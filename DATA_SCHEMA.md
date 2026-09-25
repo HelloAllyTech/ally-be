@@ -502,6 +502,14 @@ input rate (0.1x for reads, 1.25x for writes) — previously prompt-cache tokens
 priced, which is why Bug Hunter's "Est. cost" tile undercounted the real Anthropic bill: an agentic loop
 that resends a growing transcript every turn generates a lot of cache-write tokens.
 
+**`llm_usage."scenarioSessionId"` is indexed** (`llm_usage_scenario_session_id_idx`, migration
+`1973720000000`) because the roleplay session is now a unit of cost: the Priority tab's
+"Roleplay Cost per Minute" chart (`GET /v1/analytics/roleplay-session-cost`) joins every session
+in a window to its usage rows, and `.../sessions/:sessionId` itemises one. Which session-tagged
+tasks count as DELIVERY cost, and which as analysis spend reported beside it, is decided by
+`SESSION_COST_COMPONENT_BY_TASK` in `analytics/constants/session-cost.constants.ts` — add a task
+there in the same change that tags it to a session, or it silently lands in the excluded bucket.
+
 ---
 
 ### 3.13 Product Roadmap (`product-roadmap`)

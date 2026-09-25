@@ -1009,6 +1009,8 @@ export class AiService {
        */
       liveNotes?: string[] | null;
     },
+    /** The session being debriefed — attributes the call's AI spend to it. */
+    scenarioSessionId?: string,
   ): Promise<ScenarioEvaluationResponse> {
     try {
       const prompts = await this.getPromptOverrides();
@@ -1028,6 +1030,7 @@ export class AiService {
         live_notes: supervisorContext?.liveNotes?.length
           ? supervisorContext.liveNotes
           : null,
+        scenario_session_id: scenarioSessionId ?? null,
       };
 
       const response = await this.makeRequest<

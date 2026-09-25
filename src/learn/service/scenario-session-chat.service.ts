@@ -17,6 +17,7 @@ import { ScenarioSessionChatMessageRepository } from '../repository/scenario-ses
 import { ScenarioSessionContextProvider } from './scenario-session-context.provider';
 import { ScenarioSessionChat } from '../entity/scenario-session-chat.entity';
 import { ScenarioSessionChatMessage } from '../entity/scenario-session-chat-message.entity';
+import { LlmTask } from '../enum/llm-task.enum';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   CHAT_HISTORY_WINDOW_SIZE,
@@ -192,6 +193,14 @@ export class ScenarioSessionChatService {
         model,
         temperature,
         maxTokens: this.configService.aiChat.maxTokens,
+      },
+      // The debrief chat is part of delivering the roleplay, so its spend is
+      // recorded against the session it is about.
+      usage: {
+        task: LlmTask.DEBRIEF_CHAT,
+        scenarioSessionId,
+        tenantId,
+        metadata: { chatId: chat.id },
       },
     });
 
@@ -382,6 +391,12 @@ export class ScenarioSessionChatService {
         existingSummary: chat.summary ?? null,
         messages: overflowAsLlm,
         llmConfig: { model: this.configService.aiChat.model },
+        usage: {
+          task: LlmTask.DEBRIEF_CHAT_SUMMARY,
+          scenarioSessionId: chat.scenarioSessionId,
+          tenantId: chat.tenantId,
+          metadata: { chatId: chat.id },
+        },
       });
 
       chat.summary = newSummary;

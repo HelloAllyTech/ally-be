@@ -31,6 +31,42 @@ export enum LlmTask {
   // because the feature is a per-simulation opt-in, so its spend has to be
   // readable on its own to be argued for.
   BACKCHANNEL_PHRASES = 'backchannel_phrases',
+  // The rest of the live session's side calls in ally-ai-learn. Before these
+  // labels existed none of them recorded usage at all, so a session's cost was
+  // understated by everything that is not the reply itself. Each has its own
+  // label because the roleplay session-cost chart groups them into different
+  // components (see SESSION_COST_COMPONENT_BY_TASK), which a shared label would
+  // make impossible.
+  //   Fillers & holding: the fast interim reply covering a pause, and the
+  //   thinking fillers (predictive, seed and in-turn), plus the separate clip
+  //   TTS instance that voices fillers, back-channels and interim clips.
+  INTERIM_REPLY = 'interim_reply',
+  THINKING_FILLER = 'thinking_filler',
+  CLIP_TTS = 'clip_tts',
+  //   Live dialogue: the pick of which knowledge keys a turn needs, and the
+  //   embeddings behind the character's working-memory recall.
+  KNOWLEDGE_RETRIEVAL = 'knowledge_retrieval',
+  WORKING_MEMORY_EMBEDDING = 'working_memory_embedding',
+  //   Events & rules: branching, behaviour detection, and the per-turn event
+  //   detectors (guardrail, binary classifier, paraphrase, semantic
+  //   similarity embeddings).
+  BRANCHING_INSTRUCTION = 'branching_instruction',
+  BRANCHING_CHAT_SUMMARY = 'branching_chat_summary',
+  BEHAVIOUR_DETECTION = 'behaviour_detection',
+  GUARDRAIL_CHECK = 'guardrail_check',
+  BINARY_CLASSIFIER = 'binary_classifier',
+  HELPER_PARAPHRASED = 'helper_paraphrased',
+  EVENT_EMBEDDING = 'event_embedding',
+  // Goal-based actor evaluation of a REAL session in ally-ai-learn, after it
+  // ends. Measures the character's quality for us, not feedback for the
+  // learner, so it is tagged to the session but kept OUT of the session's
+  // delivery cost.
+  ACTOR_EVALUATION = 'actor_evaluation',
+  // Debrief chat in ally-be: the learner's post-session chat about their
+  // debrief, and the rolling summary that keeps its history bounded. Recorded
+  // nothing before these labels.
+  DEBRIEF_CHAT = 'debrief_chat',
+  DEBRIEF_CHAT_SUMMARY = 'debrief_chat_summary',
   // Track-level memory consolidation in ally-be: folds per-session memories
   // into one evolving learner memory per track enrollment.
   TRACK_MEMORY_FOLD = 'track_memory_fold',

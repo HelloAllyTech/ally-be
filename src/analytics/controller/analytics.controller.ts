@@ -229,6 +229,11 @@ import {
   RoleplayCostResponseDto,
 } from '../dto/roleplay-cost-analytics.dto';
 import {
+  RoleplaySessionCostDetailDto,
+  RoleplaySessionCostQueryDto,
+  RoleplaySessionCostResponseDto,
+} from '../dto/roleplay-session-cost-analytics.dto';
+import {
   CodingAgentCostQueryDto,
   CodingAgentCostResponseDto,
 } from '../dto/coding-agent-cost-analytics.dto';
@@ -251,6 +256,7 @@ import {
 import { PracticeDepthAnalyticsService } from '../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
+import { RoleplaySessionCostAnalyticsService } from '../service/roleplay-session-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
 import { BugAgentPerformanceAnalyticsService } from '../service/bug-agent-performance-analytics.service';
@@ -321,6 +327,7 @@ export class AnalyticsController {
     private readonly practiceDepthAnalyticsService: PracticeDepthAnalyticsService,
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
+    private readonly roleplaySessionCostAnalyticsService: RoleplaySessionCostAnalyticsService,
     private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
     private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
     private readonly bugAgentPerformanceAnalyticsService: BugAgentPerformanceAnalyticsService,
@@ -712,6 +719,60 @@ export class AnalyticsController {
     @Query() query: RoleplayCostQueryDto,
   ): Promise<RoleplayCostResponseDto> {
     return this.roleplayCostAnalyticsService.getRoleplayCost(query);
+  }
+
+  @Get('roleplay-session-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'AI cost per minute of roleplay, per session (super-admin)',
+    description:
+      'What it costs in AI to DELIVER a roleplay session, per minute of ' +
+      'practice, for the sessions started in each period. The session is the ' +
+      "unit: every model call tagged to it — the character's replies, STT, " +
+      'TTS, fillers and holding lines, event and rule detectors, live coaching, ' +
+      'the debrief evaluation, the debrief chat and memory folds — is summed ' +
+      'and bucketed by when the SESSION started, so a debrief that lands after ' +
+      'midnight stays with its session. Split into components that sum to the ' +
+      'total. Authoring spend cannot appear (it carries no session); analysis ' +
+      'spend tagged to a session (actor evaluation, judges) is reported as ' +
+      '`excludedCostUsd` and never folded in. Every session ever started ' +
+      'counts, however short. `partial` marks periods that began before every ' +
+      'delivery call was logged (`fullCoverageFrom`) — their cost is ' +
+      'understated and cannot be backfilled. Estimates, USD, platform-wide.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Roleplay session cost retrieved successfully',
+    type: RoleplaySessionCostResponseDto,
+  })
+  async getRoleplaySessionCost(
+    @Query() query: RoleplaySessionCostQueryDto,
+  ): Promise<RoleplaySessionCostResponseDto> {
+    return this.roleplaySessionCostAnalyticsService.getRoleplaySessionCost(
+      query,
+    );
+  }
+
+  @Get('roleplay-session-cost/sessions/:sessionId')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'The AI cost of one roleplay session, itemised (super-admin)',
+    description:
+      "One session's delivery cost by task, service and model, using the same " +
+      'classification as /roleplay-session-cost. Lines with a null component ' +
+      'are analysis spend, excluded from the cost.',
+  })
+  @ApiParam({ name: 'sessionId', description: 'Scenario session uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Session cost retrieved successfully',
+    type: RoleplaySessionCostDetailDto,
+  })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async getRoleplaySessionCostDetail(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ): Promise<RoleplaySessionCostDetailDto> {
+    return this.roleplaySessionCostAnalyticsService.getSessionCost(sessionId);
   }
 
   @Get('coding-agent-cost')

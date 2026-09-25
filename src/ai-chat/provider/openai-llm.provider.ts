@@ -6,7 +6,15 @@ import {
   LlmMessage,
   LlmProviderConfig,
   LlmStreamChunk,
+  LlmTokenUsage,
 } from '../interface/llm-provider.interface';
+
+/** OpenAI's usage block → ours. */
+const toTokenUsage = (usage: OpenAI.CompletionUsage): LlmTokenUsage => ({
+  promptTokens: usage.prompt_tokens ?? 0,
+  completionTokens: usage.completion_tokens ?? 0,
+  cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? undefined,
+});
 
 @Injectable()
 export class OpenAiLlmProvider implements LlmProvider {
@@ -26,6 +34,8 @@ export class OpenAiLlmProvider implements LlmProvider {
       model: config.model,
       messages,
       stream: true,
+      // Adds one final chunk with empty `choices` carrying the call's usage.
+      stream_options: { include_usage: true },
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? 1500,
     });
@@ -36,12 +46,16 @@ export class OpenAiLlmProvider implements LlmProvider {
       if (content) {
         yield { content, finishReason: finishReason ?? undefined };
       }
+      if (chunk.usage) {
+        yield { content: '', usage: toTokenUsage(chunk.usage) };
+      }
     }
   }
 
   async getCompletion(
     messages: LlmMessage[],
     config: LlmProviderConfig,
+    onUsage?: (usage: LlmTokenUsage) => void,
   ): Promise<string> {
     const response = await this.client.chat.completions.create({
       model: config.model,
@@ -50,6 +64,7 @@ export class OpenAiLlmProvider implements LlmProvider {
       max_tokens: config.maxTokens ?? 1500,
     });
 
+    if (response.usage) onUsage?.(toTokenUsage(response.usage));
     return response.choices[0]?.message?.content ?? '';
   }
 }

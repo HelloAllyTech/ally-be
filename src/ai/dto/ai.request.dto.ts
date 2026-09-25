@@ -214,6 +214,13 @@ export type ScenarioEvaluationRequest = {
    * notes switched off, which is the default.
    */
   live_notes?: string[] | null;
+  /**
+   * The scenario session being debriefed. ally-ai stamps it on the usage rows
+   * it emits while serving this request, so the debrief's AI spend lands on
+   * the session's cost rather than in an unattributable platform bucket.
+   * Optional: an older ally-ai ignores it.
+   */
+  scenario_session_id?: string | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

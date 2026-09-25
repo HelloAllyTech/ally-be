@@ -33,6 +33,7 @@ import {
 @Index('llm_usage_service_idx', ['service'])
 @Index('llm_usage_model_idx', ['model'])
 @Index('llm_usage_task_idx', ['task'])
+@Index('llm_usage_scenario_session_id_idx', ['scenarioSessionId'])
 @Entity('llm_usage')
 export class LlmUsage {
   @PrimaryGeneratedColumn('uuid')

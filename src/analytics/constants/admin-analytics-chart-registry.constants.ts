@@ -1407,6 +1407,16 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/AverageRatingCard.tsx'),
       note: 'Sits beside AAQ-005 (Satisfaction Mix) and reads the same quality-distribution ratings',
     },
+    {
+      id: 'AAQ-157',
+      tab: 'Highlights',
+      subTab: 'Goals',
+      title: 'Roleplay Cost per Minute',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/RoleplaySessionCostCard.tsx'),
+      note: 'Per-session delivery cost (GET /v1/analytics/roleplay-session-cost), stacked by component. Distinct from the Unit economics cost per 10 minutes, which buckets each call by when it ran rather than by its session',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */

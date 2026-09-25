@@ -1754,6 +1754,7 @@ describe('ScenarioSessionService', () => {
         // name here because this fixture's session has no resolvable user;
         // ally-ai falls back to the lay register in that case.
         expect.objectContaining({ supervisorMemory: null }),
+        mockScenarioSessionId,
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
@@ -1843,6 +1844,7 @@ describe('ScenarioSessionService', () => {
           helpfulBehaviours: ['Reflects feelings before advice'],
           unhelpfulBehaviours: ['Interrupts the client'],
         }),
+        mockScenarioSessionId,
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
@@ -1911,6 +1913,7 @@ describe('ScenarioSessionService', () => {
           helpfulBehaviours: [],
           unhelpfulBehaviours: [],
         }),
+        mockScenarioSessionId,
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
@@ -1984,6 +1987,7 @@ describe('ScenarioSessionService', () => {
         true,
         'hi',
         expect.objectContaining({ supervisorMemory: null }),
+        mockScenarioSessionId,
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;

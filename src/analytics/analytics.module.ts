@@ -63,6 +63,8 @@ import { OrgEngagementAnalyticsService } from './service/org-engagement-analytic
 import { OrgEngagementAnalyticsRepository } from './repository/org-engagement-analytics.repository';
 import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.service';
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
+import { RoleplaySessionCostAnalyticsService } from './service/roleplay-session-cost-analytics.service';
+import { RoleplaySessionCostAnalyticsRepository } from './repository/roleplay-session-cost-analytics.repository';
 import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
 import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
 import { FixSessionEngineCostAnalyticsService } from './service/fix-session-engine-cost-analytics.service';
@@ -220,6 +222,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     OrgEngagementAnalyticsRepository,
     RoleplayCostAnalyticsService,
     RoleplayCostAnalyticsRepository,
+    RoleplaySessionCostAnalyticsService,
+    RoleplaySessionCostAnalyticsRepository,
     CodingAgentCostAnalyticsService,
     CodingAgentCostAnalyticsRepository,
     FixSessionEngineCostAnalyticsService,
