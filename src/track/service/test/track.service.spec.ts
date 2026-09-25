@@ -136,4 +136,38 @@ describe('TrackService', () => {
       ).resolves.not.toThrow();
     });
   });
+
+  describe('description sanitization', () => {
+    const maliciousDescription =
+      '<p>Hello <script>alert("xss")</script><a href="javascript:alert(1)">link</a></p>';
+    const sanitizedDescription = '<p>Hello <a>link</a></p>';
+
+    it('should sanitize description on create', async () => {
+      mockTrackRepository.save.mockImplementation((track) =>
+        Promise.resolve({ ...track, id: 'new-id' }),
+      );
+      const newTrack = await service.createTrack({
+        title: 'Test',
+        description: maliciousDescription,
+      });
+      expect(newTrack.description).toBe(sanitizedDescription);
+    });
+
+    it('should sanitize description on update', async () => {
+      const trackId = 'test-track-id';
+      mockTrackRepository.findOne.mockResolvedValue({
+        id: trackId,
+        description: 'old',
+      } as Track);
+      mockTrackRepository.update.mockResolvedValue({} as any);
+
+      await service.updateTrack(trackId, {
+        description: maliciousDescription,
+      });
+
+      const updateCall = mockTrackRepository.update.mock.calls[0];
+      expect(updateCall[0]).toBe(trackId);
+      expect(updateCall[1].description).toBe(sanitizedDescription);
+    });
+  });
 });

@@ -108,7 +108,7 @@ function visitField(spec: FieldSpec, visit: FieldVisitor): void {
 
 /** `title` + `description`, shared by tracks, sections and items. */
 function walkHeading(
-  entity: { title?: string; description?: string },
+  entity: { title?: string; description?: string | null },
   visit: FieldVisitor,
   prefix = '',
 ): void {

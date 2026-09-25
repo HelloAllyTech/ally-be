@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, In, QueryFailedError } from 'typeorm';
+import * as sanitizeHtml from 'sanitize-html';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
@@ -114,7 +115,7 @@ export class TrackService {
 
     const track = await this.trackRepository.save({
       title: createTrackDto.title,
-      description: createTrackDto.description,
+      description: this.sanitizeDescription(createTrackDto.description),
       coverImageUrl: createTrackDto.coverImageUrl,
       isGlobal: createTrackDto.isGlobal ?? false,
       status,
@@ -165,17 +166,28 @@ export class TrackService {
     }
 
     const userId = this.getUserId();
-    await this.trackRepository.update(id, {
+
+    const updatePayload: Partial<Track> = {
       title: updateTrackDto.title ?? track.title,
-      description: updateTrackDto.description ?? track.description,
       coverImageUrl: updateTrackDto.coverImageUrl ?? track.coverImageUrl,
       isGlobal: updateTrackDto.isGlobal ?? track.isGlobal,
       estimatedDurationMinutes:
         updateTrackDto.estimatedDurationMinutes ??
         track.estimatedDurationMinutes,
       status: targetStatus,
-      ...(userId ? { updatedBy: userId } : {}),
-    });
+    };
+
+    if (userId) {
+      updatePayload.updatedBy = userId;
+    }
+
+    if ('description' in updateTrackDto) {
+      updatePayload.description = this.sanitizeDescription(
+        updateTrackDto.description,
+      );
+    }
+
+    await this.trackRepository.update(id, updatePayload);
 
     if (
       updateTrackDto.isGlobal !== undefined &&
@@ -675,5 +687,19 @@ export class TrackService {
     } else {
       await tenantRepo.delete({ trackId, tenantId: In(tenantIds) });
     }
+  }
+
+  private sanitizeDescription(
+    description: string | null | undefined,
+  ): string | null | undefined {
+    if (description === null || description === undefined) {
+      return description;
+    }
+    return sanitizeHtml(description, {
+      allowedTags: ['p', 'b', 'i', 'u', 'ul', 'ol', 'li', 'a'],
+      allowedAttributes: {
+        a: ['href'],
+      },
+    });
   }
 }
