@@ -55,7 +55,7 @@ describe('BugHunterService', () => {
 
       const eventParams = {
         runId,
-        stage: BugHuntEventStage.INFO,
+        stage: BugHuntEventStage.SESSION_DISPATCHED,
         summary: 'This is a test event.',
       };
 
