@@ -32,6 +32,9 @@
  * - `unmounted` entries are chart components that exist in the analytics folder
  *   but are not currently rendered by any live tab; they keep a reserved id so
  *   remounting one does not renumber everything after it.
+ * - A chart that is deleted outright has its id RETIRED, not reassigned: its
+ *   entry is removed and a comment left in its place saying what it was and
+ *   why it went (e.g. AAQ-011, AAQ-037..039, AAQ-070).
  */
 
 export type AdminAnalyticsChartKind =
@@ -166,16 +169,10 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     },
 
     // ---- Highlights > Platform ----
-    {
-      id: 'AAQ-011',
-      tab: 'Highlights',
-      subTab: 'Platform',
-      title: 'Ally Certification — learners certified',
-      kind: 'chart',
-      chartType: 'ComboChart + SimpleBarChart',
-      componentFile: f('Analytics/CertificationCard.tsx'),
-      note: 'Certification hero card',
-    },
+    // AAQ-011 is retired (2026-09-25): the Ally Certification hero card counted
+    // learners past 5,000 lifetime roleplay minutes as "L1 Ally Certified" — an
+    // L1 unrelated to the XP levels. Removed with its endpoint so the only
+    // L-levels on Analytics are XP levels. Reserved, never reassigned.
     {
       id: 'AAQ-012',
       tab: 'Highlights',
@@ -381,11 +378,11 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/tabs/PlatformSubTab.tsx'),
     },
 
-    // ---- Highlights > Usage levels ----
+    // ---- Highlights > Usage ----
     {
       id: 'AAQ-035',
       tab: 'Highlights',
-      subTab: 'Usage levels',
+      subTab: 'Usage',
       title: 'New-learner activation funnel',
       kind: 'funnel',
       chartType: 'FunnelBars',
@@ -394,43 +391,20 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     {
       id: 'AAQ-036',
       tab: 'Highlights',
-      subTab: 'Usage levels',
+      subTab: 'Usage',
       title: 'Time to first practice',
       kind: 'chart',
       chartType: 'SimpleBarChart',
       componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
     },
-    {
-      id: 'AAQ-037',
-      tab: 'Highlights',
-      subTab: 'Usage levels',
-      title: 'New levels reached per period',
-      kind: 'chart',
-      chartType: 'GroupedBarChart',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
-    },
-    {
-      id: 'AAQ-038',
-      tab: 'Highlights',
-      subTab: 'Usage levels',
-      title: 'Learners holding each level',
-      kind: 'chart',
-      chartType: 'LineChart',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
-    },
-    {
-      id: 'AAQ-039',
-      tab: 'Highlights',
-      subTab: 'Usage levels',
-      title: 'Account → L1 → L5',
-      kind: 'funnel',
-      chartType: 'FunnelBars',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
-    },
+    // AAQ-037..AAQ-039 are retired (2026-09-25): the learner usage ladder
+    // (L1–L5 by lifetime roleplay minutes) — its per-period attainment, holders
+    // and account → L1 → L5 funnel. Removed with `/v1/analytics/usage-ladder` so
+    // the only L-levels on Analytics are XP levels. Reserved, never reassigned.
     {
       id: 'AAQ-040',
       tab: 'Highlights',
-      subTab: 'Usage levels',
+      subTab: 'Usage',
       title: 'Do they come back?',
       kind: 'funnel',
       chartType: 'FunnelBars',
@@ -439,7 +413,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     {
       id: 'AAQ-041',
       tab: 'Highlights',
-      subTab: 'Usage levels',
+      subTab: 'Usage',
       title: 'Roleplay sessions of N+ minutes',
       kind: 'chart',
       chartType: 'SimpleBarChart',
@@ -695,15 +669,10 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       kind: 'kpi',
       componentFile: f('Analytics/tabs/OrgEngagementSubTab.tsx'),
     },
-    {
-      id: 'AAQ-070',
-      tab: 'Highlights',
-      subTab: 'Orgs',
-      title: 'Org created → L1 → L4',
-      kind: 'funnel',
-      chartType: 'FunnelBars',
-      componentFile: f('Analytics/tabs/OrgEngagementSubTab.tsx'),
-    },
+    // AAQ-070 is retired (2026-09-25): the org ladder funnel (Org created →
+    // L1 → L4 by total org practice minutes). Removed with the ladder half of
+    // `/v1/analytics/org-engagement` so the only L-levels on Analytics are XP
+    // levels. Reserved, never reassigned.
     {
       id: 'AAQ-071',
       tab: 'Highlights',

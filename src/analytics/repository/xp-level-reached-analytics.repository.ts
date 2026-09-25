@@ -19,15 +19,12 @@ export interface XpLevelCrossingRow {
 /**
  * Unique learners reaching each XP level for the first time, per bucket.
  *
- * Mirrors `UsageLadderAnalyticsRepository.getAttainmentByPeriod` — the identical
- * shape of problem ("distinct users reaching rung N for the first time in
- * period P") for a different metric (lifetime XP instead of lifetime practice
- * minutes): a running per-user total, computed with a window function, and a
+ * The shape of problem is "distinct users reaching rung N for the first time in
+ * period P", solved with a running per-user total, computed with a window function, and a
  * rung's crossing bucket is the FIRST bucket whose running total clears it
  * (`MIN(bucket) FILTER (WHERE cumulative >= threshold)`). Because the running
  * total is monotonic, that MIN is exactly the first crossing — there is no need
- * to additionally check the total just before it, the same shortcut the usage
- * ladder repository takes.
+ * to additionally check the total just before it.
  *
  * Computed from `xp_events`, not `user_progress.totalXp`/`lastLevelUpAt`: the
  * rollup holds only a learner's CURRENT total with no time dimension, and
@@ -48,8 +45,7 @@ export interface XpLevelCrossingRow {
  *
  * ALL-TIME by construction (no lower bound on the ledger read): a windowed
  * running total would misattribute a crossing that actually happened earlier to
- * whatever bucket the window happens to start in — see the usage ladder
- * repository's doc comment for the same reasoning. The caller (the service)
+ * whatever bucket the window happens to start in. The caller (the service)
  * fetches crossings through `endExclusive` and keeps only the ones landing on
  * or after the requested window's start.
  */
@@ -100,7 +96,7 @@ export class XpLevelReachedAnalyticsRepository {
     }).join(',\n               ');
 
     // One (level, bucket) row per crossing, unpivoted from the per-user crossing
-    // columns — same shape as UsageLadderAnalyticsRepository's `crossingUnion`.
+    // columns.
     const crossingUnion = LEVEL_THRESHOLDS.map(
       (_, i) =>
         `SELECT "crossed${i}" AS bucket, ${i + 1} AS level ` +

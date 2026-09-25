@@ -4,20 +4,18 @@ import {
   OrgActivityPointDto,
   OrgEngagementQueryDto,
   OrgEngagementResponseDto,
-  OrgFunnelStepDto,
 } from '../dto/org-engagement-analytics.dto';
 import {
   DEFAULT_ORG_ACTIVITY_WINDOW,
   ORG_ACTIVITY_MONTHS,
-  ORG_LADDER_LEVELS,
   OrgEngagementAnalyticsRepository,
 } from '../repository/org-engagement-analytics.repository';
 
 /**
  * Org-level engagement for the Highlights "Orgs" sub-tab.
  *
- * Three panels off two queries: the ladder funnel, the "active recently"
- * headline, and the monthly activity trend behind it.
+ * Three readings off three queries: how many orgs there are, the "active
+ * recently" headline, and the monthly activity trend behind it.
  *
  * Two things this service is careful about, both of which a client would
  * otherwise get wrong:
@@ -41,8 +39,8 @@ export class OrgEngagementAnalyticsService {
   ): Promise<OrgEngagementResponseDto> {
     const activityDays = query.activityDays ?? DEFAULT_ORG_ACTIVITY_WINDOW;
 
-    const [funnelRow, activityRow, trendRows] = await Promise.all([
-      this.repo.getFunnel(),
+    const [orgs, activityRow, trendRows] = await Promise.all([
+      this.repo.getOrgCount(),
       this.repo.getActivityWindow(activityDays),
       this.repo.getActivityByMonth(ORG_ACTIVITY_MONTHS),
     ]);
@@ -55,9 +53,7 @@ export class OrgEngagementAnalyticsService {
     }));
 
     return {
-      levels: ORG_LADDER_LEVELS.map((l) => ({ ...l })),
-      funnel: buildFunnel(funnelRow.orgs, funnelRow.atLevel),
-      orgs: funnelRow.orgs,
+      orgs,
       activityDays,
       activeOrgs: activityRow.activeOrgs,
       eligibleOrgs: activityRow.totalOrgs,
@@ -65,7 +61,7 @@ export class OrgEngagementAnalyticsService {
       activityTrend,
       scoping: {
         tenantId: null,
-        unscopedSections: ['funnel', 'activeOrgs', 'activityTrend'],
+        unscopedSections: ['orgs', 'activeOrgs', 'activityTrend'],
       },
       computedAt: new Date().toISOString(),
     };
@@ -75,39 +71,4 @@ export class OrgEngagementAnalyticsService {
 function pct(numerator: number, denominator: number): number | null {
   if (denominator <= 0) return null;
   return Math.round((numerator / denominator) * 1000) / 10;
-}
-
-/**
- * The nested org funnel with both conversions attached.
- *
- * No minimum-group-size floor here, unlike the learner funnels: the population
- * being counted is ORGS, and an org is not a person. "2 of 40 orgs reached L3"
- * identifies a company, which is commercially sensitive but not personal data,
- * and it is precisely what an account review is for. The learner-level charts,
- * where a percentage over a handful of people names one of them, keep their floor.
- */
-function buildFunnel(orgs: number, atLevel: number[]): OrgFunnelStepDto[] {
-  const steps: OrgFunnelStepDto[] = [
-    {
-      id: 'orgs',
-      label: 'Org created',
-      orgs,
-      ofPreviousPct: null,
-      ofTopPct: orgs > 0 ? 100 : null,
-    },
-  ];
-
-  ORG_LADDER_LEVELS.forEach((level, i) => {
-    const atThisLevel = atLevel[i] ?? 0;
-    const previous = steps[steps.length - 1].orgs;
-    steps.push({
-      id: level.id,
-      label: level.label,
-      orgs: atThisLevel,
-      ofPreviousPct: pct(atThisLevel, previous),
-      ofTopPct: pct(atThisLevel, orgs),
-    });
-  });
-
-  return steps;
 }
