@@ -50,6 +50,15 @@ const PROSE_SECTIONS: {
   // decides which goals are worth having, and an agent that writes goals
   // first tends to defend them afterwards.
   { key: 'existingBehaviour', label: 'What already exists', minLength: 60 },
+  // And straight after it, where the change belongs — because knowing what
+  // exists is what makes that answerable, and because the repo where a
+  // problem was noticed is evidence about where it was noticed and nothing
+  // else.
+  {
+    key: 'whereChangesBelong',
+    label: 'Where the change belongs',
+    minLength: 60,
+  },
   { key: 'goals', label: 'Goals', minLength: 30 },
   { key: 'nonGoals', label: 'Non-goals', minLength: 20 },
   { key: 'testPlanMd', label: 'Test plan', minLength: 100 },
@@ -386,6 +395,66 @@ export class BuilderPrdService {
       ok: openQuestions.length === 0,
       hint: openQuestions.length
         ? `${openQuestions.length} open question(s) left to settle.`
+        : '',
+    });
+
+    // The one rubric row that compares two sections against each other.
+    //
+    // "Where the change belongs" is prose, and prose is not checkable — except
+    // for the repo names in it, which come from a fixed list. That is enough
+    // to catch the failure this whole section exists for: a PRD that has
+    // traced the behaviour into ally-be and then plans only ally-web. The
+    // build would clone one repo, fix what it could reach, and pass its own
+    // gate against the half it changed.
+    //
+    // Blocks rather than scores, and passes vacuously on a blank PRD: naming
+    // no repos is not a claim about any.
+    //
+    // Deliberately one-directional. A repo named in the prose must be planned;
+    // a repo planned but not discussed in the prose is untidy, not wrong, and
+    // blocking on it would turn a section about reasoning into a checklist to
+    // satisfy.
+    // Only a repo that OWNS a line counts — "- ally-be: the count is computed
+    // here", not any mention anywhere in the prose. The looser reading was
+    // written first and immediately flagged a sentence whose whole point was
+    // that a repo is NOT involved ("nothing in ally-web renders them yet").
+    // Naming a repo to rule it out is a normal, useful thing to write, and a
+    // check that punishes it teaches people to stop writing it.
+    const spokenFor = String(draft.whereChangesBelong ?? '');
+    const ownsALine = (repo: string) =>
+      new RegExp(
+        `^[\\s>*\\-\\d.\`]*\\*{0,2}${repo}\\*{0,2}\`?\\s*[:\u2014-]`,
+        'im',
+      ).test(spokenFor);
+    const namedRepos = BUILDER_REPO_NAMES.filter(ownsALine);
+    const plannedRepos = new Set(
+      repoPlans
+        .map((plan) =>
+          String(plan.repo ?? '')
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    );
+    const unplanned = namedRepos.filter(
+      (repo) => !plannedRepos.has(repo.toLowerCase()),
+    );
+    sections.push({
+      key: 'repoCoverage',
+      label: 'Every repo named is planned',
+      ok: unplanned.length === 0,
+      hint: unplanned.length
+        ? `${unplanned.join(', ')} named as owning a change, but not in the plan.`
+        : '',
+      detail: unplanned.length
+        ? `"Where the change belongs" says the change belongs in ${unplanned.join(
+            ', ',
+          )}, and /technicalPlan/repos has no entry for ${
+            unplanned.length > 1 ? 'those repos' : 'it'
+          }. Add one, with changesMd describing what changes there. If the ` +
+          'change does not in fact belong there, correct the section instead ' +
+          '— a build cannot edit a repo it was not given, and will fix what ' +
+          'it can reach rather than what is wrong.'
         : '',
     });
 

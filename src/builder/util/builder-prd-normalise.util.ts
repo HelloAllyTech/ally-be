@@ -378,6 +378,7 @@ export function normalisePrdDocument(
     problem: asPrdText(raw.problem),
     usersAndContext: asPrdText(raw.usersAndContext),
     existingBehaviour: asPrdText(raw.existingBehaviour),
+    whereChangesBelong: asPrdText(raw.whereChangesBelong),
     goals: asPrdText(raw.goals),
     nonGoals: asPrdText(raw.nonGoals),
     requirements: asList(raw.requirements).map((entry, index) =>

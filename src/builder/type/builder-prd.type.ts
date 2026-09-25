@@ -104,6 +104,27 @@ export interface BuilderPrdDocument {
    * from the real codebase instead of an imagined empty one.
    */
   existingBehaviour: string;
+  /**
+   * Which repo owns each change, and why that layer rather than the one where
+   * the problem was noticed.
+   *
+   * Symptom and cause are not the same place, and the repo an admin was
+   * looking at when they filed the request is evidence about neither. ally-web
+   * #713 was raised against a notification badge that would not clear, scoped
+   * to ally-web because that is where the badge is; the defect was an ally-be
+   * query matching zero rows. Builder could only edit what it was given, so it
+   * localised a server bug to the client, wrote a test asserting the client
+   * behaviour it had changed, and passed every gate with the feature still
+   * broken.
+   *
+   * A section rather than a line in the prompt, for the same reason
+   * `existingBehaviour` is one: the rubric can block on it. And because it
+   * names repos explicitly, the rubric can do something a prompt cannot —
+   * check that every repo named here actually appears in the technical plan.
+   * A build that has traced the behaviour to ally-be cannot then quietly plan
+   * only ally-web.
+   */
+  whereChangesBelong: string;
   goals: string;
   nonGoals: string;
   requirements: BuilderPrdRequirement[];
@@ -160,6 +181,7 @@ export function createEmptyPrdDocument(
     problem: '',
     usersAndContext: '',
     existingBehaviour: '',
+    whereChangesBelong: '',
     goals: '',
     nonGoals: '',
     requirements: [],

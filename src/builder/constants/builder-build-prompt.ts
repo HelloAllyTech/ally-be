@@ -217,6 +217,9 @@ ${prd.usersAndContext}
 ## What already exists
 ${prd.existingBehaviour || '(not established — treat every claim below as unverified and check before building)'}
 
+## Where the change belongs
+${prd.whereChangesBelong || '(not established — if the change you are about to make is not in the layer that owns the behaviour, say so rather than patching the layer you were given)'}
+
 ## Goals
 ${prd.goals}
 

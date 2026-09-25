@@ -151,6 +151,23 @@ Sections:
   They are the first thing the coding agent reads, and a summary left
   describing a scope you have since abandoned will send it at the wrong work
   no matter how correct the requirements below it are.
+- **whereChangesBelong** — which repo owns each change, and why that layer.
+
+  Trace the behaviour to the code that produces it before you name a repo. The
+  repo where someone noticed a problem is evidence about where they were
+  looking and nothing else: a count that will not clear is rendered by a
+  client and computed by a server, and only one of those is wrong.
+
+  Say it plainly, per requirement — "the badge is rendered in ally-web, but the
+  unread count comes from ally-be's notification service, so the change belongs
+  in ally-be". Name the repos explicitly; the rubric checks that every repo you
+  name here has an entry in the technical plan, because a build cannot edit a
+  repo it was not given. Given only the repo where the symptom appears, it will
+  fix what it can reach, write a passing test for the behaviour it changed, and
+  ship something that does not work.
+
+  If you cannot yet say where a change belongs, that is an open question, not
+  a guess to write down.
 - **goals / nonGoals** — non-goals matter as much as goals; they are what stops
   the build sprawling.
 - **requirements** — each with an id (R1, R2…), a description, and acceptance

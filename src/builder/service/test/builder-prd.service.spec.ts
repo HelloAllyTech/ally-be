@@ -17,6 +17,8 @@ const buildReadyPrd = (): BuilderPrdDocument => ({
     'Ally platform admins working in the admin dashboard, usually alone and mid-week.',
   existingBehaviour:
     'Nothing exists for this yet: there is no builder module, no builder_sessions table and no admin route. Searched for builder, prd, interview and copilot across ally-be and ally-web.',
+  whereChangesBelong:
+    '- ally-be: the interview, the PRD document and the readiness rubric are all server-side, so every requirement lands here. Nothing in ally-web renders them yet.',
   goals: 'Turn a feature idea into reviewable pull requests without a handoff.',
   nonGoals: 'Not a replacement for code review; humans still merge.',
   testPlanMd:
@@ -142,6 +144,74 @@ describe('BuilderPrdService', () => {
       expect(readiness.ready).toBe(true);
       expect(readiness.score).toBe(100);
       expect(readiness.blockers).toEqual([]);
+    });
+
+    /**
+     * The rule that would have caught ally-web#713.
+     *
+     * That PRD traced a notification badge that would not clear, was scoped to
+     * ally-web because that is where the badge is, and the defect was an
+     * ally-be query matching zero rows. A build cannot edit a repo it was not
+     * given, so it fixed the layer it could reach, wrote a passing test for
+     * the behaviour it had changed, and cleared every gate with the feature
+     * still broken.
+     */
+    describe('every repo named as owning a change is planned', () => {
+      it('blocks when the plan has no entry for a repo the PRD named', () => {
+        const draft = buildReadyPrd();
+        draft.whereChangesBelong =
+          '- ally-web: the badge is rendered here.\n' +
+          '- ally-be: the unread count is computed here, and this is where it is wrong.';
+        draft.technicalPlan.repos = [
+          { repo: 'ally-web', changesMd: 'Clear the badge.' },
+        ];
+
+        const readiness = service.computeReadiness(draft);
+
+        expect(readiness.ready).toBe(false);
+        expect(readiness.blockers.join(' ')).toContain('ally-be');
+      });
+
+      it('is satisfied once that repo is planned', () => {
+        const draft = buildReadyPrd();
+        draft.whereChangesBelong =
+          '- ally-web: the badge is rendered here.\n' +
+          '- ally-be: the unread count is computed here.';
+        draft.technicalPlan.repos = [
+          { repo: 'ally-web', changesMd: 'Clear the badge.' },
+          { repo: 'ally-be', changesMd: 'Match unread rows with IS NULL.' },
+        ];
+
+        expect(service.computeReadiness(draft).ready).toBe(true);
+      });
+
+      /**
+       * Naming a repo to rule it out is a normal thing to write, and the first
+       * version of this rule flagged exactly that — on this file's own
+       * fixture. A check that punishes useful prose teaches people to stop
+       * writing it.
+       */
+      it('ignores a repo mentioned in passing rather than owning a line', () => {
+        const draft = buildReadyPrd();
+        draft.whereChangesBelong =
+          '- ally-be: the count is computed here, and nothing in ally-mobile ' +
+          'or ally-web has to change for it.';
+        draft.technicalPlan.repos = [
+          { repo: 'ally-be', changesMd: 'Match unread rows with IS NULL.' },
+        ];
+
+        expect(service.computeReadiness(draft).ready).toBe(true);
+      });
+
+      /** A blank section is not a claim about any repo. */
+      it('passes vacuously before anything has been written', () => {
+        const draft = buildReadyPrd();
+        draft.whereChangesBelong = '';
+
+        expect(
+          service.computeReadiness(draft).blockers.join(' '),
+        ).not.toContain('not in the plan');
+      });
     });
 
     it('blocks on an unconfirmed assumption', () => {
