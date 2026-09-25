@@ -90,6 +90,34 @@ Language–Voice mapping. Both are **id-returning prompts**, and that is where t
   but belongs to another language would dispatch the wrong TTS for the whole session, so
   `parseLanguageVoices` checks membership rather than existence.
 
+### Event field prompts (`event_builder/`)
+
+`event_builder/` follows the same basename-is-the-enum-value contract as `agent_builder/`,
+against `EventBuilderField` and `toPromptCode('event_builder', field)`. It turns an author's
+free-text description of a counsellor behaviour into the configuration of a
+`BINARY_CLASSIFIER` session event, one file per part: `classifier`, `examples`, `feedback`,
+`branch_instruction`, `tags`.
+
+`classifier.txt` is sequenced ahead of the rest and its answer is fed back in as
+`{{className}}`, so the examples and feedback describe the class the author actually kept
+rather than one each call re-imagined. The other four must still read sensibly when
+`{{className}}` renders empty — `renderTemplate` blanks unknown placeholders, and a caller
+that fires them all in parallel gets a weaker answer, not a broken one.
+
+Two constraints specific to this folder:
+
+- **`examples.txt` is a runtime cost, not just a generation.** What it writes is inlined into
+  a prompt ally-ai-learn rebuilds on *every learner turn*, batched across every classifier on
+  the simulation. `{{numExamples}}` is clamped server-side to `MAX_EXAMPLES_PER_POLARITY`;
+  do not write a prompt that argues for more.
+- **Negatives must be near misses.** A negative example only calibrates the boundary if it is
+  something a counsellor plausibly says in the same moment that a careless classifier would
+  wrongly flag. Unrelated negatives read fine in review and teach the classifier nothing.
+
+`branch_instruction.txt` is the one file here that returns **plain text, not JSON** — it is
+injected into the AI client's prompt as direction to an actor — so it is the only field the
+service calls with `expectJson: false`.
+
 ### Agent prompts coupled to a tool contract (`character_interview/`)
 
 `character_interview/interviewer_system.txt` is an agent prompt (above) with one extra

@@ -32,6 +32,7 @@ import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
+import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderEventType,
@@ -49,6 +50,8 @@ import {
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
+  builderAllowedEngines,
+  BUILDER_MODEL_DEFAULTS,
   BUILDER_RESUME_FILES_MAX,
   BUILDER_RESUME_TEST_OUTPUT_MAX,
   BUILDER_RUN_TIMEOUT_MS,
@@ -121,6 +124,60 @@ export interface BuilderBudgetState {
  * correlates the two afterwards. Cancel, run links and status settling are all
  * eventually consistent because of it.
  */
+/**
+ * Session states a build can be dispatched from.
+ *
+ * Named rather than inlined because the admin UI makes the same decision about
+ * which sessions offer a start control, and the two had already drifted: the
+ * page offered a retry the API refused.
+ */
+/**
+ * Which engine a model id belongs to, or null when we cannot tell.
+ *
+ * Deliberately a prefix match rather than a catalog lookup: the catalog says
+ * whether a model exists, not which CLI can drive it, and this has to answer
+ * before anything is dispatched. Unknown ids return null and are treated as
+ * usable by any engine — the catalog is admin-maintained, and a new provider
+ * should not need this edited before it can be configured.
+ */
+export const builderEngineOf = (
+  model: string | null | undefined,
+): string | null => {
+  const id = String(model ?? '').trim();
+  if (!id) return null;
+  if (id.startsWith('gemini-')) return 'gemini';
+  if (id.startsWith('claude-')) return 'claude-code';
+  return null;
+};
+
+/**
+ * The engines this file can attribute a model to at all.
+ *
+ * Nothing may be refused on behalf of an engine that is not in here. A new
+ * engine arrives as a settings string long before this file learns its model
+ * naming, and refusing every model for it would make it unusable — the same
+ * reason `builderEngineOf` lets an unknown model id pass.
+ */
+const BUILDER_KNOWN_MODEL_OWNERS = new Set(['gemini', 'claude-code']);
+
+/**
+ * Engines that are harnesses rather than vendors.
+ *
+ * `builderEngineOf` answers "whose model is this", which is the right question
+ * for `gemini` and `claude-code` — each runs one vendor's models and exits on
+ * its first phase if handed another's. opencode runs any provider it has a key
+ * for, so asking whether `gemini-2.5-pro` "belongs to opencode" is the wrong
+ * question, and answering no would filter out every model an opencode run
+ * could legitimately use.
+ */
+const BUILDER_MULTI_PROVIDER_ENGINES = new Set(['opencode']);
+
+export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
+  BuilderSessionStatus.PRD_READY,
+  BuilderSessionStatus.FAILED,
+  BuilderSessionStatus.CANCELLED,
+];
+
 @Injectable()
 export class BuilderBuildService {
   private readonly logger = LoggerService.getInstance(BuilderBuildService.name);
@@ -178,9 +235,32 @@ export class BuilderBuildService {
         'GITHUB_TOKEN is not configured on this environment, so builds cannot be dispatched.',
       );
     }
+    // CANCELLED is startable, and leaving it out made stop a one-way door.
+    //
+    // A session only reaches CANCELLED by way of BUILDING, so its PRD is ready
+    // by construction — stopping a run says "not this build", not "retire this
+    // work". Refusing here meant the deliberate act of pressing stop discarded
+    // the session: the PRD stayed, the branch stayed, and the only route
+    // onward was a new session and a re-run of the interview.
+    //
+    // COMPLETED stays out. Its pull requests are open or merged, and a second
+    // build of finished work opens a competing set against the same PRD.
+    // A COMPLETED session that opened no pull requests has shipped nothing —
+    // getDeliveryState says so in as many words — so it is not finished in any
+    // sense a person cares about and must not be a dead end. It happens: a run
+    // whose agent claimed done and whose evidence said otherwise settles the
+    // session green with an empty branch behind it. One with pull requests
+    // stays closed to rebuilding, because a second build against the same PRD
+    // opens a competing set.
+    const completedEmptyHanded =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      (await this.pullRequestRepository.count({
+        where: { sessionId: session.id },
+      })) === 0;
+
     if (
-      session.status !== BuilderSessionStatus.PRD_READY &&
-      session.status !== BuilderSessionStatus.FAILED
+      !BUILDER_STARTABLE_STATUSES.includes(session.status) &&
+      !completedEmptyHanded
     ) {
       throw new BadRequestException(
         `A build can only start from a ready PRD — this session is ${session.status.toLowerCase()}.`,
@@ -202,11 +282,7 @@ export class BuilderBuildService {
     // column nothing read. Falling through to it (and finally to the
     // hardcoded default, for a settings row that predates the field) is what
     // makes that picker do something.
-    const engine =
-      overrides.engine ??
-      session.engine ??
-      settings.defaultEngine ??
-      'claude-code';
+    const engine = this.resolveEngine(session, settings, overrides.engine);
     // Epic mode dispatches the first milestone rather than the whole PRD. The
     // split itself is proposed and confirmed before this point — a wrong
     // decomposition is expensive in a way a wrong plan is not, because it
@@ -217,7 +293,14 @@ export class BuilderBuildService {
     const milestone = await this.epicService.nextPending(session.id);
 
     const sizing = await this.classifySession(session, milestone);
-    const models = this.resolveModels(session, settings, overrides, sizing);
+    const models = this.resolveModels(
+      engine,
+      session,
+      settings,
+      overrides,
+      sizing,
+    );
+    this.assertModelsMatchEngine(engine, models);
     await this.assertModelsAreReal(models);
 
     // Carry the chosen engine/model onto the session so a resume run and the
@@ -280,7 +363,11 @@ export class BuilderBuildService {
       this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
-      const models = this.resolveModels(session, settings);
+      const models = this.resolveModels(
+        this.resolveEngine(session, settings),
+        session,
+        settings,
+      );
       await this.sessionRepository.update(
         { id: session.id },
         {
@@ -323,11 +410,44 @@ export class BuilderBuildService {
   }
 
   /**
+   * Which engine this session runs on.
+   *
+   * One expression, because every model tier now falls back differently
+   * depending on the answer — and a resume, fix or review run that disagreed
+   * with the build run about the engine would resolve a different set of
+   * models for the same session.
+   */
+  private resolveEngine(
+    session: BuilderSession,
+    settings: { defaultEngine?: string | null },
+    override?: string,
+  ): string {
+    const chosen =
+      override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
+
+    // Permitted, or overruled — wherever it came from. See
+    // builderAllowedEngines: a stale `claude-code` and an admin typing
+    // `claude-code` spend the same money, so this does not care which it was.
+    const allowed = builderAllowedEngines();
+    if (!allowed.length || allowed.includes(chosen)) return chosen;
+
+    // Said, not swallowed. An engine picker being overruled should be
+    // findable without reading this file.
+    this.logger.info(
+      `Builder engine "${chosen}" is not permitted (allowed: ` +
+        `${allowed.join(', ')}); running session ${session.id} on ` +
+        `${allowed[0]} instead.`,
+    );
+    return allowed[0];
+  }
+
+  /**
    * Model per tier, resolved run override → session (coder only) → settings →
    * config default. One resolution path so the run row, the workflow input
    * and the UI can never disagree about which model a phase used.
    */
   private resolveModels(
+    engine: string,
     session: BuilderSession,
     settings: {
       plannerModel?: string | null;
@@ -351,14 +471,74 @@ export class BuilderBuildService {
     const { size } = sizing;
     const profile = BUILDER_SIZE_PROFILES[size];
 
+    // A config default is only usable if it belongs to the engine that will be
+    // asked to run it.
+    //
+    // The config defaults are Gemini ids now, so the case this was written for
+    // — a Gemini session reaching a `claude-opus-5` default and handing it to
+    // `gemini --model claude-opus-5` — is no longer the default path. It is
+    // still reachable in the other direction, and from any tier: an admin who
+    // sets `BUILDER_PLANNER_MODEL` or a settings tier to a Claude id while a
+    // session is pinned to `gemini` recreates it exactly. The filter is about
+    // which engine will be handed the id, not about which vendor wrote the
+    // default, so it stays.
+    //
+    // The SMALL profile is the one worth remembering: its mechanical planner
+    // tier reads `config.mechanicalModel` directly, so before this filter
+    // existed it ignored the settings entirely and every small cross-engine
+    // build planned on a model the engine had never heard of.
+    //
+    // Skipping the default rather than translating it: there is no honest
+    // mapping from "Opus" to a Gemini tier, and inventing one would silently
+    // run a build on a model nobody chose. Falling through to the coder tier
+    // means the worst case is a build that plans on the model the admin
+    // actually picked.
+    const engineOf = builderEngineOf;
+    const forThisEngine = (model: string | null | undefined): string | null => {
+      // A multi-provider harness can run whatever it is given, so nothing is
+      // filtered out on its behalf.
+      if (BUILDER_MULTI_PROVIDER_ENGINES.has(engine)) return model ?? null;
+      const owner = engineOf(model);
+      // Unknown ids pass. The catalog is admin-maintained and a new provider
+      // should not need this function edited before it can be configured.
+      return owner === null || owner === engine ? (model ?? null) : null;
+    };
+
+    // Every rung of the fallback chain, not just the config defaults.
+    //
+    // The filter was applied to `config.*Model` alone, on the reasoning that
+    // those are the hardcoded Anthropic ids. But a session carries its OWN
+    // engine, pinned when it was created, while the models come from settings
+    // that an admin can change afterwards — so switching Builder's default
+    // engine to Gemini left every earlier session pinned to `claude-code`
+    // resolving its coder to `settings.coderModel`, `gemini-2.5-pro`, and
+    // handing that to Claude Code. The engine exits immediately with "issue
+    // with the selected model" on every phase, having written nothing, and the
+    // run burns its whole remediation ladder repeating it.
+    //
+    // `session.model` and the settings tiers are exactly as capable of naming
+    // another engine's model as a config default is, so they go through the
+    // same filter. An explicit per-run override is deliberately NOT filtered —
+    // silently discarding what an admin typed is worse than refusing — and
+    // assertModelsMatchEngine below refuses the dispatch instead, by name.
     const coder =
       overrides.model ??
-      session.model ??
-      settings.coderModel ??
-      settings.defaultModel ??
-      config.coderModel;
+      forThisEngine(session.model) ??
+      forThisEngine(settings.coderModel) ??
+      forThisEngine(settings.defaultModel) ??
+      forThisEngine(config.coderModel) ??
+      // Last rung. Deliberately NOT the unfiltered `config.coderModel`: an
+      // environment that names another engine's model would otherwise defeat
+      // every filter above it and be handed straight to the engine — which is
+      // exactly the shape of the claude-code review dispatch found on
+      // 2026-09-23. The compiled default is the one value guaranteed to belong
+      // to the engine this build is pinned to.
+      BUILDER_MODEL_DEFAULTS.coder;
     const plannerTier =
-      settings.plannerModel ?? config.plannerModel ?? config.coderModel;
+      forThisEngine(settings.plannerModel) ??
+      forThisEngine(settings.defaultModel) ??
+      forThisEngine(config.plannerModel) ??
+      coder;
 
     // Three tiers now, not two. A small build plans on the mechanical tier
     // because planning was a quarter of Builder's whole spend on work this
@@ -370,7 +550,9 @@ export class BuilderBuildService {
           // unconfigured mechanical model would otherwise hand the runner an
           // empty `--model`, and a cost optimisation that can fail the build
           // is not one.
-          (config.mechanicalModel ?? coder)
+          // The same fallback covers a mechanical model belonging to
+          // another engine — see forThisEngine above.
+          (forThisEngine(config.mechanicalModel) ?? coder)
         : profile.plannerTier === 'coder'
           ? coder
           : plannerTier);
@@ -399,13 +581,16 @@ export class BuilderBuildService {
       // escalates nowhere.
       coderLadder: profile.coderLadder.map((tier) => {
         if (tier === 'planner') return overrides.plannerModel ?? plannerTier;
-        if (tier === 'mechanical') return config.mechanicalModel;
+        if (tier === 'mechanical')
+          return forThisEngine(config.mechanicalModel) ?? coder;
         return coder;
       }),
       verifier:
         overrides.verifierModel ??
-        settings.verifierModel ??
-        config.verifierModel,
+        forThisEngine(settings.verifierModel) ??
+        forThisEngine(settings.defaultModel) ??
+        forThisEngine(config.verifierModel) ??
+        coder,
       // Read by run-engine.sh out of the same `models` input, because
       // workflow_dispatch caps at 10 and the workflow already sits at 9.
       size,
@@ -415,7 +600,59 @@ export class BuilderBuildService {
       effort: profile.effort,
       plannerMaxTurns: profile.maxTurns,
       planWords: profile.planWords,
-      budgets: profile.maxBudgetUsd,
+      budgets: this.phaseBudgetsWithin(session, profile.maxBudgetUsd),
+    };
+  }
+
+  /**
+   * Per-phase ceilings, capped at what the session can actually afford.
+   *
+   * The profile's figures are absolute and they add up: LARGE is
+   * 10 + 20 + 6 + 5 — and that is one pass each, with up to four coding
+   * attempts allowed. A session with a $10 ceiling was dispatched with
+   * permission to spend $41 before anything asked it to stop, and one run did
+   * exactly that ($41.92 of $10.00). Nothing was wrong with the boundary check
+   * that is supposed to catch this; it simply runs BETWEEN phases, and the
+   * overshoot happens inside one.
+   *
+   * A phase may therefore never be handed more than the session has left. That
+   * is not the same as dividing the headroom four ways: the phases are
+   * sequential and most runs never reach the last one, so splitting it would
+   * starve CODE — the phase that does the work — on a budget that could have
+   * covered it. The engine's own ceiling stops a phase at the session's limit;
+   * the boundary check then holds the run rather than starting the next one.
+   *
+   * No ceiling on the session means no clamp: zero has meant "uncapped"
+   * everywhere else in this file since the column was added.
+   */
+  private phaseBudgetsWithin(
+    session: BuilderSession,
+    profileBudgets: {
+      plan: number;
+      code: number;
+      verify: number;
+      finalise: number;
+    },
+  ): { plan: number; code: number; verify: number; finalise: number } {
+    const ceiling = Number(session.budgetUsd ?? 0);
+    if (!ceiling || !Number.isFinite(ceiling)) return profileBudgets;
+
+    const spent = Number(session.totalCostUsd ?? 0);
+    const headroom = Math.max(
+      0,
+      ceiling - (Number.isFinite(spent) ? spent : 0),
+    );
+    // Never zero. A phase handed `--max-budget-usd 0` is a phase that cannot
+    // run at all, and a session with no headroom is refused at dispatch by
+    // assertWithinBudget long before this — so the floor here only covers the
+    // rounding case, where the last cent would otherwise read as "uncapped".
+    const cap = (value: number) => Math.max(0.5, Math.min(value, headroom));
+
+    return {
+      plan: cap(profileBudgets.plan),
+      code: cap(profileBudgets.code),
+      verify: cap(profileBudgets.verify),
+      finalise: cap(profileBudgets.finalise),
     };
   }
 
@@ -507,6 +744,51 @@ export class BuilderBuildService {
     }
   }
 
+  /**
+   * Refuse a build whose models belong to a different engine than the one that
+   * will run them — before it costs anything.
+   *
+   * This is the sibling of assertModelsAreReal, and it exists because "the
+   * model is real" and "this engine can run it" are different questions.
+   * `gemini-2.5-pro` is a real, active row in the catalog; handed to Claude
+   * Code it produces "There's an issue with the selected model" and an
+   * immediate non-zero exit, on every phase, having written nothing.
+   *
+   * The resolution chain now filters the tiers it controls, so the only way to
+   * reach here is an explicit per-run override — which is deliberately left
+   * unfiltered, because silently replacing a model an admin typed is worse
+   * than telling them it cannot run. Hence a refusal that names the model, the
+   * engine and the way out.
+   */
+  private assertModelsMatchEngine(
+    engine: string,
+    models: BuilderResolvedModels,
+  ): void {
+    // Only an engine whose models we can actually name. See
+    // BUILDER_KNOWN_MODEL_OWNERS.
+    if (!BUILDER_KNOWN_MODEL_OWNERS.has(engine)) return;
+
+    const mismatched = [
+      ...new Set(
+        [models.planner, models.coder, models.verifier, ...models.coderLadder]
+          .map((model) => String(model ?? '').trim())
+          .filter((model) => {
+            const owner = builderEngineOf(model);
+            return owner !== null && owner !== engine;
+          }),
+      ),
+    ];
+    if (!mismatched.length) return;
+
+    throw new BadRequestException(
+      `This session runs on the ${engine} engine, which cannot use ` +
+        `${mismatched.join(', ')}. A build dispatched this way exits immediately ` +
+        'on every phase without writing anything, and spends its whole ' +
+        'remediation ladder repeating it. Pick a model for this engine, or ' +
+        'clear the override to use the platform default.',
+    );
+  }
+
   private async classifySession(
     session: BuilderSession,
     milestone?: {
@@ -591,7 +873,11 @@ export class BuilderBuildService {
 
     // A resume keeps the paused run's models: switching tiers mid-session
     // would make "which model wrote this" unanswerable for the run pair.
-    const models = this.resolveModels(session, settings);
+    const models = this.resolveModels(
+      this.resolveEngine(session, settings),
+      session,
+      settings,
+    );
     return this.dispatchRun({
       session,
       mode: BuilderRunMode.RESUME,
@@ -795,7 +1081,11 @@ export class BuilderBuildService {
       1,
     );
 
-    const models = this.resolveModels(session, settings);
+    const models = this.resolveModels(
+      this.resolveEngine(session, settings),
+      session,
+      settings,
+    );
     const run = await this.dispatchRun({
       session,
       mode: BuilderRunMode.FIX,
@@ -902,7 +1192,11 @@ export class BuilderBuildService {
       mode: BuilderRunMode.REVIEW,
       userId: session.createdBy ?? 0,
       repos: [pullRequest.repo],
-      models: this.resolveModels(session, settings),
+      models: this.resolveModels(
+        this.resolveEngine(session, settings),
+        session,
+        settings,
+      ),
       branches: { [pullRequest.repo]: pullRequest.branch },
       pullRequestId: pullRequest.id,
     });
@@ -1655,11 +1949,41 @@ export class BuilderBuildService {
 
     // Only the run's own outcome moves the session; a session already
     // cancelled by a human stays cancelled.
+    //
+    // The exception is this run correcting itself. A run reports its outcome
+    // once — but the runner also reports one, from evidence, after the agent
+    // has finished: work pushed with no pull request, a branch that went
+    // nowhere. Those arrive second, and the guard above swallowed them, so a
+    // run whose agent said "done" settled the session COMPLETED and the
+    // runner's truthful "failed" moments later updated only the run row.
+    //
+    // That is the worst shape this can take: the session reads Done in green,
+    // its own latest run reads Failed, no pull request exists, and COMPLETED
+    // is deliberately not restartable — so the page offers no way onward from
+    // a success that did not happen.
+    //
+    // Narrow on purpose. Only a FAILED settlement, only from the session's own
+    // latest run, and only over a COMPLETED that the same run just set.
+    // Evidence may correct a claim; a claim may not overwrite evidence, and
+    // nothing here lets an older run reopen a session that has moved on.
+    const correctingItsOwnClaim =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      (status === BuilderRunStatus.FAILED ||
+        status === BuilderRunStatus.TIMED_OUT) &&
+      (await this.runRepository.isLatestForSession(run.id, session.id));
+
     if (
       session.status !== BuilderSessionStatus.BUILDING &&
-      session.status !== BuilderSessionStatus.WAITING_FOR_INPUT
+      session.status !== BuilderSessionStatus.WAITING_FOR_INPUT &&
+      !correctingItsOwnClaim
     ) {
       return;
+    }
+
+    if (correctingItsOwnClaim) {
+      this.logger.warn(
+        `Builder run ${run.id} reported done and then failed; correcting session ${session.id} back from COMPLETED.`,
+      );
     }
 
     if (status === BuilderRunStatus.SUCCEEDED) {
@@ -1841,6 +2165,19 @@ export class BuilderBuildService {
       // dispatch guard already refuses from here on.
       await this.notificationService.budgetReached(session, total);
     }
+  }
+
+  async recordRunModel(
+    run: BuilderBuildRun,
+    dto: RecordBuilderRunModelDto,
+  ): Promise<void> {
+    await this.runRepository.update(
+      { id: run.id },
+      {
+        engine: dto.engine ?? run.engine,
+        model: dto.model ?? run.model,
+      },
+    );
   }
 
   /**

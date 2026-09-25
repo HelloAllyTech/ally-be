@@ -13,6 +13,7 @@ import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderMessage } from '../entity/builder-message.entity';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
+import { BuilderPullRequestRepository } from '../repository/builder-build.repository';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderBuildService } from './builder-build.service';
@@ -45,6 +46,7 @@ export class BuilderSessionService {
     private readonly configService: AppConfigService,
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly messageRepository: BuilderMessageRepository,
+    private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly prdService: BuilderPrdService,
     private readonly settingsService: BuilderSettingsService,
     // Forward-ref'd: the build service reads sessions through repositories
@@ -53,6 +55,49 @@ export class BuilderSessionService {
     @Inject(forwardRef(() => BuilderBuildService))
     private readonly buildService: BuilderBuildService,
   ) {}
+
+  /**
+   * Has this session's work actually shipped?
+   *
+   * For callers outside Builder — today the roadmap, which needs to know when
+   * an opportunity it handed over has been delivered. Deliberately NOT
+   * user-scoped, unlike `getSession`: this is read by a scheduled sweep that
+   * has no user, and ownership is not the question being asked.
+   *
+   * "Shipped" is stricter than "merged". A merged pull request is code on
+   * master; `released` on the roadmap is a claim that it reached production,
+   * and the two can be hours apart — or never converge, since `failed` means
+   * merged but NOT deployed, which is exactly the state a person has to act on.
+   * So every pull request must be merged AND every release either `released`
+   * or `skipped` — skipped being a repo with no deploy pipeline, where the
+   * merge genuinely is the delivery.
+   *
+   * A session with no pull requests has shipped nothing, whatever its status:
+   * a build can complete having decided there was nothing to do.
+   */
+  async getDeliveryState(sessionId: string): Promise<{
+    status: BuilderSessionStatus;
+    pullRequestCount: number;
+    shipped: boolean;
+  } | null> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+    });
+    if (!session) return null;
+
+    const pullRequests =
+      await this.pullRequestRepository.listBySession(sessionId);
+    const delivered = (state?: string | null) =>
+      state === 'released' || state === 'skipped';
+
+    return {
+      status: session.status,
+      pullRequestCount: pullRequests.length,
+      shipped:
+        pullRequests.length > 0 &&
+        pullRequests.every((row) => row.merged && delivered(row.releaseState)),
+    };
+  }
 
   async createSession(
     userId: number,
@@ -76,12 +121,32 @@ export class BuilderSessionService {
         ? String(this.configService.builder.defaultBudgetUsd)
         : null);
 
+    // The engine, for the same reason and with the same history as the budget
+    // above. `builder_sessions.engine` carries a column default (once
+    // 'claude-code', now 'gemini'), so `session.engine` is never null — and the
+    // dispatch reads
+    // `overrides.engine ?? session.engine ?? settings.defaultEngine`, where a
+    // non-null column default makes the third rung unreachable. The admin's
+    // "default engine" picker therefore applied to no new session ever: every
+    // one of them arrived at dispatch already saying claude-code.
+    //
+    // Worse than doing nothing, because the per-tier MODELS do read settings.
+    // A workspace set to Gemini produced a claude-code engine with
+    // `gemini-2.5-pro` as its coder, and the run died on its first invocation
+    // having planned on claude-haiku-4-5.
+    //
+    // Stamped here, where the budget's identical bug was fixed, rather than by
+    // making the column nullable — the session then records the engine it will
+    // actually run on, which is also what the UI reads back.
+    const engine = settings.defaultEngine ?? 'gemini';
+
     const session = await this.sessionRepository.save(
       this.sessionRepository.create({
         title: title || 'New build',
         slug: await this.allocateSlug(title),
         tenantId: params.tenantId ?? null,
         budgetUsd,
+        engine,
         createdBy: userId,
         updatedBy: userId,
       }),

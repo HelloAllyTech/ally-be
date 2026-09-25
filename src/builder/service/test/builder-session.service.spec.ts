@@ -61,6 +61,9 @@ describe('BuilderSessionService', () => {
       { builder: { defaultBudgetUsd: 25 } } as any,
       sessionRepository as any,
       {} as any,
+      // Pull requests: read by getDeliveryState, which the roadmap polls to
+      // learn whether a session's work actually shipped.
+      { listBySession: jest.fn().mockResolvedValue([]) } as any,
       prdService as any,
       settingsService as any,
       buildService as any,
@@ -102,6 +105,35 @@ describe('BuilderSessionService', () => {
 
       expect(sessionRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ budgetUsd: '25' }),
+      );
+    });
+
+    /**
+     * `builder_sessions.engine` carries a column default of 'claude-code', so
+     * `session.engine` is never null and the dispatch's
+     * `session.engine ?? settings.defaultEngine` could never reach the third
+     * rung. The picker applied to no new session ever — while the per-tier
+     * MODELS did read settings, so a workspace set to Gemini produced a
+     * claude-code engine running a gemini coder model, which fails on its
+     * first invocation.
+     */
+    it("stamps the admin's default engine, so the picker does something", async () => {
+      settingsService.get.mockResolvedValue({ defaultEngine: 'gemini' });
+
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'gemini' }),
+      );
+    });
+
+    it('falls back to gemini when no default engine is set', async () => {
+      settingsService.get.mockResolvedValue({});
+
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'gemini' }),
       );
     });
 

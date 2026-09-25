@@ -325,6 +325,46 @@ export class BuilderNotificationService {
     );
   }
 
+  /**
+   * The GitHub credential is being rejected, so everything downstream is blind.
+   *
+   * Not attached to a session, because it is not about one: nothing Builder
+   * does works while this is true. It is sent once per outage rather than per
+   * refused call — the polling loops would otherwise repeat it every five
+   * minutes for as long as it lasted.
+   */
+  async credentialRejected(
+    session: BuilderSession,
+    failures: number,
+    since: Date | null,
+  ): Promise<void> {
+    // Once per outage, not once per tick. `since` is the outage's identity: an
+    // announcement newer than the moment the failures began has already
+    // reported this one. The circuit breaker shipped without this and posted
+    // every five minutes for as long as it stayed tripped.
+    if (
+      since &&
+      (await this.repository.existsSince(
+        session.id,
+        BuilderNotificationKind.CREDENTIAL_REJECTED,
+        since,
+      ))
+    ) {
+      return;
+    }
+
+    const started = since
+      ? ` It started failing at ${since.toISOString().slice(11, 16)} UTC.`
+      : '';
+    return this.notify(
+      session,
+      BuilderNotificationKind.CREDENTIAL_REJECTED,
+      `GitHub is rejecting my credential — ${failures} calls in a row came back unauthorised, so I ` +
+        `cannot read pull requests, dispatch runs or release anything.${started} The token has most ` +
+        'likely expired and needs replacing; nothing else will work until it is.',
+    );
+  }
+
   budgetReached(session: BuilderSession, spent: number): Promise<void> {
     return this.notify(
       session,

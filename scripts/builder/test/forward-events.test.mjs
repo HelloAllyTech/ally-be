@@ -123,15 +123,28 @@ await test('delta-streamed assistant text is merged into one event, not two', as
   // separate choppy text events instead of the sentence "OK.".
   const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
   const textEvents = events.filter((event) => event.type === 'text');
-  assert.equal(textEvents.length, 1);
+  // The second text event is the unpriced-model notice: this captured run is
+  // on `auto-gemini-2.5`, a routing alias with no rate-card entry, so the
+  // forwarder says so in the feed rather than letting the phase read as free.
+  assert.equal(textEvents.length, 2);
   assert.equal(textEvents[0].payload.text, 'OK.');
+  assert.match(textEvents[1].payload.text, /no entry in the rate card/);
 });
 
 await test('tool and file-edit events still surface around the merged text', async () => {
   const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
   assert.deepEqual(
     events.map((event) => event.type),
-    ['tool_call', 'tool_call', 'file_edit', 'tool_result', 'tool_result', 'tool_result', 'text'],
+    [
+      'tool_call',
+      'tool_call',
+      'file_edit',
+      'tool_result',
+      'tool_result',
+      'tool_result',
+      'text',
+      'text',
+    ],
   );
 });
 
@@ -151,6 +164,8 @@ await test('a run ending mid-delta still flushes its last fragment', async () =>
   const truncatedRun = GEMINI_RUN.slice(0, -1);
   const { events } = await runForwarder(truncatedRun, { engine: 'gemini' });
   const textEvents = events.filter((event) => event.type === 'text');
+  // One text event, not two: with no terminal `result` frame there is no
+  // pricing step, so the unpriced-model notice never arises here.
   assert.equal(textEvents.length, 1);
   assert.equal(textEvents[0].payload.text, 'OK.');
 });
@@ -168,6 +183,115 @@ await test('claude code text is emitted immediately, with no buffering', async (
   assert.equal(result.total_cost_usd, 0.05);
 });
 
+
+
+// ── pricing follows what ran, not what was asked for ────────────────────────
+//
+// Captured from @google/gemini-cli 0.60.0: a request for `gemini-2.5-flash`
+// comes back with `init.model` saying gemini-2.5-flash and `stats.models`
+// keyed by gemini-3.5-flash. Only the breakdown says which card applies.
+const GEMINI_ROUTED_RUN = [
+  '{"type":"init","timestamp":"2026-09-22T14:14:28.536Z","session_id":"5a77d58a","model":"gemini-2.5-flash"}',
+  '{"type":"message","timestamp":"2026-09-22T14:14:32.581Z","role":"assistant","content":"ok","delta":true}',
+  '{"type":"result","timestamp":"2026-09-22T14:14:32.629Z","status":"success","stats":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080,"duration_ms":4093,"tool_calls":0,"models":{"gemini-2.5-pro":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080}}}}',
+];
+
+await test('a routed run is priced from stats.models, not from the init model', async () => {
+  const { result } = await runForwarder(GEMINI_ROUTED_RUN, { engine: 'gemini' });
+  // 9080 fresh input @ $1.25/M + 1 output @ $10/M — the gemini-2.5-pro card,
+  // reached through the breakdown. Pricing the init model would have charged
+  // the flash card and under-reported the phase.
+  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 1.25 * 1e6 + (1 / 1e6) * 10 * 1e6) / 1e6);
+});
+
+await test('an unpriced model still reports zero, and says so in the feed', async () => {
+  const routedToUnknown = GEMINI_ROUTED_RUN.map((line) =>
+    line.replace('"gemini-2.5-pro"', '"gemini-3.5-flash"'),
+  );
+  const { result, events } = await runForwarder(routedToUnknown, { engine: 'gemini' });
+  assert.equal(result.total_cost_usd, 0);
+  assert.equal(
+    events.filter((event) => /no entry in the rate card/.test(event.payload?.text ?? '')).length,
+    1,
+  );
+});
+
+await test('flash-lite is priced from its own card, not the flash card it prefixes', async () => {
+  const liteRun = GEMINI_ROUTED_RUN.map((line) =>
+    line.replace('"gemini-2.5-pro"', '"gemini-2.5-flash-lite"'),
+  );
+  const { result } = await runForwarder(liteRun, { engine: 'gemini' });
+  // 9080 input @ $0.10/M + 1 output @ $0.40/M. The first-prefix-wins lookup
+  // matched `gemini-2.5-flash` and charged $0.30/M + $2.50/M instead.
+  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 0.1 * 1e6 + (1 / 1e6) * 0.4 * 1e6) / 1e6);
+});
+
+// ── opencode ────────────────────────────────────────────────────────────────
+//
+// Shapes captured from a real run on a real runner
+// (.github/workflows/opencode-spike.yml), not from documentation.
+const OPENCODE_RUN = [
+  '{"type":"step_start","part":{"type":"step-start"}}',
+  '{"type":"text","part":{"type":"text","text":"Adding the bell icon."}}',
+  '{"type":"tool_use","part":{"type":"tool","tool":"write","state":{"status":"completed","input":{"filePath":"src/Bell.tsx","content":"export const Bell = () => null;"},"output":"written"}}}',
+  '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":100,"input":80,"output":20,"cache":{"read":5}},"cost":0.012}}',
+  '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":50,"input":40,"output":10,"cache":{"read":0}},"cost":0.008}}',
+];
+
+await test('opencode cost is summed across steps, not read off the last one', async () => {
+  // The trap this engine brings: cost arrives PER STEP and nothing sums it.
+  // Reading only the final frame would price a four-step run as one step.
+  const { result } = await runForwarder(OPENCODE_RUN, { engine: 'opencode' });
+
+  assert.equal(result.total_cost_usd, 0.02);
+  assert.deepEqual(result.usage, {
+    input_tokens: 120,
+    output_tokens: 30,
+    cached_tokens: 5,
+  });
+});
+
+await test('an opencode write surfaces as a file edit, not an opaque tool call', async () => {
+  const { events } = await runForwarder(OPENCODE_RUN, { engine: 'opencode' });
+
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['text', 'file_edit', 'tool_result'],
+  );
+  const edit = events.find((event) => event.type === 'file_edit');
+  assert.equal(edit.payload.path, 'src/Bell.tsx');
+  assert.equal(edit.payload.operation, 'write');
+});
+
+await test('a refusal from a read-only agent is shown, not hidden', async () => {
+  // What the spike actually saw when a denied agent reached for bash: the tool
+  // is not offered at all, and opencode answers with a completed `invalid`
+  // call carrying the explanation. That is a refusal worth reading.
+  const refused = [
+    '{"type":"tool_use","part":{"type":"tool","tool":"invalid","state":{"status":"completed","input":{"tool":"bash"},"output":"Model tried to call unavailable tool \'bash\'."}}}',
+    '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":1,"output":1},"cost":0.001}}',
+  ];
+  const { events } = await runForwarder(refused, { engine: 'opencode' });
+
+  const result = events.find((event) => event.type === 'tool_result');
+  assert.match(result.payload.text, /unavailable tool/);
+});
+
+await test('an opencode auth failure reaches the feed as words', async () => {
+  // The spike's own first run died exactly this way, and a silent version of
+  // it would look like a model that simply said nothing.
+  const failed = [
+    '{"type":"error","error":{"name":"ProviderAuthError","data":{"providerID":"google","message":"Google Generative AI API key is missing."}}}',
+  ];
+  const { events, result } = await runForwarder(failed, { engine: 'opencode' });
+
+  assert.match(events[0].payload.text, /API key is missing/);
+  // No step ran, so there is nothing to price — and no fabricated zero either.
+  assert.equal(result, null);
+});
+
+// Last, not mid-file: this directory is where runForwarder writes each
+// result, so removing it early makes every test after it read `null`.
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

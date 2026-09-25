@@ -729,6 +729,20 @@ export class LearnController {
     type: String,
     description: 'Filter by language code',
   })
+  @ApiQuery({
+    name: 'counselorIds',
+    required: false,
+    type: String,
+    description:
+      'Comma-separated counselor ids — only sessions run by these people',
+  })
+  @ApiQuery({
+    name: 'scenarioIds',
+    required: false,
+    type: String,
+    description:
+      'Comma-separated scenario ids — only sessions of these role plays',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_SESSION])
   @Get('admin-scenario-sessions')
   async getAdminScenarioSessions(
@@ -738,6 +752,8 @@ export class LearnController {
     sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
     @Query('languageCode') languageCode?: string,
+    @Query('counselorIds') counselorIds?: string,
+    @Query('scenarioIds') scenarioIds?: string,
   ) {
     return this.scenarioSessionService.getAdminScenarioSessions(
       {
@@ -746,6 +762,27 @@ export class LearnController {
         sortBy,
         order,
       },
+      languageCode,
+      { counselorIds, scenarioIds },
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Get the people and role plays the admin scenario session list can be filtered by',
+  })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Language to resolve role play titles in',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_SESSION])
+  @Get('admin-scenario-session-filters')
+  async getAdminScenarioSessionFilters(
+    @Query('languageCode') languageCode?: string,
+  ) {
+    return this.scenarioSessionService.getAdminScenarioSessionFilterOptions(
       languageCode,
     );
   }

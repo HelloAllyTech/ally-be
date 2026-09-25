@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# todo <file.json> — replace the WHOLE list. File holds:
+#   [{"id":"1","text":"…","status":"pending|in_progress|done"}]
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -f "${1:-}" ] || usage "todo <file.json>"
+post_json events "$(jq -nc --slurpfile i "$1" '{events:[{type:"todo",payload:{items:$i[0]}}]}')" || true

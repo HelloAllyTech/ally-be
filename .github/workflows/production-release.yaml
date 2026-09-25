@@ -412,7 +412,8 @@ jobs:
             
             ---
             
-            **Note**: This is a draft release. Please review and publish when ready.
+            **Note**: This release is created as a draft. Publishing it is a manual step and
+            changes nothing operationally — the deployment described above has already run.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

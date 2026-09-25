@@ -31,6 +31,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { PostHog } from 'posthog-node';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -66,6 +67,7 @@ describe('TenantService', () => {
   let mockPermissionsService: any;
   let mockAdminTenantService: any;
   let mockAuditLogService: any;
+  let posthog: { capture: jest.Mock };
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -195,6 +197,7 @@ describe('TenantService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
+        { provide: PostHog, useValue: { capture: jest.fn() } },
         {
           provide: getRepositoryToken(Tenant),
           useValue: mockRepository,
@@ -265,6 +268,7 @@ describe('TenantService', () => {
     service = module.get<TenantService>(TenantService);
     tenantRepository = module.get(getRepositoryToken(Tenant));
     userRepository = module.get(UserRepository);
+    posthog = module.get(PostHog);
     tenantScenarioSharedService = module.get(TenantScenarioSharedService);
     tenantScenarioPathSharedService = module.get(
       TenantScenarioPathSharedService,
@@ -976,6 +980,49 @@ describe('TenantService', () => {
       await expect(
         service.getPresignedUrlForOrganizationLogo(dto as any),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateMetadata', () => {
+    it('captures plan.upgraded when the plan key changes', async () => {
+      tenantRepository.findOne
+        .mockResolvedValueOnce({
+          ...mockTenant,
+          metadata: { plan: 'free' },
+        } as Tenant)
+        .mockResolvedValueOnce({
+          ...mockTenant,
+          metadata: { plan: 'premium' },
+        } as Tenant);
+      tenantRepository.update.mockResolvedValue({} as any);
+
+      await service.updateMetadata('test-tenant-id', { plan: 'premium' });
+
+      expect(posthog.capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            previous_plan: 'free',
+            new_plan: 'premium',
+          }),
+        }),
+      );
+    });
+
+    it('does not capture plan.upgraded when metadata omits the plan key', async () => {
+      tenantRepository.findOne
+        .mockResolvedValueOnce({
+          ...mockTenant,
+          metadata: { plan: 'premium' },
+        } as Tenant)
+        .mockResolvedValueOnce({
+          ...mockTenant,
+          metadata: { otherField: 'value' },
+        } as Tenant);
+      tenantRepository.update.mockResolvedValue({} as any);
+
+      await service.updateMetadata('test-tenant-id', { otherField: 'value' });
+
+      expect(posthog.capture).not.toHaveBeenCalled();
     });
   });
 

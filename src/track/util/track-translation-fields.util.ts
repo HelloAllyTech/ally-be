@@ -157,6 +157,24 @@ function walkQuizQuestion(
     },
     visit,
   );
+  /**
+   * The media URL is not translatable (see `TrackTranslationContent.media`),
+   * but its description is the only thing a screen-reader user gets in place
+   * of the picture — leaving it in English would hand a Tamil learner an
+   * English-only question stem.
+   */
+  visitField(
+    {
+      path: `${base}.media.alt`,
+      kind: TranslatableFieldKind.PROSE,
+      get: () => question.media?.alt,
+      set: (value) => {
+        if (question.media) question.media.alt = value;
+      },
+      context: prompt,
+    },
+    visit,
+  );
 
   /** Shared walk for the `QuizOption[]` collections (options/items/left/right). */
   const walkOptions = (

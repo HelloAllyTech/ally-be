@@ -24,6 +24,27 @@ export interface BugHuntRepoConfig {
   /** Lint gate. A lint error is itself a valid (low-severity, proven) finding. */
   lint: string;
   /**
+   * A repo's real PR-gate CI can enforce more than `test`+`lint` alone. A
+   * fix that passes both locally still opens a PR that fails the moment
+   * someone tries to merge it if the real gate checks something neither
+   * command does — found from a real, recurring pattern: ally-be's and
+   * ally-web's `lint` is bare ESLint, but their `.github/workflows/test.yml`
+   * also runs a separate, blocking TypeScript compile
+   * (`tsc --noEmit`) that ESLint's own rules never catch. Optional because
+   * it's a genuine gap only for these two — ally-ai/ally-ai-learn's flake8
+   * and ally-mobile's eslint already match their CI exactly (confirmed
+   * directly against each repo's `test.yml`), and ally-mobile's own
+   * `tsc --noEmit` exists only in a local Husky pre-commit hook, never in
+   * CI, so there is nothing here for it to close.
+   *
+   * Two other real PR-gate workflows (`docs.yml`'s docs-guard, and
+   * `secret-scan.yml`'s gitleaks on ally-ai) are NOT modeled as a command
+   * here — neither is a "run this and check the exit code" gate the fix
+   * protocol could satisfy the same way; they need their own, different
+   * handling as a later pass.
+   */
+  typecheck?: string;
+  /**
    * False when the repo can be swept for bugs but no fix can be dispatched to
    * it — it carries no `bug-fix-session.yml`. Sweeping a non-fixable repo is
    * still worth doing: the finding gets recorded for a human even though the
@@ -69,12 +90,21 @@ export const BUG_HUNT_REPOS: Record<string, BugHuntRepoConfig> = {
   'ally-be': {
     test: 'npm test',
     lint: 'npm run lint',
+    typecheck: 'npx tsc --noEmit -p tsconfig.json',
     fixable: true,
     canBotMerge: false,
   },
   'ally-web': {
     test: 'npm test',
     lint: 'npm run lint',
+    // Three separate project configs — CI's own "typecheck" job runs each
+    // as its own step; chained with && here so one command still means "all
+    // green or stop", matching how the fix protocol already treats
+    // test/lint. This is CI's real gate, not `lint`: that job is
+    // continue-on-error there (see test.yml's own comment), so typecheck is
+    // actually the only one of the two that blocks a merge.
+    typecheck:
+      'npx tsc --noEmit -p apps/ally-admin-dashboard/tsconfig.app.json && npx tsc --noEmit -p apps/ally-helpline-dashboard/tsconfig.app.json && npx tsc --noEmit -p libs/ui-shared/tsconfig.lib.json',
     fixable: true,
     canBotMerge: false,
   },
@@ -119,4 +149,18 @@ export const BUG_HUNT_SWEEPABLE_REPOS = Object.keys(BUG_HUNT_REPOS);
  */
 export function repoCommands(repo: string): BugHuntRepoConfig | null {
   return BUG_HUNT_REPOS[repo] ?? null;
+}
+
+/**
+ * `test`, `lint`, and `typecheck` (where configured) as one English list of
+ * quoted commands — "X" and "Y", or "X", "Y", and "Z" once typecheck exists
+ * for a repo. One place to build this rather than three copies drifting
+ * across the fix prompt's and sweep prompt's own verification steps.
+ */
+export function verifyCommandsList(commands: BugHuntRepoConfig): string {
+  const quoted = [commands.test, commands.lint, commands.typecheck]
+    .filter((cmd): cmd is string => Boolean(cmd))
+    .map((cmd) => `"${cmd}"`);
+  if (quoted.length <= 2) return quoted.join(' and ');
+  return `${quoted.slice(0, -1).join(', ')}, and ${quoted[quoted.length - 1]}`;
 }

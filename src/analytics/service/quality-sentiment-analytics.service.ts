@@ -78,8 +78,7 @@ export class QualitySentimentAnalyticsService {
   async getQualitySentiment(
     query: QualitySentimentQueryDto,
   ): Promise<QualitySentimentResponseDto> {
-    const needsFloor =
-      (query.range ?? 'all') === 'all' && !query.from && !query.to;
+    const needsFloor = (query.range ?? 'all') === 'all';
     const window = resolveAnalyticsWindow(query, {
       defaultRange: 'all',
       defaultBucketFor,
@@ -88,11 +87,13 @@ export class QualitySentimentAnalyticsService {
     const tenantId = query.tenantId?.trim() || undefined;
     const { start, endExclusive, bucket } = window;
 
-    // The sentiment half and the index are independent aggregates over the same
-    // window — no ordering dependency, so they go out together.
-    const [rows, index] = await Promise.all([
+    // The sentiment half, the bucketed index and the whole-window index are
+    // independent aggregates over the same window — no ordering dependency,
+    // so they go out together.
+    const [rows, index, overallIndex] = await Promise.all([
       this.repo.getByBucket(start, endExclusive, bucket, tenantId),
       this.qualityIndex.getQualityIndex(start, endExclusive, bucket, tenantId),
+      this.qualityIndex.getQualityIndexOverall(start, endExclusive, tenantId),
     ]);
     const byBucket = new Map(rows.map((r) => [r.bucket, r]));
     const indexByBucket = new Map(index.points.map((p) => [p.bucket, p]));
@@ -180,6 +181,12 @@ export class QualitySentimentAnalyticsService {
         totals.detractors,
         totals.responses,
       ),
+      // A DIFFERENT metric from overallCompositeScore above: that is the raw
+      // actor-goal judge score, this is the weighted blend of all four Quality
+      // Index dimensions (same definition as `points[].qualityIndex`, but for
+      // the whole window rather than one bucket). Feeds the Goals-tab
+      // "Roleplay quality" chart's All-time KPI tile.
+      overallQualityIndex: overallIndex.index,
       totalEvaluatedSessions: totals.evaluated,
       totalResponses: totals.responses,
       minResponses: MIN_SENTIMENT_RESPONSES,

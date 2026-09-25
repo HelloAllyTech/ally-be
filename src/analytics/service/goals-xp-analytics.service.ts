@@ -5,18 +5,41 @@ import {
   GoalsXpPointDto,
   GoalsXpQueryDto,
   GoalsXpResponseDto,
+  XpBucketGrain,
+  XpChartGrain,
   XpGoalGrain,
+  isXpGoalGrain,
 } from '../dto/goals-xp-analytics.dto';
 import { isoDate } from '../util/analytics-window.util';
 
-const DEFAULT_GRAIN: XpGoalGrain = 'month';
+const DEFAULT_GRAIN: XpChartGrain = 'month';
 
 /**
- * Month/quarter/year bucketing that platform-analytics.dto's ANALYTICS_BUCKETS
- * does not cover (no 'quarter' there). Kept local to this endpoint rather than
- * added to the shared bucket type, which several other charts rely on.
+ * Left edge of the Goals chart, fixed by product rather than measured from
+ * the platform's all-time data floor — the platform has XP data from before
+ * this date, but Goals is scoped to the period goals are actually tracked
+ * against.
  */
-function truncToGrain(d: Date, grain: XpGoalGrain): Date {
+const CHART_FLOOR = new Date(Date.UTC(2026, 3, 1));
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Day/week/month/quarter/year bucketing, matching Postgres `date_trunc` (weeks
+ * start Monday). Kept local to this endpoint rather than reusing
+ * platform-analytics.dto's ANALYTICS_BUCKETS, which has no 'quarter'.
+ */
+function truncToGrain(d: Date, grain: XpBucketGrain): Date {
+  if (grain === 'day') {
+    return new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+    );
+  }
+  if (grain === 'week') {
+    const day = truncToGrain(d, 'day');
+    const sinceMonday = (day.getUTCDay() + 6) % 7;
+    return new Date(day.getTime() - sinceMonday * DAY_MS);
+  }
   if (grain === 'year') return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   if (grain === 'quarter') {
     const quarter = Math.floor(d.getUTCMonth() / 3);
@@ -25,7 +48,9 @@ function truncToGrain(d: Date, grain: XpGoalGrain): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-function nextPeriod(d: Date, grain: XpGoalGrain): Date {
+function nextPeriod(d: Date, grain: XpBucketGrain): Date {
+  if (grain === 'day') return new Date(d.getTime() + DAY_MS);
+  if (grain === 'week') return new Date(d.getTime() + 7 * DAY_MS);
   if (grain === 'year') return new Date(Date.UTC(d.getUTCFullYear() + 1, 0, 1));
   if (grain === 'quarter') {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, 1));
@@ -33,7 +58,9 @@ function nextPeriod(d: Date, grain: XpGoalGrain): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
 }
 
-function periodLabel(d: Date, grain: XpGoalGrain): string {
+function periodLabel(d: Date, grain: XpBucketGrain): string {
+  // Day and week read as the date they start on, like the rest of Analytics.
+  if (grain === 'day' || grain === 'week') return isoDate(d);
   if (grain === 'year') return String(d.getUTCFullYear());
   if (grain === 'quarter') {
     return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
@@ -44,7 +71,7 @@ function periodLabel(d: Date, grain: XpGoalGrain): string {
 function generatePeriodStarts(
   start: Date,
   endExclusive: Date,
-  grain: XpGoalGrain,
+  grain: XpBucketGrain,
 ): Date[] {
   const periods: Date[] = [];
   for (let cur = start; cur < endExclusive; cur = nextPeriod(cur, grain)) {
@@ -92,7 +119,8 @@ function deriveGrainGoals(
 }
 
 /**
- * Actual XP earned vs. a goal, per month/quarter/year.
+ * Actual XP earned vs. a goal, per day/week/month/quarter/year or all time.
+ * Goals exist only at month/quarter/year; the other grains are actual only.
  *
  * Goals are read-only here — see {@link AnalyticsXpGoal} for why they are set
  * by migration rather than through this API. A period with no goal row comes
@@ -105,13 +133,17 @@ export class GoalsXpAnalyticsService {
 
   async getGoalsXp(query: GoalsXpQueryDto): Promise<GoalsXpResponseDto> {
     const grain = query.grain ?? DEFAULT_GRAIN;
-
-    const dataFloor = await this.repository.getDataFloor();
     const now = new Date();
-    const start = truncToGrain(dataFloor, grain);
+
+    if (grain === 'all') return this.getAllTimeXp(now);
+
+    const start = truncToGrain(CHART_FLOOR, grain);
     const currentPeriodStart = truncToGrain(now, grain);
 
-    const goals = await this.getGoalsForGrain(grain);
+    // No goal is ever set per day or week — those grains are actual XP only.
+    const goals = isXpGoalGrain(grain)
+      ? await this.getGoalsForGrain(grain)
+      : new Map<string, number>();
 
     const currentPeriodIso = isoDate(currentPeriodStart);
     let furthestGoalIso = currentPeriodIso;
@@ -154,6 +186,38 @@ export class GoalsXpAnalyticsService {
     return {
       grain,
       points,
+      scoping: { tenantId: null, unscopedSections: [] },
+      computedAt: now.toISOString(),
+    };
+  }
+
+  /**
+   * One "All time" point: every XP earned from the chart floor through today.
+   * Summed from monthly buckets, which is exact — a sum is associative. No
+   * goal, because there is no whole-window target to compare it with.
+   */
+  private async getAllTimeXp(now: Date): Promise<GoalsXpResponseDto> {
+    const endExclusive = nextPeriod(truncToGrain(now, 'day'), 'day');
+    const rows = await this.repository.getActualXpByPeriod(
+      'month',
+      CHART_FLOOR,
+      endExclusive,
+    );
+    const actualXp = rows.reduce((sum, r) => sum + r.actualXp, 0);
+
+    return {
+      grain: 'all',
+      points: [
+        {
+          periodStart: isoDate(CHART_FLOOR),
+          periodLabel: 'All time',
+          actualXp,
+          goalXp: null,
+          hasGoal: false,
+          inProgress: true,
+          upcoming: false,
+        },
+      ],
       scoping: { tenantId: null, unscopedSections: [] },
       computedAt: now.toISOString(),
     };

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
@@ -8,7 +9,9 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 
@@ -25,7 +28,74 @@ import { AgentBuilderField } from '../enum/agent-builder-field.enum';
  * samples, allowed filler words) are fired once per language the client
  * speaks, with `languageId` naming the language to write in. The wizard learns
  * that list from the `spoken_languages` field, which it fires first.
+ *
+ * Generation is CHAINED in two stages so the fields agree with each other:
+ * the challenge description and persona are generated first, from the brief
+ * alone, and every later field is sent them as `establishedContext` — the
+ * backstory is written for the person the persona named, the states for the
+ * challenge the description set out.
  */
+/**
+ * The persona as the wizard applied it to the form. Every key is optional: a
+ * trainer can edit or clear any of them between stages, and a partial persona
+ * still anchors the later fields better than none.
+ */
+export class EstablishedPersonaDto {
+  @ApiProperty({ required: false, example: 'Priya Sharma' })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({ required: false, example: 34 })
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  @IsOptional()
+  age?: number;
+
+  @ApiProperty({ required: false, example: 'female' })
+  @IsString()
+  @MaxLength(50)
+  @IsOptional()
+  gender?: string;
+
+  @ApiProperty({ required: false, example: 'Software engineer' })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  profession?: string;
+
+  @ApiProperty({ required: false, example: 'Pune' })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  currentLocation?: string;
+}
+
+/**
+ * What the first stage of the chain settled, passed to the second-stage
+ * fields so they build on it rather than each reinventing the client.
+ */
+export class EstablishedContextDto {
+  @ApiProperty({
+    description:
+      'The generated Challenge Description (HTML allowed; tags are stripped ' +
+      'before it reaches the prompt).',
+    required: false,
+  })
+  @IsString()
+  @MaxLength(8000)
+  @IsOptional()
+  challengeDescription?: string;
+
+  @ApiProperty({ type: EstablishedPersonaDto, required: false })
+  @ValidateNested()
+  @Type(() => EstablishedPersonaDto)
+  @IsOptional()
+  persona?: EstablishedPersonaDto;
+}
+
 export class GenerateAgentBuilderFieldDto {
   @ApiProperty({
     description: 'Which Basic Settings field to generate',
@@ -123,6 +193,20 @@ export class GenerateAgentBuilderFieldDto {
   @Max(120)
   @IsOptional()
   personaAge?: number;
+
+  @ApiProperty({
+    description:
+      'What the first stage of the chain already generated (challenge ' +
+      'description + persona). Appended to the actor brief as facts to stay ' +
+      'consistent with. Ignored by the first-stage fields themselves and by ' +
+      '`spoken_languages`, which read the brief alone.',
+    type: EstablishedContextDto,
+    required: false,
+  })
+  @ValidateNested()
+  @Type(() => EstablishedContextDto)
+  @IsOptional()
+  establishedContext?: EstablishedContextDto;
 
   @ApiProperty({
     description: 'Model override for generation',

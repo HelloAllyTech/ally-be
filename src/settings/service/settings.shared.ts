@@ -23,7 +23,7 @@ export class SettingsShared {
   async createGlobalSettings(
     createAppVersionSettingsDto: CreateAppVersionSettingsDto,
   ): Promise<{ data: GlobalSettings[] }> {
-    const userId = Number(ExecutionManager.getUserId());
+    const userId = Number(ExecutionManager.getUserId() ?? 0);
 
     this.validateGlobalSettingsKeys(createAppVersionSettingsDto);
 
@@ -77,7 +77,7 @@ export class SettingsShared {
   async updateGlobalSettings(
     updateAppVersionSettingsDto: UpdateAppVersionSettingsDto,
   ): Promise<{ data: GlobalSettings[] }> {
-    const userId = Number(ExecutionManager.getUserId());
+    const userId = Number(ExecutionManager.getUserId() ?? 0);
 
     this.validateGlobalSettingsKeys(updateAppVersionSettingsDto);
 

@@ -50,19 +50,70 @@ Output the document only — no preamble, no closing remarks.
 PROMPT
 )
 
-claude -p "$PROMPT" \
-  --permission-mode acceptEdits \
-  --model "${BUILDER_MAP_MODEL:-claude-sonnet-5}" \
-  --allowedTools "Read,Glob,Grep,Bash" \
-  --max-turns 40 \
-  --output-format json \
-  > /tmp/map-result.json
+# The third file that knows anything engine-specific, after install-engine.sh
+# and run-engine.sh. It cannot just call run-engine.sh: that drives the whole
+# build protocol — branches, phases, gates, cost callbacks — and this is one
+# prompt whose answer is a document.
+ENGINE="${BUILDER_ENGINE:-gemini}"
 
-MAP_MD="$(node -e "
-  const fs = require('fs');
-  const result = JSON.parse(fs.readFileSync('/tmp/map-result.json', 'utf8'));
-  process.stdout.write(result.result ?? '');
-")"
+case "$ENGINE" in
+  claude-code)
+    claude -p "$PROMPT" \
+      --permission-mode acceptEdits \
+      --model "${BUILDER_MAP_MODEL:-claude-sonnet-5}" \
+      --allowedTools "Read,Glob,Grep,Bash" \
+      --max-turns 40 \
+      --output-format json \
+      > /tmp/map-result.json
+
+    MAP_MD="$(node -e "
+      const fs = require('fs');
+      const result = JSON.parse(fs.readFileSync('/tmp/map-result.json', 'utf8'));
+      process.stdout.write(result.result ?? '');
+    ")"
+    ;;
+
+  # Gemini's terminal `result` frame carries usage and nothing else — the text
+  # only ever exists as the assistant messages that streamed before it (see
+  # normaliseGemini() in forward-events.mjs, which is built against the real
+  # 0.22.5 event schema). So the document is reassembled from the stream rather
+  # than read out of a result object, which is why this is `stream-json` and
+  # not `json`.
+  #
+  # `--yolo` is the acceptEdits equivalent; neither --max-turns nor a tool
+  # allowlist has a counterpart on this CLI, and the job's timeout-minutes is
+  # the backstop for both.
+  gemini)
+    gemini "$PROMPT" \
+      --model "${BUILDER_MAP_MODEL:-gemini-2.5-pro}" \
+      --yolo \
+      --output-format stream-json \
+      > /tmp/map-result.jsonl
+
+    MAP_MD="$(node -e "
+      const fs = require('fs');
+      let buffered = '';
+      const parts = [];
+      const flush = () => { if (buffered) { parts.push(buffered); buffered = ''; } };
+      for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        let record;
+        try { record = JSON.parse(line); } catch { continue; }
+        const isAssistant = record?.type === 'message' && record.role === 'assistant';
+        if (isAssistant && record.delta === true) { buffered += record.content ?? ''; continue; }
+        flush();
+        if (isAssistant && record.content) parts.push(record.content);
+      }
+      flush();
+      process.stdout.write(parts.join(''));
+    ")"
+    ;;
+
+  *)
+    echo "Unknown BUILDER_ENGINE '${ENGINE}' — add a case here, to install-engine.sh and to run-engine.sh." >&2
+    exit 1
+    ;;
+esac
 
 if [ -z "$MAP_MD" ]; then
   echo "Empty map for ${REPO} — refusing to overwrite a good one with nothing." >&2

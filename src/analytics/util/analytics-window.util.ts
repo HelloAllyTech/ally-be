@@ -64,6 +64,12 @@ export function startOfUtcYear(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
 }
 
+/** Start of the calendar quarter (month rounded down to 1/4/7/10), UTC. */
+export function startOfUtcQuarter(d: Date): Date {
+  const quarterStartMonth = Math.floor(d.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(d.getUTCFullYear(), quarterStartMonth, 1));
+}
+
 /** ISO week start (Monday 00:00 UTC), matching Postgres `date_trunc('week')`. */
 export function startOfUtcWeekMonday(d: Date): Date {
   const day = startOfUtcDay(d);
@@ -77,6 +83,23 @@ export function isoDate(d: Date): string {
 }
 
 /**
+ * Whitelist guard for a bucket value bound for an interpolated SQL position
+ * (`date_trunc('${bucket}', ...)` cannot be parameterized). Every repository's
+ * `resolveBucket` used to hand-roll this same if/else whitelist-or-fallback
+ * check, one copy per file, with no guarantee the copies agreed — this is the
+ * single mechanism they all delegate to now. The `allowed` list and `fallback`
+ * stay a per-call-site choice: each endpoint's existing default is part of its
+ * behavior, not something this helper should homogenize.
+ */
+export function resolveSqlBucket<T extends string>(
+  bucket: T | undefined,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return bucket && allowed.includes(bucket) ? bucket : fallback;
+}
+
+/**
  * Truncate a date to the start of the bucket that contains it — the JS twin of
  * Postgres `date_trunc`, so a value bucketed in SQL and a value bucketed here
  * produce the same `yyyy-mm-dd` key. Used wherever a row's own timestamp has to
@@ -86,6 +109,7 @@ export function truncToBucket(d: Date, bucket: AnalyticsBucket): Date {
   if (bucket === 'day') return startOfUtcDay(d);
   if (bucket === 'week') return startOfUtcWeekMonday(d);
   if (bucket === 'month') return startOfUtcMonth(d);
+  if (bucket === 'quarter') return startOfUtcQuarter(d);
   return startOfUtcYear(d);
 }
 
@@ -398,6 +422,16 @@ export function generateBucketLabels(
     while (cur <= last) {
       labels.push(isoDate(cur));
       cur = addYears(cur, 1);
+    }
+    return labels;
+  }
+
+  if (bucket === 'quarter') {
+    let cur = startOfUtcQuarter(windowStart);
+    const last = startOfUtcQuarter(lastDay);
+    while (cur <= last) {
+      labels.push(isoDate(cur));
+      cur = addMonths(cur, 3);
     }
     return labels;
   }

@@ -324,6 +324,10 @@ export class TrackService {
               caseId: item.type === TrackItemType.CASE ? item.caseId : null,
               content: item.content ?? null,
               completionCriteria: item.completionCriteria ?? null,
+              // Omitted by a client that predates discussions: leave it alone.
+              ...(item.hasDiscussion !== undefined
+                ? { hasDiscussion: item.hasDiscussion }
+                : {}),
             } as Partial<TrackItem>);
           }
         }
@@ -417,6 +421,7 @@ export class TrackService {
               content: item.content,
               completionCriteria: item.completionCriteria,
               translations: item.translations,
+              hasDiscussion: item.hasDiscussion,
             })),
           );
         }
@@ -634,6 +639,7 @@ export class TrackService {
             caseId: item.caseId ?? undefined,
             content: item.content as Record<string, any> | undefined,
             completionCriteria: item.completionCriteria ?? undefined,
+            hasDiscussion: item.hasDiscussion,
           }) as UpsertTrackItemDto,
       ),
     }));

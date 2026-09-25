@@ -97,3 +97,36 @@ export function validateSimulationStates(
 
   return errors;
 }
+
+/**
+ * Validate trainer-authored memory locks: every Knowledge Source's
+ * `unlocksFromStateId` must name one of the scenario's states. Returns
+ * human-readable errors; empty means acceptable.
+ *
+ * Rejected rather than repaired because the agent fails CLOSED on a lock it
+ * cannot resolve (the memory stays hidden all session) — silently saving one
+ * would give the trainer a memory that never comes up and no reason why. The
+ * studio clears locks pointing at a state it deletes, so this only catches
+ * API callers and stale clients.
+ */
+export function validateKnowledgeSourceUnlocks(
+  knowledgeSources:
+    | { title?: string; unlocksFromStateId?: string | null }[]
+    | undefined
+    | null,
+  states: SimulationState[] | undefined | null,
+): string[] {
+  const locked = (knowledgeSources ?? []).filter(
+    (source) => !!source?.unlocksFromStateId,
+  );
+  if (locked.length === 0) {
+    return [];
+  }
+  const stateIds = new Set((states ?? []).map((state) => state?.id));
+  return locked
+    .filter((source) => !stateIds.has(source.unlocksFromStateId as string))
+    .map(
+      (source) =>
+        `Knowledge source '${source.title ?? ''}' unlocks at a state that does not exist on this simulation (${source.unlocksFromStateId}).`,
+    );
+}

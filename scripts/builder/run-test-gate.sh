@@ -116,6 +116,29 @@ for dir in repos/*/; do
   # Only repos this run actually changed. `master...HEAD` is why the clones are
   # blobless-but-full-history rather than shallow.
   if git -C "$dir" diff --quiet master...HEAD 2>/dev/null; then
+    # "Unchanged" has two causes and they need different answers. Genuinely
+    # untouched is fine and common in a multi-repo run. Touched-but-invisible
+    # is the one that used to burn a whole run: work committed onto master
+    # makes `master...HEAD` empty however many lines it changed, so the gate
+    # skipped a repo holding the entire change, failed closed, and sent the
+    # agent to remediate a fix it had already made. Four rounds of that is what
+    # the first Gemini-engine run spent its seventeen minutes on.
+    #
+    # run-engine.sh now puts every repo on a branch before any agent starts, so
+    # this should be unreachable. Kept, and made loud, because the failure it
+    # describes was indistinguishable from an idle repo in the log — which is
+    # why it took a run log and a git archaeology session to find.
+    on="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo detached)"
+    ahead="$(git -C "$dir" rev-list --count origin/master..HEAD 2>/dev/null || echo 0)"
+    dirty="$(git -C "$dir" status --porcelain 2>/dev/null | head -1)"
+    if [ "${ahead:-0}" != "0" ] || [ -n "$dirty" ]; then
+      echo "=== ${repo}: has work, but NOT on a branch this gate can see ===" >&2
+      echo "HEAD is '${on}', ${ahead} commit(s) ahead of origin/master." >&2
+      echo "The gate compares master...HEAD, which is empty when HEAD is master." >&2
+      echo "Move the work onto builder/<slug> — the work is fine, it is unmeasurable." >&2
+      blocked=true
+      continue
+    fi
     echo "=== ${repo}: unchanged, skipping gate ==="
     continue
   fi

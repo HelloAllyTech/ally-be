@@ -23,7 +23,40 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
  */
 export const MAX_COMBINATION_EVENT_DEPTH = 20;
 
-export const DETECTION_DATA_TRANSLATABLE_PATHS = ['sentences', 'className'];
+/**
+ * `detectionData` keys that must be written in the session's language.
+ *
+ * Everything else in `detectionData` is machinery (scores, times, expression
+ * trees) and rides through untranslated — see `extractTranslatableFields`,
+ * which splits this object into a translatable half and a passthrough half.
+ *
+ * `positiveExamples` / `negativeExamples` are the BINARY_CLASSIFIER few-shot
+ * block. They MUST be here: the classifier judges an utterance spoken in the
+ * session's language, and calibrating that against English examples is the
+ * whole failure mode this list exists to prevent. They are also the only
+ * entries whose value is not a string or a string array — see
+ * DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS.
+ */
+export const DETECTION_DATA_TRANSLATABLE_PATHS = [
+  'sentences',
+  'className',
+  'positiveExamples',
+  'negativeExamples',
+];
+
+/**
+ * Of the paths above, those whose value is an array of `{ text }` objects
+ * rather than a bare string or string array.
+ *
+ * The translator only speaks strings, so these are unwrapped to `string[]` on
+ * the way out and re-wrapped on the way back. Adding a path to
+ * DETECTION_DATA_TRANSLATABLE_PATHS without listing it here when its value is
+ * shaped like this is a SILENT no-op: extraction accepts only strings and
+ * string arrays, so the field is never sent, never translated, and the English
+ * original stays in place with nothing to show for it.
+ */
+export const DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS: ReadonlySet<string> =
+  new Set(['positiveExamples', 'negativeExamples']);
 
 export const SYSTEM_EVENT_DETECTION_TYPES = [
   SessionEventDetectionType.HELPER_PARAPHRASED,

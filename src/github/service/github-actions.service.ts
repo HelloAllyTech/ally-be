@@ -115,6 +115,43 @@ export class GithubActionsService {
     return Boolean(this.configService.githubToken);
   }
 
+  /**
+   * Consecutive calls rejected as unauthorised, and when the run of them began.
+   *
+   * A token that expires does not announce itself. Every call starts returning
+   * 401, each caller catches its own failure and logs a `warn`, and the polling
+   * loops above them keep reporting that they completed — so the platform goes
+   * quiet while looking healthy. One expiry cost a whole afternoon before
+   * anyone read the right log line.
+   *
+   * Counting it here rather than in each caller is the only place that sees
+   * every call. A single 401 is not news — a repository can be missing, a
+   * fine-grained token can lack one scope — but a run of them across different
+   * endpoints is a credential, not a permission.
+   */
+  private authFailures = 0;
+  private authFailingSince: Date | null = null;
+
+  get credentialHealth(): { failures: number; since: Date | null } {
+    return { failures: this.authFailures, since: this.authFailingSince };
+  }
+
+  /** Every request funnels its outcome through here, success or failure. */
+  private noteAuthOutcome(error?: unknown): void {
+    const status = (error as AxiosError | undefined)?.response?.status;
+    if (status === 401) {
+      if (!this.authFailures) this.authFailingSince = new Date();
+      this.authFailures += 1;
+      return;
+    }
+    // Anything that is not an auth rejection proves the credential works —
+    // including a 404, which is a live token being told no.
+    if (error === undefined || status) {
+      this.authFailures = 0;
+      this.authFailingSince = null;
+    }
+  }
+
   private get headers(): Record<string, string> {
     return {
       Accept: 'application/vnd.github+json',
@@ -203,6 +240,56 @@ export class GithubActionsService {
   }
 
   /**
+   * Did a run of this workflow SUCCEED after the given moment?
+   *
+   * Distinct from `findRunSince`, which correlates a dispatch we just made and
+   * therefore wants the oldest qualifying run whatever its outcome. This asks a
+   * question about the world: has this thing been released since then, by
+   * anyone — Builder, a person, another automation.
+   *
+   * No `event` filter, deliberately. `findRunSince` restricts to
+   * `workflow_dispatch` because it is looking for its own dispatch; a release
+   * cut by hand is exactly as real, and excluding it would answer "no" about a
+   * deploy that plainly happened.
+   */
+  async findSuccessfulRunSince(params: {
+    repo: string;
+    workflow: string;
+    since: Date;
+  }): Promise<WorkflowRun | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(
+        this.url(params.repo, `actions/workflows/${params.workflow}/runs`),
+        {
+          headers: this.headers,
+          params: { status: 'success', per_page: 30 },
+          timeout: 15_000,
+        },
+      );
+      const candidates = (data?.workflow_runs ?? [])
+        .map((run: any) => this.toWorkflowRun(run))
+        .filter(
+          (run: WorkflowRun) =>
+            run.conclusion === 'success' && run.createdAt >= params.since,
+        )
+        .sort(
+          (a: WorkflowRun, b: WorkflowRun) =>
+            a.createdAt.getTime() - b.createdAt.getTime(),
+        );
+      return candidates[0] ?? null;
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not list successful runs for ${params.workflow} in ${params.repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * A pull request's current merge state, straight from GitHub — the check
    * nothing else in this module performs. `merged` is only ever true once
    * GitHub itself reports it, whichever way the PR was actually merged (the
@@ -219,6 +306,7 @@ export class GithubActionsService {
         headers: this.headers,
         timeout: 15_000,
       });
+      this.noteAuthOutcome();
       return {
         merged: Boolean(data?.merged),
         htmlUrl: data?.html_url,
@@ -230,6 +318,7 @@ export class GithubActionsService {
           : null,
       };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
           error instanceof Error ? error.message : String(error)
@@ -276,6 +365,7 @@ export class GithubActionsService {
       }
       return { files, truncated: true };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not list files on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -481,6 +571,7 @@ export class GithubActionsService {
           : [],
       };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read the author of ${repo}@${sha}: ${
           error instanceof Error ? error.message : String(error)
@@ -509,6 +600,7 @@ export class GithubActionsService {
       });
       return Array.isArray(data) && data.length > 0;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not check ${repo} for commits since ${since.toISOString()}, assuming there are some: ${
           error instanceof Error ? error.message : String(error)
@@ -590,6 +682,7 @@ export class GithubActionsService {
             : 'success';
       return { state, failed, total };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read checks for ${repo}@${ref}: ${
           error instanceof Error ? error.message : String(error)
@@ -630,6 +723,7 @@ export class GithubActionsService {
         });
       }
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read review comments on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -659,6 +753,7 @@ export class GithubActionsService {
         });
       }
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read reviews on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -688,6 +783,7 @@ export class GithubActionsService {
       );
       return data?.html_url ? String(data.html_url) : null;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not reply to comment ${commentId} on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -723,6 +819,7 @@ export class GithubActionsService {
       );
       return data?.html_url ? String(data.html_url) : null;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not comment on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -768,6 +865,7 @@ export class GithubActionsService {
       );
       return this.toWorkflowRun(data);
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read run ${runId} in ${repo}: ${
           error instanceof Error ? error.message : String(error)
@@ -792,20 +890,51 @@ export class GithubActionsService {
       `^${tagPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)\\.(\\d+)\\.(\\d+)$`,
     );
     try {
-      const { data } = await axios.get(this.url(repo, 'tags'), {
-        headers: this.headers,
-        params: { per_page: 100 },
-        timeout: 15_000,
-      });
-      const versions = (data ?? [])
-        .map((tag: any) => pattern.exec(tag?.name ?? ''))
-        .filter(Boolean)
-        .map((match: RegExpExecArray) => [
-          Number(match[1]),
-          Number(match[2]),
-          Number(match[3]),
-        ]);
-      if (versions.length === 0) return `${tagPrefix}0.0.1`;
+      // Paged, because one page is not the repo. ally-web carries three
+      // independently-released apps in one repo, and its first 100 tags are
+      // ALL `helpline-v*` — so a single-page read found no `admin-v*` at all,
+      // fell through to the "never released" branch below, and proposed
+      // `admin-v0.0.1` for an app on 1.88. The release workflow rejected it,
+      // which is the only reason this was a failed release rather than a
+      // catastrophic one.
+      const versions: number[][] = [];
+      let sawEveryTag = false;
+      for (let page = 1; page <= 10; page += 1) {
+        const { data } = await axios.get(this.url(repo, 'tags'), {
+          headers: this.headers,
+          params: { per_page: 100, page },
+          timeout: 15_000,
+        });
+        const batch = (data ?? []) as { name?: string }[];
+        for (const tag of batch) {
+          const match = pattern.exec(tag?.name ?? '');
+          if (match) {
+            versions.push([
+              Number(match[1]),
+              Number(match[2]),
+              Number(match[3]),
+            ]);
+          }
+        }
+        if (batch.length < 100) {
+          sawEveryTag = true;
+          break;
+        }
+      }
+
+      if (versions.length === 0) {
+        // "No tag with this prefix" and "I did not look far enough" produce
+        // the same empty list and mean opposite things, so they are not
+        // allowed to share an answer. Only the first — provable because the
+        // last page came back short — is a genuine first release.
+        if (!sawEveryTag) {
+          throw new Error(
+            `Found no ${tagPrefix}* tags in ${repo} within 10 pages, and there are more to read. ` +
+              'Refusing to guess a version rather than proposing a first release for something already released.',
+          );
+        }
+        return `${tagPrefix}0.0.1`;
+      }
 
       const [major, minor, patch] = versions.sort(
         (a: number[], b: number[]) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2],
@@ -850,6 +979,7 @@ export class GithubActionsService {
       axiosError?.response?.data?.message ??
       (error instanceof Error ? error.message : String(error));
     const status = axiosError?.response?.status;
+    this.noteAuthOutcome(error);
     this.logger.error(`${prefix}: ${status ?? ''} ${detail}`);
     return new ServiceUnavailableException(`${prefix}: ${detail}`);
   }

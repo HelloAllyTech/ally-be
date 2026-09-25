@@ -99,6 +99,26 @@ export class WebSocketAuthMiddleware {
   }
 
   private extractToken(socket: Socket): string | null {
-    return socket.handshake.auth?.token;
+    // 1. Try from socket.handshake.auth.token (standard for socket.io auth)
+    if (socket.handshake.auth?.token) {
+      return socket.handshake.auth.token as string;
+    }
+
+    // 2. Try from socket.handshake.query.token (common for browser clients)
+    if (socket.handshake.query?.token) {
+      return socket.handshake.query.token as string;
+    }
+
+    // 3. Try from Authorization header (fallback for other clients)
+    const authHeader = socket.handshake.headers?.authorization;
+    if (
+      authHeader &&
+      typeof authHeader === 'string' &&
+      authHeader.startsWith('Bearer ')
+    ) {
+      return authHeader.substring(7);
+    }
+
+    return null;
   }
 }

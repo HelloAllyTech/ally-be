@@ -89,8 +89,7 @@ export class HighlightsAnalyticsService {
     query: AnalyticsHighlightsQueryDto,
   ): Promise<AnalyticsHighlightsResponseDto> {
     // The data floor is one extra cheap query, and only for an all-time range.
-    const needsFloor =
-      (query.range ?? '30d') === 'all' && !query.from && !query.to;
+    const needsFloor = (query.range ?? '30d') === 'all';
     const window = resolveAnalyticsWindow(query, {
       defaultRange: '30d',
       defaultBucketFor,
@@ -110,6 +109,7 @@ export class HighlightsAnalyticsService {
       activeOrgs,
       topOrgsResult,
       practiceRows,
+      practiceMinutesOverall,
       playTimeRows,
       playTimeOverall,
       qualityOverall,
@@ -131,6 +131,13 @@ export class HighlightsAnalyticsService {
           window.start,
           window.endExclusive,
           window.bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getPracticeMinutesOverall(
+          window.start,
+          window.endExclusive,
           tenantId,
         ),
       ),
@@ -282,6 +289,10 @@ export class HighlightsAnalyticsService {
         completedSimulations: topOrgsResult.belowFloor.sims,
       },
       practiceMinutes,
+      practiceMinutesOverall: {
+        minutes: round1(practiceMinutesOverall.minutes),
+        activeLearners: practiceMinutesOverall.activeLearners,
+      },
       playTime,
       csatTrend,
       trackFunnel: {

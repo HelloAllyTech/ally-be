@@ -11,7 +11,10 @@ import {
 } from '../type/session-event-translation-data.type';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventTranslation } from '../interface/session-events-translation.interface';
-import { DETECTION_DATA_TRANSLATABLE_PATHS } from '../constants/event.constant';
+import {
+  DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+  DETECTION_DATA_TRANSLATABLE_PATHS,
+} from '../constants/event.constant';
 import {
   wrapFieldPlaceholders,
   unwrapFieldPlaceholders,
@@ -144,6 +147,7 @@ export class SessionEventTranslationService {
         const { translatable, passthrough } = this.extractTranslatableFields(
           rawMetadata?.detectionData ?? {},
           DETECTION_DATA_TRANSLATABLE_PATHS,
+          DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
         );
 
         const sanitized = this.sanitizeSessionEventMetadata({
@@ -167,7 +171,7 @@ export class SessionEventTranslationService {
             l &&
             l.translationCode &&
             l.translationCode.trim() !== '' &&
-            !l.value.includes(DEFAULT_LANGUAGE_TRANSLATION_CODE),
+            !l.translationCode.startsWith(DEFAULT_LANGUAGE_TRANSLATION_CODE),
         );
 
         if (!languagesFiltered.length) {
@@ -205,6 +209,7 @@ export class SessionEventTranslationService {
             detectionData: this.mergeTranslatedFields(
               passthrough,
               translatedData.detectionData as TranslatableMap,
+              DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
             ),
           });
         }
@@ -267,9 +272,25 @@ export class SessionEventTranslationService {
     return sanitizeJsonbMetadata(data ?? {});
   }
 
+  /**
+   * Split `source` into the half that goes to the translator and the half that
+   * rides through untouched.
+   *
+   * `textObjectArrayPaths` names the paths whose value is an array of
+   * `{ text }` objects. Those are unwrapped to `string[]` here — the translator
+   * only speaks strings — and re-wrapped by `mergeTranslatedFields`. Unlike
+   * every other extracted path they are deliberately LEFT in `passthrough`:
+   * merging overwrites them when a good translation comes back, and when one
+   * does not, the English original survives. That matters because the runtime
+   * reads a translation row's `detectionData` WHOLESALE (the repository
+   * COALESCEs the whole jsonb, not key by key), so a key missing from the
+   * translated object is a key the session simply does not have — for the
+   * few-shot block that silently downgrades the classifier to zero-shot.
+   */
   private extractTranslatableFields(
     source: Record<string, any> | undefined,
     allowedPaths: string[],
+    textObjectArrayPaths: ReadonlySet<string> = new Set(),
   ): {
     translatable: TranslatableMap;
     passthrough: Record<string, any>;
@@ -283,6 +304,18 @@ export class SessionEventTranslationService {
 
     for (const path of allowedPaths) {
       const value = this.getValueByPath(source, path);
+
+      if (textObjectArrayPaths.has(path)) {
+        if (
+          Array.isArray(value) &&
+          value.length > 0 &&
+          value.every((v) => v && typeof v.text === 'string' && v.text.trim())
+        ) {
+          translatable[path] = value.map((v) => v.text.trim());
+        }
+        // No deleteValueByPath — see the note above.
+        continue;
+      }
 
       if (typeof value === 'string' && value.trim()) {
         translatable[path] = value.trim();
@@ -302,15 +335,41 @@ export class SessionEventTranslationService {
     };
   }
 
+  /**
+   * Write the translated values back over the passthrough object.
+   *
+   * For a `textObjectArrayPaths` path the translated `string[]` is re-wrapped
+   * as `[{ text }]`, the shape `detectionData` and ally-ai-learn's
+   * `_parse_binary_classifier_data` both expect. A translation that came back
+   * as anything other than a non-empty array of non-empty strings is SKIPPED
+   * rather than written: passthrough still holds the English original (see
+   * `extractTranslatableFields`), and few-shot examples in the wrong language
+   * beat a malformed value the runtime discards outright.
+   */
   private mergeTranslatedFields(
     passthrough: Record<string, any>,
     translated: TranslatableMap | undefined,
+    textObjectArrayPaths: ReadonlySet<string> = new Set(),
   ): Record<string, any> {
     if (!translated) return passthrough;
 
     const merged = structuredClone(passthrough);
 
     for (const [path, value] of Object.entries(translated)) {
+      if (textObjectArrayPaths.has(path)) {
+        const texts = Array.isArray(value)
+          ? value.filter(
+              (v): v is string => typeof v === 'string' && v.trim() !== '',
+            )
+          : [];
+        if (!texts.length) continue;
+        this.setValueByPath(
+          merged,
+          path,
+          texts.map((text) => ({ text: text.trim() })),
+        );
+        continue;
+      }
       this.setValueByPath(merged, path, value);
     }
 

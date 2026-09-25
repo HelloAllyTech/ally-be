@@ -16,6 +16,9 @@ import {
   McqSingleQuestion,
   OpenEndedQuestion,
   OrderingQuestion,
+  QuestionMedia,
+  QuestionMediaKind,
+  QuestionMediaSource,
   QuizContent,
   QuizQuestion,
   QuizQuestionType,
@@ -35,6 +38,7 @@ import {
   TRACK_MAX_ANNOTATION_UNITS,
   TRACK_MAX_ARTICLE_QUESTIONS,
   TRACK_MAX_ITEMS_PER_SECTION,
+  TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH,
   TRACK_MAX_QUIZ_QUESTIONS,
   TRACK_MAX_SECTIONS,
 } from '../constants/track.constant';
@@ -518,7 +522,72 @@ export function validateQuizContent(
   });
 }
 
+/**
+ * A question's optional picture or clip. Reached from `validateQuizQuestion`,
+ * so it covers quiz questions, video interjections and inline article
+ * questions on identical terms — media lives on `QuizQuestionBase`, and a
+ * field validated in only one of the three places is a field that arrives
+ * unchecked from the other two.
+ *
+ * The `https` requirement is not pedantry: this URL is handed straight to an
+ * `<img src>` / `<iframe src>` on three clients, so anything that is not a
+ * fetchable web URL is either broken or an injection attempt.
+ */
+function validateQuestionMedia(media: QuestionMedia, label: string): void {
+  if (!Object.values(QuestionMediaKind).includes(media.kind)) {
+    fail(`${label}: media must be an image or a video.`);
+  }
+  if (!Object.values(QuestionMediaSource).includes(media.source)) {
+    fail(`${label}: media has an unknown source.`);
+  }
+  if (typeof media.url !== 'string' || !media.url.trim()) {
+    fail(`${label}: media is missing its URL.`);
+  }
+  if (!media.url.trim().startsWith('https://')) {
+    fail(`${label}: media URL must be an https link.`);
+  }
+  // There is no "embed an image" concept — an image is always a file the
+  // trainer uploaded — so an image claiming a video host is a malformed
+  // payload, not a shape we should start rendering.
+  if (
+    media.kind === QuestionMediaKind.IMAGE &&
+    media.source !== QuestionMediaSource.S3
+  ) {
+    fail(`${label}: an image must be an uploaded file.`);
+  }
+  if (media.posterUrl !== undefined) {
+    if (
+      typeof media.posterUrl !== 'string' ||
+      !media.posterUrl.trim().startsWith('https://')
+    ) {
+      fail(`${label}: media thumbnail must be an https link.`);
+    }
+    // A poster for a still image is meaningless, and an embed brings its
+    // own — so a poster anywhere but on an uploaded video is a payload we
+    // did not write and should not start rendering.
+    if (
+      media.kind !== QuestionMediaKind.VIDEO ||
+      media.source !== QuestionMediaSource.S3
+    ) {
+      fail(`${label}: only an uploaded video can have a thumbnail.`);
+    }
+  }
+  if (media.alt !== undefined) {
+    if (typeof media.alt !== 'string') {
+      fail(`${label}: media description must be text.`);
+    }
+    if (media.alt.length > TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH) {
+      fail(
+        `${label}: media description must be ${TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH} characters or fewer.`,
+      );
+    }
+  }
+}
+
 function validateQuizQuestion(question: QuizQuestion, label: string): void {
+  if (question.media !== undefined && question.media !== null) {
+    validateQuestionMedia(question.media, label);
+  }
   switch (question.type) {
     case QuizQuestionType.MCQ_SINGLE:
       return validateMcqSingle(question, label);

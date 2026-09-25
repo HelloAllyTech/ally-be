@@ -86,6 +86,9 @@ describe('BuilderPullRequestService', () => {
     };
     github = {
       isConfigured: true,
+      // Healthy credential by default. A run of unauthorised calls is what
+      // raises the alarm; zero failures keeps the release watcher quiet.
+      credentialHealth: { failures: 0, since: null },
       listPullRequestFiles: jest
         .fn()
         .mockResolvedValue({ files: ['src/a.ts'], truncated: false }),

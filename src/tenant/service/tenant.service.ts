@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -45,6 +45,9 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { PostHog } from 'posthog-node';
+import { ADMIN_ANALYTICS_EVENTS } from 'src/posthog/admin-analytics.constants';
+import { userDistinctId } from 'src/posthog/posthog.util';
 
 @Injectable()
 export class TenantService {
@@ -54,6 +57,7 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
+    private readonly posthog: PostHog,
     private readonly tenantScenarioSharedService: TenantScenarioSharedService,
     private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
     private readonly badgeTenantSharedService: BadgeTenantSharedService,
@@ -73,8 +77,16 @@ export class TenantService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async findAll(): Promise<Tenant[]> {
-    return this.tenantRepository.find();
+  /**
+   * Pass the caller's `entityManager` when the tenant list feeds a write in
+   * the same transaction — otherwise the read goes out on a pool connection of
+   * its own and is not covered by anything that transaction holds.
+   */
+  async findAll(entityManager?: EntityManager): Promise<Tenant[]> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this.tenantRepository;
+    return repository.find();
   }
 
   async create(
@@ -311,8 +323,50 @@ export class TenantService {
     id: string,
     metadata: Record<string, any>,
   ): Promise<Tenant | null> {
+    const previousPlan = (await this.findTenantEntityById(id))?.metadata?.plan;
     await this.tenantRepository.update(id, { metadata });
+    // This is a full-blob PUT, so a caller that edits some other metadata
+    // field and simply doesn't round-trip `plan` must not read as "changed
+    // it to null" — only fire the capture when the key was actually part of
+    // this write.
+    if ('plan' in metadata) {
+      this.capturePlanChange(id, previousPlan, metadata.plan);
+    }
     return this.findTenantEntityById(id);
+  }
+
+  /**
+   * Fires `plan.upgraded` only when the plan really moved. The caller only
+   * invokes this when the incoming metadata actually carried a `plan` key —
+   * an unchanged value is still not a plan change.
+   *
+   * `upgraded_by` comes from the request context rather than a new parameter;
+   * the only caller is the admin-gated controller. Wholly guarded — analytics
+   * must never fail an admin's edit.
+   */
+  private capturePlanChange(
+    tenantId: string,
+    previousPlan: unknown,
+    newPlan: unknown,
+  ): void {
+    if (previousPlan === newPlan || (!previousPlan && !newPlan)) return;
+    try {
+      const changedBy = ExecutionManager.getUserId();
+      this.posthog.capture({
+        distinctId: changedBy ? userDistinctId(Number(changedBy)) : tenantId,
+        event: ADMIN_ANALYTICS_EVENTS.PLAN_UPGRADED,
+        properties: {
+          org_id: tenantId,
+          previous_plan: previousPlan ?? null,
+          new_plan: newPlan ?? null,
+          upgraded_by: changedBy,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${ADMIN_ANALYTICS_EVENTS.PLAN_UPGRADED} in PostHog for tenant ${tenantId}: ${error}`,
+      );
+    }
   }
 
   async validateTenant(tenantId: string): Promise<boolean> {

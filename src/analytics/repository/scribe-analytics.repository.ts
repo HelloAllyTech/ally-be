@@ -9,6 +9,7 @@ import {
   ScribeSessionMode,
 } from '../../common/constants/chat.constants';
 import { AnalyticsBucket } from './platform-analytics.repository';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 export interface ScribeBucketCountRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
@@ -55,12 +56,19 @@ export interface ScribeProviderStatRow {
 export class ScribeAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): 'day' | 'week' | 'month' {
+  private resolveBucket(
+    bucket: AnalyticsBucket,
+  ): 'day' | 'week' | 'month' | 'quarter' {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
-    // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    return 'week';
+    // have not explicitly whitelisted. Cast is safe: resolveSqlBucket's own
+    // runtime whitelist check falls back to 'week' for a 'year' bucket just
+    // as it would for any other unrecognized value — this repo has no
+    // yearly aggregation.
+    return resolveSqlBucket(
+      bucket as 'day' | 'week' | 'month' | 'quarter',
+      ['day', 'week', 'month', 'quarter'],
+      'week',
+    );
   }
 
   /**

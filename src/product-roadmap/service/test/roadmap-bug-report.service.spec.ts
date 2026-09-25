@@ -94,6 +94,14 @@ describe('RoadmapOpportunityService.createBugReport', () => {
           );
         }),
       } as never,
+      // Repo classification is best-effort and unrelated to what these tests
+      // assert — a stub that resolves to "unclassified" keeps the created
+      // finding's repo null, same as before this dependency existed.
+      {
+        classifyRepo: jest
+          .fn()
+          .mockResolvedValue({ repo: null, rationale: '' }),
+      } as never,
     );
 
     return { service, opportunityRepository };
@@ -202,6 +210,14 @@ describe('RoadmapOpportunityService.createBugReport', () => {
             'readiness token verified on a path that should not gate',
           );
         }),
+      } as never,
+      // Repo classification is best-effort and unrelated to what these tests
+      // assert — a stub that resolves to "unclassified" keeps the created
+      // finding's repo null, same as before this dependency existed.
+      {
+        classifyRepo: jest
+          .fn()
+          .mockResolvedValue({ repo: null, rationale: '' }),
       } as never,
     );
 

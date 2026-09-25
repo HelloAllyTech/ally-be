@@ -95,6 +95,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
   ],
   exports: [
     TrackSharedService,
+    TrackEnrollmentService,
     TrackProgressService,
     TrackMemoryService,
     TrackLocalizationService,

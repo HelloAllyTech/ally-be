@@ -70,3 +70,7 @@ scan_report.*
 
 # Scratch clone of the wiki, created by the wiki-pr flow (see AGENTS.md)
 .wiki-tmp/
+
+# Bug Hunter eval replays: per-run detail stays local, the score is recorded in ally-be (see evals/bug-hunter/README.md)
+evals/bug-hunter/results/
+.eval-worktrees/

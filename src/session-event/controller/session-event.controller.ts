@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
@@ -30,6 +31,11 @@ import {
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
+import {
+  GenerateEventBuilderFieldDto,
+  GenerateEventBuilderFieldResponseDto,
+} from '../dto/generate-event-builder-field.dto';
+import { EventBuilderService } from '../service/event-builder.service';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { SuccessResponse } from 'src/common/type/common.type';
@@ -41,7 +47,32 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 @ApiSecurity('access-token')
 @Controller('v1/session-events')
 export class SessionEventController {
-  constructor(private readonly sessionEventService: SessionEventService) {}
+  constructor(
+    private readonly sessionEventService: SessionEventService,
+    private readonly eventBuilderService: EventBuilderService,
+  ) {}
+
+  @ApiOperation({
+    summary:
+      'Event Builder: generate one part of a binary-classification event ' +
+      'from a free-text description of the behaviour (fired per field)',
+  })
+  @ApiBody({ type: GenerateEventBuilderFieldDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Generated field value',
+    type: GenerateEventBuilderFieldResponseDto,
+  })
+  // EDIT_SESSION_EVENTS rather than a generation-specific permission: this
+  // produces a draft of exactly what that permission already lets its holder
+  // type by hand, and nothing is persisted here.
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  @Post('generate-field')
+  async generateEventBuilderField(
+    @Body() dto: GenerateEventBuilderFieldDto,
+  ): Promise<GenerateEventBuilderFieldResponseDto> {
+    return this.eventBuilderService.generateField(dto);
+  }
 
   @ApiOperation({ summary: 'Create session events' })
   @ApiBody({ type: CreateSessionEventsDto })

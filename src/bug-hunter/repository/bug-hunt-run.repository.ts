@@ -14,6 +14,60 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
   }
 
   /**
+   * How much of the repo runs in the window were shown, averaged over the runs
+   * that said — see `BugHunterTelemetryService.recordContext`, which writes
+   * `metadata.breadth`. Runs that never reported (older sweeps, fix sessions,
+   * a sweep that died before Discover finished) are excluded from every
+   * average rather than counted as zero, and `runsReporting` says how many
+   * the averages stand on.
+   */
+  async breadthStats(since: Date): Promise<{
+    runsReporting: number;
+    avgFilesInScope: number | null;
+    avgLinesInScope: number | null;
+    avgCommits: number | null;
+    avgPackChars: number | null;
+    deepShare: number | null;
+  }> {
+    const [row] = await this.manager.query<
+      Array<{
+        runs: string;
+        avg_files: string | null;
+        avg_lines: string | null;
+        avg_commits: string | null;
+        avg_pack: string | null;
+        deep_runs: string;
+      }>
+    >(
+      `
+      SELECT
+        COUNT(*) AS runs,
+        AVG(NULLIF(r.metadata->'breadth'->>'filesInScope', '')::numeric) AS avg_files,
+        AVG(NULLIF(r.metadata->'breadth'->>'linesInScope', '')::numeric) AS avg_lines,
+        AVG(NULLIF(r.metadata->'breadth'->>'commits', '')::numeric) AS avg_commits,
+        AVG(NULLIF(r.metadata->'breadth'->>'packChars', '')::numeric) AS avg_pack,
+        COUNT(*) FILTER (WHERE (r.metadata->'breadth'->>'deep')::boolean IS TRUE) AS deep_runs
+      FROM bug_hunt_runs r
+      WHERE r."createdAt" >= $1
+        AND r.metadata ? 'breadth'
+      `,
+      [since],
+    );
+
+    const runs = Number(row?.runs ?? 0);
+    const num = (value: string | null | undefined): number | null =>
+      value === null || value === undefined ? null : Number(value);
+    return {
+      runsReporting: runs,
+      avgFilesInScope: num(row?.avg_files),
+      avgLinesInScope: num(row?.avg_lines),
+      avgCommits: num(row?.avg_commits),
+      avgPackChars: num(row?.avg_pack),
+      deepShare: runs === 0 ? null : Number(row?.deep_runs ?? 0) / runs,
+    };
+  }
+
+  /**
    * What every run in the window actually cost, and how many there were.
    *
    * Server-side and un-truncated, which is the point of it. The tab's existing
@@ -67,6 +121,77 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
       fixSessionRuns: Number(row?.fix_runs ?? 0),
       fixSessionCostUsd: Number(row?.fix_cost_usd ?? 0),
     };
+  }
+
+  /**
+   * `costInWindow`'s same figures, plus a per-status count, bucketed by
+   * calendar week — the raw material for cost, fix-throughput, and
+   * reliability trend charts. One query rather than three: cost, the
+   * fix-session-run denominator (for escalation/fallback rates), and
+   * completion-status counts (for run-completion-rate) all group on the same
+   * (week, trigger, status) cells.
+   */
+  async weeklyRunStats(
+    start: Date,
+    end: Date,
+  ): Promise<
+    Array<{
+      week: Date;
+      trigger: string;
+      status: string;
+      runs: number;
+      costUsd: number;
+    }>
+  > {
+    const rows = await this.manager.query<
+      Array<{
+        week: Date;
+        trigger: string;
+        status: string;
+        runs: string;
+        cost_usd: string | null;
+      }>
+    >(
+      `
+      SELECT
+        date_trunc('week', r."createdAt") AS week,
+        r.trigger AS trigger,
+        r.status AS status,
+        COUNT(*) AS runs,
+        COALESCE(SUM(COALESCE(
+          NULLIF((r.metadata->>'cliReportedCostUsd'), '')::numeric,
+          r."totalTokenCostUsd"
+        )), 0) AS cost_usd
+      FROM bug_hunt_runs r
+      WHERE r."createdAt" >= $1
+        AND r."createdAt" < $2
+        AND r.status NOT IN ('skipped_disabled', 'skipped_quiet')
+      GROUP BY week, r.trigger, r.status
+      ORDER BY week
+      `,
+      [start, end],
+    );
+    return rows.map((row) => ({
+      week: row.week,
+      trigger: row.trigger,
+      status: row.status,
+      runs: Number(row.runs),
+      costUsd: Number(row.cost_usd ?? 0),
+    }));
+  }
+
+  /**
+   * Bug Hunter's own first run — the "all time" floor for its trend charts.
+   * Deliberately not the platform-wide `getPlatformDataFloor` (which measures
+   * from the first `users`/`scenario_sessions` row): that predates Bug Hunter
+   * entirely, which would stretch an all-time window back through years of
+   * guaranteed-empty weeks.
+   */
+  async getDataFloor(): Promise<Date> {
+    const [row] = await this.manager.query<Array<{ floor: Date | null }>>(
+      `SELECT MIN("createdAt") AS floor FROM bug_hunt_runs`,
+    );
+    return row?.floor ?? new Date();
   }
 
   /**

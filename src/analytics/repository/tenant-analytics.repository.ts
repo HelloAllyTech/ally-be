@@ -5,7 +5,7 @@ import {
   ScenarioSessionStatus,
 } from '../../learn/enum/scenario-session-status.enum';
 import { LearnerUsageStatus } from '../dto/tenant-analytics.dto';
-import { startOfUtcDay } from '../util/analytics-window.util';
+import { resolveSqlBucket, startOfUtcDay } from '../util/analytics-window.util';
 import { sessionDurationMsExpr } from '../util/session-eligibility.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
 
@@ -270,10 +270,18 @@ export class TenantAnalyticsRepository {
     end: Date,
     bucket: AnalyticsBucket,
   ): Promise<BucketCountRow[]> {
+    // Not user-reachable today (TenantAnalyticsQueryDto has no `bucket`
+    // field — this always resolves internally via resolveAnalyticsWindow),
+    // but never interpolate anything we have not explicitly whitelisted.
+    const trunc = resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('${bucket}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
+        `to_char(date_trunc('${trunc}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
         'bucket',
       )
       .addSelect('COUNT(*)::int', 'count')
@@ -304,10 +312,16 @@ export class TenantAnalyticsRepository {
     end: Date,
     bucket: AnalyticsBucket,
   ): Promise<BucketCountRow[]> {
+    // Not user-reachable today — see getCompletedSimulationsByBucket.
+    const trunc = resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('${bucket}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
+        `to_char(date_trunc('${trunc}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
         'bucket',
       )
       .addSelect('COUNT(DISTINCT s."counselorId")::int', 'count')
@@ -361,10 +375,16 @@ export class TenantAnalyticsRepository {
     end: Date,
     bucket: AnalyticsBucket,
   ): Promise<BucketCountRow[]> {
+    // Not user-reachable today — see getCompletedSimulationsByBucket.
+    const trunc = resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('${bucket}', u."createdAt"), 'YYYY-MM-DD')`,
+        `to_char(date_trunc('${trunc}', u."createdAt"), 'YYYY-MM-DD')`,
         'bucket',
       )
       .addSelect('COUNT(*)::int', 'count')

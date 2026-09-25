@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { IsNull } from 'typeorm';
+import { In, IsNull, Not } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -11,6 +11,7 @@ import { FeatureToggleService } from 'src/authorization/service/feature-toggle.s
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { BuilderSessionService } from 'src/builder/service/builder-session.service';
 
+import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { OpenBuilderSessionResponseDto } from '../dto/roadmap-response.dto';
 import { BUILDER_SEED_TITLE_MAX } from '../constants/product-roadmap.constants';
@@ -107,6 +108,24 @@ export class RoadmapBuilderService {
       };
     }
 
+    // Handing work to Builder IS starting it, so the board should say so
+    // rather than leaving the row sitting in `new` while a build runs against
+    // it. Only forward, and only from the two stages that precede development:
+    // a row someone has already marked released or archived is not something
+    // this should reopen.
+    if (
+      opportunity.stage === RoadmapOpportunityStage.NEW ||
+      opportunity.stage === RoadmapOpportunityStage.PRIORITISED
+    ) {
+      await this.opportunityRepository.update(
+        { id: opportunityId },
+        {
+          stage: RoadmapOpportunityStage.UNDER_DEVELOPMENT,
+          updatedBy: userId,
+        },
+      );
+    }
+
     this.logger.info(
       `[ROADMAP] Opened Builder session ${session.id} for opportunity ${opportunityId} by user ${userId}`,
     );
@@ -158,6 +177,65 @@ export class RoadmapBuilderService {
           'toggle and the Builder edit permission, which are granted separately from ' +
           'the roadmap.',
       );
+    }
+  }
+
+  /**
+   * Move opportunities whose Builder work has shipped to `released`.
+   *
+   * The roadmap asks Builder, rather than Builder writing here: the roadmap is
+   * allowed to depend on Builder's services (this class already does), and the
+   * reverse edge is the one the opportunity entity explicitly warns against.
+   * So this polls, on the same tick as everything else.
+   *
+   * `shipped` is stricter than "the session finished": every pull request
+   * merged AND deployed. A build can complete having written nothing, and a
+   * merged pull request whose release failed is the exact state a person needs
+   * to see rather than have marked done. `releasedAt` is stamped here because
+   * this IS the transition into RELEASED, which is the only time that column
+   * is written.
+   *
+   * Never downgrades and never touches an archived row. A stage a person set
+   * by hand is theirs; this only moves work forward to a conclusion the
+   * evidence already supports.
+   */
+  async reconcileShippedOpportunities(): Promise<void> {
+    const candidates = await this.opportunityRepository.find({
+      where: {
+        builderSessionId: Not(IsNull()),
+        stage: In([
+          RoadmapOpportunityStage.NEW,
+          RoadmapOpportunityStage.PRIORITISED,
+          RoadmapOpportunityStage.UNDER_DEVELOPMENT,
+        ]),
+      },
+      take: 100,
+    });
+
+    for (const opportunity of candidates) {
+      try {
+        const delivery = await this.builderSessionService.getDeliveryState(
+          opportunity.builderSessionId!,
+        );
+        if (!delivery?.shipped) continue;
+
+        await this.opportunityRepository.update(
+          { id: opportunity.id },
+          {
+            stage: RoadmapOpportunityStage.RELEASED,
+            releasedAt: new Date(),
+          },
+        );
+        this.logger.info(
+          `[ROADMAP] Opportunity ${opportunity.id} released: Builder session ${opportunity.builderSessionId} shipped ${delivery.pullRequestCount} pull request(s).`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `[ROADMAP] Could not settle opportunity ${opportunity.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
   }
 }

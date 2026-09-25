@@ -11,6 +11,10 @@ import {
   StageLatency,
 } from '../repository/bug-finding.repository';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
+import {
+  BugHuntEventRepository,
+  EscalationBreakdown,
+} from '../repository/bug-hunt-event.repository';
 
 /** One source's or one repo's funnel, from filed to live. */
 export interface FindingFunnel {
@@ -75,6 +79,13 @@ export interface BugHunterMetrics {
   /** The same figures across everything, so a reader has one honest headline. */
   overall: FindingFunnel;
   declines: DeclineBreakdown[];
+  /**
+   * Escalations in the window, grouped by their exact summary text — see
+   * BugHuntEventRepository.escalationBreakdown's own doc for why the raw
+   * string is already a clean-enough grouping for 3 of the 4 escalation
+   * paths today.
+   */
+  escalations: EscalationBreakdown[];
   latency: {
     filedToDecided: StageLatency;
     filedToMerged: StageLatency;
@@ -166,17 +177,20 @@ export class BugHunterMetricsService {
   constructor(
     private readonly findingRepository: BugFindingRepository,
     private readonly runRepository: BugHuntRunRepository,
+    private readonly eventRepository: BugHuntEventRepository,
   ) {}
 
   async report(windowDays: number): Promise<BugHunterMetrics> {
     const since = new Date(Date.now() - windowDays * MS_PER_DAY);
 
-    const [rows, latency, regressionCounts, cost] = await Promise.all([
-      this.findingRepository.outcomeCounts(since),
-      this.findingRepository.stageLatencies(since),
-      this.findingRepository.regressionCounts(since),
-      this.runRepository.costInWindow(since),
-    ]);
+    const [rows, latency, regressionCounts, cost, escalations] =
+      await Promise.all([
+        this.findingRepository.outcomeCounts(since),
+        this.findingRepository.stageLatencies(since),
+        this.findingRepository.regressionCounts(since),
+        this.runRepository.costInWindow(since),
+        this.eventRepository.escalationBreakdown(since),
+      ]);
 
     const bySource = groupFunnels(rows, (row) => row.source);
     const byRepo = groupFunnels(rows, (row) => row.repo);
@@ -190,6 +204,7 @@ export class BugHunterMetricsService {
       byRepo,
       overall,
       declines: declineBreakdown(rows),
+      escalations,
       latency,
       regressions: {
         filed: regressionCounts.regressions,
@@ -337,7 +352,15 @@ const finalise = (funnel: FindingFunnel): FindingFunnel => {
   return funnel;
 };
 
-const foldFunnel = (
+/**
+ * Exported for `BugAgentPerformanceAnalyticsService`: folding one week's
+ * `WeeklyFindingOutcomeCount` rows into a funnel is the exact same arithmetic
+ * as folding one window's `FindingOutcomeCount` rows — the row shapes only
+ * differ by an extra `week` field this function never reads. Kept as one
+ * definition rather than a second copy of `applyRow`/`finalise` for a
+ * trend chart to drift out of sync with.
+ */
+export const foldFunnel = (
   key: string | null,
   rows: FindingOutcomeCount[],
 ): FindingFunnel => {
@@ -346,7 +369,7 @@ const foldFunnel = (
   return finalise(funnel);
 };
 
-const groupFunnels = (
+export const groupFunnels = (
   rows: FindingOutcomeCount[],
   keyOf: (row: FindingOutcomeCount) => string | null,
 ): FindingFunnel[] => {

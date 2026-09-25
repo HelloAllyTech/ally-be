@@ -27,6 +27,7 @@ import {
 } from '../../dto/admin-tenant.dto';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { PostHog } from 'posthog-node';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -128,6 +129,10 @@ describe('UserController', () => {
               termsAndAgreement: false,
             },
           },
+        },
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
         },
       ],
     }).compile();
@@ -614,7 +619,7 @@ describe('UserController', () => {
       const mockResponse = { success: true };
       mockUserService.approveTermsAndAgreement.mockResolvedValue(mockResponse);
 
-      const result = await controller.approveTermsAndAgreement();
+      const result = await controller.approveTermsAndAgreement(mockTokenUser);
 
       expect(mockUserService.approveTermsAndAgreement).toHaveBeenCalled();
       expect(result).toEqual(mockResponse);
@@ -626,12 +631,12 @@ describe('UserController', () => {
         new BadRequestException('User not found'),
       );
 
-      await expect(controller.approveTermsAndAgreement()).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(controller.approveTermsAndAgreement()).rejects.toThrow(
-        'User not found',
-      );
+      await expect(
+        controller.approveTermsAndAgreement(mockTokenUser),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        controller.approveTermsAndAgreement(mockTokenUser),
+      ).rejects.toThrow('User not found');
     });
   });
 

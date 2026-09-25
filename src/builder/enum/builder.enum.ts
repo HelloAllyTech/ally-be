@@ -288,6 +288,8 @@ export enum BuilderNotificationKind {
    * single failure, because the thing that has stopped is the loop.
    */
   AUTOMATION_PAUSED = 'automation_paused',
+  /** The GitHub credential is being rejected — everything downstream is blind. */
+  CREDENTIAL_REJECTED = 'credential_rejected',
 }
 
 /**

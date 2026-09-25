@@ -10,6 +10,7 @@ import { LanguageModule } from 'src/language/language.module';
 import { SessionEventTranslationsRepository } from './repository/session-event-translation.repository';
 import { SessionEventTranslationService } from './service/session-event-translation.service';
 import { SessionEventSharedService } from './service/session-event-shared.service';
+import { EventBuilderService } from './service/event-builder.service';
 
 @Module({
   imports: [
@@ -25,6 +26,9 @@ import { SessionEventSharedService } from './service/session-event-shared.servic
     SessionEventTranslationsRepository,
     SessionEventTranslationService,
     SessionEventSharedService,
+    // Reaches AutofillService, which LearnModule exports. LearnModule is
+    // already imported (forwardRef) for the scenario-events join.
+    EventBuilderService,
   ],
   exports: [
     SessionEventService,

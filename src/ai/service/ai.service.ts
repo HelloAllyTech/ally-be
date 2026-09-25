@@ -57,6 +57,8 @@ import {
   TagPositivityRatingsRequest,
   TranscribeAudioRequest,
   UpdateReferenceDocumentRequest,
+  AgentMemoryUpsertRequest,
+  AgentMemorySearchRequest,
 } from '../dto/ai.request.dto';
 import { PromptSharedService } from '../../prompt/service/prompt-shared.service';
 import {
@@ -80,6 +82,9 @@ import {
   TagPositivityRatingsResponse,
   TranscribeAudioResponse,
   UpdateReferenceDocumentResponse,
+  AgentMemoryUpsertResponse,
+  AgentMemorySearchResponse,
+  AgentMemoryDeleteResponse,
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 import { WorkerType } from 'src/user/enum/user.enum';
@@ -318,6 +323,57 @@ export class AiService {
       undefined,
       false,
       15_000,
+    );
+  }
+
+  // ── Agent memory (Bug Hunter / Builder notebook) ─────────────────────────
+  // ally-ai owns the `AgentMemory` Weaviate collection; ally-be's `agent_memories`
+  // is the system of record. Same explicit-timeout rule as the roadmap block: a
+  // memory write is best-effort and a lookup happens mid-task on a CI runner, so
+  // neither may hang on an unhealthy ally-ai.
+
+  /** Idempotent: the Weaviate object uuid IS the memory id. 8s — a write nobody waits on. */
+  async upsertAgentMemory(request: AgentMemoryUpsertRequest) {
+    return this.makeRequest<
+      AgentMemoryUpsertResponse,
+      AgentMemoryUpsertRequest
+    >(
+      `${ENDPOINTS.AGENT_MEMORY_UPSERT}/${request.memory_id}`,
+      request,
+      true,
+      'put',
+      undefined,
+      false,
+      8_000,
+    );
+  }
+
+  /** Called when an entry is retired or merged away, so it stops surfacing in lookups. */
+  async deleteAgentMemory(memoryId: string) {
+    return this.makeRequest<AgentMemoryDeleteResponse, undefined>(
+      `${ENDPOINTS.AGENT_MEMORY_DELETE}/${memoryId}`,
+      undefined,
+      true,
+      'delete',
+      undefined,
+      false,
+      8_000,
+    );
+  }
+
+  /** 10s — the agent is waiting on this mid-task, and a slow answer is worse than none. */
+  async findSimilarAgentMemories(request: AgentMemorySearchRequest) {
+    return this.makeRequest<
+      AgentMemorySearchResponse,
+      AgentMemorySearchRequest
+    >(
+      ENDPOINTS.AGENT_MEMORY_SEARCH,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      10_000,
     );
   }
 
@@ -805,6 +861,9 @@ export class AiService {
         : errCode
           ? `network_${errCode}`
           : 'unknown';
+      const requestDataForLog = redactBody
+        ? `[redacted ${dataSize}B — this endpoint carries PII/PHI]`
+        : JSON.stringify(data);
       this.logger.error(
         `AI Request FAIL | execId=${execId} | endpoint=${endpoint} | ` +
           `category=${failureCategory} | elapsedMs=${elapsedMs} | ` +
@@ -814,7 +873,7 @@ export class AiService {
           `upstreamTraceId=${upstreamTraceId ?? 'none'} | ` +
           `upstreamDetail=${JSON.stringify(upstreamDetail)} | ` +
           `upstreamBody=${upstreamBodyStr} | ` +
-          `dataSize=${dataSize}B | requestData=${JSON.stringify(data)}`,
+          `dataSize=${dataSize}B | requestData=${requestDataForLog}`,
         error.stack,
       );
       this.eventEmitter.emit('exception', {

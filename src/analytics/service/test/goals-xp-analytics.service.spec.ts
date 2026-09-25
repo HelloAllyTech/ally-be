@@ -4,14 +4,13 @@ import { GoalsXpAnalyticsService } from '../goals-xp-analytics.service';
 import { GoalsXpAnalyticsRepository } from '../../repository/goals-xp-analytics.repository';
 
 /**
- * Fixed "now" = 2026-08-20 (mid Q3/August), with a data floor of 2026-06-10
- * (June, Q2). That yields:
- *   - month axis:   2026-06-01, 2026-07-01, 2026-08-01 (Aug in progress)
+ * Fixed "now" = 2026-08-20 (mid Q3/August). The chart floor is a fixed
+ * 2026-04-01 (Q2), not measured, so that yields:
+ *   - month axis:   2026-04-01 .. 2026-08-01 (Aug in progress)
  *   - quarter axis: 2026-04-01 (Q2), 2026-07-01 (Q3, in progress)
  *   - year axis:    2026-01-01 (in progress)
  */
 const FIXED_NOW = new Date('2026-08-20T12:00:00.000Z');
-const DATA_FLOOR = new Date('2026-06-10T00:00:00.000Z');
 
 describe('GoalsXpAnalyticsService', () => {
   let service: GoalsXpAnalyticsService;
@@ -21,7 +20,6 @@ describe('GoalsXpAnalyticsService', () => {
     jest.useFakeTimers().setSystemTime(FIXED_NOW);
 
     const mockRepo: Partial<jest.Mocked<GoalsXpAnalyticsRepository>> = {
-      getDataFloor: jest.fn().mockResolvedValue(DATA_FLOOR),
       getActualXpByPeriod: jest.fn().mockResolvedValue([]),
       getGoalsByGrain: jest.fn().mockResolvedValue(new Map()),
     };
@@ -42,22 +40,93 @@ describe('GoalsXpAnalyticsService', () => {
     jest.clearAllMocks();
   });
 
+  describe('actual-only grains', () => {
+    it('buckets by Monday-start week with no goal, ending on the in-progress week', async () => {
+      const res = await service.getGoalsXp({ grain: 'week' });
+
+      expect(res.grain).toBe('week');
+      // 2026-04-01 is a Wednesday, so the first week starts Monday 2026-03-30.
+      expect(res.points[0].periodStart).toBe('2026-03-30');
+      expect(res.points[0].periodLabel).toBe('2026-03-30');
+      const last = res.points[res.points.length - 1];
+      expect(last.periodStart).toBe('2026-08-17');
+      expect(last.inProgress).toBe(true);
+      expect(res.points.every((p) => !p.hasGoal && p.goalXp === null)).toBe(
+        true,
+      );
+      expect(res.points.some((p) => p.upcoming)).toBe(false);
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+      expect(repo.getActualXpByPeriod).toHaveBeenCalledWith(
+        'week',
+        new Date('2026-03-30T00:00:00.000Z'),
+        new Date('2026-08-24T00:00:00.000Z'),
+      );
+    });
+
+    it('buckets by day from the chart floor through today', async () => {
+      const res = await service.getGoalsXp({ grain: 'day' });
+
+      expect(res.points[0].periodStart).toBe('2026-04-01');
+      expect(res.points[res.points.length - 1].periodStart).toBe('2026-08-20');
+      expect(res.points).toHaveLength(142);
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+    });
+
+    it('returns one All-time point summing every month, with no goal', async () => {
+      repo.getActualXpByPeriod.mockResolvedValue([
+        { periodStart: '2026-04-01', actualXp: 100 },
+        { periodStart: '2026-07-01', actualXp: 250 },
+      ]);
+
+      const res = await service.getGoalsXp({ grain: 'all' });
+
+      expect(res.grain).toBe('all');
+      expect(res.points).toEqual([
+        {
+          periodStart: '2026-04-01',
+          periodLabel: 'All time',
+          actualXp: 350,
+          goalXp: null,
+          hasGoal: false,
+          inProgress: true,
+          upcoming: false,
+        },
+      ]);
+      expect(repo.getActualXpByPeriod).toHaveBeenCalledWith(
+        'month',
+        new Date('2026-04-01T00:00:00.000Z'),
+        new Date('2026-08-21T00:00:00.000Z'),
+      );
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+    });
+  });
+
   describe('period axis', () => {
-    it('defaults to month, spanning the data floor through the in-progress month', async () => {
+    it('defaults to month, spanning the fixed chart floor through the in-progress month', async () => {
       const res = await service.getGoalsXp({});
 
       expect(res.grain).toBe('month');
       expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2026-04-01',
+        '2026-05-01',
         '2026-06-01',
         '2026-07-01',
         '2026-08-01',
       ]);
       expect(res.points.map((p) => p.periodLabel)).toEqual([
+        'Apr 2026',
+        'May 2026',
         'Jun 2026',
         'Jul 2026',
         'Aug 2026',
       ]);
-      expect(res.points.map((p) => p.inProgress)).toEqual([false, false, true]);
+      expect(res.points.map((p) => p.inProgress)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        true,
+      ]);
     });
 
     it('buckets by quarter, truncating the floor to the start of its quarter', async () => {
@@ -84,11 +153,6 @@ describe('GoalsXpAnalyticsService', () => {
         inProgress: true,
       });
     });
-
-    it('measures the data floor for every grain', async () => {
-      await service.getGoalsXp({ grain: 'year' });
-      expect(repo.getDataFloor).toHaveBeenCalled();
-    });
   });
 
   describe('actual XP', () => {
@@ -100,7 +164,9 @@ describe('GoalsXpAnalyticsService', () => {
 
       const res = await service.getGoalsXp({});
 
-      expect(res.points.map((p) => p.actualXp)).toEqual([1_545, 1_615, 0]);
+      expect(res.points.map((p) => p.actualXp)).toEqual([
+        0, 0, 1_545, 1_615, 0,
+      ]);
     });
 
     it('never fabricates actual XP for a period with no rows — a real zero, not a gap', async () => {
@@ -121,6 +187,16 @@ describe('GoalsXpAnalyticsService', () => {
       const res = await service.getGoalsXp({});
 
       expect(res.points).toEqual([
+        expect.objectContaining({
+          periodStart: '2026-04-01',
+          goalXp: null,
+          hasGoal: false,
+        }),
+        expect.objectContaining({
+          periodStart: '2026-05-01',
+          goalXp: null,
+          hasGoal: false,
+        }),
         expect.objectContaining({
           periodStart: '2026-06-01',
           goalXp: null,
@@ -166,6 +242,8 @@ describe('GoalsXpAnalyticsService', () => {
       const res = await service.getGoalsXp({});
 
       expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2026-04-01',
+        '2026-05-01',
         '2026-06-01',
         '2026-07-01',
         '2026-08-01',
@@ -176,10 +254,14 @@ describe('GoalsXpAnalyticsService', () => {
         false,
         false,
         false,
+        false,
+        false,
         true,
         true,
       ]);
       expect(res.points.map((p) => p.inProgress)).toEqual([
+        false,
+        false,
         false,
         false,
         true,
@@ -212,6 +294,8 @@ describe('GoalsXpAnalyticsService', () => {
     it("does not extend the series when no goal is set past today's period", async () => {
       const res = await service.getGoalsXp({});
       expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2026-04-01',
+        '2026-05-01',
         '2026-06-01',
         '2026-07-01',
         '2026-08-01',

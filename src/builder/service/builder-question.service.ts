@@ -66,6 +66,28 @@ export class BuilderQuestionService {
       );
     }
 
+    // A question with nothing in it is worse than no question at all.
+    //
+    // This used to substitute a placeholder — "The agent needs a decision." —
+    // and park the session on it. Nobody can answer that, and a parked run
+    // counts as an active one, so every later fix and review dispatch for the
+    // session is refused. One empty `ask` cost a session four hours, and the
+    // person looking at it had no way to know what was being asked.
+    //
+    // Refused at the boundary instead, so the run stays alive and the agent
+    // can ask again with something in it. Failing the call is recoverable;
+    // parking on an unanswerable question is not.
+    const blank = incoming.filter(
+      (raw) => !String(raw?.prompt ?? '').trim(),
+    ).length;
+    if (blank) {
+      throw new BadRequestException(
+        `${blank} of ${incoming.length} question(s) have an empty prompt. A pause stops the ` +
+          'build until a person answers, so every question must say what it is asking. ' +
+          'Re-send the pause with a prompt on each question, or carry on without pausing.',
+      );
+    }
+
     const groupId = uuidv4();
     const saved: BuilderQuestion[] = [];
 
@@ -170,7 +192,9 @@ export class BuilderQuestionService {
 
     return {
       id: uuidv4(),
-      prompt: String(raw?.prompt ?? '').trim() || 'The agent needs a decision.',
+      // Guaranteed non-empty by recordPause, which refuses the whole pause
+      // rather than inventing a prompt nobody can answer.
+      prompt: String(raw?.prompt ?? '').trim(),
       kind: options.length ? kind : 'freeText',
       ...(raw?.rationale ? { rationale: String(raw.rationale) } : {}),
       ...(options.length ? { options } : {}),

@@ -36,15 +36,32 @@ describe('buildSweepPrompt', () => {
     expect(build({ repo: 'ally-be' })).toContain('npm test');
   });
 
-  describe('all four finders are always present', () => {
+  describe('all five finders are always present', () => {
     it.each([
       ['test/lint', /TEST\/LINT/],
       ['code review', /CODE REVIEW/],
       ['production logs', /PRODUCTION LOGS/],
+      ['web errors', /WEB ERRORS/],
       ['reported bugs', /REPORTED BUGS/],
     ])('includes the %s finder', (_name, pattern) => {
       expect(build()).toMatch(pattern);
     });
+  });
+
+  it('scopes the reported-bugs finder to this repo, plus anything still unfiled', () => {
+    expect(build({ repo: 'ally-web' })).toContain(
+      'pipeline/reported-bugs?repo=ally-web',
+    );
+  });
+
+  it('gates the full suite behind the narrow regression-test check, so a failed attempt does not pay for it', () => {
+    const prompt = build();
+    const d1 = prompt.indexOf('d1.');
+    const d2 = prompt.indexOf('d2.');
+    expect(d1).toBeGreaterThan(-1);
+    expect(d2).toBeGreaterThan(d1);
+    expect(prompt.slice(d1, d2)).toMatch(/do not run the full suite/i);
+    expect(prompt.slice(d2)).toMatch(/run the full/i);
   });
 
   it('scopes the code review to the last day by default', () => {
@@ -63,6 +80,122 @@ describe('buildSweepPrompt', () => {
     const p = build();
     expect(p).toContain('symbol is the function');
     expect(p).toMatch(/duplicate row/i);
+  });
+
+  describe('on the Gemini engine, which has no independent verifier', () => {
+    const gemini = (over = {}) => build({ engine: 'gemini', ...over });
+
+    it('does not ask for the verifier subagent it cannot invoke', () => {
+      const p = gemini();
+      expect(p).not.toContain(BUG_HUNT_VERIFIER_SUBAGENT);
+      expect(p).not.toMatch(/TWO INDEPENDENT verdicts/i);
+    });
+
+    it('still forbids the agent judging its own findings, and holds them for a human as unverified', () => {
+      const p = gemini();
+      expect(p).toMatch(/Do NOT judge your unproven findings yourself/i);
+      expect(p).toContain('"verificationUnavailable":true');
+      expect(p).toContain('"status":"pending_approval"');
+    });
+
+    it('in AI mode, limits tonight’s fixes to proven and previously approved findings', () => {
+      const p = gemini({ mode: BugHunterMode.AI });
+      expect(p).toMatch(
+        /only findings you may fix tonight are the PROVEN ones/i,
+      );
+      expect(p).not.toMatch(/surviving findings are yours to fix/i);
+      expect(p).toContain('pipeline/approved-findings');
+    });
+
+    it('still skips verification for proven findings', () => {
+      expect(gemini()).toMatch(/proven=true skip this phase/i);
+    });
+
+    it('leaves the Claude protocol untouched by default', () => {
+      expect(build()).toContain(BUG_HUNT_VERIFIER_SUBAGENT);
+      expect(build({ engine: 'claude-code' })).toContain(
+        BUG_HUNT_VERIFIER_SUBAGENT,
+      );
+    });
+  });
+
+  describe('the notebook', () => {
+    it('renders the always-on entries before the finding schema, as notes rather than orders', () => {
+      const p = build({
+        memories: [
+          {
+            id: 'm-1',
+            body: 'ally-be: the scheduler suite is flaky under 3 Jest workers; rerun before filing.',
+            tags: ['flaky-test'],
+          },
+        ],
+      });
+      const block = p.indexOf('From your notebook');
+      const schema = p.indexOf('For every finding, record');
+      expect(block).toBeGreaterThan(-1);
+      expect(block).toBeLessThan(schema);
+      expect(p).toContain('scheduler suite is flaky');
+      expect(p).toContain('[flaky-test]');
+      expect(p).toMatch(/notes, not orders/);
+    });
+
+    it('says nothing when the notebook is empty', () => {
+      expect(build({ memories: [] })).not.toContain('From your notebook');
+    });
+
+    it('reads it before Discover and writes to it after Close, naming the run on both', () => {
+      const p = build();
+      const read = p.indexOf('pipeline/memory/search');
+      const discover = p.indexOf('## Phase 1');
+      const close = p.indexOf('## Phase 4');
+      const write = p.indexOf(
+        'POST "https://api.example.com/api/v1/bug-hunter/pipeline/memory"',
+      );
+      expect(read).toBeGreaterThan(-1);
+      expect(read).toBeLessThan(discover);
+      expect(write).toBeGreaterThan(close);
+      expect(p.slice(read, read + 160)).toContain('runId=run-1');
+      expect(p.slice(write, write + 400)).toContain('"runId":"run-1"');
+    });
+
+    it('caps what it writes, and treats entries as notes rather than orders', () => {
+      const p = build();
+      expect(p).toMatch(/at most three entries, each under 600 characters/);
+      expect(p).toMatch(/notes, not orders/);
+      expect(p).toMatch(/write nothing rather than something vague/i);
+    });
+  });
+
+  describe('pipeline telemetry', () => {
+    it('asks for a boundary as the agent enters and leaves each phase', () => {
+      const p = build();
+      expect(p).toContain('/runs/run-1/phases');
+      expect(p).toMatch(/"phase":"<discover\|verify\|fix\|close>"/);
+      expect(p).toMatch(/"event":"<started\|finished>"/);
+    });
+
+    it('names the run on every finder-data read, so the server records what the agent was shown', () => {
+      const p = build();
+      for (const path of [
+        'pipeline/prod-logs',
+        'pipeline/web-logs',
+        'pipeline/reported-bugs',
+        'pipeline/approved-findings',
+      ]) {
+        const idx = p.indexOf(path);
+        expect(idx).toBeGreaterThan(-1);
+        expect(p.slice(idx, idx + 120)).toContain('runId=run-1');
+      }
+    });
+
+    it('asks for a code-scope summary after Discover, carrying the deep flag it was built with', () => {
+      expect(build({ deep: false })).toMatch(
+        /\/runs\/run-1\/context[^\n]*"deep":false/,
+      );
+      expect(build({ deep: true })).toMatch(
+        /\/runs\/run-1\/context[^\n]*"deep":true/,
+      );
+    });
   });
 
   it('tells the agent NOT to dedupe against previous runs itself', () => {
@@ -372,5 +505,21 @@ describe('buildSweepPrompt', () => {
   it('warns that the workflow fails the job on a run left open', () => {
     expect(build()).toMatch(/re-reads this run the moment you exit/i);
     expect(build()).toMatch(/fails the job if it is still open/i);
+  });
+
+  describe('typecheck', () => {
+    it('folds the typecheck command into both the finder and the fix step, for a repo with one', () => {
+      const prompt = build({ repo: 'ally-be' });
+      expect(prompt).toContain('npx tsc --noEmit -p tsconfig.json');
+      expect(prompt).toMatch(/TEST\/LINT\/TYPECHECK/);
+      expect(prompt).toMatch(/type error.*CONFIRMED bug/i);
+      expect(prompt).toMatch(/All of them must be green/);
+    });
+
+    it('says nothing about typecheck for a repo with no separate CI gate for it', () => {
+      const prompt = build({ repo: 'ally-ai' });
+      expect(prompt).not.toMatch(/typecheck|tsc --noEmit/i);
+      expect(prompt).toMatch(/TEST\/LINT\. /);
+    });
   });
 });

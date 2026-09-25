@@ -38,6 +38,9 @@ import {
 } from '../dto/create-review.dto';
 import { GetScenarioSessionReviewResponseDto } from '../dto/get-review-response.dto';
 import { ScenarioSessionRecordingService } from 'src/learn/service/scenario-session-recording.service';
+import { PostHog } from 'posthog-node';
+import { ADMIN_ANALYTICS_EVENTS } from 'src/posthog/admin-analytics.constants';
+import { userDistinctId } from 'src/posthog/posthog.util';
 
 @Injectable()
 export class ScenarioSessionReviewService extends BaseReviewService<
@@ -59,8 +62,33 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     protected readonly reviewReadStatusRepository: ScenarioSessionReviewReadStatusRepository,
     protected readonly permissionValidator: PermissionValidator,
     private readonly scenarioSessionRecordingService: ScenarioSessionRecordingService,
+    private readonly posthog: PostHog,
   ) {
     super();
+  }
+
+  /**
+   * Both review events, captured on whoever performed the action — the learner
+   * for `review.submitted`, the reviewer for `review.completed`. Wholly guarded
+   * — analytics must never fail a submission or a reviewer's read.
+   */
+  private captureReviewEvent(
+    userId: number,
+    event: string,
+    reviewId: string,
+    properties: Record<string, unknown>,
+  ): void {
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(userId),
+        event,
+        properties: { review_id: reviewId, ...properties },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${event} in PostHog for reviewId ${reviewId}: ${error}`,
+      );
+    }
   }
 
   async createReview(
@@ -97,6 +125,16 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       tenantId: tenantId,
     });
     const savedReview = await this.reviewRepository.save(review);
+
+    this.captureReviewEvent(
+      userId,
+      ADMIN_ANALYTICS_EVENTS.REVIEW_SUBMITTED,
+      savedReview.id,
+      {
+        scenario_session_id: createReviewDto.scenarioSessionId,
+        org_id: tenantId,
+      },
+    );
 
     return { id: savedReview.id };
   }
@@ -339,14 +377,46 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     return data;
   }
 
+  /**
+   * Marking a submitted session read is the reviewer's terminal action — it is
+   * permission-gated to reviewers, clears the review from their unread count
+   * and flips `isReviewed` in the list — so `review.completed` fires here.
+   *
+   * `super.markReviewAsRead` upserts unconditionally on every call, including
+   * a re-view of an already-read session, so the already-read check runs
+   * first and gates the capture — otherwise every re-view would inflate
+   * `review.completed` counts on the funnel for a review that was already
+   * the reviewer's terminal action once.
+   *
+   * `score_given` is in the spec but has no source: reviews in this model carry
+   * a note, threaded comments and reactions, and no numeric grade anywhere on
+   * the row. It is left off the event rather than filled with a stand-in that
+   * would read as a real score on a dashboard. Send it from here the moment a
+   * score column exists, or drop it from the spec.
+   */
   async markReviewAsRead(reviewId: string) {
-    const result = await super.markReviewAsRead(reviewId);
     const userId = Number(ExecutionManager.getUserId());
+    const alreadyRead = (
+      await this.reviewReadStatusRepository.getReadReviewIds(userId, [reviewId])
+    ).has(reviewId);
+
+    const result = await super.markReviewAsRead(reviewId);
     this.logger.info({
       event: 'simulation_review_viewed',
       reviewId,
       userId,
     });
+    if (!alreadyRead) {
+      this.captureReviewEvent(
+        userId,
+        ADMIN_ANALYTICS_EVENTS.REVIEW_COMPLETED,
+        reviewId,
+        {
+          reviewer_id: String(userId),
+          org_id: ExecutionManager.getTenantId(),
+        },
+      );
+    }
     return result;
   }
 

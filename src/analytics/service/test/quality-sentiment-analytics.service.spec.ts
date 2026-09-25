@@ -26,8 +26,20 @@ const row = (
 
 describe('QualitySentimentAnalyticsService', () => {
   let service: QualitySentimentAnalyticsService;
+  let module: TestingModule;
 
-  const setup = async (rows: QualitySentimentBucketRow[] = []) => {
+  let qualityIndexService: { getQualityIndexOverall: jest.Mock };
+
+  const setup = async (
+    rows: QualitySentimentBucketRow[] = [],
+    overallIndex: {
+      index: number | null;
+      contributions?: Record<string, number>;
+      raw?: Record<string, number>;
+      n?: Record<string, number>;
+      missing?: string[];
+    } = { index: null },
+  ) => {
     // Stand-in for the real weighted-blend index: these tests are about the
     // SERVICE's gap-fill / pairing / correlation behaviour, not about how the
     // index itself is computed (that lives in
@@ -46,7 +58,17 @@ describe('QualitySentimentAnalyticsService', () => {
         missing: [],
       }));
 
-    const module: TestingModule = await Test.createTestingModule({
+    qualityIndexService = {
+      getQualityIndexOverall: jest.fn().mockResolvedValue({
+        contributions: {},
+        raw: {},
+        n: {},
+        missing: [],
+        ...overallIndex,
+      }),
+    };
+
+    module = await Test.createTestingModule({
       providers: [
         QualitySentimentAnalyticsService,
         {
@@ -67,6 +89,7 @@ describe('QualitySentimentAnalyticsService', () => {
               points: indexPoints,
               coverage: [],
             }),
+            ...qualityIndexService,
           },
         },
       ],
@@ -204,6 +227,56 @@ describe('QualitySentimentAnalyticsService', () => {
     });
   });
 
+  describe('overallQualityIndex', () => {
+    it('is sourced from QualityIndexAnalyticsService.getQualityIndexOverall, not from the bucketed points', async () => {
+      await setup([row({ bucket: '2024-05-01', avgCompositeScore: 40 })], {
+        index: 83.5,
+      });
+      const result = await monthly();
+
+      expect(result.overallQualityIndex).toBe(83.5);
+      expect(qualityIndexService.getQualityIndexOverall).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        undefined,
+      );
+    });
+
+    it('is null when no dimension had data over the whole window', async () => {
+      await setup([], { index: null });
+      const result = await monthly();
+
+      expect(result.overallQualityIndex).toBeNull();
+    });
+
+    it('is a DIFFERENT figure from overallCompositeScore (raw judge score vs. the index blend)', async () => {
+      // The composite score is re-weighted from the raw session rows (90 vs
+      // 50 across differently-sized buckets -> 86, see the whole-window-figures
+      // tests above); the index blend is an independent number computed by the
+      // stubbed getQualityIndexOverall and must NOT be conflated with it.
+      await setup(
+        [
+          row({
+            bucket: '2024-04-01',
+            avgCompositeScore: 90,
+            evaluatedSessions: 90,
+          }),
+          row({
+            bucket: '2024-05-01',
+            avgCompositeScore: 50,
+            evaluatedSessions: 10,
+          }),
+        ],
+        { index: 61.2 },
+      );
+      const result = await monthly();
+
+      expect(result.overallCompositeScore).toBeCloseTo(86, 1);
+      expect(result.overallQualityIndex).toBe(61.2);
+      expect(result.overallQualityIndex).not.toBe(result.overallCompositeScore);
+    });
+  });
+
   describe('the correlation', () => {
     it('is suppressed below three paired buckets', async () => {
       await setup([
@@ -280,6 +353,19 @@ describe('QualitySentimentAnalyticsService', () => {
 
       expect(result.pairedBuckets).toBe(0);
       expect(result.correlation).toBeNull();
+    });
+  });
+
+  describe(`'all' time range queries`, () => {
+    it(`fetches the data floor when 'from' is also provided`, async () => {
+      await setup([]);
+      const repo = module.get(QualitySentimentAnalyticsRepository);
+      await service.getQualitySentiment({
+        range: 'all',
+        from: '2024-06-01',
+        to: '2024-06-12',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
     });
   });
 });

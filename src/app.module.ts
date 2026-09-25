@@ -47,6 +47,7 @@ import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { TrackModule } from './track/track.module';
+import { CourseDiscussionModule } from './course-discussion/course-discussion.module';
 import { ProgressModule } from './progress/progress.module';
 import { CohortModule } from './cohort/cohort.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
@@ -67,6 +68,7 @@ import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
+import { PostHogModule } from './posthog/posthog.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
@@ -80,6 +82,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     }),
     AppConfigModule,
     DatabaseModule,
+    PostHogModule,
     AuthModule,
     ChatModule,
     HealthModule,
@@ -110,6 +113,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     ScenarioPathModule,
     CaseModule,
     TrackModule,
+    CourseDiscussionModule,
     CohortModule,
     LanguageModule,
     ScenarioSessionReviewModule,

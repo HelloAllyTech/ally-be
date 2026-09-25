@@ -45,6 +45,22 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
    * plain status check keeps seeing a blocker that nothing will ever clear,
    * and every later fix and review dispatch is refused in silence.
    */
+  /**
+   * Is this the newest run of its session?
+   *
+   * Asked when a run settles a second time — the agent's claim first, the
+   * runner's evidence after it — so that a later correction can only touch a
+   * session this run is still the current owner of.
+   */
+  async isLatestForSession(runId: string, sessionId: string): Promise<boolean> {
+    const latest = await this.findOne({
+      where: { sessionId },
+      order: { createdAt: 'DESC' },
+      select: ['id'],
+    });
+    return latest?.id === runId;
+  }
+
   async countBlockingRuns(sessionId: string): Promise<number> {
     return this.createQueryBuilder('run')
       .where('run.sessionId = :sessionId', { sessionId })

@@ -249,6 +249,36 @@ jobs:
               | jq -r '.status // "unknown"')
             if [ "$STATUS" = "fixing" ] || [ "$STATUS" = "queued" ]; then
               echo "Gemini left the finding '$STATUS' without reporting an outcome — falling back to Claude Code (${{ steps.models.outputs.escalation_model }}) for one retry."
+
+              # Make the fallback visible on the admin timeline, not just this
+              # job's log — without this, a Claude retry that goes on to
+              # succeed leaves no trace that Gemini ran first and got stuck.
+              # There is no structured reason to report: confirmed in
+              # gemini-cli-core's nonInteractiveCli.js that `--output-format
+              # json` (non-streaming, what this workflow uses) only reacts to
+              # a detected loop when a StreamJsonFormatter is active
+              # (`--output-format stream-json`); in plain `json` mode the
+              # GeminiEventType.LoopDetected event is silently dropped and the
+              # CLI exits 0 with whatever partial text it had already
+              # generated, exactly as if the turn had ended normally. So the
+              # operational signal checked above (finding still 'fixing' /
+              # 'queued' with no error) is the only evidence available —
+              # attaching Gemini's last partial response text gives a reader
+              # something to look at without overclaiming it names a cause.
+              EXCERPT=$(jq -r '.response // empty' /tmp/claude-result.json 2>/dev/null | tail -c 400)
+              REPORT_BODY=$(jq -n \
+                --arg repo "${{ inputs.repo }}" \
+                --arg findingId "${{ inputs.finding_id }}" \
+                --arg summary "Gemini's session left the bug '$STATUS' without reporting an outcome — most likely its own loop-detector silently stopping a thrashing turn (gemini-cli-core gives no structured signal for this in --output-format json, so it can't be confirmed beyond the finding being left '$STATUS'). Retrying automatically with Claude Code (${{ steps.models.outputs.escalation_model }})." \
+                --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --arg excerpt "$EXCERPT" \
+                '{repo: $repo, stage: "fix_attempt", summary: $summary, findingId: $findingId, payload: {runUrl: $runUrl, fallback: "gemini-to-claude", geminiLastResponseExcerpt: $excerpt}}')
+              curl -sS -X POST \
+                -H "Content-Type: application/json" \
+                -H "x-api-key: $ALLY_BE_API_KEY" \
+                "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/report" \
+                -d "$REPORT_BODY" || true
+
               # Whatever Gemini left behind (uncommitted edits, a checked-out
               # branch) is discarded — the fix protocol's own contract is
               # already "anything not pushed is gone with the runner", so a
@@ -379,7 +409,17 @@ jobs:
           fi
 
           echo "::error::The fix session ended while the finding was still '$STATUS' — it stopped mid-protocol without reporting an outcome."
-          SUMMARY="The fix session ended while the bug was still '$STATUS' — the agent stopped mid-protocol without opening a PR, escalating, or dismissing. Anything it had not pushed is gone with the runner. Start a new session to retry."
+          # A gemini-engine run that fell back to Claude above (see "Run the
+          # fix session") overwrote /tmp/actual-engine.txt with "claude-code"
+          # — reaching this step in THAT case means the fallback itself also
+          # failed to reach a terminal outcome, which is worth saying plainly
+          # rather than folding into the fully generic message below.
+          ACTUAL_ENGINE=$(cat /tmp/actual-engine.txt 2>/dev/null || echo "${{ steps.models.outputs.engine }}")
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ] && [ "$ACTUAL_ENGINE" = "claude-code" ]; then
+            SUMMARY="Gemini's session ended without reporting an outcome, and the automatic Claude Code fallback (${{ steps.models.outputs.escalation_model }}) then also ended while the bug was still '$STATUS' without opening a PR, escalating, or dismissing. Anything not pushed is gone with the runner. Start a new session to retry."
+          else
+            SUMMARY="The fix session ended while the bug was still '$STATUS' — the agent stopped mid-protocol without opening a PR, escalating, or dismissing. Anything it had not pushed is gone with the runner. Start a new session to retry."
+          fi
           # Before the close, or appendEvent rejects it: a closed run refuses
           # further events.
           curl -sS -X POST \

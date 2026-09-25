@@ -656,6 +656,28 @@ export class BuilderController {
     return this.metricsService.scoreboard(Number(windowDays) || 30);
   }
 
+  /**
+   * The read path for `builder_attempts`.
+   *
+   * The table has recorded an arm and a reward on every coding attempt since
+   * 2026-09-15 with nothing querying it, so the dataset built to settle
+   * "can a build start on a cheaper tier" could not answer it — and prod RDS
+   * is not publicly reachable, so the rows could not be inspected by hand
+   * either. This is the whole of the read path.
+   */
+  @Get('model-routing')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Per model and build size — first-attempt pass rate, escalation, ' +
+      'what shipped and what it cost',
+  })
+  modelRouting(@Query('windowDays') windowDays?: string) {
+    return this.metricsService.modelRouting(Number(windowDays) || 30);
+  }
+
   @Get('pipeline-health')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],

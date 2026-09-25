@@ -29,6 +29,24 @@ const readySession = (overrides: Record<string, any> = {}) => ({
 });
 
 describe('BuilderBuildService', () => {
+  // Unrestricted for this whole file.
+  //
+  // Production runs an engine ALLOWLIST (see builderAllowedEngines), which
+  // overrules anything not on it wherever it came from. The chain it overrules
+  // is still what these tests exist to cover — sizing, the escalation ladder
+  // and, above all, never handing one engine another engine's model. That
+  // filter is the safety net if the list is ever widened, so it is tested with
+  // the list lifted rather than deleted with it in place.
+  // `builder-engine-invocation.spec.ts` covers the list itself.
+  const allowedBefore = process.env.BUILDER_ENGINE_ALLOWED;
+  beforeAll(() => {
+    process.env.BUILDER_ENGINE_ALLOWED = '';
+  });
+  afterAll(() => {
+    if (allowedBefore === undefined) delete process.env.BUILDER_ENGINE_ALLOWED;
+    else process.env.BUILDER_ENGINE_ALLOWED = allowedBefore;
+  });
+
   let service: BuilderBuildService;
   let github: {
     isConfigured: boolean;
@@ -54,9 +72,14 @@ describe('BuilderBuildService', () => {
     listRecent: jest.Mock;
     countBlockingRuns: jest.Mock;
     findLatest: jest.Mock;
+    isLatestForSession: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
-  let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
+  let pullRequestRepository: {
+    increment: jest.Mock;
+    findOne: jest.Mock;
+    count: jest.Mock;
+  };
   let questionRepository: { isGroupComplete: jest.Mock; update: jest.Mock };
   let settingsService: { get: jest.Mock };
   let notificationService: {
@@ -106,6 +129,7 @@ describe('BuilderBuildService', () => {
       // resume exists, so this is a query rather than a status filter.
       countBlockingRuns: jest.fn().mockResolvedValue(0),
       findLatest: jest.fn().mockResolvedValue(null),
+      isLatestForSession: jest.fn().mockResolvedValue(false),
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
@@ -114,6 +138,7 @@ describe('BuilderBuildService', () => {
     pullRequestRepository = {
       increment: jest.fn(),
       findOne: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
     };
     questionRepository = {
       isGroupComplete: jest.fn().mockResolvedValue(true),
@@ -226,6 +251,73 @@ describe('BuilderBuildService', () => {
       expect(models.effort).toBe('low');
       expect(models.plannerMaxTurns).toBe(20);
       expect(models.budgets.plan).toBe(1);
+    });
+
+    /**
+     * The profile's per-phase ceilings are absolute and they add up — LARGE is
+     * $10 + $20 + $6 + $5, one pass each, with up to four coding attempts
+     * allowed. A session with a $10 ceiling was dispatched with permission to
+     * spend all of it before anything asked it to stop, and a run did exactly
+     * that: $41.92 against a $10.00 ceiling, and the banner said so only once
+     * the money was gone. The boundary check cannot catch it, because the
+     * overshoot happens inside a phase and the check runs between them.
+     */
+    it('never hands a phase more than the session has left', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 14 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [
+              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
+              { repo: 'ally-web', changesMd: 'x'.repeat(2000) },
+            ],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({
+          repos: ['ally-be', 'ally-web'],
+          budgetUsd: '10',
+          totalCostUsd: '2.5',
+        }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      expect(models.size).toBe('large');
+      // $7.50 left, so every phase is capped there — not divided four ways.
+      // The phases are sequential and most runs never reach the last one, so
+      // splitting the headroom would starve CODE on money that could have
+      // covered it.
+      expect(models.budgets).toEqual({
+        plan: 7.5,
+        code: 7.5,
+        verify: 6,
+        finalise: 5,
+      });
+    });
+
+    /** Zero has meant "uncapped" everywhere since the column was added. */
+    it('leaves the profile alone when the session has no ceiling', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: [{ id: 'R1' }, { id: 'R2' }],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ budgetUsd: null, totalCostUsd: '99' }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().budgets).toEqual({
+        plan: 1,
+        code: 8,
+        verify: 3,
+        finalise: 3,
+      });
     });
 
     /**
@@ -591,6 +683,13 @@ describe('BuilderBuildService', () => {
         enabled: true,
         maxConcurrentBuilds: 3,
         defaultEngine: 'gemini',
+        // A model this engine can actually run. Without one, every tier falls
+        // through to the unfiltered Anthropic default at the end of the chain
+        // and the dispatch is refused — correctly, since that build could only
+        // have exited on its first phase. This test is about which ENGINE is
+        // resolved, so it should not also be asserting that a Gemini build with
+        // no Gemini model configured is allowed to start.
+        defaultModel: 'gemini-2.5-pro',
       });
 
       await service.startBuild(readySession({ engine: null }) as any, 1);
@@ -598,16 +697,384 @@ describe('BuilderBuildService', () => {
       expect(dispatchedEngine()).toBe('gemini');
     });
 
-    it('falls all the way back to claude-code when nothing at all is configured', async () => {
+    it('falls all the way back to gemini when nothing at all is configured', async () => {
       settingsService.get.mockResolvedValue({
         enabled: true,
         maxConcurrentBuilds: 3,
         defaultEngine: null,
+        // Same reason as the test above: this one is about which ENGINE is
+        // resolved, and the shared fixtures still mock Anthropic models so the
+        // cross-engine routing tests below have something to route. Without a
+        // Gemini model to land on, assertModelsMatchEngine refuses the
+        // dispatch before the engine assertion is ever reached.
+        defaultModel: 'gemini-2.5-pro',
       });
 
       await service.startBuild(readySession({ engine: null }) as any, 1);
 
-      expect(dispatchedEngine()).toBe('claude-code');
+      expect(dispatchedEngine()).toBe('gemini');
+    });
+  });
+
+  /**
+   * A tier can reach a config default belonging to a different engine than the
+   * one about to be handed it. The first Gemini-engine build hit two of these
+   * at once, back when every `config.builder` default was an Anthropic id;
+   * these fixtures keep mocking Anthropic defaults so the cross-engine case
+   * stays covered now that the real defaults are Gemini.
+   */
+  describe('model routing across engines', () => {
+    const dispatchedModels = () =>
+      JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
+      );
+
+    const geminiSettings = (extra: Record<string, unknown> = {}) => ({
+      enabled: true,
+      maxConcurrentBuilds: 3,
+      defaultEngine: 'gemini',
+      defaultModel: 'gemini-2.5-pro',
+      ...extra,
+    });
+
+    const smallPrd = {
+      draft: {
+        requirements: [{ id: 'R1' }, { id: 'R2' }],
+        technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+      },
+    };
+
+    const isClaude = (model: unknown) =>
+      String(model ?? '').startsWith('claude-');
+
+    /**
+     * The inverse, and the one that actually bit: a session pins its engine
+     * when it is created, while the models come from settings an admin can
+     * change afterwards. Switching Builder's default engine to Gemini left
+     * every earlier session pinned to `claude-code` resolving its coder to
+     * `settings.coderModel` — `gemini-2.5-pro` — because the engine filter was
+     * applied to the config defaults and to nothing else. Claude Code exits
+     * immediately on a model it does not have, on every phase, having written
+     * nothing.
+     */
+    it('never hands a Gemini model to a Claude run', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+        coderModel: 'gemini-2.5-pro',
+        plannerModel: 'gemini-2.5-pro',
+        verifierModel: 'gemini-2.5-pro',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      // The session was created before the switch, so it carries claude-code.
+      await service.startBuild(
+        readySession({ engine: 'claude-code', model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      const every = [
+        models.planner,
+        models.coder,
+        models.verifier,
+        ...models.coderLadder,
+      ];
+      expect(
+        every.filter((m: unknown) => String(m).startsWith('gemini-')),
+      ).toEqual([]);
+    });
+
+    /**
+     * A model the session itself carries is as capable of naming the wrong
+     * engine as a setting is — `session.model` is written by an earlier
+     * dispatch and outlives any settings change.
+     */
+    it("does not let the session's own pinned model escape the engine", async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: 'claude-code', model: 'gemini-2.5-pro' }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().coder).not.toBe('gemini-2.5-pro');
+    });
+
+    /**
+     * An explicit per-run override is NOT filtered — silently discarding what
+     * an admin typed is worse than refusing — so the dispatch refuses instead,
+     * naming the model and the engine. Before this it cost $0.17 and four
+     * remediation attempts to find out.
+     */
+    it('refuses a dispatch whose override cannot run on this engine', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'claude-code',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await expect(
+        service.startBuild(readySession({ engine: 'claude-code' }) as any, 1, {
+          model: 'gemini-2.5-pro',
+        } as any),
+      ).rejects.toThrow(/cannot use gemini-2\.5-pro/i);
+
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('never hands a Claude model to a Gemini run', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      const every = [
+        models.planner,
+        models.coder,
+        models.verifier,
+        ...models.coderLadder,
+      ];
+      expect(every.filter(isClaude)).toEqual([]);
+    });
+
+    /**
+     * The SMALL profile plans on the `mechanical` tier, which read
+     * `config.mechanicalModel` directly — so it ignored the admin's settings
+     * entirely and every small Gemini build planned on `claude-haiku-4-5`.
+     */
+    it("does not let a small build's mechanical planner tier escape the engine", async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('gemini-2.5-pro');
+    });
+
+    /**
+     * `plannerModel` had no `defaultModel` rung at all, so an admin who set
+     * one default model and no per-tier overrides still got Opus planning a
+     * Gemini build.
+     */
+    it('falls a planner back to the configured default model, not the Claude one', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 12 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [{ repo: 'ally-be', changesMd: 'x'.repeat(4000) }],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('gemini-2.5-pro');
+    });
+
+    it('routes the verifier by the same rule', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(isClaude(dispatchedModels().verifier)).toBe(false);
+    });
+
+    /**
+     * The negative half. Nothing above should change what a Claude build gets
+     * — the config defaults are exactly right for it, and the escalation
+     * ladder's tiers are the whole point of that profile.
+     */
+    it('leaves a claude-code run on its configured tiers', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'claude-code',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      expect(models.coder).toBe('claude-sonnet-5');
+      expect(models.planner).toBe('claude-haiku-4-5');
+      expect(models.verifier).toBe('claude-opus-5');
+    });
+
+    /**
+     * An engine this code has never heard of must not be silently stripped
+     * back to nothing. Unknown model ids pass through, so adding a provider is
+     * a settings change rather than a deploy.
+     */
+    it('passes through model ids it cannot attribute to any engine', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'codex',
+        defaultModel: 'o4-mini',
+      });
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().coder).toBe('o4-mini');
+    });
+  });
+
+  /**
+   * Stopping a build used to be a one-way door: the session kept its PRD and
+   * its branch, and the API refused every attempt to build from it again.
+   */
+  describe('which states a build can start from', () => {
+    const startFrom = (status: BuilderSessionStatus) =>
+      service.startBuild(readySession({ status }) as any, 1);
+
+    it('starts again after a stop', async () => {
+      await expect(
+        startFrom(BuilderSessionStatus.CANCELLED),
+      ).resolves.toBeDefined();
+    });
+
+    it('starts again after a failure', async () => {
+      await expect(
+        startFrom(BuilderSessionStatus.FAILED),
+      ).resolves.toBeDefined();
+    });
+
+    /**
+     * Finished work stays finished. Its pull requests are open or merged, and
+     * a second build against the same PRD opens a competing set.
+     */
+    it('refuses to rebuild finished work', async () => {
+      pullRequestRepository.count.mockResolvedValue(2);
+
+      await expect(startFrom(BuilderSessionStatus.COMPLETED)).rejects.toThrow(
+        /can only start from a ready PRD/,
+      );
+    });
+
+    /**
+     * "A session with no pull requests has shipped nothing, whatever its
+     * status" — getDeliveryState's own words. A run that claimed done and left
+     * an empty branch settles the session green, and that must not be a dead
+     * end.
+     */
+    it('rebuilds a completed session that shipped nothing', async () => {
+      pullRequestRepository.count.mockResolvedValue(0);
+
+      await expect(
+        startFrom(BuilderSessionStatus.COMPLETED),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses while a build is already running', async () => {
+      await expect(startFrom(BuilderSessionStatus.BUILDING)).rejects.toThrow(
+        /can only start from a ready PRD/,
+      );
+    });
+  });
+
+  /**
+   * A run reports its outcome once — but the runner reports one too, from
+   * evidence, after the agent has finished. When the agent claims done and the
+   * runner then finds no pull request, the second report is the true one.
+   */
+  describe('evidence correcting a success the agent claimed', () => {
+    const settling = (sessionStatus: BuilderSessionStatus, latest = true) => {
+      const run = {
+        id: 'run-1',
+        sessionId: 'session-1',
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        status: sessionStatus,
+      });
+      runRepository.isLatestForSession.mockResolvedValue(latest);
+      return run;
+    };
+
+    it('takes a session back off COMPLETED when its own run then fails', async () => {
+      const run = settling(BuilderSessionStatus.COMPLETED);
+
+      await service.settleRun(
+        run as any,
+        BuilderRunStatus.FAILED,
+        'Work was pushed but no pull request exists.',
+      );
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    /**
+     * The guard this narrows still has to hold: a human pressing stop is not
+     * overruled by a run finishing a moment later.
+     */
+    it('leaves a session a person cancelled alone', async () => {
+      const run = settling(BuilderSessionStatus.CANCELLED);
+
+      await service.settleRun(run as any, BuilderRunStatus.FAILED, 'boom');
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    it('does not let a stale run reopen a session that has moved on', async () => {
+      const run = settling(BuilderSessionStatus.COMPLETED, false);
+
+      await service.settleRun(run as any, BuilderRunStatus.FAILED, 'boom');
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    /**
+     * One direction only. Evidence may correct a claim; a claim may not
+     * overwrite evidence.
+     */
+    it('never turns a failed session green', async () => {
+      const run = settling(BuilderSessionStatus.FAILED);
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.COMPLETED }),
+      );
     });
   });
 

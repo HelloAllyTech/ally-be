@@ -3,11 +3,9 @@ import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { SuccessResponse } from 'src/common/type/common.type';
 import {
-  TRACK_IMAGE_FILE_SIZE_LIMIT,
   TRACK_MEDIA_ALLOWED_CONTENT_TYPES,
-  TRACK_VIDEO_FILE_DURATION_LIMIT,
-  TRACK_VIDEO_FILE_SIZE_LIMIT,
-  TrackMediaKind,
+  TRACK_MEDIA_DURATION_LIMITS,
+  TRACK_MEDIA_SIZE_LIMITS,
 } from '../constants/track.constant';
 import {
   DeleteTrackMediaDto,
@@ -37,22 +35,20 @@ export class TrackMediaService {
       throw new BadRequestException('Invalid file type');
     }
 
-    const sizeLimit =
-      dto.kind === TrackMediaKind.VIDEO
-        ? TRACK_VIDEO_FILE_SIZE_LIMIT
-        : TRACK_IMAGE_FILE_SIZE_LIMIT;
+    const sizeLimit = TRACK_MEDIA_SIZE_LIMITS[dto.kind];
     if (dto.fileSize > sizeLimit) {
       throw new BadRequestException(
         `File size must be less than ${Math.round(sizeLimit / 1024 / 1024)} MB`,
       );
     }
+    const durationLimit = TRACK_MEDIA_DURATION_LIMITS[dto.kind];
     if (
-      dto.kind === TrackMediaKind.VIDEO &&
+      durationLimit !== undefined &&
       dto.duration !== undefined &&
-      dto.duration > TRACK_VIDEO_FILE_DURATION_LIMIT
+      dto.duration > durationLimit
     ) {
       throw new BadRequestException(
-        `Video duration must be less than ${TRACK_VIDEO_FILE_DURATION_LIMIT / 60} minutes`,
+        `Video duration must be less than ${durationLimit / 60} minutes`,
       );
     }
 

@@ -11,6 +11,21 @@ export const BUG_HUNT_MAX_AUTO_MERGES_PER_RUN = 3;
 export const BUG_HUNT_MAX_FIX_ATTEMPTS = 2;
 
 /**
+ * What "genuinely trivial" means for a sweep's auto-merge, in files.
+ *
+ * The sweep prompt has always said a nightly merge must be "a lint/type-only
+ * fix, or a single-file change plus its test", and until
+ * `BugHunterPolicyService` that sentence was the whole enforcement. These two
+ * numbers are the same rule made checkable: one source file plus its test is
+ * two files, and a lint rule fixed across a component folder may touch a few
+ * more but not a refactor's worth. Measured on the PR's file list because
+ * that is what GitHub gives cheaply; line counts would be better and can
+ * replace this when the listing carries them.
+ */
+export const BUG_HUNT_TRIVIAL_FIX_MAX_FILES = 2;
+export const BUG_HUNT_TRIVIAL_LINT_FIX_MAX_FILES = 10;
+
+/**
  * How long the fix agent's escalation-wait loop polls for an admin's answer
  * before giving up for now (see BugFindingService.getAnswerIfReady and the
  * "blocking/synchronous" design in bug-hunt.mjs). A genuinely unbounded wait

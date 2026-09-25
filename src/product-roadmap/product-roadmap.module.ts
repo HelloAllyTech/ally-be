@@ -58,7 +58,9 @@ import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
 import { RoadmapStrategyGoalService } from './service/roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from './service/roadmap-goal-impact.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
+import { RoadmapBuilderSchedulerRegistrationService } from './service/roadmap-builder-scheduler-registration.service';
 import { RoadmapVoteGrantSchedulerRegistrationService } from './service/roadmap-vote-grant-scheduler-registration.service';
+import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
 import { RoadmapCollaborationController } from './controller/roadmap-collaboration.controller';
@@ -180,6 +182,14 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     RoadmapInterviewNoteService,
     RoadmapAiService,
     RoadmapVoteGrantSchedulerRegistrationService,
+    RoadmapBuilderSchedulerRegistrationService,
+    // Classifies a reported bug's repo at intake (RoadmapOpportunityService.create).
+    // Provided directly rather than importing BugHunterModule: it constructs
+    // itself from AppConfigService (global), PromptSharedService and
+    // LlmUsageService — both already imported above — so no heavier module
+    // import is needed, same reasoning as BugFinding being registered as just
+    // the entity above rather than the whole module.
+    BugHunterRepoClassifierService,
     // realtime
     RoadmapGateway,
   ],

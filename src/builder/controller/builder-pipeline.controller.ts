@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Header,
@@ -53,7 +54,11 @@ import {
   BUILDER_REPOS,
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
-import { BuilderRunMode, BuilderRunStatus } from '../enum/builder.enum';
+import {
+  BuilderRunMode,
+  BuilderRunStatus,
+  BuilderStage,
+} from '../enum/builder.enum';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDocument } from '../type/builder-prd.type';
@@ -68,6 +73,7 @@ import {
   CompleteBuilderRunDto,
   UpsertBuilderRepoMapDto,
   RecordBuilderReviewFindingsDto,
+  RecordBuilderRunModelDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -627,6 +633,17 @@ export class BuilderPipelineController {
     return { ok: true };
   }
 
+  @Post('runs/:runId/model')
+  @ApiOperation({ summary: 'Record the engine and model used for this run' })
+  async recordModel(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: RecordBuilderRunModelDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    await this.buildService.recordRunModel(run, dto);
+    return { ok: true };
+  }
+
   @Post('runs/:runId/complete')
   @ApiOperation({ summary: 'Finish the run' })
   async complete(
@@ -654,27 +671,99 @@ export class BuilderPipelineController {
     // request and changed no code — and were recorded FAILED, which poisoned
     // the session and counted toward the breaker. Doing the right thing must
     // not look like failing.
+    // A plan is not an outcome.
+    //
+    // 2026-09-24: the PLANNING agent of a build finished writing its plan and
+    // called `complete_run done`. ally-be accepted it — a planner edits no
+    // files, so `changedNothing` below waved the gate requirement through —
+    // and the run was settled before the coder had started. The pipeline then
+    // carried on regardless, coded, failed, and the reconcile tick logged
+    // "reported done and then failed; correcting session" eight minutes later.
+    // Thirty-four minutes, no pull request.
+    //
+    // `changedNothing` exists for fix runs that correctly find nothing to do,
+    // and that exemption stays. What it cannot mean is "the run is over",
+    // because a planner has by definition touched nothing and is by definition
+    // not finished. So the stage decides: SETUP and PLANNING are never a place
+    // a BUILD legitimately ends, whatever the agent believes.
+    //
+    // Reachable before, likelier now: the reporting protocol moved to MCP
+    // tools, so `complete_run` went from a shell command an agent had to
+    // compose to a typed tool sitting in every phase's tool list. Making a
+    // protocol easier to call correctly makes it easier to call wrongly, and
+    // the guard for that belongs on the server rather than in the phase prompt.
+    // Every mode, not just BUILD. A fix run skips the planner and reports from
+    // CODING; a review reports from REVIEWING. There is no mode whose work is
+    // finished while the rail still reads SETUP or PLANNING, so the rule needs
+    // no exceptions and gets none — one fewer condition to be wrong about, and
+    // it holds for a run whose mode is missing entirely.
+    const session = await this.sessionService.getSession(run.sessionId);
+    const tooEarlyToFinish =
+      session.currentStage === BuilderStage.SETUP ||
+      session.currentStage === BuilderStage.PLANNING;
+
+    if (dto.outcome === 'done' && tooEarlyToFinish) {
+      this.logger.warn(
+        `Builder run ${run.id} reported done from ${session.currentStage} — ` +
+          'refusing the claim; the run continues.',
+      );
+      throw new ConflictException(
+        `A run cannot finish from ${session.currentStage}. If you are the ` +
+          'planning phase: write the plan and stop. The runner starts the ' +
+          'coder itself, and a later phase reports the outcome.',
+      );
+    }
+
     const changedNothing =
       dto.outcome === 'done' &&
       (await this.buildService.touchedNoFiles(run.id));
 
+    // A REVIEW run has no gate to pass, by construction.
+    //
+    // The mode reads a finished diff and writes findings; run-engine.sh never
+    // invokes the test gate for it, so `hasPassingGate` can only ever be false
+    // and the guard above made a correct review impossible to complete. On
+    // 2026-09-23 a review of ally-web#694 reported zero findings, approved the
+    // pull request — and was then refused its own completion twice, failed by
+    // outcome-gate.sh, and recorded as a failed run. A review that did exactly
+    // its job cannot be allowed to read as a failure: BUILD_FAILED is an
+    // announced kind, so the failure reaches Slack as well as the session.
+    //
+    // `changedNothing` was already meant to cover this and does not: it asks
+    // whether files were touched, and a reviewer that writes so much as a
+    // scratch file fails that test while still having nothing to gate.
+    // Naming the mode says what is actually true instead of inferring it.
+    const cannotGate = run.mode === BuilderRunMode.REVIEW;
+
     if (
       dto.outcome === 'done' &&
       !changedNothing &&
+      !cannotGate &&
       !(await this.buildService.hasPassingGate(run.id))
     ) {
+      // Refused, NOT settled. The run may still be working.
+      //
+      // This used to record FAILED, on the assumption that a `done` without a
+      // gate came from an agent about to exit. It also arrives from one that
+      // simply completed too early: a coding phase that called `complete-run`
+      // in the middle of the pipeline, before the gate it is claiming had run
+      // at all. The run then carried on — gate, remediation, finalise, a real
+      // pull request — behind a session already painted red by a claim the
+      // pipeline had itself overtaken.
+      //
+      // Leaving it RUNNING loses nothing. An agent that goes on to quit is
+      // caught by outcome-gate.sh, which settles anything still QUEUED or
+      // RUNNING when the engine exits; an agent that carries on reaches a real
+      // outcome. Either way the verdict comes from what happened rather than
+      // from what was claimed halfway through.
       this.logger.warn(
-        `Builder run ${run.id} reported done with no passing test gate — failing it instead.`,
+        `Builder run ${run.id} reported done with no passing test gate — refusing the claim; the run continues.`,
       );
-      await this.buildService.settleRun(
-        run,
-        BuilderRunStatus.FAILED,
-        'The run reported success but no passing test gate was recorded, so nothing proves the change works.',
+      throw new ConflictException(
+        'No passing gate_result for this run. The test gate has not run yet, ' +
+          'so there is nothing to complete against — carry on, and let the ' +
+          'pipeline reach its own outcome.',
       );
-      return {
-        ok: false,
-        note: 'No passing gate_result for this run. Run the test gate before completing.',
-      };
     }
 
     await this.buildService.settleRun(

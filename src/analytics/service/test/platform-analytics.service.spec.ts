@@ -59,6 +59,15 @@ describe('PlatformAnalyticsService', () => {
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
       getVoiceLatencyByLanguage: jest.fn().mockResolvedValue([]),
+      getVoiceLatencyDataFloor: jest
+        .fn()
+        .mockResolvedValue(new Date('2024-02-10T08:30:00.000Z')),
+      getVoiceLatencyOverall: jest.fn().mockResolvedValue({
+        turns: 0,
+        avgMs: null,
+        p50Ms: null,
+        p95Ms: null,
+      }),
       getVoiceLatencyBySessions: jest
         .fn()
         .mockResolvedValue({ rows: [], total: 0 }),
@@ -391,6 +400,15 @@ describe('PlatformAnalyticsService', () => {
       expect(result.previous).not.toBeNull();
     });
 
+    it('fetches the data floor when range is "all" even with a "from" date', async () => {
+      await service.getOverview({
+        range: 'all',
+        from: '2024-01-01',
+        to: '2024-02-01',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
+    });
+
     it('rejects range=all on an endpoint with no data floor', async () => {
       // Token consumption resolves a calendar window only; answering "all time"
       // there would mean inventing a start date.
@@ -429,6 +447,21 @@ describe('PlatformAnalyticsService', () => {
         'month',
         undefined, // no language filter
       );
+    });
+
+    it('opens range=all on the first turn metric, not a guessed epoch', async () => {
+      await service.getVoiceLatency({ range: 'all', bucket: 'month' });
+
+      expect(repo.getVoiceLatencyDataFloor).toHaveBeenCalledTimes(1);
+      const [start, end, bucket] = repo.getVoiceLatencyByBucket.mock.calls[0];
+      expect(start).toEqual(new Date('2024-02-10T00:00:00.000Z'));
+      expect(end).toEqual(new Date('2024-06-13T00:00:00.000Z'));
+      expect(bucket).toBe('month');
+    });
+
+    it('skips the floor query for a windowed range', async () => {
+      await service.getVoiceLatency({ range: '30d' });
+      expect(repo.getVoiceLatencyDataFloor).not.toHaveBeenCalled();
     });
 
     it('honours an explicit bucket override while keeping the range window', async () => {
@@ -537,6 +570,52 @@ describe('PlatformAnalyticsService', () => {
         new Date('2024-06-13T00:00:00.000Z'),
       );
       expect(result.byLanguage).toEqual(byLanguage);
+    });
+
+    it('includes the whole-window overall KPI figure alongside the trend', async () => {
+      repo.getVoiceLatencyOverall.mockResolvedValue({
+        turns: 5000,
+        avgMs: 4700,
+        p50Ms: 4300,
+        p95Ms: 8100,
+      });
+
+      const result = await service.getVoiceLatency({ range: '90d' });
+
+      expect(result.overall).toEqual({
+        turns: 5000,
+        avgMs: 4700,
+        p50Ms: 4300,
+        p95Ms: 8100,
+      });
+    });
+
+    it('resolves the overall KPI over the SAME window/language as the trend', async () => {
+      await service.getVoiceLatency({ range: '90d', language: 'hi-IN' });
+
+      const [trendStart, trendEnd, , trendLanguage] =
+        repo.getVoiceLatencyByBucket.mock.calls[0];
+      expect(repo.getVoiceLatencyOverall).toHaveBeenCalledWith(
+        trendStart,
+        trendEnd,
+        trendLanguage,
+      );
+      expect(repo.getVoiceLatencyOverall).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'hi-IN',
+      );
+    });
+
+    it('defaults to zero turns and null latencies with nothing in the window', async () => {
+      const result = await service.getVoiceLatency({ range: '30d' });
+
+      expect(result.overall).toEqual({
+        turns: 0,
+        avgMs: null,
+        p50Ms: null,
+        p95Ms: null,
+      });
     });
   });
 

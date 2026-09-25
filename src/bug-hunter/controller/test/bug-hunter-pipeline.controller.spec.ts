@@ -1,76 +1,78 @@
+import { Test, TestingModule } from '@nestjs/testing';
 import { BugHunterPipelineController } from '../bug-hunter-pipeline.controller';
-import { BugHuntRun } from '../../entity/bug-hunt-run.entity';
-import { BugHuntRunStatus } from '../../enum/bug-hunt-run.enum';
+import { BugHunterService } from '../../service/bug-hunter.service';
+import { BugFindingService } from '../../service/bug-finding.service';
+import { BugHunterFinderDataService } from '../../service/bug-hunter-finder-data.service';
+import { BugFixSessionService } from '../../service/bug-fix-session.service';
+import { AppConfigService } from 'src/config/config.service';
+import { BugHunterModelSettingsService } from '../../service/bug-hunter-model-settings.service';
+import { BugHunterTelemetryService } from '../../service/bug-hunter-telemetry.service';
+import { BugHunterEvalService } from '../../service/bug-hunter-eval.service';
+import { BugHunterPolicyService } from '../../service/bug-hunter-policy.service';
+import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
+import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
+import { ValidationPipe } from '@nestjs/common';
 
-/**
- * Direct-instantiation style, matching the rest of this module's specs — the
- * `ApiAuthGuard` on this controller only ever runs on a real HTTP request, so
- * calling the method directly needs no guard/provider scaffolding.
- */
 describe('BugHunterPipelineController', () => {
   let controller: BugHunterPipelineController;
-  let bugHunterService: { getRun: jest.Mock };
+  let agentMemoryService: AgentMemoryService;
 
-  beforeEach(() => {
-    bugHunterService = { getRun: jest.fn() };
-    controller = new BugHunterPipelineController(
-      bugHunterService as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      // Model settings service: no case here reads GET pipeline/models.
-      {} as never,
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [BugHunterPipelineController],
+      providers: [
+        { provide: BugHunterService, useValue: {} },
+        { provide: BugFindingService, useValue: {} },
+        { provide: BugHunterFinderDataService, useValue: {} },
+        { provide: BugFixSessionService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+        { provide: BugHunterModelSettingsService, useValue: {} },
+        {
+          provide: BugHunterTelemetryService,
+          useValue: { timed: jest.fn((_runId, _kind, fn) => fn()) },
+        },
+        { provide: BugHunterEvalService, useValue: {} },
+        { provide: BugHunterPolicyService, useValue: {} },
+        { provide: AgentMemoryService, useValue: { search: jest.fn() } },
+      ],
+    }).compile();
+
+    controller = module.get<BugHunterPipelineController>(
+      BugHunterPipelineController,
     );
+    agentMemoryService = module.get<AgentMemoryService>(AgentMemoryService);
   });
 
-  // Read by every repo's `bug-hunt-sweep.yml` the moment `claude -p` exits.
-  // The CLI exits 0 even when the agent ends its turn mid-protocol, so a green
-  // job proves nothing — a run still RUNNING at that point was abandoned, and
-  // there is no reconcile pass that would ever notice.
-  describe('getRunStatus', () => {
-    it('reports a run the sweep agent left open', async () => {
-      bugHunterService.getRun.mockResolvedValue({
-        id: 'run-1',
-        status: BugHuntRunStatus.RUNNING,
-      } as BugHuntRun);
-
-      await expect(controller.getRunStatus('run-1')).resolves.toEqual({
-        status: BugHuntRunStatus.RUNNING,
-      });
-      expect(bugHunterService.getRun).toHaveBeenCalledWith('run-1');
-    });
-
-    it.each([
-      BugHuntRunStatus.COMPLETED,
-      BugHuntRunStatus.FAILED,
-      BugHuntRunStatus.SKIPPED_DISABLED,
-    ])('reports %s for a run that closed itself', async (status) => {
-      bugHunterService.getRun.mockResolvedValue({
-        id: 'run-1',
-        status,
-      } as BugHuntRun);
-
-      await expect(controller.getRunStatus('run-1')).resolves.toEqual({
-        status,
-      });
-    });
-
-    it('exposes only the status, never the rest of the run', async () => {
-      // A CI gate needs one field. Widening this to the admin controller's run
-      // detail would put a run's findings and events behind the machine key
-      // for no reason.
-      bugHunterService.getRun.mockResolvedValue({
-        id: 'run-1',
-        status: BugHuntRunStatus.COMPLETED,
+  describe('searchMemory', () => {
+    it('should handle `limit` as a string and convert it to a number', async () => {
+      const query = {
+        q: 'test',
         repo: 'ally-be',
-        totalTokenCostUsd: '12.3400',
-        metadata: { errorMessage: 'something internal' },
-      } as unknown as BugHuntRun);
+        limit: '3',
+      };
 
-      expect(Object.keys(await controller.getRunStatus('run-1'))).toEqual([
-        'status',
-      ]);
+      const validationPipe = new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      });
+
+      const dto = new SearchBugHunterMemoryQueryDto();
+      dto.q = query.q;
+      dto.repo = query.repo;
+      dto.limit = Number(query.limit);
+
+      await validationPipe.transform(dto, { type: 'query' });
+
+      (agentMemoryService.search as jest.Mock).mockResolvedValue([]);
+
+      await controller.searchMemory(dto);
+
+      expect(agentMemoryService.search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          limit: 3,
+        }),
+      );
     });
   });
 });

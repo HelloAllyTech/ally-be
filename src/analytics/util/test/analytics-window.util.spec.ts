@@ -2,11 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 
 import {
   MAX_CUSTOM_RANGE_DAYS,
+  addDays,
   describeWindow,
   generateBucketLabels,
   isoDate,
   previousWindow,
   resolveAnalyticsWindow,
+  resolveSqlBucket,
   truncToBucket,
 } from '../analytics-window.util';
 import { AnalyticsRange } from '../../dto/platform-analytics.dto';
@@ -250,6 +252,46 @@ describe('truncToBucket', () => {
     expect(isoDate(truncToBucket(d('2024-05-15'), 'month'))).toBe('2024-05-01');
     expect(isoDate(truncToBucket(d('2024-05-15'), 'year'))).toBe('2024-01-01');
   });
+
+  it('truncates to the start of the calendar quarter, not the year', () => {
+    // 2024-05-15 falls in Q2 (Apr-Jun) — this must NOT silently fall through
+    // to the yearly branch (2024-01-01), which was the bug: 'quarter' had no
+    // explicit case and landed on the trailing `startOfUtcYear` default.
+    expect(isoDate(truncToBucket(d('2024-05-15'), 'quarter'))).toBe(
+      '2024-04-01',
+    );
+  });
+
+  it('rounds the month down to 1/4/7/10 for every quarter', () => {
+    expect(isoDate(truncToBucket(d('2024-01-15'), 'quarter'))).toBe(
+      '2024-01-01',
+    );
+    expect(isoDate(truncToBucket(d('2024-06-30'), 'quarter'))).toBe(
+      '2024-04-01',
+    );
+    expect(isoDate(truncToBucket(d('2024-09-01'), 'quarter'))).toBe(
+      '2024-07-01',
+    );
+    expect(isoDate(truncToBucket(d('2024-12-31'), 'quarter'))).toBe(
+      '2024-10-01',
+    );
+  });
+});
+
+describe('resolveSqlBucket', () => {
+  const allowed = ['day', 'week', 'month', 'quarter'] as const;
+
+  it('passes through a whitelisted value', () => {
+    expect(resolveSqlBucket('quarter', allowed, 'week')).toBe('quarter');
+  });
+
+  it('falls back for an unrecognized value not in the allowed list', () => {
+    expect(resolveSqlBucket('year' as never, allowed, 'week')).toBe('week');
+  });
+
+  it('falls back for undefined', () => {
+    expect(resolveSqlBucket(undefined, allowed, 'week')).toBe('week');
+  });
 });
 
 describe('previousWindow', () => {
@@ -361,5 +403,42 @@ describe('generateBucketLabels', () => {
     expect(
       generateBucketLabels(d('2024-05-14'), d('2024-05-14'), 'day'),
     ).toEqual([]);
+  });
+
+  it('emits quarter starts stepping 3 months at a time, not weekly', () => {
+    // Window spans Q1 2024 through the start of Q4 2024. Before the fix
+    // 'quarter' had no explicit branch and fell through to the trailing
+    // weekly loop, which would have produced dozens of week-start labels
+    // instead of 4 quarter starts.
+    const labels = generateBucketLabels(
+      d('2024-01-15'),
+      d('2024-10-05'),
+      'quarter',
+    );
+
+    expect(labels).toEqual([
+      '2024-01-01',
+      '2024-04-01',
+      '2024-07-01',
+      '2024-10-01',
+    ]);
+  });
+
+  it('emits a single quarter-start label for a window inside one quarter', () => {
+    expect(
+      generateBucketLabels(d('2024-05-14'), d('2024-05-15'), 'quarter'),
+    ).toEqual(['2024-04-01']);
+  });
+
+  it('agrees with truncToBucket on where a quarter starts', () => {
+    // The two functions used to disagree for 'quarter': truncToBucket fell
+    // through to the yearly start while generateBucketLabels fell through to
+    // the weekly loop. A single-day window's sole label must equal
+    // truncToBucket's answer for that same day, for every bucket kind.
+    const day = d('2024-08-22');
+    (['day', 'week', 'month', 'quarter', 'year'] as const).forEach((bucket) => {
+      const labels = generateBucketLabels(day, addDays(day, 1), bucket);
+      expect(labels).toEqual([isoDate(truncToBucket(day, bucket))]);
+    });
   });
 });

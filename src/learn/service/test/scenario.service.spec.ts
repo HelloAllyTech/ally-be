@@ -22,6 +22,8 @@ import { ScenarioImageUploadRequestDto } from 'src/learn/dto/scenario-image-uplo
 import { ScenarioImageUploadContentType } from 'src/learn/enum/scenario-image-upload-content-type.enum';
 import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { TenantScenarioSharedService } from 'src/tenant/service/tenant-scenario-shared';
 import { UpdateScenarioDto } from 'src/learn/dto/update-scenario.dto';
 import { CreateScenarioDto } from 'src/learn/dto/create-scenario.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
@@ -3095,6 +3097,8 @@ describe('ScenarioService', () => {
         { id: 'tenant-2' },
       ] as any);
       const mockEntityManager = {
+        // The global fan-out takes an advisory lock before reading tenants.
+        query: jest.fn().mockResolvedValue([]),
         getRepository: jest.fn().mockImplementation((entity) => {
           if (entity === Scenarios) {
             return {
@@ -3122,6 +3126,123 @@ describe('ScenarioService', () => {
 
       expect(result).toHaveLength(1);
       expect(tenantService.findAll).toHaveBeenCalled();
+    });
+
+    it('assigns a global scenario to a tenant that commits while the create transaction is open', async () => {
+      // Regression: creating a global scenario read the tenant list on its own
+      // connection, outside the transaction and unserialised. A tenant whose
+      // own transaction committed in that window got no scenario_tenants row
+      // from either side — this one read the tenant list too early, and the
+      // tenant's own assignGlobalScenariosToTenant read the global-scenario
+      // list before this scenario committed.
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Global Scenario',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: true,
+            languageVoices: { 1: 'voice-1' },
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            openingStatements: ['Hi'],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      // What a READ COMMITTED read would see: the concurrent tenant
+      // transaction adds to this at the moment it commits.
+      const committedTenants: { id: string }[] = [{ id: 'tenant-1' }];
+      tenantService.findAll.mockImplementation(
+        async () => [...committedTenants] as any,
+      );
+
+      // A stand-in for Postgres transaction-level advisory locks (the same
+      // one ux-signal-writer.service.spec.ts uses): a transaction that asks
+      // for the lock waits for whoever holds it and keeps it until it ends,
+      // and one that never asks is not serialised at all. Modelling the
+      // second half matters — a plain transaction under READ COMMITTED does
+      // not stop these two reads from interleaving, so the test must not
+      // pretend it does.
+      let lockChain: Promise<void> = Promise.resolve();
+      const acquireLock = () => {
+        const heldByOthers = lockChain;
+        let release: () => void = () => {};
+        lockChain = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { heldByOthers, release: () => release() };
+      };
+
+      // The concurrent tenant creation: holds the lock, commits `tenant-2`
+      // once the scenario transaction has had every chance to run, then ends.
+      const tenantTransaction = acquireLock();
+      const concurrentTenantCreate = (async () => {
+        await tenantTransaction.heldByOthers;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        committedTenants.push({ id: 'tenant-2' });
+        tenantTransaction.release();
+      })();
+
+      const savedScenarioTenants: { scenarioId: number; tenantId: string }[] =
+        [];
+      const mockScenarioTenantRepo = {
+        create: jest.fn((row) => row),
+        save: jest.fn(async (rows: any[]) => {
+          savedScenarioTenants.push(...rows);
+          return rows;
+        }),
+      };
+
+      let releaseScenarioLock: () => void = () => {};
+      const mockEntityManager = {
+        query: jest.fn(async (sql: string) => {
+          if (!sql.includes('pg_advisory_xact_lock')) return [];
+          const lock = acquireLock();
+          releaseScenarioLock = lock.release;
+          await lock.heldByOthers;
+          return [{}];
+        }),
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1, isGlobal: true }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: true }]),
+            };
+          }
+          if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation(async (cb: any) => {
+        try {
+          return await cb(mockEntityManager as any);
+        } finally {
+          releaseScenarioLock();
+        }
+      });
+
+      await service.createScenarios(createDto as any, 1);
+      await concurrentTenantCreate;
+
+      // The read happens only once the lock is held, so it cannot miss a
+      // tenant that commits alongside it.
+      expect(savedScenarioTenants.map((row) => row.tenantId)).toEqual([
+        'tenant-1',
+        'tenant-2',
+      ]);
+      // ...and it goes through the transaction's own manager rather than a
+      // separate connection.
+      expect(tenantService.findAll).toHaveBeenCalledWith(mockEntityManager);
     });
 
     it('should save trigger warnings when triggerWarningList is filled', async () => {
@@ -4308,15 +4429,25 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn((data) => data),
           save: jest.fn().mockResolvedValue([]),
+          find: jest.fn().mockResolvedValue([]),
+        };
+
+        // The tenant list is read through the transaction, not through
+        // TenantService, so that it cannot be stale by the time the
+        // scenario_tenants rows are written.
+        const mockTenantRepo = {
+          find: jest.fn().mockResolvedValue(mockTenants),
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioEvents) return mockScenarioEventRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+            if (entity === Tenant) return mockTenantRepo;
             return {};
           }),
         };
@@ -4407,7 +4538,7 @@ describe('ScenarioService', () => {
           ]),
         );
 
-        expect(tenantService.findAll).toHaveBeenCalled();
+        expect(mockTenantRepo.find).toHaveBeenCalled();
         expect(mockScenarioTenantRepo.save).toHaveBeenCalledWith(
           expect.arrayContaining([
             expect.objectContaining({
@@ -4503,11 +4634,18 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioEvents) return mockScenarioEventRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4552,10 +4690,17 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4597,9 +4742,11 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn(),
           save: jest.fn(),
+          find: jest.fn().mockResolvedValue([]),
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
@@ -4648,9 +4795,6 @@ describe('ScenarioService', () => {
           { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
           { id: 'st-2', scenarioId, tenantId: 'tenant-2' },
         ]);
-        (dataSource.getRepository as jest.Mock).mockReturnValue({
-          find: sourceTenantFind,
-        });
 
         const mockScenarioRepo = {
           save: jest.fn().mockResolvedValue(mockNewScenario),
@@ -4659,9 +4803,11 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn((data) => data),
           save: jest.fn().mockResolvedValue([]),
+          find: sourceTenantFind,
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
@@ -4686,6 +4832,270 @@ describe('ScenarioService', () => {
           { scenarioId: 2, tenantId: 'tenant-1' },
           { scenarioId: 2, tenantId: 'tenant-2' },
         ]);
+      });
+
+      // Regression: the source's scenario_tenants rows were read before the
+      // transaction opened, so an assignment granted between that read and the
+      // transaction was lost. The copy came out with the audience the source
+      // had a moment ago rather than the one it has, and nothing backfills it.
+      it('should read the source tenant assignments inside the duplicate transaction', async () => {
+        const mockNewScenario = {
+          id: 2,
+          title: 'Copy of Test Scenario',
+          status: ScenarioStatus.DRAFT,
+          isGlobal: false,
+        };
+
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
+          ...mockScenario,
+          isGlobal: false,
+        } as any);
+        scenarioEventsRepository.find.mockResolvedValue([]);
+        triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
+          [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
+
+        // What a read taken before the transaction would have seen: the grant
+        // to tenant-3 had not been committed yet.
+        const staleFind = jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
+          ]);
+        (dataSource.getRepository as jest.Mock).mockReturnValue({
+          find: staleFind,
+        });
+
+        const transactionalFind = jest.fn().mockResolvedValue([
+          { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
+          { id: 'st-3', scenarioId, tenantId: 'tenant-3' },
+        ]);
+
+        const mockScenarioRepo = {
+          save: jest.fn().mockResolvedValue(mockNewScenario),
+        };
+
+        const mockScenarioTenantRepo = {
+          create: jest.fn((data) => data),
+          save: jest.fn().mockResolvedValue([]),
+          find: transactionalFind,
+        };
+
+        const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
+          getRepository: jest.fn((entity) => {
+            if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+            return {};
+          }),
+        };
+
+        (dataSource.transaction as jest.Mock).mockImplementation(async (cb) =>
+          cb(mockEntityManager),
+        );
+
+        await service.duplicateScenario(scenarioId);
+
+        expect(transactionalFind).toHaveBeenCalledWith({
+          where: { scenarioId },
+        });
+        expect(staleFind).not.toHaveBeenCalled();
+        expect(mockScenarioTenantRepo.save).toHaveBeenCalledWith([
+          { scenarioId: 2, tenantId: 'tenant-1' },
+          { scenarioId: 2, tenantId: 'tenant-3' },
+        ]);
+      });
+
+      // Regression: duplicating a global simulation read the tenant list
+      // outside the transaction that writes scenario_tenants, and nothing
+      // serialised it against tenant creation. A tenant created while the
+      // duplicate was in flight got no row for the copy — the copy stays
+      // invisible to that organisation for good, because tenant creation only
+      // ever assigns the global simulations that were committed when it ran.
+      it('should assign a duplicated global simulation to a tenant created alongside it', async () => {
+        const tenantScenarioShared = new TenantScenarioSharedService();
+
+        // A stand-in for two Postgres behaviours the duplicate depends on:
+        // transaction-level advisory locks — a transaction that asks for the
+        // lock waits for whoever holds it and keeps it until it commits, while
+        // one that never asks is not serialised at all — and READ COMMITTED
+        // visibility, where a transaction's writes stay invisible to everyone
+        // else until it commits. Modelling the second half matters: a plain
+        // transaction does not make read-then-write atomic, so the test must
+        // not pretend it does.
+        const committed = {
+          scenarios: [{ id: scenarioId, isGlobal: true }] as any[],
+          tenants: [{ id: 'tenant-1' }] as any[],
+          scenarioTenants: [] as any[],
+        };
+        let nextScenarioId = 2;
+        let lockHolder: symbol | null = null;
+        const lockWaiters: Array<() => void> = [];
+
+        // Resolves once the tenant-creating transaction has either committed
+        // or parked on the lock — whichever happens first. The duplicate waits
+        // on it at the moment it reads the tenant list, which is the only
+        // window in which this bug can bite.
+        let markTenantTaskSettled: () => void = () => {};
+        const tenantTaskSettled = new Promise<void>((resolve) => {
+          markTenantTaskSettled = resolve;
+        });
+
+        // Pins the interleaving: tenant creation starts only once the
+        // duplicate has read the tenant list, so the tenant row is always the
+        // one the duplicate could not have seen.
+        let markDuplicateReadTenants: () => void = () => {};
+        const duplicateReadTenants = new Promise<void>((resolve) => {
+          markDuplicateReadTenants = resolve;
+        });
+
+        const runTransaction = async (run: (manager: any) => Promise<any>) => {
+          const txId = Symbol('tx');
+          const pending = {
+            scenarios: [] as any[],
+            tenants: [] as any[],
+            scenarioTenants: [] as any[],
+          };
+
+          const readTenants = async () => {
+            const snapshot = [...committed.tenants, ...pending.tenants];
+            markDuplicateReadTenants();
+            await tenantTaskSettled;
+            return snapshot;
+          };
+
+          const manager = {
+            query: async (sql: string) => {
+              if (!sql.includes('pg_advisory_xact_lock')) return [];
+              if (lockHolder && lockHolder !== txId) {
+                await new Promise<void>((resolve) => {
+                  lockWaiters.push(resolve);
+                  markTenantTaskSettled();
+                });
+              }
+              lockHolder = txId;
+              return [{}];
+            },
+            save: async (entity: any, row: any) => {
+              if (entity === Tenant) pending.tenants.push(row);
+              return row;
+            },
+            getRepository: (entity: any) => {
+              if (entity === Scenarios) {
+                return {
+                  create: (data: any) => data,
+                  save: async (row: any) => {
+                    const saved = { ...row, id: nextScenarioId++ };
+                    pending.scenarios.push(saved);
+                    return saved;
+                  },
+                  find: async () =>
+                    [...committed.scenarios, ...pending.scenarios].filter(
+                      (item) => item.isGlobal,
+                    ),
+                };
+              }
+              if (entity === Tenant) return { find: readTenants };
+              if (entity === ScenarioTenants) {
+                return {
+                  create: (data: any) => data,
+                  save: async (rows: any[]) => {
+                    pending.scenarioTenants.push(...rows);
+                    return rows;
+                  },
+                  insert: async (rows: any[]) => {
+                    pending.scenarioTenants.push(...rows);
+                    return { identifiers: [] };
+                  },
+                  find: async ({ where }: any) =>
+                    committed.scenarioTenants.filter(
+                      (row) => row.scenarioId === where.scenarioId,
+                    ),
+                };
+              }
+              return {
+                create: (data: any) => data,
+                save: async () => [],
+                find: async () => [],
+              };
+            },
+          };
+
+          try {
+            const result = await run(manager);
+            committed.scenarios.push(...pending.scenarios);
+            committed.tenants.push(...pending.tenants);
+            committed.scenarioTenants.push(...pending.scenarioTenants);
+            return result;
+          } finally {
+            if (lockHolder === txId) {
+              lockHolder = null;
+              lockWaiters.shift()?.();
+            }
+          }
+        };
+
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
+          ...mockScenario,
+          id: scenarioId,
+          isGlobal: true,
+        } as any);
+        scenarioEventsRepository.find.mockResolvedValue([]);
+        triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
+          [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
+        // The non-transactional tenant read, modelled the same way: it sees
+        // whatever is committed at the moment it is taken.
+        tenantService.findAll.mockImplementation(async () => {
+          const snapshot = [...committed.tenants];
+          markDuplicateReadTenants();
+          await tenantTaskSettled;
+          return snapshot as any;
+        });
+        (dataSource.transaction as jest.Mock).mockImplementation((cb) =>
+          runTransaction(cb),
+        );
+
+        const tenantTask = duplicateReadTenants
+          .then(() =>
+            runTransaction(async (manager: any) => {
+              await manager.save(Tenant, { id: 'tenant-new' });
+              await tenantScenarioShared.assignGlobalScenariosToTenant(
+                'tenant-new',
+                manager,
+              );
+            }),
+          )
+          .then((result) => {
+            markTenantTaskSettled();
+            return result;
+          });
+
+        const [duplicated] = await Promise.all([
+          service.duplicateScenario(scenarioId),
+          tenantTask,
+        ]);
+
+        // The new organisation gets the source simulation either way; what the
+        // race used to drop is the copy.
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId,
+          tenantId: 'tenant-new',
+        });
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId: duplicated.id,
+          tenantId: 'tenant-new',
+        });
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId: duplicated.id,
+          tenantId: 'tenant-1',
+        });
       });
 
       it('should use ExecutionManager.getUserId for createdBy and updatedBy', async () => {
@@ -4717,8 +5127,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4762,8 +5179,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4807,8 +5231,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4845,8 +5276,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -6067,6 +6505,105 @@ describe('ScenarioService', () => {
         expect(['openai', 'anthropic']).toContain(m.provider);
         expect(typeof m.supportsTemperature).toBe('boolean');
       }
+    });
+  });
+
+  describe('generateAgentBuilderField — chained context', () => {
+    const brief = 'A 34-year-old engineer struggling after a layoff.';
+    const establishedContext = {
+      challengeDescription:
+        '<p>Feels <strong>ashamed</strong> and withdrawn.</p><ul><li>Deflects</li></ul>',
+      persona: {
+        name: 'Priya Sharma',
+        age: 34,
+        gender: 'female',
+        profession: 'Software engineer',
+        currentLocation: 'Pune',
+      },
+    };
+
+    /** The brief the prompt template was rendered with. */
+    const renderedBrief = (): string =>
+      autofillService.generateContentFromPrompt.mock.calls[0][1]
+        .actorDescription;
+
+    it('appends the established persona and challenge to the brief for a second-stage field', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('History.');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.BACKSTORY,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      const rendered = renderedBrief();
+      expect(rendered.startsWith(brief)).toBe(true);
+      expect(rendered).toContain('Already established for this scenario');
+      expect(rendered).toContain(
+        'Name: Priya Sharma; Age: 34; Gender: female; Profession: Software engineer; Lives in: Pune',
+      );
+      // Markup is stripped before the model sees it.
+      expect(rendered).toContain(
+        'The challenge in this session: Feels ashamed and withdrawn. Deflects',
+      );
+      expect(rendered).not.toContain('<p>');
+    });
+
+    it.each([
+      AgentBuilderField.CHALLENGE_DESCRIPTION,
+      AgentBuilderField.PERSONA,
+    ])('ignores the context for the foundation field %s', async (field) => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('{}');
+
+      await service.generateAgentBuilderField({
+        field,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      expect(renderedBrief()).toBe(brief);
+    });
+
+    it('ignores the context for spoken_languages', async () => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue([]);
+      autofillService.generateContentFromPrompt.mockResolvedValue('[]');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      expect(renderedBrief()).toBe(brief);
+    });
+
+    it('keeps only the persona facts that are present', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('{}');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.TITLE,
+        actorDescription: brief,
+        establishedContext: { persona: { name: 'Priya', profession: ' ' } },
+      });
+
+      const rendered = renderedBrief();
+      expect(rendered).toContain('The client — Name: Priya.');
+      expect(rendered).not.toContain('Profession');
+      expect(rendered).not.toContain('The challenge in this session');
+    });
+
+    it('leaves the brief untouched when nothing usable was established', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('Text.');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.ROLE_INSTRUCTION,
+        actorDescription: brief,
+        establishedContext: { challengeDescription: '<p> </p>', persona: {} },
+      });
+
+      expect(renderedBrief()).toBe(brief);
     });
   });
 
