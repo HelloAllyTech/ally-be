@@ -16,7 +16,7 @@ export class Track extends BaseWithoutTenantEntity {
   title!: string;
 
   @Column({ type: 'text', nullable: true })
-  description?: string;
+  description?: string | null;
 
   @Column({ nullable: true })
   coverImageUrl?: string;
