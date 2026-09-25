@@ -11,6 +11,7 @@ import {
   QuizAnswer,
   QuizAttemptStatus,
   QuizContent,
+  QuizQuestion,
   QuizQuestionGrading,
   QuizQuestionType,
   QuizShowExplanations,
@@ -21,8 +22,12 @@ import { TrackItemProgressRepository } from '../repository/track-item-progress.r
 import { TrackEnrollmentService } from './track-enrollment.service';
 import { TrackProgressService } from './track-progress.service';
 import { TrackQuizLlmGraderService } from './track-quiz-llm-grader.service';
-import { autogradeQuestion } from './track-quiz.autograder';
-import { questionPoints } from './track-quiz.sanitizer';
+import { autogradeQuestion, scoreQuizAttempt } from './track-quiz.autograder';
+import {
+  QuizCorrectAnswer,
+  correctAnswerOf,
+  isQuestionGraded,
+} from '../util/track-quiz-grading.util';
 
 export interface QuizAttemptResult {
   attemptId: string;
@@ -33,18 +38,50 @@ export interface QuizAttemptResult {
   passScore: number;
   attemptsUsed: number;
   maxAttempts: number | null;
-  questions: {
-    questionId: string;
-    correct: boolean | null;
-    pointsAwarded: number;
-    pointsPossible: number;
-    explanation?: string;
-    llmFeedback?: string;
-  }[];
+  questions: QuizQuestionResult[];
   itemCompleted: boolean;
   unlockedItemIds: string[];
   sectionCompleted: boolean;
   trackCompleted: boolean;
+}
+
+export interface QuizQuestionResult {
+  questionId: string;
+  /** null = pending LLM grading, or ungraded with no key (see `graded`). */
+  correct: boolean | null;
+  /** false = not scored; never read `correct: null` as pending when so. */
+  graded: boolean;
+  pointsAwarded: number;
+  pointsPossible: number;
+  explanation?: string;
+  llmFeedback?: string;
+  /**
+   * The answer key, when there is one and the trainer lets learners see it.
+   * Absent otherwise — the verdict in `correct` is still sent.
+   */
+  correctAnswer?: QuizCorrectAnswer;
+}
+
+/**
+ * One row of the results screen. Pure, so what does and doesn't leave the
+ * server is testable without the persistence around it.
+ */
+export function buildQuestionResult(
+  entry: QuizQuestionGrading,
+  question: QuizQuestion | undefined,
+  includeExplanations: boolean,
+): QuizQuestionResult {
+  const correctAnswer = question ? correctAnswerOf(question) : null;
+  return {
+    questionId: entry.questionId,
+    correct: entry.correct,
+    graded: entry.graded ?? (question ? isQuestionGraded(question) : true),
+    pointsAwarded: entry.pointsAwarded,
+    pointsPossible: entry.pointsPossible,
+    ...(includeExplanations ? { explanation: question?.explanation } : {}),
+    ...(entry.llm ? { llmFeedback: entry.llm.feedback } : {}),
+    ...(correctAnswer ? { correctAnswer } : {}),
+  };
 }
 
 @Injectable()
@@ -89,10 +126,28 @@ export class TrackQuizService {
       answers.map((answer) => [answer.questionId, answer]),
     );
     for (const answer of answers) {
-      if (!quiz.questions.some((q) => q.id === answer.questionId)) {
+      const question = quiz.questions.find((q) => q.id === answer.questionId);
+      if (!question) {
         throw new BadRequestException(
           `Answer references unknown question: ${answer.questionId}`,
         );
+      }
+      // Nothing grades a rating, so nothing else would notice one that
+      // points at a statement or scale point the question doesn't have —
+      // and it would sit in the attempt looking like a real response.
+      if (question.type === QuizQuestionType.LIKERT_SCALE && answer.ratings) {
+        const statementIds = new Set(question.statements.map((o) => o.id));
+        const scaleIds = new Set(question.scale.map((o) => o.id));
+        const invalid = answer.ratings.some(
+          (rating) =>
+            !statementIds.has(rating.statementId) ||
+            !scaleIds.has(rating.scaleOptionId),
+        );
+        if (invalid) {
+          throw new BadRequestException(
+            `Rating references an unknown statement or scale point: ${answer.questionId}`,
+          );
+        }
       }
     }
 
@@ -106,6 +161,8 @@ export class TrackQuizService {
     let pendingGrading = false;
     for (const question of quiz.questions) {
       if (question.type !== QuizQuestionType.OPEN_ENDED) continue;
+      // An ungraded reflection prompt is recorded, not judged — no model call.
+      if (!isQuestionGraded(question)) continue;
       const answer = answersByQuestionId.get(question.id);
       const entry = grading.find((g) => g.questionId === question.id)!;
       const text = (answer?.text ?? '').trim();
@@ -175,7 +232,7 @@ export class TrackQuizService {
     for (const question of quiz.questions) {
       if (question.type !== QuizQuestionType.OPEN_ENDED) continue;
       const entry = grading.find((g) => g.questionId === question.id);
-      if (!entry || entry.correct !== null) continue;
+      if (!entry || entry.correct !== null || entry.graded === false) continue;
       const text = (answersByQuestionId.get(question.id)?.text ?? '').trim();
       if (!text) {
         entry.correct = false;
@@ -246,17 +303,11 @@ export class TrackQuizService {
     existingAttemptId?: string;
   }): Promise<TrackQuizAttempt> {
     const { grading, quiz, pendingGrading } = params;
-    const totalPoints = quiz.questions.reduce(
-      (sum, question) => sum + questionPoints(question),
-      0,
+    const { scorePct, passed } = scoreQuizAttempt(
+      grading,
+      quiz.settings.passScore,
+      pendingGrading,
     );
-    const awarded = grading.reduce(
-      (sum, entry) => sum + entry.pointsAwarded,
-      0,
-    );
-    const scorePct =
-      totalPoints > 0 ? Math.round((awarded / totalPoints) * 100) : 0;
-    const passed = pendingGrading ? null : scorePct >= quiz.settings.passScore;
     const now = new Date();
 
     const attempt = await this.trackQuizAttemptRepository.save({
@@ -303,8 +354,8 @@ export class TrackQuizService {
       quiz.settings.showExplanations ?? QuizShowExplanations.AFTER_SUBMIT;
     const includeExplanations = showExplanations !== QuizShowExplanations.NEVER;
 
-    const explanationsByQuestionId = new Map(
-      quiz.questions.map((question) => [question.id, question.explanation]),
+    const questionsById = new Map(
+      quiz.questions.map((question) => [question.id, question]),
     );
     const attemptsUsed =
       await this.trackQuizAttemptRepository.countByProgressId(progressId);
@@ -314,21 +365,20 @@ export class TrackQuizService {
       attemptNumber: attempt.attemptNumber,
       status: attempt.status,
       scorePct:
-        attempt.scorePct !== undefined ? Number(attempt.scorePct) : null,
+        attempt.scorePct !== undefined && attempt.scorePct !== null
+          ? Number(attempt.scorePct)
+          : null,
       passed: attempt.passed ?? null,
       passScore: quiz.settings.passScore,
       attemptsUsed,
       maxAttempts: quiz.settings.maxAttempts ?? null,
-      questions: (attempt.grading ?? []).map((entry) => ({
-        questionId: entry.questionId,
-        correct: entry.correct,
-        pointsAwarded: entry.pointsAwarded,
-        pointsPossible: entry.pointsPossible,
-        ...(includeExplanations
-          ? { explanation: explanationsByQuestionId.get(entry.questionId) }
-          : {}),
-        ...(entry.llm ? { llmFeedback: entry.llm.feedback } : {}),
-      })),
+      questions: (attempt.grading ?? []).map((entry) =>
+        buildQuestionResult(
+          entry,
+          questionsById.get(entry.questionId),
+          includeExplanations,
+        ),
+      ),
       itemCompleted:
         completion.completed ||
         progress?.status === SessionItemStatus.COMPLETED,

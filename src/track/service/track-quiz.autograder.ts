@@ -11,12 +11,41 @@ import {
   TrueFalseQuestion,
 } from '../type/quiz.type';
 import { questionPoints } from './track-quiz.sanitizer';
+import {
+  hasAnswerKey,
+  isQuestionGraded,
+} from '../util/track-quiz-grading.util';
 
 /**
  * Pure per-question autograders. Open-ended questions return `correct: null`
  * with 0 points — the LLM grader fills those in afterwards.
+ *
+ * An ungraded question is worth nothing either way, but one that kept its
+ * answer key is still marked right or wrong so the learner gets the verdict;
+ * one without a key (and every Likert) comes back `correct: null`,
+ * `graded: false`.
  */
 export function autogradeQuestion(
+  question: QuizQuestion,
+  answer: QuizAnswer | undefined,
+): QuizQuestionGrading {
+  if (!isQuestionGraded(question)) {
+    const verdict =
+      hasAnswerKey(question) && question.type !== QuizQuestionType.OPEN_ENDED
+        ? gradeGraded(question, answer).correct
+        : null;
+    return {
+      questionId: question.id,
+      correct: verdict,
+      pointsAwarded: 0,
+      pointsPossible: 0,
+      graded: false,
+    };
+  }
+  return gradeGraded(question, answer);
+}
+
+function gradeGraded(
   question: QuizQuestion,
   answer: QuizAnswer | undefined,
 ): QuizQuestionGrading {
@@ -175,6 +204,39 @@ function gradeFillBlank(
     ...base,
     correct: fraction === 1,
     pointsAwarded: round2(fraction * base.pointsPossible),
+  };
+}
+
+export interface QuizAttemptScore {
+  /** null when the quiz has no graded questions — a survey has no score. */
+  scorePct: number | null;
+  /** null while grading is pending; true for a quiz with nothing to fail. */
+  passed: boolean | null;
+}
+
+/**
+ * Score an attempt from its per-question grading. Only graded questions
+ * count, on both sides of the fraction, so adding a survey question to a
+ * quiz never moves anyone's percentage.
+ */
+export function scoreQuizAttempt(
+  grading: QuizQuestionGrading[],
+  passScore: number,
+  pendingGrading: boolean,
+): QuizAttemptScore {
+  const counted = grading.filter((entry) => entry.graded !== false);
+  const totalPoints = counted.reduce(
+    (sum, entry) => sum + entry.pointsPossible,
+    0,
+  );
+  if (counted.length === 0 || totalPoints <= 0) {
+    return { scorePct: null, passed: pendingGrading ? null : true };
+  }
+  const awarded = counted.reduce((sum, entry) => sum + entry.pointsAwarded, 0);
+  const scorePct = Math.round((awarded / totalPoints) * 100);
+  return {
+    scorePct,
+    passed: pendingGrading ? null : scorePct >= passScore,
   };
 }
 
