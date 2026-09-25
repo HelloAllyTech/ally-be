@@ -279,6 +279,25 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     configuredBy: 'PREDICTIVE_FILLER_MODEL / PREDICTIVE_FILLER_PROVIDER',
   },
   {
+    id: 'backchannel-phrases',
+    task: null,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: 'The agent prepares listener affirmations for a session',
+    detail:
+      'Once per session, at session start and off the opening-statement path: ' +
+      'one structured-output call for the "mm-hmm"s the character plays while the ' +
+      'learner holds the floor. Runs only when the BACKCHANNEL_GLOBALLY_ENABLED ' +
+      'kill-switch and the per-simulation continuousBackchanneling toggle are both ' +
+      'on, and is skipped when the voice gets no clips (see agent-clip-tts). Text ' +
+      'comes from the editable filler/backchannel prompt ' +
+      '(ally_ai_learn_filler_backchannel); that row supplies wording only, and its ' +
+      'model field is not read. Not recorded in llm_usage.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: "the scenario's main LLM",
+    configuredBy: 'Inherits the agent_turn client',
+  },
+  {
     id: 'knowledge-retrieval',
     task: null,
     runtime: LlmRuntime.AI_LEARN,
