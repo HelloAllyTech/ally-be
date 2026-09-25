@@ -127,6 +127,30 @@ ensure_head_is_checkable >/dev/null 2>&1
 check "catches [ci skip] too" no \
   "$([ "$(head_sha alt)" = "$alt_sha" ] && echo yes || echo no)"
 
+echo "── the identity ally-be will recognise ──"
+#
+# ally-be decides whether a branch is Builder's own from the HEAD commit's
+# author, and will not fix red CI or update from master on someone else's
+# commit. These commits were made as "Builder
+# <builder@users.noreply.github.com>", which GitHub resolves to the login
+# `builder` — an unrelated third-party account — so Builder disowned its own
+# branch and filed its own failures as OBSERVED, which no fix run ever reads.
+#
+# It stayed hidden while these commits skipped CI: no checks, no failure, no
+# misfiling. ally-web#715 was the first to run them and be disowned.
+new_repo identity
+echo change > "${WORK}/repos/identity/file.txt"
+git -C "${WORK}/repos/identity" add -A
+git -C "${WORK}/repos/identity" commit -q -m "wip(builder): code attempt 1 [skip ci]"
+
+ensure_head_is_checkable >/dev/null 2>&1
+
+check "commits as the bot ally-be already trusts" "ally-builder[bot]" \
+  "$(git -C "${WORK}/repos/identity" log -1 --format=%an)"
+# The noreply address is what GitHub maps to a stranger's account.
+check "does not borrow a third party's identity" no \
+  "$(git -C "${WORK}/repos/identity" log -1 --format=%ae | grep -q 'users.noreply.github.com' && echo yes || echo no)"
+
 echo
 echo "${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]

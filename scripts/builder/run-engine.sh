@@ -591,6 +591,23 @@ exit_if_paused() {
 #
 # So: checkpoints skip, anything that leaves a branch someone is meant to look
 # at does not.
+# The identity matters as much as the commit.
+#
+# ally-be decides whether a branch is Builder's own before it will fix its red
+# CI or update it from master, and it decides from the HEAD commit's author.
+# These commits used to be made as "Builder <builder@users.noreply.github.com>",
+# which GitHub resolves to the login `builder` — an unrelated third-party
+# account — so Builder read its own branch as somebody else's and filed its own
+# failures as OBSERVED rather than PENDING. No fix run is ever dispatched for
+# an OBSERVED failure.
+#
+# That was invisible while these commits carried a CI-skip marker: no checks
+# ran, so there was no failure to misfile. Removing the marker made the checks
+# run, and ally-web#715 became the first pull request to fail them and be
+# disowned by the thing that wrote it.
+#
+# So: the same identity the workflow configures globally, which ends in [bot]
+# and is what isOwnActor already recognises.
 save_work_in_progress() {
   local reason="$1" skip="${2:-skip}" suffix="" branch
   [ "$skip" = skip ] && suffix=" [skip ci]"
@@ -603,7 +620,7 @@ save_work_in_progress() {
 
     if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
       git -C "$dir" add -A >/dev/null 2>&1 || true
-      git -C "$dir" -c user.name="Builder" -c user.email="builder@users.noreply.github.com" \
+      git -C "$dir" -c user.name="ally-builder[bot]" -c user.email="builder@helloally.ai" \
         commit -q -m "wip(builder): ${reason}${suffix}" >/dev/null 2>&1 || true
       echo "${repo}: committed work in progress on ${branch}"
     fi
@@ -642,7 +659,7 @@ ensure_head_is_checkable() {
 
     git -C "$dir" log -1 --format=%B 2>/dev/null | grep -qiE '\[(skip ci|ci skip)\]' || continue
 
-    git -C "$dir" -c user.name="Builder" -c user.email="builder@users.noreply.github.com" \
+    git -C "$dir" -c user.name="ally-builder[bot]" -c user.email="builder@helloally.ai" \
       commit -q --allow-empty -m "chore(builder): let the checks run
 
 The previous head was a work-in-progress checkpoint whose message told GitHub
