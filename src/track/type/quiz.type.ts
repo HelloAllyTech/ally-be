@@ -6,6 +6,7 @@ export enum QuizQuestionType {
   MATCHING = 'matching',
   FILL_BLANK = 'fill_blank',
   OPEN_ENDED = 'open_ended',
+  LIKERT_SCALE = 'likert_scale',
 }
 
 export enum QuizShowExplanations {
@@ -107,6 +108,24 @@ export interface QuizQuestionBase {
   points?: number;
   /** Optional picture or clip shown with the prompt. */
   media?: QuestionMedia;
+  /**
+   * `false` = the question earns no points and is left out of the quiz score,
+   * so a quiz can mix assessment with survey or reflection prompts. Absent =
+   * graded, which is every question written before this field existed.
+   *
+   * An ungraded question may omit its answer key; when it keeps one, the
+   * learner still sees whether they got it right — it is practice, it just
+   * doesn't count. `LIKERT_SCALE` is never graded whatever this says. Quiz
+   * items only: article and video questions are always graded.
+   */
+  isGraded?: boolean;
+  /**
+   * `false` = after submitting, the learner is told whether they were right
+   * but not what the right answer was. Absent = shown. Independent of
+   * `isGraded`, and meaningless for a question with no answer key. Quiz
+   * items only.
+   */
+  showCorrectAnswer?: boolean;
 }
 
 export interface McqSingleQuestion extends QuizQuestionBase {
@@ -165,6 +184,21 @@ export interface OpenEndedQuestion extends QuizQuestionBase {
   rubric: OpenEndedRubric;
 }
 
+/**
+ * One rating scale applied to several statements — "rate each of these from
+ * Strongly disagree to Strongly agree". Opinion, not knowledge: there is no
+ * answer key and it is never graded. The scale is shared by every statement,
+ * which is what makes the answers comparable; a matrix of per-row scales is
+ * deliberately out of scope.
+ */
+export interface LikertScaleQuestion extends QuizQuestionBase {
+  type: QuizQuestionType.LIKERT_SCALE;
+  /** The things being rated, one row each. */
+  statements: QuizOption[];
+  /** The scale points, lowest first — e.g. Strongly disagree … Strongly agree. */
+  scale: QuizOption[];
+}
+
 export type QuizQuestion =
   | McqSingleQuestion
   | McqMultiQuestion
@@ -172,7 +206,8 @@ export type QuizQuestion =
   | OrderingQuestion
   | MatchingQuestion
   | FillBlankQuestion
-  | OpenEndedQuestion;
+  | OpenEndedQuestion
+  | LikertScaleQuestion;
 
 export interface QuizContent {
   settings: QuizSettings;
@@ -187,12 +222,23 @@ export interface QuizAnswer {
   pairs?: { leftId: string; rightId: string }[];
   blanks?: { blankId: string; answer: string }[];
   text?: string;
+  /** likert_scale — one scale point per statement. */
+  ratings?: { statementId: string; scaleOptionId: string }[];
 }
 
 export interface QuizQuestionGrading {
   questionId: string;
-  /** null while an open-ended question is pending LLM grading. */
+  /**
+   * null while an open-ended question is pending LLM grading, and for an
+   * ungraded question with no answer key to be right or wrong against. Check
+   * `graded` before reading null as "pending".
+   */
   correct: boolean | null;
+  /**
+   * false = counted for nothing (`pointsPossible` is 0). Absent on attempts
+   * stored before ungraded questions existed, all of which were graded.
+   */
+  graded?: boolean;
   pointsAwarded: number;
   pointsPossible: number;
   llm?: {

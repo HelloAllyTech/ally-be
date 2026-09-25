@@ -853,8 +853,9 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     task: LlmTask.TRACK_QUIZ_GRADING,
     runtime: LlmRuntime.ALLY_BE,
     tier: LlmModelTier.REASONING,
-    trigger: 'A learner submits an open-ended quiz answer',
-    detail: "Graded against the item's rubric.",
+    trigger: 'A learner submits an answer to a graded open-ended quiz question',
+    detail:
+      "Graded against the item's rubric. Skipped entirely for a question the trainer marked ungraded.",
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',

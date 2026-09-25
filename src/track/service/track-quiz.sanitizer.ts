@@ -4,12 +4,16 @@ import {
   QuizQuestion,
   QuizQuestionType,
 } from '../type/quiz.type';
+import { isQuestionGraded } from '../util/track-quiz-grading.util';
 
 export interface LearnerQuizQuestion {
   id: string;
   type: QuizQuestionType;
   prompt: string;
+  /** 0 for an ungraded question. */
   points: number;
+  /** false = answered but not scored; the player labels it so. */
+  graded: boolean;
   /** Part of the stem, so it crosses to the learner alongside the prompt. */
   media?: QuestionMedia;
   options?: { id: string; text: string }[];
@@ -19,6 +23,9 @@ export interface LearnerQuizQuestion {
   template?: string;
   blankIds?: string[];
   minWords?: number;
+  /** likert_scale — rows to rate, and the scale points lowest first. */
+  statements?: { id: string; text: string }[];
+  scale?: { id: string; text: string }[];
 }
 
 export interface LearnerQuiz {
@@ -28,6 +35,7 @@ export interface LearnerQuiz {
     showExplanations: string;
   };
   questions: LearnerQuizQuestion[];
+  /** Graded questions only; 0 means a survey with no score to pass. */
   totalPoints: number;
 }
 
@@ -76,7 +84,8 @@ export function sanitizeQuizQuestionForLearner(
     id: question.id,
     type: question.type,
     prompt: question.prompt,
-    points: questionPoints(question),
+    points: isQuestionGraded(question) ? questionPoints(question) : 0,
+    graded: isQuestionGraded(question),
     // This function is an allowlist, not a redaction pass: anything not
     // named here never reaches the learner. Media is part of the question
     // being asked, so it is named.
@@ -118,6 +127,13 @@ export function sanitizeQuizQuestionForLearner(
       base.minWords = question.minWords;
       return base;
     }
+    case QuizQuestionType.LIKERT_SCALE: {
+      // Never shuffled: the statements may build on one another, and a scale
+      // is only readable in order.
+      base.statements = question.statements;
+      base.scale = question.scale;
+      return base;
+    }
     default:
       return base;
   }
@@ -152,9 +168,8 @@ export function sanitizeQuizForLearner(
       showExplanations: settings.showExplanations ?? 'after_submit',
     },
     questions: sanitized,
-    totalPoints: quiz.questions.reduce(
-      (sum, question) => sum + questionPoints(question),
-      0,
-    ),
+    totalPoints: quiz.questions
+      .filter(isQuestionGraded)
+      .reduce((sum, question) => sum + questionPoints(question), 0),
   };
 }

@@ -33,6 +33,18 @@ export class QuizAnswerBlankDto {
   answer!: string;
 }
 
+export class QuizAnswerRatingDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  statementId!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  scaleOptionId!: string;
+}
+
 export class QuizAnswerDto {
   @ApiProperty()
   @IsString()
@@ -74,6 +86,16 @@ export class QuizAnswerDto {
   @IsOptional()
   @IsString()
   text?: string;
+
+  @ApiPropertyOptional({
+    type: [QuizAnswerRatingDto],
+    description: 'Rating-scale answer: one scale point per statement',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuizAnswerRatingDto)
+  ratings?: QuizAnswerRatingDto[];
 }
 
 export class SubmitQuizAttemptDto {

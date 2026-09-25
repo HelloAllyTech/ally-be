@@ -276,6 +276,11 @@ function walkQuizQuestion(
       break;
     }
 
+    case QuizQuestionType.LIKERT_SCALE:
+      walkOptions('statements', question.statements);
+      walkOptions('scale', question.scale);
+      break;
+
     case QuizQuestionType.TRUE_FALSE:
       // `correctAnswer` is a boolean; the True/False labels the learner taps
       // are app strings owned by dynamic-i18n, not course content.
