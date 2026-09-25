@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -85,6 +86,7 @@ export class SearchBugHunterMemoryQueryDto {
 
   @ApiPropertyOptional({ default: 3, maximum: AGENT_MEMORY_MAX_HITS })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(AGENT_MEMORY_MAX_HITS)
