@@ -465,7 +465,8 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-4o-mini',
-    configuredBy: 'app/core/scenario_session_evaluation/evaluator.py',
+    configuredBy:
+      '_EVALUATOR_MODEL (app/core/scenario_report/evaluator.py), shared with report-evaluator',
   },
   {
     id: 'video-actor',

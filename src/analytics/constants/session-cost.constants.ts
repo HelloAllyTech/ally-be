@@ -49,7 +49,10 @@ export const SESSION_COST_COMPONENTS = [
 ] as const;
 export type SessionCostComponent = (typeof SESSION_COST_COMPONENTS)[number];
 
-/** Admin-facing names, in stack order (bottom first). */
+/**
+ * Admin-facing names, in stack order (bottom first). Kept to 16 characters or
+ * fewer: Carbon truncates longer legend labels with an ellipsis.
+ */
 export const SESSION_COST_COMPONENT_LABELS: Record<
   SessionCostComponent,
   string
@@ -57,7 +60,7 @@ export const SESSION_COST_COMPONENT_LABELS: Record<
   dialogue: 'Live dialogue',
   stt: 'Speech-to-text',
   tts: 'Text-to-speech',
-  fillers: 'Fillers & holding',
+  fillers: 'Fillers',
   events: 'Events & rules',
   coaching: 'Live coaching',
   debrief: 'Debrief & memory',
@@ -74,8 +77,8 @@ export const SESSION_COST_COMPONENT_DESCRIPTIONS: Record<
   stt: "Transcribing the learner's speech during the session.",
   tts: "The character's voice, including the opening line and holding lines.",
   fillers:
-    'Thinking fillers, interim replies and back-channels, and the audio clips ' +
-    'that voice them.',
+    'Thinking fillers, interim replies covering a pause, and back-channels, ' +
+    'plus the audio clips that voice them.',
   events:
     'Per-turn detectors and rules: behaviours, guardrails, classifiers, ' +
     'paraphrase, semantic similarity and branching.',
