@@ -12,6 +12,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -295,4 +296,15 @@ export class PreviewAskDto {
   @IsOptional()
   @IsUUID('4')
   tenantId?: string;
+}
+
+export class RegisterWaPhoneNumberDto {
+  @ApiProperty({
+    description:
+      "Six digits. Becomes the number's two-step-verification PIN on Meta's side, so record it " +
+      'somewhere safe — Meta asks for it again if the number is ever re-registered.',
+    example: '123456',
+  })
+  @Matches(/^\d{6}$/, { message: 'The PIN must be exactly six digits.' })
+  pin!: string;
 }

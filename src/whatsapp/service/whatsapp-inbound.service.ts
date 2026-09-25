@@ -299,6 +299,17 @@ export class WhatsAppInboundService {
         return;
       }
 
+      // Every path from here replies, and both of them wait on a model call first (the answer, or
+      // the crisis classifier ahead of a refusal) — several seconds with nothing on the worker's
+      // screen. Placed HERE and no earlier because Meta's guidance is to show typing only when a
+      // reply is coming: the silent exits above (opted out, blocked, rate-limited) must not leave a
+      // bubble that never resolves. Not awaited; the provider swallows its own failures, and the
+      // catch here covers any implementation that does not — an unhandled rejection would take the
+      // worker process down with it.
+      void this.provider
+        .showTypingIndicator?.(inbound.providerMessageId)
+        ?.catch(() => undefined);
+
       // ── 7. Identity ──────────────────────────────────────────────────────
       // Which organisation is asking. Documents are targeted at one, some or all of them, so
       // there is no corpus to answer from until this is known. Re-resolved on every message, so
