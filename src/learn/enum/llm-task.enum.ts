@@ -25,6 +25,12 @@ export enum LlmTask {
   // AGENT_TURN but off the reply path, so it has to be separable from turn cost
   // for the feature's spend to be arguable against its benefit.
   CLIENT_WORKING_MEMORY = 'client_working_memory',
+  // Back-channel phrases in ally-ai-learn: one call per session, at session
+  // start, generating the listener affirmations ("mm-hmm") the character plays
+  // while the learner holds the floor. Its own label rather than AGENT_TURN
+  // because the feature is a per-simulation opt-in, so its spend has to be
+  // readable on its own to be argued for.
+  BACKCHANNEL_PHRASES = 'backchannel_phrases',
   // Track-level memory consolidation in ally-be: folds per-session memories
   // into one evolving learner memory per track enrollment.
   TRACK_MEMORY_FOLD = 'track_memory_fold',
