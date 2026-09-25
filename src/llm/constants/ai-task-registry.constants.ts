@@ -375,6 +375,27 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     configuredBy: 'Voice config on the character',
   },
   {
+    id: 'agent-clip-tts',
+    task: null,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: 'The agent plays a filler, back-channel or interim clip',
+    detail:
+      'Same provider and voice as agent-tts, synthesized on a separate TTS ' +
+      'instance and played on the background track just before the reply. ' +
+      'Only fixed-speaker voices get clips (Deepgram, Sarvam bulbul:v2, Google ' +
+      'Chirp 3 HD, ElevenLabs flash/turbo/multilingual_v2, Cartesia). Generative ' +
+      'voices (ElevenLabs v3, Gemini-TTS, Hume) and anything unclassified get ' +
+      'none, and their filler/back-channel/interim LLM calls are skipped too. A ' +
+      'worker-wide cache serves repeated phrases with no call. Not recorded in ' +
+      'llm_usage: only the session instance reports TTS metrics.',
+    hotPath: true,
+    kind: AiTaskKind.SPEECH,
+    provider: 'multiple',
+    defaultModel: 'per-voice',
+    configuredBy:
+      'Voice config on the character; clip policy in BaseTTSClient.allows_clip_synthesis',
+  },
+  {
     id: 'semantic-similarity-embedding',
     task: LlmTask.EMBEDDING,
     runtime: LlmRuntime.AI_LEARN,
