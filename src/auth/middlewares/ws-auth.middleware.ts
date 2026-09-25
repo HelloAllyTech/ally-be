@@ -90,8 +90,7 @@ export class WebSocketAuthMiddleware {
       } catch (error) {
         this.logger.error(
           `WebSocket authentication failed for socket ${socket.id}:`,
-          error.message,
-          error.stack,
+          error,
         );
         next(error);
       }
