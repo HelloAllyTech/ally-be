@@ -42,8 +42,8 @@ export class UpdateScenarioVoiceDto {
       'using the incoming provider, or the stored one when omitted.',
     example: {
       gender: 'male',
-      model: 'bulbul:v2',
-      speaker: 'abhilash',
+      model: 'bulbul:v3',
+      speaker: 'aditya',
     },
     required: false,
   })

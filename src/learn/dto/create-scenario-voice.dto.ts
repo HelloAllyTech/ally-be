@@ -42,8 +42,8 @@ export class CreateScenarioVoiceDto {
       '"gender" is required for every provider.',
     example: {
       gender: 'male',
-      model: 'bulbul:v2',
-      speaker: 'abhilash',
+      model: 'bulbul:v3',
+      speaker: 'aditya',
     },
   })
   @IsObject()

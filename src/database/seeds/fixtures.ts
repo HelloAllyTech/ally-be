@@ -407,9 +407,9 @@ const sarvamAbhilash: Omit<VoiceFixture, 'name'> = {
   provider: 'SARVAM',
   config: {
     age: 'adult',
-    model: 'bulbul:v2',
+    model: 'bulbul:v3',
     gender: 'male',
-    speaker: 'abhilash',
+    speaker: 'aditya',
   },
 };
 
