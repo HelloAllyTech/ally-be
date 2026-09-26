@@ -18,6 +18,7 @@ import {
   LEXEME_MINING_JOB_TTL_SECONDS,
   LEXEME_MINING_SESSION_CAP,
   LEXEME_PAIRING_CHUNK,
+  LEXEME_SECTION_CODE,
   LEXEME_MINING_TOP_K,
   LEXEME_MINING_WINDOW_DAYS,
 } from '../constants/glossary.constants';
@@ -27,6 +28,8 @@ import {
 } from '../entity/glossary-consolidation-batch.entity';
 import {
   GlossaryEntryStatus,
+  GlossaryInjectionMode,
+  GlossarySectionStatus,
   LanguageGlossarySection,
 } from '../entity/language-glossary-section.entity';
 import { LanguageGlossaryRepository } from '../repository/language-glossary.repository';
@@ -275,6 +278,7 @@ export class GlossaryLexemeMiningService {
     });
 
     const targetSection = this.pickTargetSection(globalSections);
+    const targetCode = targetSection?.sectionCode ?? LEXEME_SECTION_CODE;
     const result: MineLexemesResult = {
       dryRun,
       language: language.value,
@@ -286,7 +290,7 @@ export class GlossaryLexemeMiningService {
         undecided: 0,
         written: 0,
       },
-      targetSection: targetSection?.sectionCode ?? null,
+      targetSection: targetCode,
       proposals: [],
       kept: [],
       undecided: [],
@@ -396,8 +400,13 @@ export class GlossaryLexemeMiningService {
     result.stats.kept = result.kept.length;
     result.stats.undecided = result.undecided.length;
 
-    if (!dryRun && targetSection) {
-      await this.writeProposals(languageId, targetSection, result, createdBy);
+    if (!dryRun) {
+      await this.writeProposals(
+        languageId,
+        targetSection ?? this.newLexemeSection(languageId, createdBy),
+        result,
+        createdBy,
+      );
     }
 
     this.logger.log(
@@ -475,18 +484,62 @@ export class GlossaryLexemeMiningService {
   }
 
   /**
-   * Word-choice pairs belong with the language's register rules: `core_style`
-   * when it exists, otherwise the first global section. Retier moves the
-   * section between tiers on its own evidence afterwards.
+   * Where mined pairs are queued: an ON-DEMAND (retrieved) vocabulary section,
+   * never an always-on one.
+   *
+   * The runtime word swap (glossary-swap.util) enforces a published pair on
+   * every reply whichever section holds it, so a pair gains nothing from also
+   * sitting in the every-turn prompt — and the every-turn block is capped.
+   * The first write run queued Tamil pairs into `core_style` while Tamil's
+   * Tier 0 was at 2320/2000 tokens: the adjudicator deferred all of them
+   * ("cap blocked core_style"), forever. Kannada and Marathi sit at 1996 and
+   * 1997 of 2000 and have no on-demand section at all.
+   *
+   * So: an existing on-demand `general_vocabulary`; else `everyday_words`
+   * (whatever an admin has since made of it); else null, meaning
+   * `everyday_words` is created on the first write.
    */
   private pickTargetSection(
     globalSections: LanguageGlossarySection[],
   ): LanguageGlossarySection | null {
     return (
-      globalSections.find((s) => s.sectionCode === 'core_style') ??
-      globalSections[0] ??
+      globalSections.find(
+        (s) =>
+          s.sectionCode === 'general_vocabulary' &&
+          s.status === GlossarySectionStatus.PUBLISHED &&
+          s.injectionMode === GlossaryInjectionMode.RETRIEVED,
+      ) ??
+      globalSections.find((s) => s.sectionCode === LEXEME_SECTION_CODE) ??
       null
     );
+  }
+
+  /**
+   * The on-demand section mined pairs go to when a language has none.
+   * Published (a draft section is never served, so accepted pairs would be
+   * unreachable) and pinned, so the tier pass never promotes it into the
+   * capped every-turn block. Empty content is served as nothing.
+   */
+  private newLexemeSection(
+    languageId: number,
+    createdBy?: string,
+  ): LanguageGlossarySection {
+    return this.glossaryRepository.create({
+      languageId,
+      sectionCode: LEXEME_SECTION_CODE,
+      profileId: null,
+      title: 'Everyday words',
+      content: '',
+      entries: [],
+      retrievalHint:
+        'Everyday spoken word choices: the colloquial word to use instead of a bookish or literary one.',
+      injectionMode: GlossaryInjectionMode.RETRIEVED,
+      status: GlossarySectionStatus.PUBLISHED,
+      tierPinned: true,
+      version: 0,
+      provenance: { source: 'lexeme_mining' },
+      createdBy,
+    });
   }
 
   /**

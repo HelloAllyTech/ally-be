@@ -75,6 +75,7 @@ describe('GlossaryLexemeMiningService', () => {
     glossaryRepository = {
       findAllForLanguage: jest.fn().mockResolvedValue([core]),
       save: jest.fn(async (v: any) => v),
+      create: jest.fn((v: any) => ({ id: 'sec-new', ...v })),
     };
     batchRepository = {
       create: jest.fn((v: any) => ({ id: 'batch-1', ...v })),
@@ -148,7 +149,9 @@ describe('GlossaryLexemeMiningService', () => {
       false,
     );
     expect(out.undecided.length).toBe(out.candidates.length - 2);
-    expect(out.targetSection).toBe('core_style');
+    // core_style is always-on (capped); with no on-demand vocabulary section
+    // the pairs would go to a new everyday_words section.
+    expect(out.targetSection).toBe('everyday_words');
     expect(glossaryRepository.save).not.toHaveBeenCalled();
     expect(batchRepository.save).not.toHaveBeenCalled();
   });
@@ -191,7 +194,14 @@ describe('GlossaryLexemeMiningService', () => {
     expect(out.stats.written).toBe(1);
     expect(out.batchId).toBe('batch-1');
     const saved = glossaryRepository.save.mock.calls[0][0];
-    expect(saved.version).toBe(5);
+    expect(saved).toMatchObject({
+      sectionCode: 'everyday_words',
+      injectionMode: 'retrieved',
+      status: 'published',
+      tierPinned: true,
+      version: 1,
+    });
+    expect(core.entries).toEqual([]);
     expect(saved.entries[0]).toMatchObject({
       markdown: '- so: say `அதனால` (avoid: `அதனால்`)',
       status: GlossaryEntryStatus.PROPOSED,
@@ -205,6 +215,54 @@ describe('GlossaryLexemeMiningService', () => {
     expect(batch.trigger).toBe('lexeme_mining');
     expect(batch.autoAccepted).toBe(false);
     expect(batch.entries).toHaveLength(1);
+  });
+
+  it('queues into an on-demand general_vocabulary section when there is one', async () => {
+    const vocab = section({
+      id: 'sec-vocab',
+      sectionCode: 'general_vocabulary',
+      injectionMode: 'retrieved',
+      status: 'published',
+      content: '',
+      version: 7,
+    });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([core, vocab]);
+    getCompletion.mockImplementation(async (messages: any[]) => {
+      const line = (messages[0].content as string)
+        .split('\n')
+        .find((l) => /^\d+\. அதனால் /.test(l))!;
+      return JSON.stringify([
+        {
+          index: Number(line.split('.')[0]),
+          verdict: 'pair',
+          say: 'அதனால',
+          meaning: 'so',
+          wordClass: 'conjunction',
+        },
+      ]);
+    });
+
+    const out = await service.mineLexemes(6, { dryRun: false });
+
+    expect(out.targetSection).toBe('general_vocabulary');
+    const saved = glossaryRepository.save.mock.calls[0][0];
+    expect(saved.id).toBe('sec-vocab');
+    expect(saved.version).toBe(8);
+    expect(glossaryRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('never picks an always-on general_vocabulary', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      core,
+      section({
+        sectionCode: 'general_vocabulary',
+        injectionMode: 'always',
+        status: 'published',
+      }),
+    ]);
+    verdicts([]);
+    const out = await service.mineLexemes(6);
+    expect(out.targetSection).toBe('everyday_words');
   });
 
   it('does not write a pair the population contradicts', async () => {

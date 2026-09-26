@@ -585,8 +585,13 @@ A counsellor asking "what do you mean?" was tested as a signal and rejected: the
 baseline was 0.73–1.1, and the hits are the reflective-clarification technique being practised,
 not incomprehension.
 
-`dryRun=false` queues surviving pairs as `proposed` entries in `core_style` under a batch with
-`trigger='lexeme_mining'`. Duplicates and `contradicted` pairs are not written. It never
+`dryRun=false` queues surviving pairs as `proposed` entries in an **on-demand** section — an
+on-demand published `general_vocabulary`, else `everyday_words` (created published, retrieved and
+`tierPinned` on first write) — under a batch with `trigger='lexeme_mining'`. Never an always-on
+section: the runtime swap (§5.2a) enforces a published pair from any section, so the every-turn
+prompt adds nothing, and its cap stranded the first run — Tamil's pairs went to `core_style` at
+2320/2000 tokens and were deferred forever ("cap blocked core_style"). Migration `1973800000000`
+moved those still-proposed pairs to the on-demand target and repointed their batch record. Duplicates and `contradicted` pairs are not written. It never
 auto-accepts, **but in an environment running §6.3 in `apply` mode the queued proposals are
 decided on the adjudicator's next pass** — the dry run is the human checkpoint. Each entry also
 records `swapSafe`: a single-token pair of an agreement-free class (discourse marker,

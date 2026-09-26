@@ -43,6 +43,10 @@ export const LEXEME_MINING_SESSION_CAP = 400;
 /** Candidates sent to the pairing prompt per run. */
 export const LEXEME_MINING_TOP_K = 40;
 
+/** The on-demand section mined pairs are queued into when a language has no
+ * on-demand `general_vocabulary` (GlossaryLexemeMiningService.pickTargetSection). */
+export const LEXEME_SECTION_CODE = 'everyday_words';
+
 /** Lexeme-mining job records live this long in Redis (seconds). */
 export const LEXEME_MINING_JOB_TTL_SECONDS = 24 * 60 * 60;
 
