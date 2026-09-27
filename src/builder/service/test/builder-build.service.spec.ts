@@ -1278,6 +1278,43 @@ describe('BuilderBuildService', () => {
       );
     });
 
+    it('files each model under its own provider, not the engine', async () => {
+      // opencode (the default engine) runs Gemini; these rows used to be
+      // hardcoded 'anthropic', so Gemini spend read as Claude spend.
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-1',
+        sessionId: 'session-1',
+        cost: null,
+        costUsd: '0',
+      });
+
+      await service.recordRunCost(
+        { id: 'run-1', sessionId: 'session-1' } as any,
+        {
+          phase: 'code-1',
+          model: 'gemini-2.5-pro',
+          totalCostUsd: 1,
+          modelUsage: {
+            'gemini-2.5-pro': { inputTokens: 1000, outputTokens: 10 },
+            'claude-haiku-4-5': { inputTokens: 500, outputTokens: 5 },
+          },
+        },
+      );
+
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'gemini-2.5-pro',
+          provider: 'gemini',
+        }),
+      );
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+        }),
+      );
+    });
+
     it('writes no usage row for a phase that measured nothing', async () => {
       runRepository.findOne.mockResolvedValue({
         id: 'run-1',
