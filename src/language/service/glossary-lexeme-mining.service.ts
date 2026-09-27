@@ -226,15 +226,15 @@ export class GlossaryLexemeMiningService {
         result,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `[GLOSSARY_LEXEME_MINING] job=${job.jobId} language=${job.languageId} failed: ${message}`,
+        `[GLOSSARY_LEXEME_MINING] job=${job.jobId} language=${job.languageId} failed`,
+        error,
       );
       await this.saveJob({
         ...job,
         status: 'failed',
         finishedAt: new Date().toISOString(),
-        error: message,
+        error: error instanceof Error ? error.message : String(error),
       }).catch((saveError) =>
         this.logger.error(
           `[GLOSSARY_LEXEME_MINING] job=${job.jobId} could not record its failure: ${saveError}`,
