@@ -290,10 +290,10 @@ describe('XpAwardService', () => {
       );
     });
 
-    it('never throws when the ledger write fails', async () => {
+    it('throws when the ledger write fails', async () => {
       xpEventRepository.insertAwards.mockRejectedValue(new Error('pg down'));
 
-      await expect(awardSession(10 * 60 * 1000)).resolves.toBeUndefined();
+      await expect(awardSession(10 * 60 * 1000)).rejects.toThrow('pg down');
     });
   });
 
