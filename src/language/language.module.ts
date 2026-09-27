@@ -22,6 +22,7 @@ import { GlossaryAdherenceSchedulerRegistrationService } from './service/glossar
 import { GlossaryAdherenceService } from './service/glossary-adherence.service';
 import { GlossaryAdjudicationService } from './service/glossary-adjudication.service';
 import { GlossaryLexemeMiningService } from './service/glossary-lexeme-mining.service';
+import { GlossaryJobService } from './service/glossary-job.service';
 import { GlossaryAdjudicationSchedulerRegistrationService } from './service/glossary-adjudication-scheduler-registration.service';
 import { VarietyProfileController } from './controller/variety-profile.controller';
 import { VarietyProfileService } from './service/variety-profile.service';
@@ -59,6 +60,7 @@ import { UserModule } from 'src/user/user.module';
     GlossaryAdherenceService,
     GlossaryAdjudicationService,
     GlossaryLexemeMiningService,
+    GlossaryJobService,
     GlossaryAdjudicationSchedulerRegistrationService,
     GlossaryAdherenceSchedulerRegistrationService,
     GlossaryConsolidationSchedulerRegistrationService,

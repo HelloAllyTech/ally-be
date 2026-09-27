@@ -22,6 +22,7 @@ import { LanguageGlossaryService } from '../service/language-glossary.service';
 import { GlossaryAdherenceService } from '../service/glossary-adherence.service';
 import { GlossaryAdjudicationService } from '../service/glossary-adjudication.service';
 import { GlossaryLexemeMiningService } from '../service/glossary-lexeme-mining.service';
+import { GlossaryJobService } from '../service/glossary-job.service';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -36,6 +37,7 @@ export class LanguageGlossaryController {
     private readonly adherenceService: GlossaryAdherenceService,
     private readonly adjudicationService: GlossaryAdjudicationService,
     private readonly lexemeMiningService: GlossaryLexemeMiningService,
+    private readonly jobs: GlossaryJobService,
   ) {}
 
   @ApiOperation({
@@ -177,25 +179,50 @@ export class LanguageGlossaryController {
   }
 
   @ApiOperation({
-    summary: 'Adjudicate the queued proposals for a language (AI review)',
+    summary:
+      'Start an adjudication run over the queued proposals for a language (AI review)',
     description:
-      'Decides every proposal awaiting review: accepts language rules, ' +
-      'rejects persona/behaviour rules, restatements and rules that fight ' +
-      'real usage, and DEFERS anything the Tier 0 token cap will not fit or ' +
-      'the adjudicator was unsure about. Rule form is checked ' +
-      'deterministically first — a substitution buried in an example line is ' +
-      'rejected without a model call, because that shape measured 4% agent ' +
-      'compliance. Pass apply=false to preview the verdicts without applying.',
+      'Returns 202 with a job id at once; poll GET ' +
+      ':id/glossary/proposals/adjudicate/:jobId for the verdicts (the run ' +
+      'outlived the 60 s load-balancer timeout on Tamil). Decides every ' +
+      'proposal awaiting review: accepts language rules, rejects ' +
+      'persona/behaviour rules, restatements and rules that fight real usage, ' +
+      'and DEFERS anything the Tier 0 token cap will not fit or the ' +
+      'adjudicator was unsure about. Rule form is checked deterministically ' +
+      'first — a substitution buried in an example line is rejected without a ' +
+      'model call, because that shape measured 4% agent compliance. Pass ' +
+      'apply=false to preview the verdicts without applying. 409 while another ' +
+      'adjudication run for the same language is in progress.',
   })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
   @Post(':id/glossary/proposals/adjudicate')
+  @HttpCode(HttpStatus.ACCEPTED)
   async adjudicateProposals(
     @Param('id') id: number,
     @Query('apply') apply?: string,
   ) {
-    return this.adjudicationService.adjudicateLanguage(Number(id), {
-      apply: apply !== 'false',
-    });
+    const languageId = Number(id);
+    await this.glossaryService.assertLanguageExists(languageId);
+    const options = { apply: apply !== 'false' };
+    return this.jobs.start('adjudication', languageId, options, () =>
+      this.adjudicationService.adjudicateLanguage(languageId, options),
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Poll an adjudication run',
+    description:
+      "status is 'running', 'succeeded' (with the verdicts as result) or " +
+      "'failed' (with error). A run still running after 15 minutes is " +
+      'reported as failed. Records expire after 24 hours.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Get(':id/glossary/proposals/adjudicate/:jobId')
+  async getAdjudicationJob(
+    @Param('id') id: number,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.jobs.get('adjudication', Number(id), jobId);
   }
 
   @ApiOperation({ summary: 'Reject a consolidation proposal' })

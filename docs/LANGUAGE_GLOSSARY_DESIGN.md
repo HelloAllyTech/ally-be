@@ -571,7 +571,8 @@ still use the substring scorer. A mined pair is `confirmed` only when counsellor
 replacement — the consolidation rule also confirms on "the agent says the avoid-term", which every
 mined candidate does, so on the first dry runs every uncontradicted pair read confirmed. A run takes 44–56 s against the 60 s load-balancer idle timeout, and
 the parallel chunks cannot shrink it (the cost is thinking time, not output length), so the run is a
-**background job**: `POST …/lexeme-mining` returns 202 with a `jobId`, and `GET
+**background job** (`GlossaryJobService`, shared with manual adjudication, which also outlived the
+60 s timeout on Tamil): `POST …/lexeme-mining` returns 202 with a `jobId`, and `GET
 …/lexeme-mining/:jobId` returns `running` / `succeeded` (with the result) / `failed` (with the
 error). The record lives in Redis (24 h TTL), not memory, because the API runs as several tasks and
 a poll can land on any of them. One run per language at a time (Redis lock, 409 otherwise); a job
@@ -729,7 +730,8 @@ POST  /v1/language/:id/glossary/lexeme-mining                     start bookish-
 GET   /v1/language/:id/glossary/lexeme-mining/:jobId              poll a mining run
 POST  /v1/language/:id/glossary/retier                            recompute Tier 0 knapsack
 POST  /v1/language/:id/glossary/:sectionCode/proposals/:entryId/accept | /reject
-POST  /v1/language/:id/glossary/proposals/adjudicate              LLM adjudication (§6.3)
+POST  /v1/language/:id/glossary/proposals/adjudicate              start LLM adjudication (202 + jobId, §6.3)
+GET   /v1/language/:id/glossary/proposals/adjudicate/:jobId       poll an adjudication run
 GET   /v1/language/:id/glossary/consolidation-batches             audit trail
 POST  /v1/language/:id/glossary/consolidation-batches/:batchId/rollback
 GET   /v1/language/:id/glossary/adherence                         deterministic scan (§9)
