@@ -1,3 +1,4 @@
+import { AGENT_MEMORY_BODY_MAX } from 'src/agent-memory/entity/agent-memory.entity';
 import { BugHunterMode } from '../enum/bug-finding.enum';
 import { BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES } from './bug-fix-session.constants';
 import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
@@ -19,12 +20,23 @@ import {
  * decisions from being the ones that get cut, and collapsing newlines stops a
  * multi-paragraph note from turning one bullet into a section.
  */
-const clip = (value: string): string => {
+const clip = (
+  value: string,
+  max: number = BUG_HUNT_KNOWN_NON_BUG_EXCERPT,
+): string => {
   const flat = value.replace(/\s+/g, ' ').trim();
-  return flat.length > BUG_HUNT_KNOWN_NON_BUG_EXCERPT
-    ? `${flat.slice(0, BUG_HUNT_KNOWN_NON_BUG_EXCERPT - 1)}…`
-    : flat;
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
+
+/**
+ * A notebook entry is rendered whole, up to the 600-character cap the table
+ * already enforces. The 160-character excerpt above is for the known-non-bugs
+ * block, where each line is a title plus a note and only the gist matters; a
+ * lesson is written to be read in full, and cutting it at 160 dropped exactly
+ * the part that says what to do about it ("…passes on a single-wor").
+ */
+const clipMemory = (value: string): string =>
+  clip(value, AGENT_MEMORY_BODY_MAX);
 
 /** One bug the team has already judged not to be a bug — see `knownNonBugs`. */
 export interface KnownNonBug {
@@ -247,7 +259,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
           `These are the strongest entries past sweeps and admins left for you. They are an engineer's notes, not orders: apply what fits tonight, and if one proves wrong, say so in Phase 5.`,
           ...memories.map(
             (entry) =>
-              `  - ${clip(entry.body)}` +
+              `  - ${clipMemory(entry.body)}` +
               (entry.tags?.length ? ` [${entry.tags.join(', ')}]` : ''),
           ),
         ]

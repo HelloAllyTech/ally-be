@@ -692,6 +692,78 @@ describe('BugFixSessionService', () => {
       );
     });
 
+    it('flips a PR_OPENED finding to CANCELLED when a developer closed the PR without merging', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-be',
+                prUrl: 'https://github.com/helloallytech/ally-be/pull/910',
+              }),
+            ]
+          : [],
+      );
+      const closedAt = new Date('2026-09-27T09:30:00.000Z');
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'closed',
+        closedAt,
+        htmlUrl: 'https://github.com/helloallytech/ally-be/pull/910',
+        mergedAt: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.CANCELLED,
+        cancelledAt: closedAt,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.CANCELLED,
+          summary: expect.stringContaining(
+            'closed on GitHub without being merged',
+          ),
+          payload: expect.objectContaining({ closedOnGitHub: true, closedAt }),
+        }),
+      );
+      // Nobody merged anything, so nothing downstream of a merge may run.
+      expect(roadmapOpportunityRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('leaves a PR_OPENED finding alone while its PR is still open', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-be',
+                prUrl: 'https://github.com/helloallytech/ally-be/pull/911',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        closedAt: null,
+        htmlUrl: 'https://github.com/helloallytech/ally-be/pull/911',
+        mergedAt: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).not.toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+      expect(bugHunterService.appendFindingEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ stage: BugHuntEventStage.CANCELLED }),
+      );
+    });
+
     it('releases the linked roadmap opportunity when a merged finding carries a reportedBugId', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED

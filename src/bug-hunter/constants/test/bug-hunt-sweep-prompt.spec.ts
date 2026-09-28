@@ -139,6 +139,17 @@ describe('buildSweepPrompt', () => {
       expect(p).toMatch(/notes, not orders/);
     });
 
+    it('renders a long entry whole rather than at the known-non-bug excerpt length', () => {
+      // A lesson is written to be read in full; the 160-char excerpt used for
+      // the known-non-bugs block once cut this one at "single-wor…".
+      const body =
+        "ally-be: the scheduler suite (src/scheduler/*.spec.ts) fails intermittently under three Jest workers with 'job lost after reconnect'. It passes on a single-worker rerun. Rerun once before filing a failure from this suite.";
+      expect(body.length).toBeGreaterThan(160);
+      const p = build({ memories: [{ id: 'm-1', body }] });
+      expect(p).toContain(body);
+      expect(p).not.toContain('single-wor…');
+    });
+
     it('says nothing when the notebook is empty', () => {
       expect(build({ memories: [] })).not.toContain('From your notebook');
     });

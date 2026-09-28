@@ -1052,14 +1052,24 @@ export class BugFixSessionService {
   }
 
   /**
-   * PR_OPENED → MERGED, read from the PR's own merge state.
+   * PR_OPENED → MERGED or CANCELLED, read from the PR's own state on GitHub.
    *
    * `pr_opened` is written once, self-reported by the fix agent the moment it
    * decides a guarded-path diff needs human review rather than merging it
    * itself (see `bug-fix-prompt.ts`'s Fix step). Nothing else ever asks GitHub
    * again after that — so a PR a human later merges by hand, through GitHub's
-   * own review UI rather than the agent's `gh pr merge --admin`, stays stuck
-   * here forever without this pass.
+   * own review UI rather than the agent's `gh pr merge`, stays stuck here
+   * forever without this pass.
+   *
+   * The same is true of a PR a developer CLOSES without merging — a rejected
+   * fix, a superseded one, a branch cleaned up. Before this pass handled it,
+   * those rows sat at "PR open" indefinitely, so the tab showed review work
+   * that no longer existed and the Review bucket never emptied. A closed PR is
+   * a human stopping the fix on purpose, which is exactly what CANCELLED means
+   * (see BugFindingStatus): the bug itself is still open, "Ask me to try
+   * again" still applies, and nothing here decides whether it was a real bug.
+   * `cancelledBy` stays null because GitHub's PR resource does not say who
+   * closed it; the timeline entry carries the PR and the closing time instead.
    */
   private async reconcilePrOpenedFindings(): Promise<void> {
     const opened = await this.findingRepository.find({
@@ -1074,7 +1084,14 @@ export class BugFixSessionService {
         if (!finding.repo || !prNumber) continue;
 
         const pr = await this.github.getPullRequest(finding.repo, prNumber);
-        if (!pr?.merged) continue;
+        if (!pr) continue;
+
+        if (!pr.merged) {
+          if (pr.state === 'closed') {
+            await this.markPrClosedWithoutMerge(finding, pr.closedAt);
+          }
+          continue;
+        }
 
         await this.findingRepository.update(finding.id, {
           status: BugFindingStatus.MERGED,
@@ -1100,6 +1117,26 @@ export class BugFixSessionService {
         );
       }
     }
+  }
+
+  /** A PR a developer closed on GitHub without merging — see reconcilePrOpenedFindings. */
+  private async markPrClosedWithoutMerge(
+    finding: BugFinding,
+    closedAt: Date | null,
+  ): Promise<void> {
+    const when = closedAt ?? new Date();
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.CANCELLED,
+      cancelledAt: when,
+    });
+    finding.status = BugFindingStatus.CANCELLED;
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo!,
+      stage: BugHuntEventStage.CANCELLED,
+      summary: `${finding.prUrl} was closed on GitHub without being merged. The bug is still open — start a fresh fix session if it still needs fixing.`,
+      payload: { prUrl: finding.prUrl, closedAt: when, closedOnGitHub: true },
+    });
   }
 
   /**

@@ -21,6 +21,8 @@ export interface PullRequestInfo {
   mergedAt: Date | null;
   /** open | closed. A PR closed without merging is a rejection, not a pass. */
   state: string;
+  /** When GitHub closed it, merged or not. Null while open. */
+  closedAt: Date | null;
   /** Head commit sha — what a CI rollup is actually about. */
   headSha: string | null;
   /**
@@ -312,6 +314,7 @@ export class GithubActionsService {
         htmlUrl: data?.html_url,
         mergedAt: data?.merged_at ? new Date(data.merged_at) : null,
         state: String(data?.state ?? 'open'),
+        closedAt: data?.closed_at ? new Date(data.closed_at) : null,
         headSha: data?.head?.sha ? String(data.head.sha) : null,
         mergeableState: data?.mergeable_state
           ? String(data.mergeable_state)
