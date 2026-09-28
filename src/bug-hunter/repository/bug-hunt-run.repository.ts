@@ -261,7 +261,7 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
       WHERE lu.task = $2
         AND r."createdAt" >= $1
       GROUP BY 1, 2
-      ORDER BY input_tokens + output_tokens DESC
+      ORDER BY COALESCE(SUM(lu."promptTokens"), 0) + COALESCE(SUM(lu."completionTokens"), 0) DESC
       `,
       [since, LlmTask.BUG_HUNTER],
     );
