@@ -7,10 +7,17 @@ import {
 } from '../enum/bug-finding.enum';
 import {
   BugFindingRepository,
+  DailyFiledCount,
   FindingOutcomeCount,
+  ReporterCount,
   StageLatency,
 } from '../repository/bug-finding.repository';
-import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
+import {
+  BugHuntRunRepository,
+  DailyRunTokens,
+  ModelTokens,
+} from '../repository/bug-hunt-run.repository';
+import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import {
   BugHuntEventRepository,
   EscalationBreakdown,
@@ -118,6 +125,61 @@ export interface BugHunterMetrics {
   };
 }
 
+/** One calendar day of the operations view. Dense: every day in the window is present. */
+export interface OperationsDay {
+  /** `YYYY-MM-DD` in the database's clock (UTC). */
+  date: string;
+  /** New findings filed that day, child steps excluded. Re-discoveries touch an existing row and so do not count. */
+  filed: number;
+  /** Of `filed`, how many have since reached a fix stage or beyond. */
+  accepted: number;
+  /** Of `filed`, how many a verifier or a human has since declined. */
+  declined: number;
+  /** Of `filed`, how many are still new or pending approval. */
+  undecided: number;
+  /** `filed` split by finding source. Sources with nothing that day are absent. */
+  bySource: Record<string, number>;
+  /** Model tokens spent by runs that STARTED that day, by trigger. */
+  tokens: Record<BugHuntTrigger, OperationsTokens>;
+}
+
+export interface OperationsTokens {
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export interface OperationsSourceTotal {
+  source: string;
+  filed: number;
+  accepted: number;
+  declined: number;
+  undecided: number;
+}
+
+export interface BugHunterOperationsMetrics {
+  windowDays: number;
+  since: string;
+  days: OperationsDay[];
+  /** Window totals per source, most filed first. */
+  bySource: OperationsSourceTotal[];
+  /** Window totals by who raised the bug. Always all three parties, zeros included. */
+  byReporter: ReporterCount[];
+  /** Window totals per model, most tokens first. Empty until the CI runner has reported usage. */
+  tokensByModel: ModelTokens[];
+  totals: {
+    filed: number;
+    accepted: number;
+    declined: number;
+    undecided: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    runs: number;
+  };
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
@@ -179,6 +241,36 @@ export class BugHunterMetricsService {
     private readonly runRepository: BugHuntRunRepository,
     private readonly eventRepository: BugHuntEventRepository,
   ) {}
+
+  /**
+   * The volume view: what gets filed each day, where it comes from, who
+   * raised it, and what the models cost — the operational counterpart to
+   * `report`, which judges outcomes.
+   *
+   * Every volume figure is paired with where that cohort stands now
+   * (`accepted` / `declined` / `undecided`). A bar of "12 bugs found" says
+   * nothing on its own: twelve that were all dismissed is a noisy finder,
+   * twelve that mostly shipped is a good night. The panel is asked to draw
+   * the second number beside the first, and this returns them together so it
+   * cannot draw one without the other.
+   *
+   * Days are dense — every calendar day in the window is present, zeros
+   * included — for the reason `scorecard.ts` gives: a day Bug Hunter did
+   * nothing is a real observation, and a chart that omits it draws four busy
+   * days as a straight line.
+   */
+  async operations(windowDays: number): Promise<BugHunterOperationsMetrics> {
+    const since = new Date(Date.now() - windowDays * MS_PER_DAY);
+
+    const [filed, reporters, tokens, models] = await Promise.all([
+      this.findingRepository.dailyFiledCounts(since),
+      this.findingRepository.reporterCounts(since),
+      this.runRepository.dailyTokens(since),
+      this.runRepository.tokensByModel(since),
+    ]);
+
+    return buildOperations(windowDays, since, filed, reporters, tokens, models);
+  }
 
   async report(windowDays: number): Promise<BugHunterMetrics> {
     const since = new Date(Date.now() - windowDays * MS_PER_DAY);
@@ -411,4 +503,159 @@ const declineBreakdown = (rows: FindingOutcomeCount[]): DeclineBreakdown[] => {
       finderError: FINDER_ERROR_REASONS.has(reason),
     }))
     .sort((a, b) => b.count - a.count);
+};
+
+// ── operations view ───────────────────────────────────────────────────────
+
+const REPORTERS: ReporterCount['reporter'][] = ['agent', 'staff', 'consumer'];
+
+const emptyTokens = (): OperationsTokens => ({
+  runs: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  costUsd: 0,
+});
+
+const emptyDay = (date: string): OperationsDay => ({
+  date,
+  filed: 0,
+  accepted: 0,
+  declined: 0,
+  undecided: 0,
+  bySource: {},
+  tokens: {
+    [BugHuntTrigger.SCHEDULED]: emptyTokens(),
+    [BugHuntTrigger.MANUAL]: emptyTokens(),
+    [BugHuntTrigger.FIX_SESSION]: emptyTokens(),
+  },
+});
+
+/** `YYYY-MM-DD` in UTC, matching the repositories' `to_char` on a UTC-stored timestamp. */
+const utcDay = (date: Date): string => date.toISOString().slice(0, 10);
+
+/**
+ * Exported for the spec: pure arithmetic over the four repository results,
+ * so the tests exercise exactly what the endpoint returns without a database.
+ */
+export const buildOperations = (
+  windowDays: number,
+  since: Date,
+  filed: DailyFiledCount[],
+  reporters: ReporterCount[],
+  tokens: DailyRunTokens[],
+  models: ModelTokens[],
+  now: Date = new Date(),
+): BugHunterOperationsMetrics => {
+  // Dense day axis, oldest first, from the window's first day through today.
+  const days = new Map<string, OperationsDay>();
+  const start = Date.UTC(
+    since.getUTCFullYear(),
+    since.getUTCMonth(),
+    since.getUTCDate(),
+  );
+  const end = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  for (let time = start; time <= end; time += MS_PER_DAY) {
+    const key = utcDay(new Date(time));
+    days.set(key, emptyDay(key));
+  }
+  // A row outside the axis (clock skew, a run stamped in the future) is
+  // dropped rather than given a day the chart does not draw.
+  const dayFor = (key: string): OperationsDay | undefined => days.get(key);
+
+  const sourceTotals = new Map<string, OperationsSourceTotal>();
+  filed.forEach((row) => {
+    const day = dayFor(row.day);
+    const count = Number(row.filed);
+    if (day) {
+      day.filed += count;
+      day.accepted += Number(row.accepted);
+      day.declined += Number(row.declined);
+      day.undecided += Number(row.undecided);
+      day.bySource[row.source] = (day.bySource[row.source] ?? 0) + count;
+    }
+    const total = sourceTotals.get(row.source) ?? {
+      source: row.source,
+      filed: 0,
+      accepted: 0,
+      declined: 0,
+      undecided: 0,
+    };
+    total.filed += count;
+    total.accepted += Number(row.accepted);
+    total.declined += Number(row.declined);
+    total.undecided += Number(row.undecided);
+    sourceTotals.set(row.source, total);
+  });
+
+  tokens.forEach((row) => {
+    const day = dayFor(row.day);
+    if (!day) return;
+    const cell = day.tokens[row.trigger] ?? emptyTokens();
+    cell.runs += row.runs;
+    cell.inputTokens += row.inputTokens;
+    cell.outputTokens += row.outputTokens;
+    cell.costUsd += row.costUsd;
+    day.tokens[row.trigger] = cell;
+  });
+
+  const totals = {
+    filed: 0,
+    accepted: 0,
+    declined: 0,
+    undecided: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    runs: 0,
+  };
+  sourceTotals.forEach((total) => {
+    totals.filed += total.filed;
+    totals.accepted += total.accepted;
+    totals.declined += total.declined;
+    totals.undecided += total.undecided;
+  });
+  tokens.forEach((row) => {
+    totals.inputTokens += row.inputTokens;
+    totals.outputTokens += row.outputTokens;
+    totals.costUsd += row.costUsd;
+    totals.runs += row.runs;
+  });
+  totals.costUsd = round(totals.costUsd);
+  days.forEach((day) => {
+    Object.values(day.tokens).forEach((cell) => {
+      cell.costUsd = round(cell.costUsd);
+    });
+  });
+
+  // All three parties, always, so the chart never silently drops "consumer"
+  // on an install where nobody has used the report form yet — a zero there
+  // is a fact worth seeing.
+  const byReporter = REPORTERS.map(
+    (reporter) =>
+      reporters.find((row) => row.reporter === reporter) ?? {
+        reporter,
+        filed: 0,
+        accepted: 0,
+        declined: 0,
+      },
+  );
+
+  return {
+    windowDays,
+    since: since.toISOString(),
+    days: [...days.values()],
+    bySource: [...sourceTotals.values()].sort(
+      (a, b) => b.filed - a.filed || a.source.localeCompare(b.source),
+    ),
+    byReporter,
+    tokensByModel: [...models].sort(
+      (a, b) =>
+        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    ),
+    totals,
+  };
 };

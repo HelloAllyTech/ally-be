@@ -10,6 +10,39 @@ import {
 } from '../enum/bug-finding.enum';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 
+/**
+ * Where a finding stands, in three words, for the operations aggregates.
+ *
+ * Listed rather than derived so a new status shows up as uncounted in the
+ * panel — the same argument `BugHunterMetricsService.OPEN_STATUSES` makes.
+ * "Accepted" is anything that reached a fix stage or beyond, failures
+ * included: somebody (or AI mode) treated it as a real bug, whatever became
+ * of the fix.
+ */
+export const FINDING_ACCEPTED_STATUSES: string[] = [
+  BugFindingStatus.APPROVED,
+  BugFindingStatus.QUEUED,
+  BugFindingStatus.FIXING,
+  BugFindingStatus.NEEDS_INPUT,
+  BugFindingStatus.BLOCKED,
+  BugFindingStatus.COORDINATING,
+  BugFindingStatus.PR_OPENED,
+  BugFindingStatus.MERGED,
+  BugFindingStatus.RELEASING,
+  BugFindingStatus.RELEASED,
+  BugFindingStatus.RELEASE_FAILED,
+  BugFindingStatus.FAILED,
+  BugFindingStatus.CANCELLED,
+];
+export const FINDING_DECLINED_STATUSES: string[] = [
+  BugFindingStatus.DISMISSED,
+  BugFindingStatus.REJECTED,
+];
+export const FINDING_UNDECIDED_STATUSES: string[] = [
+  BugFindingStatus.NEW,
+  BugFindingStatus.PENDING_APPROVAL,
+];
+
 /** Statuses that mean "still open" — a matching dedupe key under one of these is the same bug, not a new one. */
 const OPEN_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.NEW,
@@ -82,6 +115,39 @@ export interface FindingOutcomeCount {
 /** Same cells as `FindingOutcomeCount`, one set per calendar week — see `weeklyOutcomeCounts`. */
 export interface WeeklyFindingOutcomeCount extends FindingOutcomeCount {
   week: Date;
+}
+
+/**
+ * One (day, source) cell of new findings — see `dailyFiledCounts`.
+ *
+ * `accepted` / `declined` / `undecided` describe where those findings stand
+ * NOW, not on the day they were filed: the chart pairs a day's volume with
+ * the share of it that later held up, which is the only thing that stops a
+ * noisy finder reading as a productive one.
+ */
+export interface DailyFiledCount {
+  /** Calendar day, `YYYY-MM-DD`, in the database's clock (UTC). */
+  day: string;
+  source: string;
+  filed: number;
+  /** Reached a fix stage or beyond — a human or AI mode treated it as a real bug. */
+  accepted: number;
+  /** Dismissed by a verifier or rejected by a human. */
+  declined: number;
+  /** Still new or pending approval. */
+  undecided: number;
+}
+
+/**
+ * Who a finding came from, collapsed to three parties — see `reporterCounts`.
+ * `agent` is every finder plus UX signals; `staff` and `consumer` are the two
+ * ways a human files a bug (RoadmapOpportunitySource).
+ */
+export interface ReporterCount {
+  reporter: 'agent' | 'staff' | 'consumer';
+  filed: number;
+  accepted: number;
+  declined: number;
 }
 
 /** How long findings sat between two lifecycle stamps, in hours. */
@@ -655,6 +721,91 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addGroupBy('f.decision_reason')
         .getRawMany<FindingOutcomeCount>()
     );
+  }
+
+  /**
+   * New findings per calendar day and source, with where each cohort stands
+   * now — the operations panel's "what I turn up, day by day".
+   *
+   * "Unique" bugs by day falls out of the row model: a re-discovery touches
+   * the existing row (`persistFindings`) rather than inserting, so counting
+   * rows by `createdAt` IS counting distinct bugs. Child steps are excluded,
+   * as everywhere else in this file's aggregates — a three-repo fix is one
+   * bug. The day is taken in the database's clock, and the client is told so.
+   */
+  dailyFiledCounts(since: Date): Promise<DailyFiledCount[]> {
+    return this.createQueryBuilder('f')
+      .select(`to_char(f."createdAt", 'YYYY-MM-DD')`, 'day')
+      .addSelect('f.source', 'source')
+      .addSelect('COUNT(*)::int', 'filed')
+      .addSelect(
+        `COUNT(*) FILTER (WHERE f.status IN (:...accepted))::int`,
+        'accepted',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE f.status IN (:...declined))::int`,
+        'declined',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE f.status IN (:...undecided))::int`,
+        'undecided',
+      )
+      .where('f.parentFindingId IS NULL')
+      .andWhere('f."createdAt" >= :since', { since })
+      .setParameters({
+        accepted: FINDING_ACCEPTED_STATUSES,
+        declined: FINDING_DECLINED_STATUSES,
+        undecided: FINDING_UNDECIDED_STATUSES,
+      })
+      .groupBy('day')
+      .addGroupBy('f.source')
+      .orderBy('day', 'ASC')
+      .getRawMany<DailyFiledCount>();
+  }
+
+  /**
+   * Findings in the window by who raised them: the agent, a staff member, or
+   * a consumer through the in-app report form.
+   *
+   * The split lives on the linked roadmap row (`roadmap_opportunities.source`),
+   * not on the finding, because a reported bug is the reporter's own words and
+   * that row is its home. A `reported_bug` finding whose roadmap row is gone
+   * (deleted, or never linked) is counted as staff, which is that column's
+   * own default and what every pre-consumer-form row was.
+   */
+  async reporterCounts(since: Date): Promise<ReporterCount[]> {
+    const rows = await this.manager.query<
+      Array<{
+        reporter: ReporterCount['reporter'];
+        filed: string;
+        accepted: string;
+        declined: string;
+      }>
+    >(
+      `
+      SELECT
+        CASE
+          WHEN f.source = 'reported_bug' AND o.source = 'consumer' THEN 'consumer'
+          WHEN f.source = 'reported_bug' THEN 'staff'
+          ELSE 'agent'
+        END AS reporter,
+        COUNT(*) AS filed,
+        COUNT(*) FILTER (WHERE f.status = ANY($2)) AS accepted,
+        COUNT(*) FILTER (WHERE f.status = ANY($3)) AS declined
+      FROM bug_findings f
+      LEFT JOIN roadmap_opportunities o ON o.id = f.reported_bug_id
+      WHERE f.parent_finding_id IS NULL
+        AND f."createdAt" >= $1
+      GROUP BY 1
+      `,
+      [since, FINDING_ACCEPTED_STATUSES, FINDING_DECLINED_STATUSES],
+    );
+    return rows.map((row) => ({
+      reporter: row.reporter,
+      filed: Number(row.filed),
+      accepted: Number(row.accepted),
+      declined: Number(row.declined),
+    }));
   }
 
   /**

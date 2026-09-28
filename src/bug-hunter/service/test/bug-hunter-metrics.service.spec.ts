@@ -279,3 +279,217 @@ describe('BugHunterMetricsService', () => {
     expect(Math.abs(since - expected)).toBeLessThan(5_000);
   });
 });
+
+import { buildOperations } from '../bug-hunter-metrics.service';
+import { BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
+
+/**
+ * The operations view is volume paired with what became of it. These cases
+ * are about the two ways a volume chart lies: dropping quiet days, and
+ * showing a count with no acceptance figure beside it.
+ */
+describe('buildOperations', () => {
+  const now = new Date('2026-09-28T12:00:00.000Z');
+  const since = new Date('2026-09-26T12:00:00.000Z');
+
+  it('draws every calendar day in the window, zeros included, oldest first', () => {
+    const out = buildOperations(3, since, [], [], [], [], now);
+    expect(out.days.map((d) => d.date)).toEqual([
+      '2026-09-26',
+      '2026-09-27',
+      '2026-09-28',
+    ]);
+    expect(out.days[1]).toMatchObject({ filed: 0, accepted: 0, bySource: {} });
+    expect(out.days[1].tokens[BugHuntTrigger.SCHEDULED]).toEqual({
+      runs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    });
+  });
+
+  it("pairs each day's volume with where that cohort stands now, and sums sources", () => {
+    const out = buildOperations(
+      3,
+      since,
+      [
+        {
+          day: '2026-09-27',
+          source: BugFindingSource.CODE_REVIEW,
+          filed: 5,
+          accepted: 2,
+          declined: 2,
+          undecided: 1,
+        },
+        {
+          day: '2026-09-27',
+          source: BugFindingSource.TEST_FAILURE,
+          filed: 1,
+          accepted: 1,
+          declined: 0,
+          undecided: 0,
+        },
+        {
+          day: '2026-09-28',
+          source: BugFindingSource.CODE_REVIEW,
+          filed: 2,
+          accepted: 0,
+          declined: 0,
+          undecided: 2,
+        },
+      ],
+      [],
+      [],
+      [],
+      now,
+    );
+
+    const day = out.days.find((d) => d.date === '2026-09-27')!;
+    expect(day).toMatchObject({
+      filed: 6,
+      accepted: 3,
+      declined: 2,
+      undecided: 1,
+      bySource: { code_review: 5, test_failure: 1 },
+    });
+    // Most filed first, so the legend order is the order that matters.
+    expect(out.bySource.map((s) => s.source)).toEqual([
+      BugFindingSource.CODE_REVIEW,
+      BugFindingSource.TEST_FAILURE,
+    ]);
+    expect(out.bySource[0]).toMatchObject({
+      filed: 7,
+      accepted: 2,
+      declined: 2,
+    });
+    expect(out.totals).toMatchObject({
+      filed: 8,
+      accepted: 3,
+      declined: 2,
+      undecided: 3,
+    });
+  });
+
+  it('always reports all three reporters, so a zero for consumers is visible rather than missing', () => {
+    const out = buildOperations(
+      3,
+      since,
+      [],
+      [{ reporter: 'agent', filed: 9, accepted: 4, declined: 3 }],
+      [],
+      [],
+      now,
+    );
+    expect(out.byReporter).toEqual([
+      { reporter: 'agent', filed: 9, accepted: 4, declined: 3 },
+      { reporter: 'staff', filed: 0, accepted: 0, declined: 0 },
+      { reporter: 'consumer', filed: 0, accepted: 0, declined: 0 },
+    ]);
+  });
+
+  it('buckets tokens by day and trigger, rounds cost to cents, and ranks models by tokens', () => {
+    const out = buildOperations(
+      3,
+      since,
+      [],
+      [],
+      [
+        {
+          day: '2026-09-27',
+          trigger: BugHuntTrigger.SCHEDULED,
+          runs: 2,
+          inputTokens: 1000,
+          outputTokens: 200,
+          costUsd: 0.12345,
+        },
+        {
+          day: '2026-09-27',
+          trigger: BugHuntTrigger.FIX_SESSION,
+          runs: 1,
+          inputTokens: 300,
+          outputTokens: 50,
+          costUsd: 0.05,
+        },
+        // Outside the axis (clock skew): dropped, not drawn on a phantom day.
+        {
+          day: '2026-10-01',
+          trigger: BugHuntTrigger.MANUAL,
+          runs: 1,
+          inputTokens: 999,
+          outputTokens: 999,
+          costUsd: 9,
+        },
+      ],
+      [
+        {
+          model: 'claude-sonnet-5',
+          provider: 'anthropic',
+          runs: 3,
+          inputTokens: 800,
+          outputTokens: 100,
+          cacheReadTokens: 500,
+        },
+        {
+          model: 'claude-opus-5',
+          provider: 'anthropic',
+          runs: 1,
+          inputTokens: 5000,
+          outputTokens: 400,
+          cacheReadTokens: 0,
+        },
+      ],
+      now,
+    );
+
+    const day = out.days.find((d) => d.date === '2026-09-27')!;
+    expect(day.tokens[BugHuntTrigger.SCHEDULED]).toEqual({
+      runs: 2,
+      inputTokens: 1000,
+      outputTokens: 200,
+      costUsd: 0.12,
+    });
+    expect(day.tokens[BugHuntTrigger.FIX_SESSION].inputTokens).toBe(300);
+    expect(out.days.some((d) => d.date === '2026-10-01')).toBe(false);
+    expect(out.tokensByModel.map((m) => m.model)).toEqual([
+      'claude-opus-5',
+      'claude-sonnet-5',
+    ]);
+    // Totals include the skewed row's spend? No — it is a real run, so its
+    // tokens count in the window total even though no day draws it.
+    expect(out.totals).toMatchObject({
+      inputTokens: 2299,
+      outputTokens: 1249,
+      runs: 4,
+      costUsd: 9.17,
+    });
+  });
+
+  it('is what the service returns from the four repository reads', async () => {
+    const findingRepository = {
+      outcomeCounts: jest.fn(),
+      stageLatencies: jest.fn(),
+      regressionCounts: jest.fn(),
+      dailyFiledCounts: jest.fn().mockResolvedValue([]),
+      reporterCounts: jest.fn().mockResolvedValue([]),
+    };
+    const runRepository = {
+      costInWindow: jest.fn(),
+      dailyTokens: jest.fn().mockResolvedValue([]),
+      tokensByModel: jest.fn().mockResolvedValue([]),
+    };
+    const service = new BugHunterMetricsService(
+      findingRepository as never,
+      runRepository as never,
+      { escalationBreakdown: jest.fn() } as never,
+    );
+
+    const out = await service.operations(7);
+
+    expect(out.windowDays).toBe(7);
+    expect(out.days).toHaveLength(8);
+    expect(findingRepository.dailyFiledCounts).toHaveBeenCalledWith(
+      expect.any(Date),
+    );
+    expect(runRepository.tokensByModel).toHaveBeenCalledWith(expect.any(Date));
+  });
+});

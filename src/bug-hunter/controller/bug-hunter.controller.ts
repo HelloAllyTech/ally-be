@@ -77,6 +77,7 @@ import {
   BugFindingRefDto,
   RejectBugFindingDto,
   BugHunterMetricsDto,
+  BugHunterOperationsMetricsDto,
   BugHunterMetricsQueryDto,
   BugHunterModelSettingsDto,
   UpdateBugHunterModelSettingsDto,
@@ -208,6 +209,30 @@ export class BugHunterController {
       repo || undefined,
     );
     return { items };
+  }
+
+  @Get('metrics/operations')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'What Bug Hunter turns up day by day, where it comes from, who raised it, and what the models cost (super-duper-admin)',
+    description:
+      'The volume view beside GET metrics, which judges outcomes. Per calendar day: new ' +
+      'findings (distinct bugs — a re-discovery touches its existing row), split by source, ' +
+      'each with where that cohort stands now (accepted / declined / undecided), plus tokens ' +
+      'and cost by trigger. Over the window: totals by source, by who raised the bug (agent, ' +
+      'staff, consumer) and by model. Days are dense so a quiet night draws as a zero. ' +
+      'Sweep tokens cannot be split into finding versus fixing — in Works-solo mode one run ' +
+      'does both — so the honest split is by trigger.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterOperationsMetricsDto })
+  async getOperationsMetrics(
+    @Query() query: BugHunterMetricsQueryDto,
+  ): Promise<BugHunterOperationsMetricsDto> {
+    const metrics = await this.metricsService.operations(
+      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
+    );
+    return metrics as unknown as BugHunterOperationsMetricsDto;
   }
 
   @Get('metrics/pipeline')

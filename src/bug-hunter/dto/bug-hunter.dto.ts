@@ -1329,6 +1329,113 @@ export class BugHunterStageLatencyDto {
   sampled!: number;
 }
 
+export class BugHunterOperationsTokensDto {
+  @ApiProperty() runs!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty() costUsd!: number;
+}
+
+export class BugHunterOperationsDayDto {
+  @ApiProperty({ description: 'YYYY-MM-DD, in the database clock (UTC).' })
+  date!: string;
+
+  @ApiProperty({
+    description:
+      'New findings filed that day, child steps excluded. A re-discovery touches its existing row, so this counts distinct bugs.',
+  })
+  filed!: number;
+
+  @ApiProperty({ description: 'Of `filed`, now at a fix stage or beyond.' })
+  accepted!: number;
+
+  @ApiProperty({ description: 'Of `filed`, now dismissed or rejected.' })
+  declined!: number;
+
+  @ApiProperty({ description: 'Of `filed`, still new or pending approval.' })
+  undecided!: number;
+
+  @ApiProperty({
+    type: Object,
+    description: '`filed` split by finding source; absent sources had none.',
+  })
+  bySource!: Record<string, number>;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'Tokens spent by runs that started that day, keyed by trigger (scheduled / manual / fix_session), each a BugHunterOperationsTokensDto. In Works-solo mode a sweep finds AND fixes, so sweep tokens cannot be split into discovery and fixing.',
+  })
+  tokens!: Record<string, BugHunterOperationsTokensDto>;
+}
+
+export class BugHunterOperationsSourceDto {
+  @ApiProperty() source!: string;
+  @ApiProperty() filed!: number;
+  @ApiProperty() accepted!: number;
+  @ApiProperty() declined!: number;
+  @ApiProperty() undecided!: number;
+}
+
+export class BugHunterOperationsReporterDto {
+  @ApiProperty({
+    enum: ['agent', 'staff', 'consumer'],
+    description:
+      "agent = every finder plus UX signals; staff / consumer = a human report, split by the linked roadmap row's source.",
+  })
+  reporter!: 'agent' | 'staff' | 'consumer';
+
+  @ApiProperty() filed!: number;
+  @ApiProperty() accepted!: number;
+  @ApiProperty() declined!: number;
+}
+
+export class BugHunterOperationsModelDto {
+  @ApiProperty() model!: string;
+  @ApiProperty() provider!: string;
+  @ApiProperty({ description: 'Distinct runs that used this model at all.' })
+  runs!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty({ description: 'Prompt-cache reads, a subset of inputTokens.' })
+  cacheReadTokens!: number;
+}
+
+export class BugHunterOperationsTotalsDto {
+  @ApiProperty() filed!: number;
+  @ApiProperty() accepted!: number;
+  @ApiProperty() declined!: number;
+  @ApiProperty() undecided!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty() costUsd!: number;
+  @ApiProperty() runs!: number;
+}
+
+export class BugHunterOperationsMetricsDto {
+  @ApiProperty() windowDays!: number;
+  @ApiProperty() since!: string;
+
+  @ApiProperty({
+    type: [BugHunterOperationsDayDto],
+    description:
+      'Every calendar day in the window, oldest first, zeros included.',
+  })
+  days!: BugHunterOperationsDayDto[];
+
+  @ApiProperty({ type: [BugHunterOperationsSourceDto] })
+  bySource!: BugHunterOperationsSourceDto[];
+
+  @ApiProperty({ type: [BugHunterOperationsReporterDto] })
+  byReporter!: BugHunterOperationsReporterDto[];
+
+  @ApiProperty({ type: [BugHunterOperationsModelDto] })
+  tokensByModel!: BugHunterOperationsModelDto[];
+
+  @ApiProperty({ type: BugHunterOperationsTotalsDto })
+  totals!: BugHunterOperationsTotalsDto;
+}
+
 export class BugHunterMetricsDto {
   @ApiProperty()
   windowDays!: number;

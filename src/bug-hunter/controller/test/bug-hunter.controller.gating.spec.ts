@@ -94,7 +94,7 @@ describe('BugHunterController — route gating', () => {
    * `mergeFinding` writes to a repo — both belong to whoever holds the
    * toggle, not to every roadmap viewer.
    */
-  it.each(['getMetrics', 'mergeFinding'])(
+  it.each(['getMetrics', 'getOperationsMetrics', 'mergeFinding'])(
     '%s is gated on the bug_hunter toggle and on no roadmap permission',
     (name) => {
       expect(handlers).toContain(name);
