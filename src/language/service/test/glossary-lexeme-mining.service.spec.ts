@@ -9,6 +9,7 @@ import {
   parsePairingOutput,
   requireSayEvidence,
 } from '../glossary-lexeme-mining.service';
+import { GlossaryJobService } from '../glossary-job.service';
 
 /**
  * Five sessions in five scenarios. The agent says the literary அதனால் and
@@ -99,7 +100,7 @@ describe('GlossaryLexemeMiningService', () => {
       glossaryRepository,
       batchRepository,
       { getProvider: jest.fn().mockReturnValue({ getCompletion }) } as any,
-      redis,
+      new GlossaryJobService(redis),
     );
   });
 
@@ -392,7 +393,7 @@ describe('GlossaryLexemeMiningService jobs', () => {
       {} as any,
       {} as any,
       {} as any,
-      redis,
+      new GlossaryJobService(redis),
     );
     mine = jest.spyOn(service, 'mineLexemes');
   });

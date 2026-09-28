@@ -13,6 +13,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GithubActionsService } from 'src/github/service/github-actions.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { providerForModel } from 'src/llm-agent/service/agent-llm.factory';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
@@ -1762,7 +1763,9 @@ export class BuilderBuildService {
       if (!input && !output && !cacheRead && !cacheWrite) continue;
 
       await this.llmUsage.record({
-        provider: 'anthropic',
+        // From the model id, not a literal: the default engine (opencode) runs
+        // Gemini, so a hardcoded 'anthropic' filed Gemini spend under Claude.
+        provider: providerForModel(String(model)) ?? 'anthropic',
         model: String(model),
         task: LlmTask.BUILDER_BUILD,
         promptTokens: input,
