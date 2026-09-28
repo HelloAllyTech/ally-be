@@ -280,7 +280,7 @@ describe('BugHunterMetricsService', () => {
   });
 });
 
-import { buildOperations } from '../bug-hunter-metrics.service';
+import { buildOperations, difficultyOf } from '../bug-hunter-metrics.service';
 import { BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
 
 /**
@@ -316,6 +316,7 @@ describe('buildOperations', () => {
         {
           day: '2026-09-27',
           source: BugFindingSource.CODE_REVIEW,
+          proven: false,
           filed: 5,
           accepted: 2,
           declined: 2,
@@ -324,6 +325,7 @@ describe('buildOperations', () => {
         {
           day: '2026-09-27',
           source: BugFindingSource.TEST_FAILURE,
+          proven: true,
           filed: 1,
           accepted: 1,
           declined: 0,
@@ -332,6 +334,7 @@ describe('buildOperations', () => {
         {
           day: '2026-09-28',
           source: BugFindingSource.CODE_REVIEW,
+          proven: false,
           filed: 2,
           accepted: 0,
           declined: 0,
@@ -370,6 +373,70 @@ describe('buildOperations', () => {
     });
   });
 
+  it('splits filed bugs into easy / hard / reported from proven + source, never from a stored label', () => {
+    expect(difficultyOf(BugFindingSource.TEST_FAILURE, true)).toBe('easy');
+    expect(difficultyOf(BugFindingSource.PRODUCTION_LOG, true)).toBe('easy');
+    expect(difficultyOf(BugFindingSource.CODE_REVIEW, false)).toBe('hard');
+    expect(difficultyOf(BugFindingSource.UX_SIGNAL, false)).toBe('hard');
+    // A person spotted it, whatever the finder later proved.
+    expect(difficultyOf(BugFindingSource.REPORTED_BUG, false)).toBe('reported');
+    expect(difficultyOf(BugFindingSource.REPORTED_BUG, true)).toBe('reported');
+
+    const out = buildOperations(
+      3,
+      since,
+      [
+        {
+          day: '2026-09-27',
+          source: BugFindingSource.CODE_REVIEW,
+          proven: false,
+          filed: 4,
+          accepted: 1,
+          declined: 2,
+          undecided: 1,
+        },
+        {
+          day: '2026-09-27',
+          source: BugFindingSource.LINT_ERROR,
+          proven: true,
+          filed: 3,
+          accepted: 3,
+          declined: 0,
+          undecided: 0,
+        },
+        {
+          day: '2026-09-28',
+          source: BugFindingSource.REPORTED_BUG,
+          proven: false,
+          filed: 2,
+          accepted: 0,
+          declined: 0,
+          undecided: 2,
+        },
+      ],
+      [],
+      [],
+      [],
+      now,
+    );
+    const day = out.days.find((d) => d.date === '2026-09-27')!;
+    expect(day.byDifficulty.easy).toEqual({
+      filed: 3,
+      accepted: 3,
+      declined: 0,
+      undecided: 0,
+    });
+    expect(day.byDifficulty.hard.filed).toBe(4);
+    expect(day.byDifficulty.reported.filed).toBe(0);
+    // Always all three, in a fixed order, so the chart's legend never reshuffles.
+    expect(out.byDifficulty.map((d) => d.difficulty)).toEqual([
+      'easy',
+      'hard',
+      'reported',
+    ]);
+    expect(out.byDifficulty[2]).toMatchObject({ filed: 2, undecided: 2 });
+  });
+
   it('always reports all three reporters, so a zero for consumers is visible rather than missing', () => {
     const out = buildOperations(
       3,
@@ -401,6 +468,11 @@ describe('buildOperations', () => {
           inputTokens: 1000,
           outputTokens: 200,
           costUsd: 0.12345,
+          breadthRuns: 2,
+          linesInScope: 4200,
+          filesInScope: 31,
+          commits: 6,
+          deepRuns: 0,
         },
         {
           day: '2026-09-27',
@@ -409,6 +481,11 @@ describe('buildOperations', () => {
           inputTokens: 300,
           outputTokens: 50,
           costUsd: 0.05,
+          breadthRuns: 0,
+          linesInScope: 0,
+          filesInScope: 0,
+          commits: 0,
+          deepRuns: 0,
         },
         // Outside the axis (clock skew): dropped, not drawn on a phantom day.
         {
@@ -418,6 +495,11 @@ describe('buildOperations', () => {
           inputTokens: 999,
           outputTokens: 999,
           costUsd: 9,
+          breadthRuns: 1,
+          linesInScope: 100,
+          filesInScope: 1,
+          commits: 1,
+          deepRuns: 1,
         },
       ],
       [
@@ -450,6 +532,23 @@ describe('buildOperations', () => {
     });
     expect(day.tokens[BugHuntTrigger.FIX_SESSION].inputTokens).toBe(300);
     expect(out.days.some((d) => d.date === '2026-10-01')).toBe(false);
+    // Breadth comes only from runs that reported it; the fix session did not,
+    // so the day's breadth is the two sweeps' alone.
+    expect(day.breadth).toEqual({
+      runs: 2,
+      linesInScope: 4200,
+      filesInScope: 31,
+      commits: 6,
+      deepRuns: 0,
+    });
+    // A day with runs but no breadth is "not recorded", never zero.
+    expect(out.days.find((d) => d.date === '2026-09-26')!.breadth).toBeNull();
+    // The window total does include the skewed row's real run.
+    expect(out.breadth).toMatchObject({
+      runs: 3,
+      linesInScope: 4300,
+      deepRuns: 1,
+    });
     expect(out.tokensByModel.map((m) => m.model)).toEqual([
       'claude-opus-5',
       'claude-sonnet-5',

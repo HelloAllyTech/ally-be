@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   BUG_FINDING_FINDER_ERROR_REASONS,
   BugFindingDecisionReason,
+  BugFindingSource,
   BugFindingStatus,
 } from '../enum/bug-finding.enum';
 import {
@@ -139,8 +140,48 @@ export interface OperationsDay {
   undecided: number;
   /** `filed` split by finding source. Sources with nothing that day are absent. */
   bySource: Record<string, number>;
+  /** `filed` split by how hard the bug was to spot — see `difficultyOf`. Always all three keys. */
+  byDifficulty: Record<OperationsDifficulty, OperationsOutcomes>;
   /** Model tokens spent by runs that STARTED that day, by trigger. */
   tokens: Record<BugHuntTrigger, OperationsTokens>;
+  /**
+   * How much code the sweeps that started that day were shown. Null when no
+   * run that day reported breadth — telemetry shipped 2026-09-23 and fix
+   * sessions never post it — which is "not recorded", not zero.
+   */
+  breadth: OperationsBreadth | null;
+}
+
+/**
+ * How hard a bug was to spot, derived rather than stored.
+ *
+ * Nothing on a finding says "easy" or "hard", and asking the agent to rate
+ * its own findings would be unreliable. Two columns it does carry settle it:
+ *
+ *  - `easy`: `proven` — a failing test, a lint error, a recurring log or
+ *    browser error. The tool output IS the bug; no judgement was needed.
+ *  - `hard`: unproven and agent-found — a code-review read, a UX signal. The
+ *    agent inferred it and two verifiers had to be convinced.
+ *  - `reported`: a person filed it. The agent did not spot it at all, so it
+ *    belongs in neither bucket and would distort both.
+ */
+export type OperationsDifficulty = 'easy' | 'hard' | 'reported';
+
+export interface OperationsOutcomes {
+  filed: number;
+  accepted: number;
+  declined: number;
+  undecided: number;
+}
+
+export interface OperationsBreadth {
+  /** Runs that day that reported breadth at all. */
+  runs: number;
+  linesInScope: number;
+  filesInScope: number;
+  commits: number;
+  /** Runs that read the whole repo rather than the day's diff. */
+  deepRuns: number;
 }
 
 export interface OperationsTokens {
@@ -158,12 +199,20 @@ export interface OperationsSourceTotal {
   undecided: number;
 }
 
+export interface OperationsDifficultyTotal extends OperationsOutcomes {
+  difficulty: OperationsDifficulty;
+}
+
 export interface BugHunterOperationsMetrics {
   windowDays: number;
   since: string;
   days: OperationsDay[];
   /** Window totals per source, most filed first. */
   bySource: OperationsSourceTotal[];
+  /** Window totals by difficulty. Always easy, hard, reported, in that order. */
+  byDifficulty: OperationsDifficultyTotal[];
+  /** Window breadth over every run that reported it, or null when none did. */
+  breadth: OperationsBreadth | null;
   /** Window totals by who raised the bug. Always all three parties, zeros included. */
   byReporter: ReporterCount[];
   /** Window totals per model, most tokens first. Empty until the CI runner has reported usage. */
@@ -516,6 +565,15 @@ const emptyTokens = (): OperationsTokens => ({
   costUsd: 0,
 });
 
+const DIFFICULTIES: OperationsDifficulty[] = ['easy', 'hard', 'reported'];
+
+const emptyOutcomes = (): OperationsOutcomes => ({
+  filed: 0,
+  accepted: 0,
+  declined: 0,
+  undecided: 0,
+});
+
 const emptyDay = (date: string): OperationsDay => ({
   date,
   filed: 0,
@@ -523,12 +581,62 @@ const emptyDay = (date: string): OperationsDay => ({
   declined: 0,
   undecided: 0,
   bySource: {},
+  byDifficulty: {
+    easy: emptyOutcomes(),
+    hard: emptyOutcomes(),
+    reported: emptyOutcomes(),
+  },
   tokens: {
     [BugHuntTrigger.SCHEDULED]: emptyTokens(),
     [BugHuntTrigger.MANUAL]: emptyTokens(),
     [BugHuntTrigger.FIX_SESSION]: emptyTokens(),
   },
+  breadth: null,
 });
+
+/** See `OperationsDifficulty`. Exported for the spec. */
+export const difficultyOf = (
+  source: string,
+  proven: boolean,
+): OperationsDifficulty => {
+  if (source === BugFindingSource.REPORTED_BUG) return 'reported';
+  return proven ? 'easy' : 'hard';
+};
+
+const addOutcomes = (
+  into: OperationsOutcomes,
+  row: {
+    filed: unknown;
+    accepted: unknown;
+    declined: unknown;
+    undecided: unknown;
+  },
+): void => {
+  into.filed += Number(row.filed);
+  into.accepted += Number(row.accepted);
+  into.declined += Number(row.declined);
+  into.undecided += Number(row.undecided);
+};
+
+const addBreadth = (
+  into: OperationsBreadth | null,
+  row: DailyRunTokens,
+): OperationsBreadth | null => {
+  if (row.breadthRuns === 0) return into;
+  const target = into ?? {
+    runs: 0,
+    linesInScope: 0,
+    filesInScope: 0,
+    commits: 0,
+    deepRuns: 0,
+  };
+  target.runs += row.breadthRuns;
+  target.linesInScope += row.linesInScope;
+  target.filesInScope += row.filesInScope;
+  target.commits += row.commits;
+  target.deepRuns += row.deepRuns;
+  return target;
+};
 
 /** `YYYY-MM-DD` in UTC, matching the repositories' `to_char` on a UTC-stored timestamp. */
 const utcDay = (date: Date): string => date.toISOString().slice(0, 10);
@@ -567,15 +675,23 @@ export const buildOperations = (
   const dayFor = (key: string): OperationsDay | undefined => days.get(key);
 
   const sourceTotals = new Map<string, OperationsSourceTotal>();
+  const difficultyTotals: Record<OperationsDifficulty, OperationsOutcomes> = {
+    easy: emptyOutcomes(),
+    hard: emptyOutcomes(),
+    reported: emptyOutcomes(),
+  };
   filed.forEach((row) => {
     const day = dayFor(row.day);
     const count = Number(row.filed);
+    // Postgres hands a boolean column back as a boolean, but a raw row from a
+    // mock or a driver quirk can carry the string — accept both.
+    const proven = row.proven === true || String(row.proven) === 'true';
+    const difficulty = difficultyOf(row.source, proven);
+    addOutcomes(difficultyTotals[difficulty], row);
     if (day) {
-      day.filed += count;
-      day.accepted += Number(row.accepted);
-      day.declined += Number(row.declined);
-      day.undecided += Number(row.undecided);
+      addOutcomes(day, row);
       day.bySource[row.source] = (day.bySource[row.source] ?? 0) + count;
+      addOutcomes(day.byDifficulty[difficulty], row);
     }
     const total = sourceTotals.get(row.source) ?? {
       source: row.source,
@@ -591,7 +707,9 @@ export const buildOperations = (
     sourceTotals.set(row.source, total);
   });
 
+  let breadth: OperationsBreadth | null = null;
   tokens.forEach((row) => {
+    breadth = addBreadth(breadth, row);
     const day = dayFor(row.day);
     if (!day) return;
     const cell = day.tokens[row.trigger] ?? emptyTokens();
@@ -600,6 +718,7 @@ export const buildOperations = (
     cell.outputTokens += row.outputTokens;
     cell.costUsd += row.costUsd;
     day.tokens[row.trigger] = cell;
+    day.breadth = addBreadth(day.breadth, row);
   });
 
   const totals = {
@@ -651,6 +770,11 @@ export const buildOperations = (
     bySource: [...sourceTotals.values()].sort(
       (a, b) => b.filed - a.filed || a.source.localeCompare(b.source),
     ),
+    byDifficulty: DIFFICULTIES.map((difficulty) => ({
+      difficulty,
+      ...difficultyTotals[difficulty],
+    })),
+    breadth,
     byReporter,
     tokensByModel: [...models].sort(
       (a, b) =>

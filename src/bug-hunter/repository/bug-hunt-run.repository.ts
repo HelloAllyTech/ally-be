@@ -13,6 +13,19 @@ export interface DailyRunTokens {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /**
+   * Code-scope breadth, summed over the runs that reported it — the
+   * `metadata.breadth` object a sweep posts after Discover (see
+   * BugHunterTelemetryService.recordContext). `breadthRuns` says how many of
+   * `runs` reported anything: telemetry shipped on 2026-09-23 and fix sessions
+   * never post breadth, so a day can have runs and no breadth, which is "not
+   * recorded", not zero.
+   */
+  breadthRuns: number;
+  linesInScope: number;
+  filesInScope: number;
+  commits: number;
+  deepRuns: number;
 }
 
 /** One model's share of the window's spend — see `tokensByModel`. */
@@ -167,6 +180,11 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
         input_tokens: string | null;
         output_tokens: string | null;
         cost_usd: string | null;
+        breadth_runs: string;
+        lines_in_scope: string | null;
+        files_in_scope: string | null;
+        commits: string | null;
+        deep_runs: string;
       }>
     >(
       `
@@ -179,7 +197,12 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
         COALESCE(SUM(COALESCE(
           NULLIF((r.metadata->>'cliReportedCostUsd'), '')::numeric,
           r."totalTokenCostUsd"
-        )), 0) AS cost_usd
+        )), 0) AS cost_usd,
+        COUNT(*) FILTER (WHERE r.metadata ? 'breadth') AS breadth_runs,
+        COALESCE(SUM(NULLIF(r.metadata->'breadth'->>'linesInScope', '')::numeric), 0) AS lines_in_scope,
+        COALESCE(SUM(NULLIF(r.metadata->'breadth'->>'filesInScope', '')::numeric), 0) AS files_in_scope,
+        COALESCE(SUM(NULLIF(r.metadata->'breadth'->>'commits', '')::numeric), 0) AS commits,
+        COUNT(*) FILTER (WHERE (r.metadata->'breadth'->>'deep')::boolean IS TRUE) AS deep_runs
       FROM bug_hunt_runs r
       WHERE r."createdAt" >= $1
         AND r.status NOT IN ('skipped_disabled', 'skipped_quiet')
@@ -195,6 +218,11 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
       inputTokens: Number(row.input_tokens ?? 0),
       outputTokens: Number(row.output_tokens ?? 0),
       costUsd: Number(row.cost_usd ?? 0),
+      breadthRuns: Number(row.breadth_runs ?? 0),
+      linesInScope: Number(row.lines_in_scope ?? 0),
+      filesInScope: Number(row.files_in_scope ?? 0),
+      commits: Number(row.commits ?? 0),
+      deepRuns: Number(row.deep_runs ?? 0),
     }));
   }
 

@@ -1336,6 +1336,34 @@ export class BugHunterOperationsTokensDto {
   @ApiProperty() costUsd!: number;
 }
 
+export class BugHunterOperationsOutcomesDto {
+  @ApiProperty() filed!: number;
+  @ApiProperty() accepted!: number;
+  @ApiProperty() declined!: number;
+  @ApiProperty() undecided!: number;
+}
+
+export class BugHunterOperationsBreadthDto {
+  @ApiProperty({ description: 'Runs that reported breadth at all.' })
+  runs!: number;
+  @ApiProperty() linesInScope!: number;
+  @ApiProperty() filesInScope!: number;
+  @ApiProperty() commits!: number;
+  @ApiProperty({
+    description: "Runs that read the whole repo rather than the day's diff.",
+  })
+  deepRuns!: number;
+}
+
+export class BugHunterOperationsDifficultyDto extends BugHunterOperationsOutcomesDto {
+  @ApiProperty({
+    enum: ['easy', 'hard', 'reported'],
+    description:
+      'Derived: easy = proven by tool output (test, lint, recurring error); hard = agent-found and unproven, so it needed verification; reported = a person filed it, the agent did not spot it.',
+  })
+  difficulty!: 'easy' | 'hard' | 'reported';
+}
+
 export class BugHunterOperationsDayDto {
   @ApiProperty({ description: 'YYYY-MM-DD, in the database clock (UTC).' })
   date!: string;
@@ -1360,6 +1388,21 @@ export class BugHunterOperationsDayDto {
     description: '`filed` split by finding source; absent sources had none.',
   })
   bySource!: Record<string, number>;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      '`filed` split by how hard the bug was to spot, keyed easy / hard / reported, each a BugHunterOperationsOutcomesDto.',
+  })
+  byDifficulty!: Record<string, BugHunterOperationsOutcomesDto>;
+
+  @ApiProperty({
+    type: BugHunterOperationsBreadthDto,
+    nullable: true,
+    description:
+      'Code scope the sweeps that started that day were shown. Null when no run reported it (telemetry shipped 2026-09-23; fix sessions never post it) — not recorded, not zero.',
+  })
+  breadth!: BugHunterOperationsBreadthDto | null;
 
   @ApiProperty({
     type: Object,
@@ -1425,6 +1468,15 @@ export class BugHunterOperationsMetricsDto {
 
   @ApiProperty({ type: [BugHunterOperationsSourceDto] })
   bySource!: BugHunterOperationsSourceDto[];
+
+  @ApiProperty({
+    type: [BugHunterOperationsDifficultyDto],
+    description: 'Always easy, hard, reported, in that order.',
+  })
+  byDifficulty!: BugHunterOperationsDifficultyDto[];
+
+  @ApiProperty({ type: BugHunterOperationsBreadthDto, nullable: true })
+  breadth!: BugHunterOperationsBreadthDto | null;
 
   @ApiProperty({ type: [BugHunterOperationsReporterDto] })
   byReporter!: BugHunterOperationsReporterDto[];

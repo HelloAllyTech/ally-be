@@ -129,6 +129,13 @@ export interface DailyFiledCount {
   /** Calendar day, `YYYY-MM-DD`, in the database's clock (UTC). */
   day: string;
   source: string;
+  /**
+   * Whether the finder had mechanical proof (a failing test, a lint error, a
+   * recurring log event) or inferred the bug by reading. The operations view
+   * folds this with `source` into an easy-to-spot / hard-to-spot / reported
+   * split — see `BugHunterMetricsService.difficultyOf`.
+   */
+  proven: boolean;
   filed: number;
   /** Reached a fix stage or beyond — a human or AI mode treated it as a real bug. */
   accepted: number;
@@ -737,6 +744,7 @@ export class BugFindingRepository extends Repository<BugFinding> {
     return this.createQueryBuilder('f')
       .select(`to_char(f."createdAt", 'YYYY-MM-DD')`, 'day')
       .addSelect('f.source', 'source')
+      .addSelect('f.proven', 'proven')
       .addSelect('COUNT(*)::int', 'filed')
       .addSelect(
         `COUNT(*) FILTER (WHERE f.status IN (:...accepted))::int`,
@@ -759,6 +767,7 @@ export class BugFindingRepository extends Repository<BugFinding> {
       })
       .groupBy('day')
       .addGroupBy('f.source')
+      .addGroupBy('f.proven')
       .orderBy('day', 'ASC')
       .getRawMany<DailyFiledCount>();
   }
