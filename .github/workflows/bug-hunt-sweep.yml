@@ -44,9 +44,12 @@ permissions:
 
 on:
   # Nightly, staggered per repo so five sweeps do not hit ally-be's pipeline
-  # endpoints and the Anthropic API in the same minute. ally-be: 02:15 UTC.
+  # endpoints and the model API in the same minute. Anchored so the first
+  # sweep lands at 06:00 India (00:30 UTC), then twenty minutes apart:
+  # ally-be 00:30, ally-web 00:50, ally-ai 01:10, ally-ai-learn 01:30,
+  # ally-mobile 01:50 UTC.
   schedule:
-    - cron: "15 2 * * *"
+    - cron: "30 0 * * *"
 
   workflow_dispatch:
     inputs:
