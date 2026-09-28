@@ -1,4 +1,8 @@
-import { computeCostUsd, MODEL_PRICING } from '../llm-pricing.constants';
+import {
+  computeCostUsd,
+  computeServiceCostUsd,
+  MODEL_PRICING,
+} from '../llm-pricing.constants';
 
 describe('MODEL_PRICING — Gemini coverage', () => {
   /**
@@ -78,5 +82,32 @@ describe('computeCostUsd — prompt-cache pricing', () => {
     );
     // base: 3 + 15 = 18; cache read: 0.3; cache write: 3.75
     expect(costUsd).toBeCloseTo(22.05, 5);
+  });
+});
+
+describe('pricing ids the providers actually report', () => {
+  it('prices a `models/`-prefixed Gemini id like the bare id', () => {
+    // The Gemini SDK reports some calls by resource name; those rows were
+    // priced $0 ("free") instead of at the 2.5-flash rate.
+    expect(computeCostUsd('models/gemini-2.5-flash', 1_000_000, 0)).toEqual(
+      computeCostUsd('gemini-2.5-flash', 1_000_000, 0),
+    );
+  });
+
+  it('prices Cartesia TTS by provider, whatever lands in `model`', () => {
+    for (const model of ['sonic-3.6', 'Skyler Cartesia - Hindi']) {
+      const { costUsd, priced } = computeServiceCostUsd(
+        'tts',
+        'cartesia',
+        model,
+        { characters: 1_000_000 },
+      );
+      expect(priced).toBe(true);
+      expect(costUsd).toBeCloseTo(37, 5);
+    }
+  });
+
+  it('leaves image models unpriced rather than pricing them per token', () => {
+    expect(computeCostUsd('gpt-image-1', 1000, 1000).priced).toBe(false);
   });
 });

@@ -73,6 +73,11 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // 2.0-flash retired 2026-06-01; kept to price historical token records —
   // including the -exp variant, which resolves here by prefix.
   'gemini-2.0-flash': { inputPer1MUsd: 0.1, outputPer1MUsd: 0.4 },
+
+  // Deliberately absent: gpt-image-1 / gemini-2.5-flash-image. Image
+  // generation bills per IMAGE (by size/quality), not per text token, so a
+  // token rate here would be wrong in a way that looks right. Their rows
+  // (task generate_cover_image) stay priced=false — "unknown", not "free".
 };
 
 // Longest prefix first so a dated/suffixed id (e.g. gpt-4o-2024-08-06,
@@ -82,9 +87,12 @@ const PRICING_KEYS_BY_LENGTH = Object.keys(MODEL_PRICING).sort(
 );
 
 function resolvePricing(model: string): ModelPricing | undefined {
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  // The Gemini SDK sometimes reports the resource name (`models/gemini-2.5-
+  // flash`) instead of the bare id; strip it rather than duplicate entries.
+  const id = model.replace(/^models\//, '');
+  if (MODEL_PRICING[id]) return MODEL_PRICING[id];
   return PRICING_KEYS_BY_LENGTH.map((key) =>
-    model.startsWith(key) ? MODEL_PRICING[key] : undefined,
+    id.startsWith(key) ? MODEL_PRICING[key] : undefined,
   ).find((p): p is ModelPricing => p !== undefined);
 }
 
@@ -136,6 +144,10 @@ export const TTS_PRICING_PER_1M_CHARS_USD: Record<string, number> = {
   elevenlabs: 150, // flagship tiers vary widely
   sarvam: 20,
   hume: 100,
+  // Keyed by provider because Cartesia rows carry either the model
+  // (`sonic-3.6`) or a voice name (`Skyler Cartesia - Hindi`) as `model`.
+  // Sonic bills 1 credit per character; Scale plan = $299 / 8M credits.
+  cartesia: 37,
 };
 
 export type AiServiceName = 'llm' | 'stt' | 'tts';

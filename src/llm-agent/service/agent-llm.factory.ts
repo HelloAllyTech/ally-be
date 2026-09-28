@@ -28,7 +28,9 @@ const AGENT_PROVIDERS = new Set<string>(Object.values(AgentLlmProviderName));
 const MODEL_PREFIXES: [RegExp, AgentLlmProviderName][] = [
   [/^claude[-.]/i, AgentLlmProviderName.ANTHROPIC],
   [/^(gpt|o\d)[-.]/i, AgentLlmProviderName.OPENAI],
-  [/^gemini[-.]/i, AgentLlmProviderName.GEMINI],
+  // The Gemini SDK reports some ids with a `models/` resource prefix
+  // (`models/gemini-2.5-flash`) — same model, same provider.
+  [/^(models\/)?gemini[-.]/i, AgentLlmProviderName.GEMINI],
 ];
 
 /**
