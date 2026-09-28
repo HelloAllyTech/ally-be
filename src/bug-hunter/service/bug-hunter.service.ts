@@ -4,6 +4,7 @@ import { DataSource, In } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { providerForModel } from 'src/llm-agent/service/agent-llm.factory';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
@@ -384,14 +385,14 @@ export class BugHunterService {
           .filter((m) => m.inputTokens > 0 || m.outputTokens > 0)
           .map((m) =>
             this.llmUsageService.record({
-              // Was hardcoded to 'anthropic' regardless of what actually ran
-              // — harmless while Bug Hunter only had one engine, but it would
-              // silently mislabel every Gemini-engine run's spend once that
-              // engine existed. `run.engine` is now recorded by
-              // `recordResolvedModel` before this ever fires (the CI workflow
-              // resolves models, then runs, then reports cost, in that
-              // order), so this reads the real one.
-              provider: run.engine === 'gemini' ? 'gemini' : 'anthropic',
+              // Per MODEL, not per engine: one run's modelUsage mixes vendors
+              // (a Claude-engine run spawns Gemini subagents and vice versa),
+              // so labelling every row with the run's engine put
+              // gemini-2.5-* spend under 'anthropic'. The engine is only the
+              // fallback for an id whose shape names no provider.
+              provider:
+                providerForModel(m.model) ??
+                (run.engine === 'gemini' ? 'gemini' : 'anthropic'),
               model: m.model,
               task: LlmTask.BUG_HUNTER,
               promptTokens: m.inputTokens,
