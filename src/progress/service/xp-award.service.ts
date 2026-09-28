@@ -233,6 +233,7 @@ export class XpAwardService {
       this.logger.error(
         `Failed to award session XP for user ${userId} session ${scenarioSessionId}: ${error}`,
       );
+      throw error;
     }
   }
 
