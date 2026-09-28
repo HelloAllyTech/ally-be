@@ -154,4 +154,23 @@ describe('BugHunterPipelineController', () => {
 
     expect(mockBugFindingService.persistFindings).not.toHaveBeenCalled();
   });
+
+  it('should return BadRequestException when report body is malformed JSON', async () => {
+    const runId = uuidv4();
+    // Invalid JSON with a missing comma
+    const malformedJsonBody =
+      '{"repo":"ally-be","stage":"error","summary":"summary here" "findingId":"123e4567-e89b-12d3-a456-426614174000"}';
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/bug-hunter/runs/${runId}/report`)
+      .set('x-api-key', 'test-api-key')
+      .set('Content-Type', 'application/json')
+      .send(malformedJsonBody)
+      .expect(400)
+      .expect((res) => {
+        expect(res.body.message).toMatch(
+          /Expected ',' or '}' after property value in JSON/,
+        );
+      });
+  });
 });

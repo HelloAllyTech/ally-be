@@ -23,16 +23,51 @@ export class CustomExceptionFilter implements ExceptionFilter {
 
   // TODO: Add a way to handle entityId in the response generically
   catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const request = ctx.getRequest<Request>();
+
+    // The bug-hunter agent frequently sends malformed JSON to the report
+    // endpoint, which is a client-side issue. Logging a full error for every
+    // occurrence pollutes the logs. Instead, log a warning and return the
+    // standard 400 response.
+    if (
+      exception instanceof HttpException &&
+      exception.getStatus() === HttpStatus.BAD_REQUEST &&
+      request.url.startsWith('/api/v1/bug-hunter/runs/') &&
+      request.url.endsWith('/report')
+    ) {
+      const message =
+        (exception.getResponse() as any)?.message || exception.message;
+      if (
+        typeof message === 'string' &&
+        (message.includes('Unexpected string in JSON') ||
+          message.includes('Expected') ||
+          message.includes('Unexpected token'))
+      ) {
+        this.logger.warn(
+          `Suppressing BadRequestException for malformed JSON on bug hunter report endpoint: ${request.method} ${request.url} -> ${exception.name}: ${message}`,
+        );
+
+        const response = ctx.getResponse<Response>();
+        response.status(HttpStatus.BAD_REQUEST).json({
+          statusCode: HttpStatus.BAD_REQUEST,
+          timestamp: new Date().toISOString(),
+          path: request.url,
+          message,
+          error: 'Bad Request',
+        });
+        return;
+      }
+    }
+
     // Error's `message`/`stack` are non-enumerable, so logging the raw
     // exception object stringifies to `{}` and hides the real failure.
     // Log a serializable representation (name + message + stack) instead.
-    const reqForLog = host.switchToHttp().getRequest();
     this.logger.error(
       exception instanceof Error
-        ? `${reqForLog?.method} ${reqForLog?.url} -> ${exception.name}: ${exception.message}\n${exception.stack}`
+        ? `${request?.method} ${request?.url} -> ${exception.name}: ${exception.message}\n${exception.stack}`
         : exception,
     );
-    const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
