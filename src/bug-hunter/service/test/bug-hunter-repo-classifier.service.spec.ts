@@ -1,47 +1,30 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { BugHunterRepoClassifierService } from '../bug-hunter-repo-classifier.service';
-import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 
-const mockMessagesCreate = jest.fn();
-
-jest.mock('@anthropic-ai/sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    messages: { create: mockMessagesCreate },
-  })),
-}));
-
-const textResponse = (json: unknown) => ({
-  content: [{ type: 'text', text: JSON.stringify(json) }],
-  usage: { input_tokens: 10, output_tokens: 5 },
-});
+const textResponse = (json: unknown) => ({ text: JSON.stringify(json) });
 
 describe('BugHunterRepoClassifierService', () => {
   let service: BugHunterRepoClassifierService;
   let promptSharedService: { getPromptByCode: jest.Mock };
-  let llmUsage: { record: jest.Mock };
+  let mockComplete: jest.Mock;
 
   beforeEach(async () => {
-    mockMessagesCreate.mockReset();
+    mockComplete = jest.fn();
     promptSharedService = {
       getPromptByCode: jest.fn().mockResolvedValue('You are Bug Hunter...'),
     };
-    llmUsage = { record: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BugHunterRepoClassifierService,
-        {
-          provide: AppConfigService,
-          useValue: {
-            anthropic: { apiKey: 'test-key', autofillModel: 'claude-test' },
-          },
-        },
         { provide: PromptSharedService, useValue: promptSharedService },
-        { provide: LlmUsageService, useValue: llmUsage },
+        {
+          provide: LlmCompletionService,
+          useValue: { complete: mockComplete },
+        },
       ],
     }).compile();
 
@@ -49,7 +32,7 @@ describe('BugHunterRepoClassifierService', () => {
   });
 
   it('returns a dispatchable repo the model names', async () => {
-    mockMessagesCreate.mockResolvedValue(
+    mockComplete.mockResolvedValue(
       textResponse({
         repo: 'ally-web',
         confidence: 0.9,
@@ -62,13 +45,22 @@ describe('BugHunterRepoClassifierService', () => {
     );
 
     expect(result.repo).toBe('ally-web');
-    expect(llmUsage.record).toHaveBeenCalledWith(
+    expect(mockComplete).toHaveBeenCalledWith(
       expect.objectContaining({ task: 'bug_hunter' }),
     );
   });
 
+  it('names a Gemini model, never a Claude one', async () => {
+    mockComplete.mockResolvedValue(textResponse({ repo: 'ally-be' }));
+
+    await service.classifyRepo('Anything.');
+
+    const { model } = mockComplete.mock.calls[0][0];
+    expect(model).toMatch(/^gemini-/);
+  });
+
   it('discards a repo the model invents that is not a live dispatch target', async () => {
-    mockMessagesCreate.mockResolvedValue(
+    mockComplete.mockResolvedValue(
       textResponse({ repo: 'some-other-repo', rationale: 'guess' }),
     );
 
@@ -78,7 +70,7 @@ describe('BugHunterRepoClassifierService', () => {
   });
 
   it('recognizes ally-mobile as a dispatchable repo, like any other', async () => {
-    mockMessagesCreate.mockResolvedValue(
+    mockComplete.mockResolvedValue(
       textResponse({
         repo: 'ally-mobile',
         rationale: 'Native app screen.',
@@ -93,7 +85,7 @@ describe('BugHunterRepoClassifierService', () => {
   });
 
   it('degrades to unclassified rather than throwing when the model call fails', async () => {
-    mockMessagesCreate.mockRejectedValue(new Error('rate limited'));
+    mockComplete.mockRejectedValue(new Error('rate limited'));
 
     const result = await service.classifyRepo('Anything.');
 
@@ -104,10 +96,7 @@ describe('BugHunterRepoClassifierService', () => {
   });
 
   it('degrades to unclassified on unparseable model output', async () => {
-    mockMessagesCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'not json at all' }],
-      usage: { input_tokens: 1, output_tokens: 1 },
-    });
+    mockComplete.mockResolvedValue({ text: 'not json at all' });
 
     const result = await service.classifyRepo('Anything.');
 

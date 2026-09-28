@@ -47,16 +47,17 @@ export const LEXEME_MINING_TOP_K = 40;
  * on-demand `general_vocabulary` (GlossaryLexemeMiningService.pickTargetSection). */
 export const LEXEME_SECTION_CODE = 'everyday_words';
 
-/** Lexeme-mining job records live this long in Redis (seconds). */
-export const LEXEME_MINING_JOB_TTL_SECONDS = 24 * 60 * 60;
+/** Glossary background-job records (GlossaryJobService) live this long in
+ * Redis, in seconds. */
+export const GLOSSARY_JOB_TTL_SECONDS = 24 * 60 * 60;
 
 /**
- * A job still `running` after this long was lost (its task restarted or was
- * replaced by a deploy mid-run) and is reported as failed. A run takes about a
- * minute; the per-language lock expires at the same bound, so a lost run never
- * blocks the next one for longer than this.
+ * A glossary job still `running` after this long was lost (its task restarted
+ * or was replaced by a deploy mid-run) and is reported as failed. A run takes
+ * about a minute; the per-language lock expires at the same bound, so a lost
+ * run never blocks the next one for longer than this.
  */
-export const LEXEME_MINING_JOB_STALE_SECONDS = 15 * 60;
+export const GLOSSARY_JOB_STALE_SECONDS = 15 * 60;
 
 /** Candidates per pairing call; chunks run in parallel so one run stays
  * inside the API gateway's request timeout. */

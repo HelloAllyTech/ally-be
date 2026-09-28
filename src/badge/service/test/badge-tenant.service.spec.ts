@@ -276,16 +276,16 @@ describe('BadgeTenantService', () => {
       expect(result).toEqual(['tenant-1', 'tenant-2']);
     });
 
-    it('should return empty array on error', async () => {
+    it('should throw an error on DB error', async () => {
       const badge = {
         id: 'badge-1',
         visibilityType: BadgeVisibilityType.PUBLIC,
       } as Badge;
       mockTenantsRepository.find.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.assignBadgeToTenants(badge);
-
-      expect(result).toEqual([]);
+      await expect(service.assignBadgeToTenants(badge)).rejects.toThrow(
+        'DB error',
+      );
     });
   });
 

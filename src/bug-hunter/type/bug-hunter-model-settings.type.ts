@@ -35,8 +35,13 @@ export interface BugHunterModelSettings {
 export const BUG_HUNTER_MODEL_SETTINGS_NAME = 'bug_hunter.models';
 
 /** Defaults, applied per-field over whatever the row holds — see the service's `merge`. */
+/**
+ * Gemini, not Claude: there is no Claude budget, and the sweep/fix workflows now refuse any engine
+ * but `gemini` rather than run Claude Code. `escalationModel` is inert on that engine, but the
+ * workflows require it non-null, so it names the same Gemini model.
+ */
 export const DEFAULT_BUG_HUNTER_MODEL_SETTINGS: BugHunterModelSettings = {
-  engine: 'claude-code',
-  defaultModel: 'claude-sonnet-5',
-  escalationModel: 'claude-opus-5',
+  engine: 'gemini',
+  defaultModel: 'gemini-2.5-pro',
+  escalationModel: 'gemini-2.5-pro',
 };

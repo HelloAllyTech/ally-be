@@ -27,6 +27,10 @@ describe('providerForModel', () => {
     expect(providerForModel('claude-opus-9-0')).toBe('anthropic');
   });
 
+  it('resolves a Gemini id reported with its `models/` resource prefix', () => {
+    expect(providerForModel('models/gemini-2.5-flash')).toBe('gemini');
+  });
+
   it('returns undefined for a model nothing claims', () => {
     expect(providerForModel('llama-3-70b')).toBeUndefined();
     expect(providerForModel('')).toBeUndefined();

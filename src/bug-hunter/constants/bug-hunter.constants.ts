@@ -135,8 +135,16 @@ export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
 } as const;
 
-/** Max tokens for the repo-classification call — a one-sentence-rationale JSON reply. */
-export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 300;
+/**
+ * Max tokens for the repo-classification call — a one-sentence-rationale JSON reply. Far above
+ * that reply's size because Gemini 2.5's thinking tokens count against maxOutputTokens, and 300
+ * could be spent thinking before the answer is written.
+ */
+export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 2048;
+/** AI-task-registry row for the repo classifier. */
+export const BUG_HUNTER_CLASSIFY_REPO_TASK_ID = 'bug-hunter-repo-classifier';
+/** Named explicitly so the call never reaches a Claude model (it used to ride ANTHROPIC_AUTOFILL_MODEL). */
+export const BUG_HUNTER_CLASSIFY_REPO_MODEL = 'gemini-2.5-flash';
 
 /**
  * Subagent name for Bug Hunter's model escalation path — defined once per

@@ -34,7 +34,12 @@ export enum BugHuntEventStage {
   PLAN_CREATED = 'plan_created',
   /** The orchestrator dispatched the next step of a plan. */
   STEP_STARTED = 'step_started',
-  /** An admin pressed "Stop fix session" — see BugFixSessionService.cancelFixSession. */
+  /**
+   * A human stopped a fix on purpose: an admin pressed "Stop fix session"
+   * (BugFixSessionService.cancelFixSession), or a developer closed the agent's
+   * PR on GitHub without merging it (reconcilePrOpenedFindings). The payload's
+   * `closedOnGitHub: true` tells the two apart.
+   */
   CANCELLED = 'cancelled',
   /**
    * An admin rewrote the bug's description before putting Bug Hunter on it —

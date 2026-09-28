@@ -207,6 +207,20 @@ export const planReleased = (
     .join(', ')}.`,
 });
 
+/**
+ * A merged fix went live through a release somebody ran from GitHub, not from
+ * the tab. Voice rule 3: it never claims work it has not done, so this says
+ * who did not press the button and lets the run URL on the timeline say who did.
+ */
+export const findingReleasedOutOfBand = (
+  findingTitle: string,
+  repo: Maybe<string>,
+  target: Maybe<string>,
+): BugHunterMessage => ({
+  title: `It's live in production: ${findingTitle}`,
+  body: `Someone released ${target ?? repo} from GitHub after my fix merged, so it is live now. I didn't start that release — the run is linked on the bug.`,
+});
+
 /** One ordinary bug's fix is deployed. */
 export const findingReleased = (
   findingTitle: string,
