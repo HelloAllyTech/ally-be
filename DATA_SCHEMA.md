@@ -465,7 +465,13 @@ developer then closes on GitHub WITHOUT merging also lands on `cancelled` — `r
 reads the PR's state every 5 minutes alongside its merge check — because a closed PR is a human stopping
 the fix on purpose, and leaving the row at `pr_opened` showed review work that no longer existed.
 `cancelled_by` stays NULL on that path (GitHub's PR resource does not name the closer); the `cancelled`
-event's payload carries `closedOnGitHub: true` and the closing time.
+event's payload carries `closedOnGitHub: true` and the closing time. The mirror image also holds: a
+`merged` (or `release_failed`) finding whose deployable's production-release workflow SUCCEEDED after its
+PR merged — a release an engineer cut from GitHub rather than from the tab — is moved to `released` by
+`reconcileOutOfBandReleases`, with `release_run_id`/`release_run_url` set, `release_tag` NULL (the run does
+not say which tag it shipped) and `released_by` NULL; the `released` event's payload carries
+`outOfBand: true`. Findings whose deployable cannot be resolved (`libs/` in ally-web, ally-mobile) and plan
+parents are left alone.
 
 **Sweeps are now actually triggered.** Until migration `1910000000000`'s change nothing started
 one: `bug_hunt_runs.trigger='scheduled'` was a valid value with no producer anywhere, there was no

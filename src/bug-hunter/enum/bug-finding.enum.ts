@@ -113,6 +113,9 @@ export const BUG_FINDING_FINDER_ERROR_REASONS: BugFindingDecisionReason[] = [
  *                              BugFixSessionService.reconcilePrOpenedFindings)
  *   MERGED → RELEASING        (admin pressed "Release to production")
  *   RELEASING → RELEASED | RELEASE_FAILED   (reconciled from the GitHub run)
+ *   MERGED | RELEASE_FAILED → RELEASED   (somebody released that deployable
+ *                              from GitHub after the PR merged — reconciled by
+ *                              BugFixSessionService.reconcileOutOfBandReleases)
  *
  * RELEASE_FAILED is deliberately distinct from FAILED: FAILED means the fix
  * agent gave up and nothing landed, whereas RELEASE_FAILED means the fix IS

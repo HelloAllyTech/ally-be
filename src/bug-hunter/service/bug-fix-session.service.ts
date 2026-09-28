@@ -15,6 +15,7 @@ import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
   findingReleased,
+  findingReleasedOutOfBand,
   findingReleaseFailed,
   planCreated,
   planReadyToRelease,
@@ -713,6 +714,7 @@ export class BugFixSessionService {
     await this.reconcileFixingSessions();
     await this.reconcilePrOpenedFindings();
     await this.reconcileReleases();
+    await this.reconcileOutOfBandReleases();
     // Order matters: the four passes above settle each step's own status from
     // GitHub, and these two then read those settled statuses to decide what to
     // start next. Running them first would advance a plan on stale state.
@@ -1227,6 +1229,113 @@ export class BugFixSessionService {
       } catch (error) {
         this.logger.warn(
           `Could not reconcile release for finding ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * MERGED | RELEASE_FAILED → RELEASED, when the deployable was released by
+   * somebody else.
+   *
+   * The tab's "Release to production" button is one way a merged fix reaches
+   * users. The other is the ordinary one: an engineer cuts the next release of
+   * that service from GitHub as part of the day's work, and the fix rides
+   * along. Before this pass the finding never heard about that — it sat at
+   * "Merged" with a Release button offering to deploy code that was already
+   * live, and the Review bucket counted a fix users had for weeks.
+   *
+   * The question asked is the one Builder already asks of its own merged pull
+   * requests (`BuilderPullRequestService.reconcileFailedReleases`): has a run
+   * of this deployable's production-release workflow SUCCEEDED since the PR
+   * merged? Any successful run, whoever started it — `findSuccessfulRunSince`
+   * deliberately does not filter on the event. Since is the PR's own merge
+   * time from GitHub, not the row's `updatedAt`, so a release that ran between
+   * the merge and the reconcile is caught and one that ran before the merge is
+   * not. A finding whose deployable cannot be resolved (an ally-web `libs/`
+   * change, ally-mobile) is left alone, exactly as the Release button is.
+   *
+   * `releaseTag` is left null (or cleared, after a failed attempt): the run
+   * resource does not carry the tag it was dispatched with, and naming a
+   * guess beside "Live" would state something we do not know. `releasedBy`
+   * stays null for the same reason. The run URL is the record.
+   *
+   * Plan parents are skipped: their release is a sequence
+   * (`advanceReleaseSequences`) and each step is a leaf this pass does see.
+   */
+  private async reconcileOutOfBandReleases(): Promise<void> {
+    const candidates = await this.findingRepository.find({
+      where: [
+        { status: BugFindingStatus.MERGED },
+        { status: BugFindingStatus.RELEASE_FAILED },
+      ],
+    });
+
+    for (const finding of candidates) {
+      try {
+        if (!finding.repo) continue;
+        const target = resolveReleaseTarget(finding.repo, finding.file);
+        if (!target) continue;
+
+        const children = await this.findingRepository.listChildren(finding.id);
+        if (children.length) continue;
+
+        const prNumber = finding.prUrl
+          ? BugFixSessionService.prNumberFrom(finding.prUrl)
+          : null;
+        if (!prNumber) continue;
+        const pr = await this.github.getPullRequest(finding.repo, prNumber);
+        if (!pr?.merged || !pr.mergedAt) continue;
+
+        const run = await this.github.findSuccessfulRunSince({
+          repo: target.repo,
+          workflow: target.workflow,
+          since: pr.mergedAt,
+        });
+        if (!run) continue;
+
+        const releasedAt = new Date();
+        await this.findingRepository.update(finding.id, {
+          status: BugFindingStatus.RELEASED,
+          releasedAt,
+          releaseTag: null,
+          releaseRunId: run.id,
+          releaseRunUrl: run.htmlUrl,
+        });
+        finding.status = BugFindingStatus.RELEASED;
+        finding.releasedAt = releasedAt;
+        await this.checkForAndRecordReversals(finding, releasedAt);
+        await this.bugHunterService.appendFindingEvent({
+          findingId: finding.id,
+          repo: finding.repo,
+          stage: BugHuntEventStage.RELEASED,
+          summary: `Live in production: ${target.label} was released from GitHub (${run.htmlUrl}) after this fix merged. Bug Hunter did not start that release.`,
+          payload: {
+            runUrl: run.htmlUrl,
+            runId: run.id,
+            workflow: target.workflow,
+            outOfBand: true,
+            mergedAt: pr.mergedAt,
+          },
+        });
+        // A plan step stays quiet, as in settleRelease: the sequence speaks
+        // for the whole plan.
+        if (finding.parentFindingId) continue;
+        await this.notificationService.notify({
+          level: BugHunterNotificationLevel.INFO,
+          ...findingReleasedOutOfBand(
+            finding.title,
+            finding.repo,
+            target.label,
+          ),
+          findingId: finding.id,
+          repo: finding.repo,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Could not check for an out-of-band release of finding ${finding.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
