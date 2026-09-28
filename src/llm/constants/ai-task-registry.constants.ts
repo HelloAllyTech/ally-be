@@ -1143,10 +1143,9 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     trigger: 'Bug Hunter decides which repo a bug belongs to',
     detail: 'The routing step before a sweep or fix session is dispatched.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
+    configuredBy: 'BUG_HUNTER_CLASSIFY_REPO_MODEL (compiled in)',
   },
   {
     id: 'agent-memory-curation',
