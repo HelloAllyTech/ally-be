@@ -1417,6 +1417,73 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/RoleplaySessionCostCard.tsx'),
       note: 'Per-session delivery cost (GET /v1/analytics/roleplay-session-cost), stacked by component. Distinct from the Unit economics cost per 10 minutes, which buckets each call by when it ran rather than by its session',
     },
+    // ── Bug Agent: volume beside the rates (GET /v1/bug-hunter/metrics/operations) ──
+    // Day-bucketed counts, each paired with where the cohort stands now
+    // (accepted / declined / undecided). The page range is mapped to the
+    // endpoint's day count; "all" and "12m" become its 365-day maximum.
+    {
+      id: 'AAQ-158',
+      tab: 'Bug Agent',
+      title: 'Bugs filed per day',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Distinct bugs by createdAt day (a re-discovery touches its row), stacked by current outcome',
+    },
+    {
+      id: 'AAQ-159',
+      tab: 'Bug Agent',
+      title: 'Bugs filed per day, by source',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Only sources present in the window are plotted; each keeps a fixed colour. Table view carries accepted share per source',
+    },
+    {
+      id: 'AAQ-160',
+      tab: 'Bug Agent',
+      title: 'How hard they were to spot',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Derived from proven + source: easy (tool output proved it), hard (agent-inferred, verified), reported (a person filed it)',
+    },
+    {
+      id: 'AAQ-161',
+      tab: 'Bug Agent',
+      title: 'Who raises bugs',
+      kind: 'chart',
+      chartType: 'SimpleBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: "Bug Hunter vs staff vs consumers; reported_bug rows split by the linked roadmap row's source. All three always listed",
+    },
+    {
+      id: 'AAQ-162',
+      tab: 'Bug Agent',
+      title: 'Tokens spent per day, by trigger',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'By trigger, not by phase: in AI mode one sweep finds and fixes, so a finding-vs-fixing split would be invented',
+    },
+    {
+      id: 'AAQ-163',
+      tab: 'Bug Agent',
+      title: 'Code shown to the sweeps per day',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Lines in scope from bug_hunt_runs.metadata.breadth; plot starts on the first recorded day (telemetry shipped 2026-09-23). Takeaway gives tokens per line',
+    },
+    {
+      id: 'AAQ-164',
+      tab: 'Bug Agent',
+      title: 'Tokens by model',
+      kind: 'chart',
+      chartType: 'SimpleBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'From per-model llm_usage rows tagged bug_hunter, joined to runs in the window',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
