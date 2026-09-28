@@ -146,7 +146,7 @@ export class BadgeTenantService {
         `Failed to assign badge ${badge.id} to tenants`,
         error.stack,
       );
-      return [];
+      throw error;
     }
   }
 
