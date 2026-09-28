@@ -66,7 +66,9 @@ export class WebSocketAuthMiddleware {
 
           if (!userHasPermission) {
             this.logger.error(
-              `User ${userId} missing permissions: ${permissions.join(', ')}`,
+              `User ${userId} missing permissions: ${permissions.join(
+                ', ',
+              )}. User has permissions: ${userPermissions.join(', ')}`,
             );
             return next(
               new ForbiddenException(
