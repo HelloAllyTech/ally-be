@@ -58,6 +58,12 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 
 - **Multi-tenant.** Nearly every entity carries `tenantId`. A query without tenant
   isolation is a data leak, not a bug.
+- **The permission service caches empty permissions.** `PermissionsService` caches an empty
+  array for groups that have no permissions. This is an intentional performance
+  optimization, but it can be surprising when debugging `UnauthorizedException`
+  errors that appear to be permission-related but are actually caused by this
+  caching behavior. If a user's permissions seem to be missing, check if their
+  groups simply have no permissions and that an empty set is being cached correctly.
 - **Gate on `roles`, not `role`.** There is no `role` column — a role is a `groups` row
   joined through `user_groups`, and permissions union across all of them.
   `GET /users/me` also returns a single `role`, collapsed by a priority list for legacy

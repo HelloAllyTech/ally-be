@@ -194,15 +194,16 @@ export class PermissionsService {
         {} as Record<number, string[]>,
       );
 
-      // Cache each group's permissions
+      // Cache all fetched groups, including those with no permissions
       await Promise.all(
-        Object.entries(groupedPermissions).map(([groupId, perms]) =>
-          this.cache.set(
+        [...missingGroupIds].map((groupId) => {
+          const perms = groupedPermissions[groupId] || [];
+          return this.cache.set(
             `group:permissions:${groupId}`,
             JSON.stringify(perms),
             1800,
-          ),
-        ),
+          );
+        }),
       );
     }
 

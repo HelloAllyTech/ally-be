@@ -501,6 +501,81 @@ describe('PermissionsService', () => {
         manyGroups,
       );
     });
+
+    it('should cache an empty array for a group that has no permissions to prevent repeated DB queries', async () => {
+      const userId = 123;
+      const groupIdWithNoPerms = 30;
+
+      // --- First call ---
+      // Arrange: Cache is empty for user groups and for the group's permissions
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `user:groups:${userId}`) return Promise.resolve(null);
+        if (key === `group:permissions:${groupIdWithNoPerms}`)
+          return Promise.resolve(null);
+        return Promise.resolve(null);
+      });
+
+      userGroupService.getUserGroups.mockResolvedValue([
+        {
+          id: 1,
+          userId,
+          groupId: groupIdWithNoPerms,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ] as any);
+      groupPermissionsService.getGroupPermissions.mockResolvedValue([]);
+
+      // Act
+      const permissions1 = await service.getUserPermissions(userId);
+
+      // Assert
+      expect(permissions1).toEqual([]);
+      expect(userGroupService.getUserGroups).toHaveBeenCalledTimes(1);
+      expect(groupPermissionsService.getGroupPermissions).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(groupPermissionsService.getGroupPermissions).toHaveBeenCalledWith([
+        groupIdWithNoPerms,
+      ]);
+      // Caches user's groups
+      expect(redisService.set).toHaveBeenCalledWith(
+        `user:groups:${userId}`,
+        JSON.stringify([groupIdWithNoPerms]),
+        1800,
+      );
+      // Caches empty permissions for the group
+      expect(redisService.set).toHaveBeenCalledWith(
+        `group:permissions:${groupIdWithNoPerms}`,
+        JSON.stringify([]),
+        1800,
+      );
+
+      // --- Second call ---
+      // Arrange: now cache should be populated
+      userGroupService.getUserGroups.mockClear();
+      groupPermissionsService.getGroupPermissions.mockClear();
+      redisService.set.mockClear();
+
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `user:groups:${userId}`)
+          return Promise.resolve(JSON.stringify([groupIdWithNoPerms]));
+        if (key === `group:permissions:${groupIdWithNoPerms}`)
+          return Promise.resolve(JSON.stringify([]));
+        return Promise.resolve(null);
+      });
+
+      // Act
+      const permissions2 = await service.getUserPermissions(userId);
+
+      // Assert: Data comes from cache, no DB calls
+      expect(permissions2).toEqual([]);
+      expect(userGroupService.getUserGroups).not.toHaveBeenCalled();
+      expect(
+        groupPermissionsService.getGroupPermissions,
+      ).not.toHaveBeenCalled();
+      expect(redisService.set).not.toHaveBeenCalled();
+    });
   });
 
   describe('Integration scenarios', () => {
