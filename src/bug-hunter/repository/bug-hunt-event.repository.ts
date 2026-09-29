@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, MoreThan, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 
@@ -92,14 +92,31 @@ export class BugHuntEventRepository extends Repository<BugHuntEvent> {
   }
 
   /**
-   * New events since a given row, for the SSE stream's poll loop — see
-   * BugHunterController.streamRun. `createdAt` alone can tie under load, so
-   * the stream also excludes `afterId` itself when timestamps match.
+   * New events after a cursor, for the SSE stream's poll loop — see
+   * BugHunterController.streamRun.
+   *
+   * The cursor is (createdAt, id), not createdAt alone. Two events written
+   * in the same millisecond — a sweep reports several finder results back to
+   * back — share a timestamp, and a `createdAt > cursor` cursor either
+   * dropped the second one (if the first was the last thing the previous
+   * poll saw) or repeated both (if the poll advanced only to the earlier
+   * one). Ordering by (createdAt, id) and comparing the pair makes every row
+   * appear exactly once. `id` is a uuid, so the tie-break is arbitrary but
+   * stable, which is all a cursor needs.
    */
-  listSince(runId: string, afterCreatedAt: Date): Promise<BugHuntEvent[]> {
-    return this.find({
-      where: { runId, createdAt: MoreThan(afterCreatedAt) },
-      order: { createdAt: 'ASC' },
-    });
+  listSince(
+    runId: string,
+    afterCreatedAt: Date,
+    afterId = '',
+  ): Promise<BugHuntEvent[]> {
+    return this.createQueryBuilder('e')
+      .where('e.runId = :runId', { runId })
+      .andWhere(
+        '(e."createdAt" > :after OR (e."createdAt" = :after AND e.id > :afterId))',
+        { after: afterCreatedAt, afterId },
+      )
+      .orderBy('e."createdAt"', 'ASC')
+      .addOrderBy('e.id', 'ASC')
+      .getMany();
   }
 }

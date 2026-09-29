@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import {
   BUG_FINDING_FINDER_ERROR_REASONS,
+  BUG_FINDING_OPEN_STATUSES,
   BugFindingDecisionReason,
   BugFindingSource,
   BugFindingStatus,
@@ -400,15 +401,10 @@ const emptyFunnel = (key: string | null): FindingFunnel => ({
  * every rate on the page means.
  */
 const OPEN_STATUSES = new Set<string>([
-  BugFindingStatus.NEW,
-  BugFindingStatus.PENDING_APPROVAL,
-  BugFindingStatus.APPROVED,
-  BugFindingStatus.QUEUED,
-  BugFindingStatus.FIXING,
-  BugFindingStatus.NEEDS_INPUT,
-  BugFindingStatus.BLOCKED,
-  BugFindingStatus.COORDINATING,
-  BugFindingStatus.PR_OPENED,
+  ...BUG_FINDING_OPEN_STATUSES,
+  // Open for THIS question — "does the user have the fix yet" — though not
+  // for the repository's dedupe question, where a fix already on master
+  // makes a re-discovery a regression. See BUG_FINDING_OPEN_STATUSES.
   BugFindingStatus.RELEASING,
 ]);
 

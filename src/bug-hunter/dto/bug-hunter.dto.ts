@@ -1,5 +1,3 @@
-import { IsJsonString } from 'src/common/decorator/is-json-string.decorator';
-
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
@@ -189,10 +187,18 @@ export class RawBugFindingDto {
   @IsString()
   file?: string;
 
-  @ApiPropertyOptional()
+  // Free text — a failing assertion, a log excerpt, a stack frame. It was
+  // validated as JSON-if-it-looks-like-JSON, which meant a snippet that
+  // happened to be wrapped in braces (a JSON log line, a stringified error
+  // body) failed the whole batch with a 400, and every finding in that sweep
+  // was lost. Evidence is quoted, never parsed, so there is nothing to
+  // validate beyond its being a string.
+  @ApiPropertyOptional({
+    description:
+      'Exact failure output, log excerpt or report text, as text. Never parsed.',
+  })
   @IsOptional()
   @IsString()
-  @IsJsonString()
   evidence?: string;
 
   @ApiPropertyOptional({ enum: BugFindingSeverity })

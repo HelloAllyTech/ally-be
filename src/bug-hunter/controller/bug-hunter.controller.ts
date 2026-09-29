@@ -876,13 +876,23 @@ export class BugHunterController {
     // BugHuntEvent, not a subscription. Cheap: one run's event count is small
     // and the interval is a few seconds, matching the copilot stream's ping
     // cadence for a familiar feel in the admin tab.
-    let cursor = new Date(0);
+    // (createdAt, id), not createdAt alone: events written in the same
+    // millisecond tied on the old cursor and were dropped or repeated — see
+    // BugHuntEventRepository.listSince.
+    let cursor: { createdAt: Date; id: string } = {
+      createdAt: new Date(0),
+      id: '',
+    };
 
     while (!clientGone) {
-      const events = await this.bugHunterService.listEventsSince(id, cursor);
+      const events = await this.bugHunterService.listEventsSince(
+        id,
+        cursor.createdAt,
+        cursor.id,
+      );
       for (const event of events) {
         safeWrite('event', toEventDto(event));
-        cursor = event.createdAt;
+        cursor = { createdAt: event.createdAt, id: event.id };
       }
 
       const run = await this.bugHunterService.getRun(id);

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
-import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
+import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 
 /** One (day, trigger) cell of run spend — see `dailyTokens`. */
 export interface DailyRunTokens {
@@ -47,6 +47,14 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
   }
 
   /** Run history, newest first — the admin tab's table. */
+  /** Every run still marked RUNNING, oldest first — the reconcile task's input. */
+  listRunning(): Promise<BugHuntRun[]> {
+    return this.find({
+      where: { status: BugHuntRunStatus.RUNNING },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   listRecent(limit: number): Promise<BugHuntRun[]> {
     return this.find({ order: { createdAt: 'DESC' }, take: limit });
   }

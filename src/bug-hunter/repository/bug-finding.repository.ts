@@ -7,6 +7,7 @@ import {
   BUG_FINDING_FINDER_ERROR_REASONS,
   BugFindingDecisionReason,
   BugFindingStatus,
+  BUG_FINDING_OPEN_STATUSES,
 } from '../enum/bug-finding.enum';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 
@@ -43,19 +44,8 @@ export const FINDING_UNDECIDED_STATUSES: string[] = [
   BugFindingStatus.PENDING_APPROVAL,
 ];
 
-/** Statuses that mean "still open" — a matching dedupe key under one of these is the same bug, not a new one. */
-const OPEN_STATUSES: BugFindingStatus[] = [
-  BugFindingStatus.NEW,
-  BugFindingStatus.PENDING_APPROVAL,
-  BugFindingStatus.APPROVED,
-  // A dispatched-but-not-yet-started fix session is as open as one already
-  // running — a sweep that rediscovers the bug in the meantime must touch that
-  // row, not open a second one alongside it.
-  BugFindingStatus.QUEUED,
-  BugFindingStatus.FIXING,
-  BugFindingStatus.NEEDS_INPUT,
-  BugFindingStatus.PR_OPENED,
-];
+/** Statuses that mean "still open" — a matching dedupe key under one of these is the same bug, not a new one. One definition, shared with the metrics funnel: see BUG_FINDING_OPEN_STATUSES. */
+const OPEN_STATUSES: BugFindingStatus[] = BUG_FINDING_OPEN_STATUSES;
 
 /**
  * Statuses that mean "somebody already said no to this".

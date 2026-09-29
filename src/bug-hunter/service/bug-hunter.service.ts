@@ -4,6 +4,11 @@ import { DataSource, In } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import {
+  BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES,
+  BUG_HUNT_RUN_RECONCILE_GRACE_MINUTES,
+  BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES,
+} from '../constants/bug-fix-session.constants';
 import { providerForModel } from 'src/llm-agent/service/agent-llm.factory';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
@@ -212,8 +217,9 @@ export class BugHunterService {
   listEventsSince(
     runId: string,
     afterCreatedAt: Date,
+    afterId?: string,
   ): Promise<BugHuntEvent[]> {
-    return this.eventRepository.listSince(runId, afterCreatedAt);
+    return this.eventRepository.listSince(runId, afterCreatedAt, afterId);
   }
 
   /** Every event reported about one finding, across however many runs — the drawer's timeline. */
@@ -300,6 +306,81 @@ export class BugHunterService {
    * the plan's "pull, not push" note); FAILED and any run with escalations
    * always post.
    */
+  /**
+   * Closes runs that stopped reporting — the run-level counterpart of
+   * BugFixSessionService.reconcile, which exists for findings but never did
+   * for runs.
+   *
+   * A sweep or fix session ends with `POST runs/:id/close`, and the workflow
+   * has a gate that closes the run if the CLI exits without doing so. Neither
+   * fires when the job itself dies: GitHub cancels a job at its
+   * `timeout-minutes`, a runner is lost, a workflow is cancelled by hand. The
+   * run then sat at RUNNING indefinitely, the profile card said "Working" for
+   * days, and the shift log showed a sweep still going on a night long over.
+   *
+   * The cutoff is the job's own budget plus a grace period, per trigger: a
+   * run older than its ceiling cannot still be running, because the runner
+   * that was executing it no longer exists. Closed as FAILED with an error
+   * event saying why, through `closeRun` so the usual notification fires and
+   * cost is snapshotted; `foundCount` is what the run actually filed before
+   * it stopped, so the scorecard does not lose those bugs.
+   */
+  async reconcileStaleRuns(now: Date = new Date()): Promise<number> {
+    const running = await this.runRepository.listRunning();
+    let closed = 0;
+    for (const run of running) {
+      const budgetMinutes =
+        run.trigger === BugHuntTrigger.FIX_SESSION
+          ? BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES
+          : BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES;
+      const ceilingMs =
+        (budgetMinutes + BUG_HUNT_RUN_RECONCILE_GRACE_MINUTES) * 60_000;
+      const ageMs = now.getTime() - run.createdAt.getTime();
+      if (ageMs < ceilingMs) continue;
+
+      try {
+        const ageMinutes = Math.round(ageMs / 60_000);
+        const message = `Run stopped reporting: ${ageMinutes} minutes since it started, past its ${budgetMinutes}-minute job budget. The runner is gone, so nothing more will arrive; closed by the reconcile task.`;
+        await this.appendEvent({
+          runId: run.id,
+          repo: run.repo,
+          stage: BugHuntEventStage.ERROR,
+          summary: message,
+          payload: { reconciled: true, ageMinutes, budgetMinutes },
+        });
+        const foundCount = await this.countFindingsForRun(run.id);
+        await this.closeRun(
+          run.id,
+          BugHuntRunStatus.FAILED,
+          {
+            foundCount,
+            autoMergedCount: 0,
+            prOpenedCount: 0,
+            dismissedCount: 0,
+          },
+          message,
+        );
+        closed += 1;
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile stale run ${run.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return closed;
+  }
+
+  /** Findings a run filed — what it "turned up" before it stopped. */
+  private async countFindingsForRun(runId: string): Promise<number> {
+    const [row] = await this.dataSource.query<{ count: string }[]>(
+      `SELECT COUNT(*) AS count FROM bug_findings WHERE run_id = $1`,
+      [runId],
+    );
+    return Number(row?.count ?? 0);
+  }
+
   async closeRun(
     id: string,
     status: BugHuntRunStatus.COMPLETED | BugHuntRunStatus.FAILED,

@@ -189,6 +189,38 @@ export const BUG_FINDING_PARENT_STATUSES: BugFindingStatus[] = [
  * QUEUED/FIXING/RELEASING (a session is already in flight — see
  * BugFixSessionService.start's double-dispatch guard).
  */
+/**
+ * Statuses that mean "this bug is still open": recorded, not declined, and
+ * not yet on master.
+ *
+ * The one list. It used to exist twice — in BugFindingRepository, deciding
+ * whether a re-discovered bug touches an existing row or opens a new one,
+ * and in BugHunterMetricsService, deciding what counts as "open" in the
+ * funnel — and the two had drifted: the repository's copy lacked BLOCKED and
+ * COORDINATING, so a sweep that re-found a bug whose fix was waiting its turn
+ * in a multi-repo plan opened a duplicate row beside it. A plan step is as
+ * open as any other bug; so is the parent coordinating it.
+ *
+ * RELEASING is deliberately NOT here: the fix is on master, so a
+ * re-discovery during the deploy is a regression of a shipped fix, not the
+ * same open bug. The metrics funnel adds it back for its own question
+ * ("does the user have this yet"), and says so where it does.
+ */
+export const BUG_FINDING_OPEN_STATUSES: BugFindingStatus[] = [
+  BugFindingStatus.NEW,
+  BugFindingStatus.PENDING_APPROVAL,
+  BugFindingStatus.APPROVED,
+  // A dispatched-but-not-yet-started fix session is as open as one already
+  // running — a sweep that rediscovers the bug in the meantime must touch that
+  // row, not open a second one alongside it.
+  BugFindingStatus.QUEUED,
+  BugFindingStatus.FIXING,
+  BugFindingStatus.NEEDS_INPUT,
+  BugFindingStatus.BLOCKED,
+  BugFindingStatus.COORDINATING,
+  BugFindingStatus.PR_OPENED,
+];
+
 export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.NEW,
   BugFindingStatus.PENDING_APPROVAL,

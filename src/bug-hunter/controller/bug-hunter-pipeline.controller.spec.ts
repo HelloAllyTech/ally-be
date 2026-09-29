@@ -125,36 +125,36 @@ describe('BugHunterPipelineController', () => {
     );
   });
 
-  it('should return BadRequestException when evidence field contains malformed JSON string', async () => {
+  it('accepts evidence that happens to look like malformed JSON — it is free text, never parsed', async () => {
+    // A log excerpt wrapped in braces, a stringified error body, a JSON log
+    // line with an unescaped quote: all real evidence. Validating this field
+    // as JSON-if-it-looks-like-JSON 400'd the whole batch and lost every
+    // finding in the sweep (OPP-0727).
     const runId = uuidv4();
-    const repo = 'ally-be';
-    // Valid outer JSON, but malformed JSON string within the 'evidence' field
-    const malformedEvidenceString =
-      '{ "key": "value with unescaped \" quote" }';
-
-    const persistBugFindingsDto: PersistBugFindingsDto = {
-      repo,
-      findings: [
-        {
-          source: BugFindingSource.PRODUCTION_LOG,
-          description: 'Test bug description',
-          evidence: malformedEvidenceString,
-        },
-      ],
-    };
+    const evidence = '{ "key": "value with unescaped " quote" }';
 
     await request(app.getHttpServer())
       .post(`/api/v1/bug-hunter/runs/${runId}/findings`)
       .set('x-api-key', 'test-api-key')
-      .send(persistBugFindingsDto)
-      .expect(400) // Expect HTTP 400 Bad Request
+      .send({
+        repo: 'ally-be',
+        findings: [
+          {
+            source: BugFindingSource.PRODUCTION_LOG,
+            description: 'Test bug description',
+            evidence,
+          },
+        ],
+      } as PersistBugFindingsDto)
       .expect((res) => {
-        expect(res.body.message).toEqual([
-          'findings.0.Text ({ "key": "value with unescaped " quote" }) is not a valid JSON string.',
-        ]);
+        expect(res.status).not.toBe(400);
       });
 
-    expect(mockBugFindingService.persistFindings).not.toHaveBeenCalled();
+    expect(mockBugFindingService.persistFindings).toHaveBeenCalledWith(
+      runId,
+      'ally-be',
+      [expect.objectContaining({ evidence })],
+    );
   });
 
   it('should return BadRequestException when report body is malformed JSON', async () => {

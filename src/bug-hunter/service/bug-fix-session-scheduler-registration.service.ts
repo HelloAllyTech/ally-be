@@ -8,12 +8,14 @@ import {
 } from '../constants/bug-hunter.constants';
 import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
+import { BugHunterService } from './bug-hunter.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
   constructor(
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly bugFindingService: BugFindingService,
+    private readonly bugHunterService: BugHunterService,
   ) {}
 
   onModuleInit(): void {
@@ -31,6 +33,17 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     // nothing is in flight.
     scheduledTaskRegistry.register('5min', 'bug-fix-session-reconcile', () =>
       this.bugFixSessionService.reconcile(),
+    );
+    // Runs had no reconcile pass at all, unlike findings: a job GitHub
+    // cancelled at its timeout left its run RUNNING forever, and the card
+    // said "Working" for days. Same cadence, same reasoning — see
+    // BugHunterService.reconcileStaleRuns.
+    scheduledTaskRegistry.register(
+      '5min',
+      'bug-hunt-run-reconcile',
+      async () => {
+        await this.bugHunterService.reconcileStaleRuns();
+      },
     );
 
     // The inbox is pull-only on purpose — no email, no push, Slack removed —

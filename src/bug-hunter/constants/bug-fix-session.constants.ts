@@ -117,3 +117,13 @@ export const BUG_FIX_SESSION_RUN_TIMEOUT_MS = 75 * 60 * 1000;
  * past it.
  */
 export const BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES = 60;
+
+/**
+ * How long past its job budget a RUNNING run may go before
+ * `BugHunterService.reconcileStaleRuns` closes it as failed.
+ *
+ * Fifteen minutes covers the workflow's own post-CLI steps (cost report, the
+ * fail-if-still-running gate) and clock skew between the runner and this
+ * server. A run older than budget + grace has no runner left to report from.
+ */
+export const BUG_HUNT_RUN_RECONCILE_GRACE_MINUTES = 15;
