@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DataSource, Repository, MoreThan, In } from 'typeorm';
+import { DataSource, Repository, MoreThan, In, Brackets } from 'typeorm';
 import { User } from '../../user/entity/user.entity';
 import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '../entity/refresh-token.entity';
@@ -74,14 +74,8 @@ export class AuthService {
   }
 
   async validateRefreshToken(refreshToken: string, userId: number) {
-    const token = await this.refreshTokenRepository.findOne({
-      where: {
-        userId: userId,
-        expiresAt: MoreThan(new Date()),
-      },
-    });
-
-    if (!token || !(await bcrypt.compare(refreshToken, token.token))) {
+    const token = await this.findRefreshTokenRow(refreshToken, userId);
+    if (!token) {
       throw new UnauthorizedException();
     }
 
@@ -134,10 +128,16 @@ export class AuthService {
         expiresIn: this.configService.jwt.accessToken.expiresIn as any,
         secret: this.configService.jwt.accessToken.secret,
       }),
-      this.jwtService.signAsync(payload, {
-        expiresIn: this.configService.jwt.refreshToken.expiresIn as any,
-        secret: this.configService.jwt.refreshToken.secret,
-      }),
+      // `jti` makes every refresh token unique — two signed in the same
+      // second would otherwise be identical — and marks it as one whose row
+      // is an exact SHA-256 (see findRefreshTokenRow).
+      this.jwtService.signAsync(
+        { ...payload, jti: crypto.randomUUID() },
+        {
+          expiresIn: this.configService.jwt.refreshToken.expiresIn as any,
+          secret: this.configService.jwt.refreshToken.secret,
+        },
+      ),
     ]);
 
     // Calculate expiry date based on config
@@ -145,9 +145,9 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + ttlDays);
 
-    // Store the hashed refresh token in DB
+    await this.pruneDeadRefreshTokens(user.id);
     await this.refreshTokenRepository.save({
-      token: await bcrypt.hash(refreshToken, 10),
+      token: AuthService.hashRefreshToken(refreshToken),
       userId: user.id,
       expiresAt,
     });
@@ -170,26 +170,118 @@ export class AuthService {
       );
       throw new UserSuspendedException();
     }
-    // Find and validate the old refresh token
-    const tokenEntity = await this.refreshTokenRepository.findOne({
-      where: {
-        userId,
-        expiresAt: MoreThan(new Date()),
-      },
-    });
-
-    if (
-      !tokenEntity ||
-      !(await bcrypt.compare(oldRefreshToken, tokenEntity.token))
-    ) {
+    const tokenEntity = await this.findRefreshTokenRow(oldRefreshToken, userId);
+    if (!tokenEntity) {
       throw new UnauthorizedException();
     }
 
-    // Delete the old refresh token (rotation)
-    await this.refreshTokenRepository.remove(tokenEntity);
+    if (AuthService.isLegacyRefreshTokenRow(tokenEntity)) {
+      // Pre-rotation session: keep its old behaviour until it expires.
+      await this.refreshTokenRepository.remove(tokenEntity);
+    } else if (!tokenEntity.rotatedAt) {
+      // Stamp rather than delete, so a concurrent refresh of the same token
+      // (a second tab, the phone) still succeeds inside the grace window.
+      await this.refreshTokenRepository.update(
+        { id: tokenEntity.id },
+        { rotatedAt: new Date() },
+      );
+    }
 
-    // Generate new tokens
     return this.generateTokens(user);
+  }
+
+  /**
+   * How long an exchanged refresh token may be exchanged again. The web client
+   * refreshes per tab, and the mobile app can race the web app, so two
+   * refreshes of one token can land within moments of each other; the loser
+   * must not be logged out. Past this window reuse is refused.
+   */
+  static readonly REFRESH_TOKEN_REUSE_GRACE_MS = 30_000;
+
+  static hashRefreshToken(refreshToken: string): string {
+    return crypto.createHash('sha256').update(refreshToken).digest('hex');
+  }
+
+  /** Rows from before exact rotation hold a bcrypt hash, not a SHA-256. */
+  private static isLegacyRefreshTokenRow(row: RefreshToken): boolean {
+    return row.token.startsWith('$2');
+  }
+
+  /**
+   * The stored row this exact refresh token was issued as, or null when it
+   * must be refused (unknown, expired, or rotated longer ago than the grace).
+   *
+   * Tokens carrying a `jti` are matched exactly by SHA-256 and nothing else.
+   * They must never fall through to the bcrypt rows: bcrypt reads only 72
+   * bytes, which every token of a user shares, so a bcrypt compare would
+   * accept any of that user's tokens — the defect this replaces. Tokens
+   * without a `jti` predate the change and keep the legacy match until their
+   * rows expire.
+   */
+  private async findRefreshTokenRow(
+    refreshToken: string,
+    userId: number,
+  ): Promise<RefreshToken | null> {
+    const now = new Date();
+    const decoded = this.jwtService.decode(refreshToken) as {
+      jti?: string;
+    } | null;
+
+    if (decoded?.jti) {
+      const row = await this.refreshTokenRepository.findOne({
+        where: {
+          userId,
+          token: AuthService.hashRefreshToken(refreshToken),
+          expiresAt: MoreThan(now),
+        },
+      });
+      if (!row) return null;
+      if (
+        row.rotatedAt &&
+        now.getTime() - new Date(row.rotatedAt).getTime() >
+          AuthService.REFRESH_TOKEN_REUSE_GRACE_MS
+      ) {
+        this.logger.warn(
+          `Refused reuse of a rotated refresh token for user ${userId}`,
+        );
+        return null;
+      }
+      return row;
+    }
+
+    const legacy = await this.refreshTokenRepository
+      .createQueryBuilder('rt')
+      .where('rt.userId = :userId', { userId })
+      .andWhere('rt.expiresAt > :now', { now })
+      .andWhere('rt.token LIKE :bcryptPrefix', { bcryptPrefix: '$2%' })
+      .getOne();
+    if (!legacy || !(await bcrypt.compare(refreshToken, legacy.token))) {
+      return null;
+    }
+    return legacy;
+  }
+
+  /**
+   * Drops rows that can never authenticate again: expired, or rotated and past
+   * the reuse grace. Without this every login and refresh left a row behind.
+   */
+  private async pruneDeadRefreshTokens(userId: number): Promise<void> {
+    const graceCutoff = new Date(
+      Date.now() - AuthService.REFRESH_TOKEN_REUSE_GRACE_MS,
+    );
+    await this.refreshTokenRepository
+      .createQueryBuilder()
+      .delete()
+      .where('"userId" = :userId', { userId })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('"expiresAt" < :now', { now: new Date() }).orWhere(
+            '"rotatedAt" < :graceCutoff',
+            { graceCutoff },
+          );
+        }),
+      )
+      .execute();
   }
 
   private logLoginError(username: string) {

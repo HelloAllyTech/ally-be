@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { UserSuspendedException } from '../../exception/login.exception';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { AuthService } from '../auth.service';
 import { User } from 'src/user/entity/user.entity';
 import { RefreshToken } from 'src/auth/entity/refresh-token.entity';
@@ -108,8 +109,21 @@ describe('AuthService', () => {
     create: jest.fn(),
     remove: jest.fn(),
     delete: jest.fn(),
+    update: jest.fn(),
     createQueryBuilder: jest.fn(),
   });
+
+  /** Chainable stand-in for the refresh-token pruning / legacy lookup builder. */
+  const createMockQueryBuilder = () => {
+    const qb: any = {};
+    for (const m of ['delete', 'where', 'andWhere', 'orWhere']) {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    }
+    qb.execute = jest.fn().mockResolvedValue({ affected: 0 });
+    qb.getOne = jest.fn().mockResolvedValue(null);
+    return qb;
+  };
+  let refreshTokenQueryBuilder: ReturnType<typeof createMockQueryBuilder>;
 
   beforeAll(() => {
     jest.spyOn(LoggerService, 'getInstance').mockReturnValue(mockLogger as any);
@@ -122,6 +136,10 @@ describe('AuthService', () => {
   beforeEach(async () => {
     const mockUserRepo = createMockRepository();
     const mockRefreshTokenRepo = createMockRepository();
+    refreshTokenQueryBuilder = createMockQueryBuilder();
+    mockRefreshTokenRepo.createQueryBuilder.mockReturnValue(
+      refreshTokenQueryBuilder,
+    );
     const mockUserGroupRepo = createMockRepository();
     const mockGroupRepo = createMockRepository();
     const mockGroupPermissionRepo = createMockRepository();
@@ -154,6 +172,7 @@ describe('AuthService', () => {
           provide: JwtService,
           useValue: {
             signAsync: jest.fn(),
+            decode: jest.fn(),
           },
         },
         {
@@ -268,59 +287,144 @@ describe('AuthService', () => {
   });
 
   describe('refreshTokens', () => {
-    const oldRefreshToken = 'old-refresh-token';
     const userId = 1;
+    const oldRefreshToken = 'old-refresh-token';
     const newAccessToken = 'new-access-token';
     const newRefreshToken = 'new-refresh-token';
-
-    it('should refresh tokens successfully with valid refresh token', async () => {
-      const tokenEntity = {
-        token: 'hashed-refresh-token',
+    const sha = (t: string) =>
+      crypto.createHash('sha256').update(t).digest('hex');
+    const exactRow = (overrides: Partial<RefreshToken> = {}) =>
+      ({
+        id: 7,
+        token: sha(oldRefreshToken),
         userId,
         expiresAt: new Date(Date.now() + 86400000),
-      } as RefreshToken;
+        rotatedAt: null,
+        ...overrides,
+      }) as RefreshToken;
 
+    beforeEach(() => {
       userRepository.findOne.mockResolvedValue(mockUser);
-      refreshTokenRepository.findOne.mockResolvedValue(tokenEntity);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      refreshTokenRepository.remove.mockResolvedValue(tokenEntity);
-      (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-refresh-token');
       jwtService.signAsync
         .mockResolvedValueOnce(newAccessToken)
         .mockResolvedValueOnce(newRefreshToken);
       refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
+    });
 
-      const result = await authService.refreshTokens(oldRefreshToken, userId);
+    describe('tokens with a jti (exact match)', () => {
+      beforeEach(() => {
+        jwtService.decode.mockReturnValue({ sub: userId, jti: 'j1' });
+      });
 
-      expect(result).toEqual({
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
+      it('matches the row by SHA-256 of the whole token and stamps rotatedAt', async () => {
+        refreshTokenRepository.findOne.mockResolvedValue(exactRow());
+
+        const result = await authService.refreshTokens(oldRefreshToken, userId);
+
+        expect(result).toEqual({
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        });
+        expect(refreshTokenRepository.findOne).toHaveBeenCalledWith({
+          where: expect.objectContaining({
+            userId,
+            token: sha(oldRefreshToken),
+          }),
+        });
+        expect(refreshTokenRepository.update).toHaveBeenCalledWith(
+          { id: 7 },
+          { rotatedAt: expect.any(Date) },
+        );
+        expect(refreshTokenRepository.remove).not.toHaveBeenCalled();
+      });
+
+      it('lets a concurrent refresh reuse a token rotated inside the grace window', async () => {
+        refreshTokenRepository.findOne.mockResolvedValue(
+          exactRow({ rotatedAt: new Date(Date.now() - 5_000) }),
+        );
+
+        await expect(
+          authService.refreshTokens(oldRefreshToken, userId),
+        ).resolves.toEqual({
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        });
+        expect(refreshTokenRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a token rotated longer ago than the grace window', async () => {
+        refreshTokenRepository.findOne.mockResolvedValue(
+          exactRow({
+            rotatedAt: new Date(
+              Date.now() - AuthService.REFRESH_TOKEN_REUSE_GRACE_MS - 1_000,
+            ),
+          }),
+        );
+
+        await expect(
+          authService.refreshTokens(oldRefreshToken, userId),
+        ).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('never falls back to the bcrypt rows, which match any token of the user', async () => {
+        refreshTokenRepository.findOne.mockResolvedValue(null);
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+        await expect(
+          authService.refreshTokens(oldRefreshToken, userId),
+        ).rejects.toThrow(UnauthorizedException);
+        expect(refreshTokenQueryBuilder.getOne).not.toHaveBeenCalled();
+        expect(bcrypt.compare).not.toHaveBeenCalled();
       });
     });
 
-    it('should throw UnauthorizedException for invalid refresh token', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
-      refreshTokenRepository.findOne.mockResolvedValue(null);
+    describe('tokens issued before exact rotation (no jti)', () => {
+      beforeEach(() => {
+        jwtService.decode.mockReturnValue({ sub: userId });
+      });
 
-      await expect(
-        authService.refreshTokens('invalid-token', userId),
-      ).rejects.toThrow(UnauthorizedException);
+      it('keeps the legacy bcrypt match and deletes the row it used', async () => {
+        const legacy = exactRow({ token: '$2b$10$legacyhash' });
+        refreshTokenQueryBuilder.getOne.mockResolvedValue(legacy);
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+        await expect(
+          authService.refreshTokens(oldRefreshToken, userId),
+        ).resolves.toEqual({
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        });
+        expect(refreshTokenRepository.remove).toHaveBeenCalledWith(legacy);
+      });
+
+      it('throws when the legacy comparison fails', async () => {
+        refreshTokenQueryBuilder.getOne.mockResolvedValue(
+          exactRow({ token: '$2b$10$legacyhash' }),
+        );
+        (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+        await expect(
+          authService.refreshTokens(oldRefreshToken, userId),
+        ).rejects.toThrow(UnauthorizedException);
+      });
     });
 
-    it('should throw UnauthorizedException when token comparison fails', async () => {
-      const tokenEntity = {
-        token: 'hashed-refresh-token',
-        userId,
-        expiresAt: new Date(Date.now() + 86400000),
-      } as RefreshToken;
+    it('issues a jti-bearing refresh token, stores its SHA-256 and prunes dead rows', async () => {
+      jwtService.decode.mockReturnValue({ sub: userId, jti: 'j1' });
+      refreshTokenRepository.findOne.mockResolvedValue(exactRow());
 
-      userRepository.findOne.mockResolvedValue(mockUser);
-      refreshTokenRepository.findOne.mockResolvedValue(tokenEntity);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      await authService.refreshTokens(oldRefreshToken, userId);
 
-      await expect(
-        authService.refreshTokens(oldRefreshToken, userId),
-      ).rejects.toThrow(UnauthorizedException);
+      expect(jwtService.signAsync).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ sub: mockUser.id, jti: expect.any(String) }),
+        expect.anything(),
+      );
+      expect(refreshTokenRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ token: sha(newRefreshToken), userId: 1 }),
+      );
+      expect(refreshTokenQueryBuilder.delete).toHaveBeenCalled();
+      expect(refreshTokenQueryBuilder.execute).toHaveBeenCalled();
     });
   });
 
@@ -329,14 +433,14 @@ describe('AuthService', () => {
     const userId = 1;
 
     it('should validate refresh token successfully', async () => {
-      const tokenEntity = {
-        token: 'hashed-refresh-token',
+      jwtService.decode.mockReturnValue({ sub: userId, jti: 'j1' });
+      refreshTokenRepository.findOne.mockResolvedValue({
+        id: 3,
+        token: 'sha',
         userId,
         expiresAt: new Date(Date.now() + 86400000),
-      } as RefreshToken;
-
-      refreshTokenRepository.findOne.mockResolvedValue(tokenEntity);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+        rotatedAt: null,
+      } as RefreshToken);
       userRepository.findOneOrFail.mockResolvedValue(mockUser);
 
       const result = await authService.validateRefreshToken(
@@ -348,6 +452,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException for invalid refresh token', async () => {
+      jwtService.decode.mockReturnValue({ sub: userId, jti: 'j1' });
       refreshTokenRepository.findOne.mockResolvedValue(null);
 
       await expect(
