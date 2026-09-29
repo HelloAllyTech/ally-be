@@ -1,4 +1,5 @@
 import { BugFinding } from '../entity/bug-finding.entity';
+import { FixDossier, renderFixDossier } from './bug-fix-dossier';
 import {
   BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES,
   BUG_FIX_SESSION_REPOS,
@@ -16,6 +17,14 @@ export interface FixPromptContext {
   repo: string;
   runId: string;
   apiBaseUrl: string;
+  /**
+   * Everything already known about the bug — verifier reasons, earlier
+   * attempts, regression lineage, nearby shipped fixes, notebook hits — as
+   * `BugHunterDossierService` assembles it. Optional so the prompt can still
+   * be built (and unit-tested) without the lookups; when absent the prompt
+   * says nothing rather than claiming there is nothing to know.
+   */
+  dossier?: FixDossier;
 }
 
 /**
@@ -56,6 +65,7 @@ export function buildFixSessionPrompt({
   repo,
   runId,
   apiBaseUrl,
+  dossier,
 }: FixPromptContext): string {
   const commands = repoCommands(repo);
   if (!commands) {
@@ -98,6 +108,13 @@ export function buildFixSessionPrompt({
     `curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${authHeader} -d '${JSON.stringify(
       { repo, stage, summary, findingId: finding.id },
     )}'`;
+  // The structured per-attempt record the dossier reads back on a retry —
+  // see FixDossierAttempt. Free-text summaries were what earlier sessions
+  // left behind, and a retry could not tell from "tried a fix" what had
+  // been tried; these six fields are the minimum that lets the next session
+  // NOT repeat this one.
+  const reportAttempt = () =>
+    `curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"repo":"${repo}","stage":"fix_attempt","findingId":"${finding.id}","summary":"<one line: what you changed and what happened>","payload":{"attempt":<n>,"hypothesis":"<the root cause you are acting on, one sentence>","changedFiles":["<path>"],"check":"<regression test|full suite>","result":"<passed|failed>","failure":"<the failing assertion or error, one line, or omit when passed>"}}'`;
   const patch = (body: Record<string, unknown>) =>
     `curl -sS -X PATCH "${findingUrl}" -H "Content-Type: application/json" ${authHeader} -d '${JSON.stringify(body)}'`;
   const plan = () =>
@@ -168,11 +185,17 @@ export function buildFixSessionPrompt({
     finding.file
       ? `File: ${finding.file}`
       : `File: not identified — locate it yourself.`,
+    // The function, route or component the bug sits on — the finder's most
+    // precise pointer, and what dedupe keys on, so a session that changes it
+    // knows it is changing the thing the bug was filed against.
+    finding.symbol ? `Symbol: ${finding.symbol}` : '',
     finding.evidence ? `Evidence: ${finding.evidence}` : '',
     finding.escalationAnswer
       ? `An admin already answered an open question about this bug on an earlier attempt: "${finding.escalationAnswer}". Use that answer; do not ask it again.`
       : '',
     ``,
+    dossier ? renderFixDossier(dossier) : '',
+    dossier ? `` : '',
     `HOW YOU ARE RUNNING — read this before you plan anything:`,
     `You are a single non-interactive process on a throwaway CI runner. The moment you end your turn the process exits and the runner is destroyed. There is no "later" for you: nothing re-invokes you, no background task ever notifies you, and any work not already pushed to GitHub is lost with the machine. So NEVER start a long command in the background and end your turn intending to pick it up when it finishes — that silently throws away the whole session. Run long commands in the FOREGROUND and wait for them, however many minutes they take; ${runMinutes} minutes is the real budget for everything below, and a single command is allowed to spend a large part of it. The two that usually take longest are the full suite at step 5 and the commit at step 8; both are meant to.`,
     ``,
@@ -185,7 +208,8 @@ export function buildFixSessionPrompt({
     `2a. Check the blast radius before you change anything. You have ONLY this repo checked out. If a complete fix needs a change in another Ally repo too — a backend field the frontend has to render, a contract both sides share, a worker and the API that feeds it — do NOT fix your half and call it done: a merged half-fix is worse than no fix, because it looks finished and can be released on its own. Instead, hand back a plan and let Bug Hunter run it:`,
     `   ${plan()}`,
     `   Each step is one repo, in DEPENDENCY ORDER — whichever has to ship first comes first, so that everything already deployed keeps working without what follows it. Supported repos: ${BUG_FIX_SESSION_REPOS.join(', ')}. Then run ${report('escalated', 'this fix spans more than one repo — reported a plan')} and finish with outcome "escalated", WITHOUT committing anything. Bug Hunter takes it from there: it opens a session per step in your order, waits for each to merge before starting the next, and releases them in the same order. Do not try to do the other repos' work yourself.`,
-    `3. Apply the minimal fix. Mark the boundary first — ${phase('reproduce', 'finished')} then ${phase('fix', 'started')} — and on a retry from step 4 or 5 run the fix-started call again, which extends the fix phase rather than restarting it. Do not refactor, rename, or clean up anything beyond what this bug requires.`,
+    `3. Apply the minimal fix. Mark the boundary first — ${phase('reproduce', 'finished')} then ${phase('fix', 'started')} — and on a retry from step 4 or 5 run the fix-started call again, which extends the fix phase rather than restarting it. Do not refactor, rename, or clean up anything beyond what this bug requires.${dossier?.previousSessions.length ? ' The dossier lists what earlier sessions tried on this bug: pick a hypothesis that is not one of theirs, and say in your first attempt report how it differs.' : ''}`,
+    `3a. After EVERY attempt — whether step 4's narrow check or step 5's full suite decides it — record what you tried and what happened, before you try again or move on: ${reportAttempt()}. One report per attempt, with the attempt number. This is the record the next session on this bug reads if yours fails, so "failure" has to name the failing assertion or error, not restate that it failed.`,
     `4. Re-run ONLY the new test and confirm it now PASSES. If it still fails, the fix did not work — go back to step 3 and try a different fix (this attempt counts toward the same ${BUG_HUNT_MAX_FIX_ATTEMPTS}-attempt cap step 5 enforces below). Do NOT run the full suite until this narrow check is green: a fix that has not even resolved its own regression test yet is not ready for the several-minutes-long full run. Once it passes, run ${report('test_written', 'regression test goes red before the fix and green after')}.`,
     `5. Run the full suite: ${verifyCommandsList(commands)}. Mark the boundary first — ${phase('fix', 'finished')} then ${phase('suite', 'started')}. All of them must be green${commands.typecheck ? ' — a fix that only passes the test suite and lint but leaves a type error will pass this step and then fail the moment the PR opened in step 8 tries to merge, which is worse than catching it now' : ''}. If not, go back to step 3 (same ${BUG_HUNT_MAX_FIX_ATTEMPTS}-attempt cap, combined with any attempts already spent failing step 4's narrow check). If it is still not green after ${BUG_HUNT_MAX_FIX_ATTEMPTS} total attempts, run ${report('escalated', 'suite still red after the attempt cap')}, then ${patch({ status: 'failed' })}, and finish with outcome "failed". Never force a merge past a red suite and never keep retrying past the cap.`,
     `6. Check whether this fix makes a README, TESTING.md, DATA_SCHEMA.md or a CLAUDE.md "gotchas" section stale, and update it in the same change if so. Run ${report('doc_updated', 'updated stale docs alongside the fix')} naming the file if you touched one.`,

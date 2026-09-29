@@ -10,6 +10,7 @@ import { BugHunterTelemetryService } from '../../service/bug-hunter-telemetry.se
 import { BugHunterEvalService } from '../../service/bug-hunter-eval.service';
 import { BugHunterPolicyService } from '../../service/bug-hunter-policy.service';
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
+import { BugHunterDossierService } from '../../service/bug-hunter-dossier.service';
 import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
 import { ValidationPipe } from '@nestjs/common';
 
@@ -34,6 +35,7 @@ describe('BugHunterPipelineController', () => {
         { provide: BugHunterEvalService, useValue: {} },
         { provide: BugHunterPolicyService, useValue: {} },
         { provide: AgentMemoryService, useValue: { search: jest.fn() } },
+        { provide: BugHunterDossierService, useValue: { build: jest.fn() } },
       ],
     }).compile();
 

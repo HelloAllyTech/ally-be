@@ -68,6 +68,8 @@ import {
 import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
+import { FixDossier } from '../constants/bug-fix-dossier';
+import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import {
   BUG_HUNT_REPOS,
   BugHuntRepoConfig,
@@ -106,6 +108,7 @@ export class BugHunterPipelineController {
     private readonly evalService: BugHunterEvalService,
     private readonly policyService: BugHunterPolicyService,
     private readonly memoryService: AgentMemoryService,
+    private readonly dossierService: BugHunterDossierService,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -492,12 +495,48 @@ export class BugHunterPipelineController {
     @Query('repo') repo?: string,
   ): Promise<string> {
     const finding = await this.bugFindingService.getOne(id);
+    const targetRepo = repo ?? finding.repo ?? '';
+    // Best-effort: a dossier that could not be assembled must not stop the
+    // session from starting — the prompt then simply carries no dossier
+    // section, which is what every session got before this existed.
+    let dossier: FixDossier | undefined;
+    try {
+      dossier = await this.dossierService.build(finding, targetRepo, runId);
+    } catch {
+      dossier = undefined;
+    }
     return buildFixSessionPrompt({
       finding,
-      repo: repo ?? finding.repo ?? '',
+      repo: targetRepo,
       runId,
       apiBaseUrl: this.configService.publicApiBaseUrl,
+      dossier,
     });
+  }
+
+  @Get('pipeline/findings/:id/dossier')
+  @ApiOperation({
+    summary:
+      'Everything already known about a bug, for the session about to fix it (pipeline only)',
+    description:
+      'The same dossier `GET pipeline/findings/:id/fix-prompt` embeds, as JSON: verifier ' +
+      'verdicts and reasons, structured records of earlier fix attempts, regression ' +
+      'lineage, the reporter and their captured context, fixes that shipped nearby in the ' +
+      'repo, other bugs open in the same file, and the closest notebook entries. Every ' +
+      'part is best-effort; only the finding itself is required. `runId` records the ' +
+      'notebook lookup against that run.',
+  })
+  async getFixDossier(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+    @Query('repo') repo?: string,
+  ): Promise<FixDossier> {
+    const finding = await this.bugFindingService.getOne(id);
+    return this.dossierService.build(
+      finding,
+      repo ?? finding.repo ?? '',
+      runId,
+    );
   }
 
   @Post('pipeline/findings/:id/plan')

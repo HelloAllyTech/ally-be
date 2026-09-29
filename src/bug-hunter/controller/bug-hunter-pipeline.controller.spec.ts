@@ -13,6 +13,7 @@ import { BugHunterTelemetryService } from '../service/bug-hunter-telemetry.servi
 import { BugHunterEvalService } from '../service/bug-hunter-eval.service';
 import { BugHunterPolicyService } from '../service/bug-hunter-policy.service';
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
+import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import {
   RecordBugHuntRunModelDto,
   PersistBugFindingsDto,
@@ -52,6 +53,7 @@ describe('BugHunterPipelineController', () => {
         // here read exactly as before and nothing is recorded.
         { provide: BugHunterEvalService, useValue: {} },
         { provide: AgentMemoryService, useValue: {} },
+        { provide: BugHunterDossierService, useValue: { build: jest.fn() } },
         // Policy: allow everything; the rules have their own spec.
         {
           provide: BugHunterPolicyService,

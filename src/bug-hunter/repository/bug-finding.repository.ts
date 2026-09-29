@@ -419,6 +419,66 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   /**
+   * Fixes that landed in this repo for bugs in the same file or on the same
+   * symbol — the "how was a bug like this fixed here before" half of a fix
+   * dossier. Newest first, the finding being fixed excluded.
+   *
+   * File OR symbol rather than the exact dedupe key: the exact key is the
+   * same bug (a regression, handled by `findRecentlyShippedByDedupeKey`),
+   * whereas a neighbour is a different bug whose fix shows the shape of this
+   * one. Symbol alone is allowed because a route or component name is stable
+   * across a file move.
+   */
+  listShippedSimilar(
+    repo: string,
+    file: string | null | undefined,
+    symbol: string | null | undefined,
+    excludeFindingId: string,
+    limit = 3,
+  ): Promise<BugFinding[]> {
+    if (!file && !symbol) return Promise.resolve([]);
+    const query = this.createQueryBuilder('f')
+      .where('f.repo = :repo', { repo })
+      .andWhere('f.id != :excludeFindingId', { excludeFindingId })
+      .andWhere('f.status IN (:...statuses)', { statuses: SHIPPED_STATUSES })
+      .orderBy('COALESCE(f.releasedAt, f."updatedAt")', 'DESC')
+      .take(limit);
+    if (file && symbol) {
+      query.andWhere('(f.file = :file OR f.symbol = :symbol)', {
+        file,
+        symbol,
+      });
+    } else if (file) {
+      query.andWhere('f.file = :file', { file });
+    } else {
+      query.andWhere('f.symbol = :symbol', { symbol });
+    }
+    return query.getMany();
+  }
+
+  /**
+   * Bugs still open in the same file as the one being fixed, so a session
+   * knows what else lives in the code it is about to change. Excludes the
+   * finding itself and any child step of a plan.
+   */
+  listOpenInFile(
+    repo: string,
+    file: string,
+    excludeFindingId: string,
+    limit = 5,
+  ): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.repo = :repo', { repo })
+      .andWhere('f.file = :file', { file })
+      .andWhere('f.id != :excludeFindingId', { excludeFindingId })
+      .andWhere('f.parentFindingId IS NULL')
+      .andWhere('f.status IN (:...statuses)', { statuses: OPEN_STATUSES })
+      .orderBy('f.createdAt', 'DESC')
+      .take(limit)
+      .getMany();
+  }
+
+  /**
    * Declined findings for this exact bug (`repo` + `dedupeKey`) whose decline
    * was a finder error and that have not already been marked reversed — the
    * candidates `checkForAndRecordReversals` flips to reversed once a

@@ -224,6 +224,80 @@ describe('buildFixSessionPrompt', () => {
     expect(p.slice(write, write + 700)).toContain('"findingId":"finding-1"');
   });
 
+  // ── the dossier ──────────────────────────────────────────────────────────
+
+  it('embeds the dossier before the protocol and asks for a structured record after every attempt', () => {
+    const prompt = buildFixSessionPrompt({
+      finding: finding(),
+      repo: 'ally-be',
+      runId: 'run-1',
+      apiBaseUrl: 'https://api.example.com',
+      dossier: {
+        finding: {
+          id: 'finding-1',
+          title: 't',
+          description: 'd',
+          originalDescription: null,
+          file: 'src/app.ts',
+          symbol: null,
+          source: 'code_review' as never,
+          severity: null,
+          proven: false,
+          evidence: null,
+          touchesGuardedPath: false,
+          status: 'approved',
+          createdAt: new Date(),
+        },
+        reporter: null,
+        verification: { confidence: 0.62, votes: [] },
+        lineage: { regressionOf: null, rediscoveredCount: 0 },
+        previousSessions: [
+          {
+            runId: 'run-0',
+            startedAt: new Date('2026-09-26T00:00:00.000Z'),
+            outcome: 'with an error',
+            attempts: [],
+            events: [
+              { stage: 'error', summary: 'suite still red', at: new Date() },
+            ],
+          },
+        ],
+        postmortem: null,
+        similarShipped: [],
+        openNeighbours: [],
+        notebook: [],
+      },
+    });
+
+    const dossierAt = prompt.indexOf('## Dossier');
+    const protocolAt = prompt.indexOf('Follow this protocol in order');
+    expect(dossierAt).toBeGreaterThan(-1);
+    expect(dossierAt).toBeLessThan(protocolAt);
+    // Step 3 knows there was an earlier session and asks for a different hypothesis.
+    expect(prompt).toContain('pick a hypothesis that is not one of theirs');
+    // Step 3a: the structured attempt report, with every field the dossier reads back.
+    expect(prompt).toContain('3a. After EVERY attempt');
+    expect(prompt).toContain('"stage":"fix_attempt"');
+    for (const field of [
+      '"attempt"',
+      '"hypothesis"',
+      '"changedFiles"',
+      '"check"',
+      '"result"',
+      '"failure"',
+    ]) {
+      expect(prompt).toContain(field);
+    }
+  });
+
+  it('says nothing about a dossier when none was supplied, rather than claiming there is nothing to know', () => {
+    const prompt = build();
+    expect(prompt).not.toContain('## Dossier');
+    expect(prompt).not.toContain('pick a hypothesis that is not one of theirs');
+    // The attempt record is asked for regardless: the next session needs it either way.
+    expect(prompt).toContain('3a. After EVERY attempt');
+  });
+
   it('replays an answer the admin already gave, so it is not asked twice', () => {
     const prompt = build({
       escalationAnswer: 'Show the raw URL as a fallback.',

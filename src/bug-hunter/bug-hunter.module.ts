@@ -33,6 +33,7 @@ import { BugHunterEvalRun } from './entity/bug-hunter-eval-run.entity';
 import { BugHunterEvalRunRepository } from './repository/bug-hunter-eval-run.repository';
 import { BugHunterEvalService } from './service/bug-hunter-eval.service';
 import { BugHunterPolicyService } from './service/bug-hunter-policy.service';
+import { BugHunterDossierService } from './service/bug-hunter-dossier.service';
 import { BugHuntEventRepository } from './repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from './repository/bug-hunter-settings.repository';
 import { BugFindingRepository } from './repository/bug-finding.repository';
@@ -129,6 +130,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterTelemetryService,
     BugHunterEvalService,
     BugHunterPolicyService,
+    BugHunterDossierService,
     BugFindingService,
     // Provided directly rather than importing UxSignalsModule: it constructs
     // itself from the global AppConfigModule alone, so this costs nothing and
