@@ -789,6 +789,8 @@ export class BugFindingService {
       verifierVotes?: Record<string, any>[];
       /** No independent verifier could run on the engine that found this — see PatchBugFindingDto. */
       verificationUnavailable?: boolean;
+      /** What a failed fix session left behind — see FixPostmortemDto. Stored under `metadata.postmortem`. */
+      postmortem?: object;
     },
   ): Promise<BugFinding> {
     const before = await this.getOne(id);
@@ -826,10 +828,22 @@ export class BugFindingService {
       patch.confidence <= 1
         ? patch.confidence
         : undefined;
+    // Stamped with when and by which run, so the drawer can say "the session
+    // of the 26th" and a later post-mortem visibly replaces an earlier one
+    // rather than silently merging into it.
+    const postmortem =
+      patch.postmortem && typeof patch.postmortem === 'object'
+        ? {
+            ...(patch.postmortem as Record<string, unknown>),
+            recordedAt: new Date().toISOString(),
+            runId: before.runId ?? null,
+          }
+        : undefined;
     const hasMetadataPatch =
       confidence !== undefined ||
       patch.verifierVotes !== undefined ||
-      patch.verificationUnavailable !== undefined;
+      patch.verificationUnavailable !== undefined ||
+      postmortem !== undefined;
 
     await this.findingRepository.update(id, {
       ...(patch.status ? { status: patch.status } : {}),
@@ -863,6 +877,7 @@ export class BugFindingService {
               ...(patch.verificationUnavailable !== undefined
                 ? { verificationUnavailable: patch.verificationUnavailable }
                 : {}),
+              ...(postmortem !== undefined ? { postmortem } : {}),
             } as Record<string, any>,
           }
         : {}),

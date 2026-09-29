@@ -501,6 +501,65 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
  * reporter's card should move to Released — nothing else asks GitHub about that
  * PR afterwards, so a card missed here is a card that stays wrong forever.
  */
+describe('BugFindingService.setStatus — a failed session’s post-mortem', () => {
+  it('stores the post-mortem under metadata, stamped with when and by which run, without dropping other keys', async () => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(
+        row({
+          id: 'finding-1',
+          status: BugFindingStatus.FIXING,
+          runId: 'run-1',
+          metadata: { confidence: 0.6 },
+        }),
+      ),
+      update: jest.fn().mockResolvedValue(undefined),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
+    };
+    const service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn().mockResolvedValue(false),
+      } as unknown as BugHunterNotificationService,
+      {
+        findOne: jest.fn(),
+        update: jest.fn(),
+      } as unknown as Repository<RoadmapOpportunity>,
+      userRepository(),
+      { appendFindingEvent: jest.fn() } as unknown as BugHunterService,
+    );
+
+    await service.setStatus('finding-1', {
+      status: BugFindingStatus.FAILED,
+      postmortem: {
+        attempts: 2,
+        failingCheck: 'full suite',
+        lastFailure: 'x',
+        rootCauseHypothesis: 'y',
+        whyItFailed: 'z',
+        tryNext: 'w',
+      },
+    });
+
+    expect(repo.update).toHaveBeenCalledWith('finding-1', {
+      status: BugFindingStatus.FAILED,
+      metadata: {
+        confidence: 0.6,
+        postmortem: {
+          attempts: 2,
+          failingCheck: 'full suite',
+          lastFailure: 'x',
+          rootCauseHypothesis: 'y',
+          whyItFailed: 'z',
+          tryNext: 'w',
+          recordedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+          runId: 'run-1',
+        },
+      },
+    });
+  });
+});
+
 describe('BugFindingService.setStatus — releasing the reporter’s roadmap card', () => {
   const merged = (over: Partial<BugFinding> = {}): BugFinding =>
     row({

@@ -12,18 +12,21 @@ import { BugHunterPolicyService } from '../../service/bug-hunter-policy.service'
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
 import { BugHunterDossierService } from '../../service/bug-hunter-dossier.service';
 import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
+import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
+import { BugFindingStatus } from '../../enum/bug-finding.enum';
 import { ValidationPipe } from '@nestjs/common';
 
 describe('BugHunterPipelineController', () => {
   let controller: BugHunterPipelineController;
   let agentMemoryService: AgentMemoryService;
+  let bugFindingService: BugFindingService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BugHunterPipelineController],
       providers: [
         { provide: BugHunterService, useValue: {} },
-        { provide: BugFindingService, useValue: {} },
+        { provide: BugFindingService, useValue: { setStatus: jest.fn() } },
         { provide: BugHunterFinderDataService, useValue: {} },
         { provide: BugFixSessionService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
@@ -33,8 +36,14 @@ describe('BugHunterPipelineController', () => {
           useValue: { timed: jest.fn((_runId, _kind, fn) => fn()) },
         },
         { provide: BugHunterEvalService, useValue: {} },
-        { provide: BugHunterPolicyService, useValue: {} },
-        { provide: AgentMemoryService, useValue: { search: jest.fn() } },
+        {
+          provide: BugHunterPolicyService,
+          useValue: { assertTransitionAllowed: jest.fn() },
+        },
+        {
+          provide: AgentMemoryService,
+          useValue: { search: jest.fn(), write: jest.fn() },
+        },
         { provide: BugHunterDossierService, useValue: { build: jest.fn() } },
       ],
     }).compile();
@@ -43,6 +52,85 @@ describe('BugHunterPipelineController', () => {
       BugHunterPipelineController,
     );
     agentMemoryService = module.get<AgentMemoryService>(AgentMemoryService);
+    bugFindingService = module.get<BugFindingService>(BugFindingService);
+  });
+
+  describe('patchFinding with a post-mortem', () => {
+    const failed = {
+      id: 'finding-1',
+      repo: 'ally-be',
+      runId: 'run-1',
+      status: BugFindingStatus.FAILED,
+      title: 't',
+      description: 'd',
+      metadata: {},
+    };
+
+    it('writes a repo gotcha into the notebook as a candidate, tagged so the curator knows where it came from', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue(failed);
+
+      await controller.patchFinding('finding-1', {
+        status: BugFindingStatus.FAILED,
+        postmortem: {
+          attempts: 2,
+          failingCheck: 'full suite',
+          lastFailure: 'x',
+          rootCauseHypothesis: 'y',
+          whyItFailed: 'z',
+          tryNext: 'w',
+          repoGotcha: '  scheduler specs need a live Redis on the runner ',
+        },
+      });
+
+      expect(agentMemoryService.write).toHaveBeenCalledWith({
+        agent: AgentMemoryAgent.BUG_HUNTER,
+        body: 'ally-be: scheduler specs need a live Redis on the runner',
+        repos: ['ally-be'],
+        tags: ['fix-gotcha', 'postmortem'],
+        runId: 'run-1',
+        findingId: 'finding-1',
+      });
+    });
+
+    it('writes nothing to the notebook when the post-mortem names no repo gotcha', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue(failed);
+
+      await controller.patchFinding('finding-1', {
+        status: BugFindingStatus.FAILED,
+        postmortem: {
+          attempts: 1,
+          failingCheck: 'regression test',
+          lastFailure: 'x',
+          rootCauseHypothesis: 'y',
+          whyItFailed: 'z',
+          tryNext: 'w',
+        },
+      });
+
+      expect(agentMemoryService.write).not.toHaveBeenCalled();
+    });
+
+    it('still returns the finding when the notebook write fails — the failure was already recorded', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue(failed);
+      (agentMemoryService.write as jest.Mock).mockRejectedValue(
+        new Error('ally-ai down'),
+      );
+
+      const dto = await controller.patchFinding('finding-1', {
+        status: BugFindingStatus.FAILED,
+        postmortem: {
+          attempts: 1,
+          failingCheck: 'c',
+          lastFailure: 'x',
+          rootCauseHypothesis: 'y',
+          whyItFailed: 'z',
+          tryNext: 'w',
+          repoGotcha: 'g',
+        },
+      });
+
+      expect(dto.id).toBe('finding-1');
+    });
   });
 
   describe('searchMemory', () => {

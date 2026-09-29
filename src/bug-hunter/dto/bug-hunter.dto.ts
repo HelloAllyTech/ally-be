@@ -250,7 +250,92 @@ export class PersistBugFindingsDto {
   findings!: RawBugFindingDto[];
 }
 
+/**
+ * What a fix session leaves behind when it gives up — see OPP-0735.
+ *
+ * A failed session used to record a status and a one-line escalation event;
+ * what it tried, which check kept failing and why it stopped lived only in
+ * a CI log nobody opens, so the retry started blind. These seven fields are
+ * the minimum a retry — or the stronger escalation model — needs in order
+ * not to repeat the session that failed. Stored on `bug_findings.metadata`
+ * as `postmortem`, shown in the drawer, and read into the next session's
+ * dossier. `repoGotcha` is the one field that is about the repo rather than
+ * the bug, and it becomes a notebook candidate.
+ */
+export class FixPostmortemDto {
+  @ApiProperty({
+    description: 'How many fix attempts were made before giving up.',
+  })
+  @IsInt()
+  @Min(0)
+  attempts!: number;
+
+  @ApiProperty({
+    maxLength: 300,
+    description:
+      'The check that kept failing — the regression test, the full suite, lint, typecheck.',
+  })
+  @IsString()
+  @MaxLength(300)
+  failingCheck!: string;
+
+  @ApiProperty({
+    maxLength: 500,
+    description:
+      'The last failing assertion or error, one line, as the tool printed it.',
+  })
+  @IsString()
+  @MaxLength(500)
+  lastFailure!: string;
+
+  @ApiProperty({
+    maxLength: 600,
+    description:
+      "The session's own hypothesis of the real root cause, after everything it saw.",
+  })
+  @IsString()
+  @MaxLength(600)
+  rootCauseHypothesis!: string;
+
+  @ApiProperty({
+    maxLength: 600,
+    description: 'Why the fixes tried did not hold.',
+  })
+  @IsString()
+  @MaxLength(600)
+  whyItFailed!: string;
+
+  @ApiProperty({
+    maxLength: 600,
+    description:
+      'What a retry should do differently. The one field written for the next reader.',
+  })
+  @IsString()
+  @MaxLength(600)
+  tryNext!: string;
+
+  @ApiPropertyOptional({
+    maxLength: 600,
+    description:
+      'A trap in this repo unrelated to the bug itself (a test that needs a service up, a hook that rewrites files). Becomes a notebook candidate.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  repoGotcha?: string;
+}
+
 export class PatchBugFindingDto {
+  /**
+   * Sent alongside `status: failed` by a fix session that gave up — see
+   * FixPostmortemDto. Ignored on other transitions.
+   */
+  @ApiPropertyOptional({ type: FixPostmortemDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FixPostmortemDto)
+  postmortem?: FixPostmortemDto;
+
   /**
    * Set by a sweep whose engine has no independent verifier (Gemini has no
    * Task tool, so the bug-verifier subagent never runs). Stored on
@@ -799,6 +884,14 @@ export class BugFindingDto {
       'How many sweeps have re-found this bug since it was declined. A high count is the sweep arguing with a human.',
   })
   rediscoveredCount!: number;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      'What the last failed fix session left behind — attempts, the failing check, its root-cause hypothesis and what to try next — plus `recordedAt` and the `runId` that wrote it. Null until a session has failed with one. See FixPostmortemDto.',
+  })
+  postmortem!: Record<string, unknown> | null;
 
   @ApiProperty({
     nullable: true,

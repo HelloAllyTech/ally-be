@@ -986,6 +986,10 @@ export function toFindingDto(
         : null,
     regressed: row.metadata?.regressed === true,
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
+    postmortem:
+      row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
+        ? (row.metadata.postmortem as Record<string, unknown>)
+        : null,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
     engine: row.engine ?? null,

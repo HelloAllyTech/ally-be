@@ -188,13 +188,42 @@ export const renderFixDossier = (dossier: FixDossier): string => {
   }
 
   if (dossier.postmortem) {
+    const pm = dossier.postmortem;
+    const str = (key: string): string | null =>
+      typeof pm[key] === 'string' && (pm[key] as string).trim()
+        ? clipDossierText(pm[key], 600)
+        : null;
+    const recorded =
+      typeof pm.recordedAt === 'string'
+        ? ` (${day(new Date(pm.recordedAt))})`
+        : '';
+    const attempts = typeof pm.attempts === 'number' ? pm.attempts : null;
     lines.push(
-      `### Post-mortem from the last failed session`,
-      ...Object.entries(dossier.postmortem).map(
-        ([key, value]) =>
-          `  - ${key}: ${clipDossierText(typeof value === 'string' ? value : JSON.stringify(value))}`,
-      ),
+      `### Post-mortem from the last failed session${recorded}`,
+      `The session that gave up on this bug wrote this for you. Its "try next" is the most valuable line in this dossier — start there.`,
     );
+    if (attempts != null || str('failingCheck') || str('lastFailure')) {
+      lines.push(
+        `  - What kept failing: ${[
+          attempts != null
+            ? `${attempts} attempt${attempts === 1 ? '' : 's'}`
+            : null,
+          str('failingCheck'),
+          str('lastFailure') ? `last failure "${str('lastFailure')}"` : null,
+        ]
+          .filter(Boolean)
+          .join('; ')}`,
+      );
+    }
+    if (str('rootCauseHypothesis'))
+      lines.push(
+        `  - Its root-cause hypothesis: ${str('rootCauseHypothesis')}`,
+      );
+    if (str('whyItFailed'))
+      lines.push(`  - Why its fixes did not hold: ${str('whyItFailed')}`);
+    if (str('tryNext')) lines.push(`  - Try next: ${str('tryNext')}`);
+    if (str('repoGotcha'))
+      lines.push(`  - Repo gotcha it hit: ${str('repoGotcha')}`);
   }
 
   if (dossier.previousSessions.length) {

@@ -290,6 +290,28 @@ describe('buildFixSessionPrompt', () => {
     }
   });
 
+  it('makes a failed session leave a post-mortem in the same PATCH as the failed status', () => {
+    const prompt = build();
+    const failed = prompt.indexOf('"status":"failed","postmortem"');
+    expect(failed).toBeGreaterThan(-1);
+    for (const field of [
+      '"attempts"',
+      '"failingCheck"',
+      '"lastFailure"',
+      '"rootCauseHypothesis"',
+      '"whyItFailed"',
+      '"tryNext"',
+      '"repoGotcha"',
+    ]) {
+      expect(prompt).toContain(field);
+    }
+    // A bare failed PATCH with no post-mortem is no longer offered anywhere.
+    expect(prompt).not.toContain(`-d '{"status":"failed"}'`);
+    expect(prompt).toContain(
+      '"tryNext" is written for the session that retries this',
+    );
+  });
+
   it('says nothing about a dossier when none was supplied, rather than claiming there is nothing to know', () => {
     const prompt = build();
     expect(prompt).not.toContain('## Dossier');

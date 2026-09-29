@@ -164,6 +164,47 @@ describe('renderFixDossier', () => {
     expect(text).toContain('error: suite still red after the attempt cap');
   });
 
+  it("renders a failed session's post-mortem as sentences, leading with what to try next", () => {
+    const text = renderFixDossier(
+      dossier({
+        postmortem: {
+          attempts: 2,
+          failingCheck: 'full suite',
+          lastFailure: 'queue.spec.ts: expected 3 jobs, received 2',
+          rootCauseHypothesis:
+            'the reconnect hook fires before the subscriber is re-registered',
+          whyItFailed: 'both fixes re-registered on connect, not on ready',
+          tryNext:
+            'register the listener inside the ready callback and add a test that reconnects twice',
+          repoGotcha: 'scheduler specs need a live Redis on the runner',
+          recordedAt: '2026-09-26T02:10:00.000Z',
+          runId: 'run-9',
+        },
+      }),
+    );
+    expect(text).toContain(
+      '### Post-mortem from the last failed session (2026-09-26)',
+    );
+    expect(text).toContain(
+      'Its "try next" is the most valuable line in this dossier',
+    );
+    expect(text).toContain(
+      'What kept failing: 2 attempts; full suite; last failure "queue.spec.ts: expected 3 jobs, received 2"',
+    );
+    expect(text).toContain(
+      'Its root-cause hypothesis: the reconnect hook fires before the subscriber is re-registered',
+    );
+    expect(text).toContain(
+      'Try next: register the listener inside the ready callback',
+    );
+    expect(text).toContain(
+      'Repo gotcha it hit: scheduler specs need a live Redis',
+    );
+    // The stamps are context for the heading, never printed as raw keys.
+    expect(text).not.toContain('recordedAt');
+    expect(text).not.toContain('run-9');
+  });
+
   it('describes the reporter and the context their client captured, without treating it as the brief', () => {
     const text = renderFixDossier(
       dossier({

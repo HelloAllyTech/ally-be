@@ -654,7 +654,28 @@ export class BugHunterPipelineController {
     // arrives — see BugHunterPolicyService. Human routes never pass through
     // here, which is the point: a person's decision is what these defer to.
     await this.policyService.assertTransitionAllowed(id, body);
-    return toFindingDto(await this.bugFindingService.setStatus(id, body));
+    const finding = await this.bugFindingService.setStatus(id, body);
+    // A post-mortem's repo gotcha is a lesson about the repo, not the bug —
+    // exactly what the notebook is for. Written as a candidate for the hourly
+    // curator, like every agent-authored entry, and best-effort: the session
+    // has already recorded its failure, and a notebook write must not turn
+    // that into a 500 the runner reads as "the PATCH did not land".
+    const gotcha = body.postmortem?.repoGotcha?.trim();
+    if (gotcha && finding.repo) {
+      try {
+        await this.memoryService.write({
+          agent: AgentMemoryAgent.BUG_HUNTER,
+          body: `${finding.repo}: ${gotcha}`.slice(0, 600),
+          repos: [finding.repo],
+          tags: ['fix-gotcha', 'postmortem'],
+          runId: finding.runId ?? undefined,
+          findingId: finding.id,
+        });
+      } catch {
+        // Logged inside the memory service; nothing more to do here.
+      }
+    }
+    return toFindingDto(finding);
   }
 
   @Get('pipeline/findings/:id/answer')
