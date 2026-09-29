@@ -119,6 +119,7 @@ export class GlossaryJobService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
         `[GLOSSARY_JOB] kind=${job.kind} job=${job.jobId} language=${job.languageId} failed: ${message}`,
+        error instanceof Error ? error.stack : undefined,
       );
       await this.save({
         ...job,

@@ -1,10 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { stripMarkdownFences } from 'src/learn/util/autofill-shared.util';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
@@ -12,6 +10,8 @@ import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { BUG_FIX_SESSION_REPOS } from '../constants/bug-fix-session.constants';
 import {
   BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS,
+  BUG_HUNTER_CLASSIFY_REPO_MODEL,
+  BUG_HUNTER_CLASSIFY_REPO_TASK_ID,
   BUG_HUNTER_PROMPT_CODES,
 } from '../constants/bug-hunter.constants';
 
@@ -41,19 +41,11 @@ export class BugHunterRepoClassifierService {
   private readonly logger = LoggerService.getInstance(
     BugHunterRepoClassifierService.name,
   );
-  private readonly client: Anthropic;
-  private readonly model: string;
 
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   async classifyRepo(
     description: string,
@@ -74,28 +66,17 @@ export class BugHunterRepoClassifierService {
 
     let raw: string | null;
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS,
-        system: template,
-        messages: [{ role: 'user', content: userMessage }],
-      });
-
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: BUG_HUNTER_CLASSIFY_REPO_TASK_ID,
         task: LlmTask.BUG_HUNTER,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        cachedTokens: response.usage?.cache_read_input_tokens ?? undefined,
-        metadata: { feature: 'bug-hunter', label: 'classify-repo' },
+        model: BUG_HUNTER_CLASSIFY_REPO_MODEL,
+        system: template,
+        prompt: userMessage,
+        maxTokens: BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS,
+        jsonMode: true,
+        usageMetadata: { feature: 'bug-hunter', label: 'classify-repo' },
       });
-
-      const block = response.content?.[0];
-      raw = block?.type === 'text' ? block.text : null;
+      raw = response.text || null;
     } catch (error) {
       this.logger.warn(
         `[BUG_HUNTER] Repo classification call failed, leaving repo unset: ${

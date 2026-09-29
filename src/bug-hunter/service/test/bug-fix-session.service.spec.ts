@@ -72,6 +72,7 @@ describe('BugFixSessionService', () => {
     findRunSince: jest.Mock;
     getRun: jest.Mock;
     getPullRequest: jest.Mock;
+    findSuccessfulRunSince: jest.Mock;
     nextPatchTag: jest.Mock;
     cancelRun: jest.Mock;
   };
@@ -105,6 +106,7 @@ describe('BugFixSessionService', () => {
       findRunSince: jest.fn(),
       getRun: jest.fn(),
       getPullRequest: jest.fn(),
+      findSuccessfulRunSince: jest.fn().mockResolvedValue(null),
       nextPatchTag: jest.fn(),
       cancelRun: jest.fn().mockResolvedValue(undefined),
     };
@@ -692,6 +694,78 @@ describe('BugFixSessionService', () => {
       );
     });
 
+    it('flips a PR_OPENED finding to CANCELLED when a developer closed the PR without merging', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-be',
+                prUrl: 'https://github.com/helloallytech/ally-be/pull/910',
+              }),
+            ]
+          : [],
+      );
+      const closedAt = new Date('2026-09-27T09:30:00.000Z');
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'closed',
+        closedAt,
+        htmlUrl: 'https://github.com/helloallytech/ally-be/pull/910',
+        mergedAt: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.CANCELLED,
+        cancelledAt: closedAt,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.CANCELLED,
+          summary: expect.stringContaining(
+            'closed on GitHub without being merged',
+          ),
+          payload: expect.objectContaining({ closedOnGitHub: true, closedAt }),
+        }),
+      );
+      // Nobody merged anything, so nothing downstream of a merge may run.
+      expect(roadmapOpportunityRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('leaves a PR_OPENED finding alone while its PR is still open', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-be',
+                prUrl: 'https://github.com/helloallytech/ally-be/pull/911',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        closedAt: null,
+        htmlUrl: 'https://github.com/helloallytech/ally-be/pull/911',
+        mergedAt: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).not.toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+      expect(bugHunterService.appendFindingEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ stage: BugHuntEventStage.CANCELLED }),
+      );
+    });
+
     it('releases the linked roadmap opportunity when a merged finding carries a reportedBugId', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
@@ -925,6 +999,163 @@ describe('BugFixSessionService', () => {
 
       expect(github.getPullRequest).not.toHaveBeenCalled();
       expect(findingRepository.update).not.toHaveBeenCalled();
+    });
+
+    describe('a release somebody ran from GitHub', () => {
+      const mergedAt = new Date('2026-09-26T10:00:00.000Z');
+      const mergedRow = (overrides: Partial<BugFinding> = {}) =>
+        findingRow({
+          status: BugFindingStatus.MERGED,
+          repo: 'ally-be',
+          file: 'src/scheduler/queue.ts',
+          prUrl: 'https://github.com/helloallytech/ally-be/pull/920',
+          ...overrides,
+        });
+      const onlyMerged = (rows: BugFinding[]) =>
+        findingRepository.find.mockImplementation(({ where }: any) =>
+          Array.isArray(where) &&
+          where.some((w: any) => w.status === BugFindingStatus.MERGED)
+            ? rows
+            : [],
+        );
+
+      it('marks a MERGED finding LIVE once the deployable released after its PR merged', async () => {
+        onlyMerged([mergedRow()]);
+        github.getPullRequest.mockResolvedValue({
+          merged: true,
+          mergedAt,
+          state: 'closed',
+          closedAt: mergedAt,
+        });
+        github.findSuccessfulRunSince.mockResolvedValue({
+          id: '5150',
+          htmlUrl: 'https://github.com/helloallytech/ally-be/actions/runs/5150',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: new Date('2026-09-26T15:00:00.000Z'),
+        });
+
+        await service.reconcile();
+
+        expect(github.findSuccessfulRunSince).toHaveBeenCalledWith({
+          repo: 'ally-be',
+          workflow: 'production-release.yaml',
+          since: mergedAt,
+        });
+        expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+          status: BugFindingStatus.RELEASED,
+          releasedAt: expect.any(Date),
+          releaseTag: null,
+          releaseRunId: '5150',
+          releaseRunUrl:
+            'https://github.com/helloallytech/ally-be/actions/runs/5150',
+        });
+        expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stage: BugHuntEventStage.RELEASED,
+            summary: expect.stringContaining('did not start that release'),
+            payload: expect.objectContaining({ outOfBand: true }),
+          }),
+        );
+        // Voice rule: it never claims a release it did not run.
+        expect(notificationService.notify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: expect.stringMatching(/live in production/i),
+            body: expect.stringContaining("I didn't start that release"),
+          }),
+        );
+      });
+
+      it('also settles a RELEASE_FAILED finding that a later hand-run release shipped', async () => {
+        findingRepository.find.mockImplementation(({ where }: any) =>
+          Array.isArray(where)
+            ? [
+                mergedRow({
+                  status: BugFindingStatus.RELEASE_FAILED,
+                  releaseTag: 'v1.4.2',
+                }),
+              ]
+            : [],
+        );
+        github.getPullRequest.mockResolvedValue({ merged: true, mergedAt });
+        github.findSuccessfulRunSince.mockResolvedValue({
+          id: '5151',
+          htmlUrl: 'https://github.com/run/5151',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: new Date(),
+        });
+
+        await service.reconcile();
+
+        expect(findingRepository.update).toHaveBeenCalledWith(
+          'finding-1',
+          expect.objectContaining({
+            status: BugFindingStatus.RELEASED,
+            // The failed tag must not sit beside "Live".
+            releaseTag: null,
+          }),
+        );
+      });
+
+      it('leaves a MERGED finding alone when nothing released since the merge', async () => {
+        onlyMerged([mergedRow()]);
+        github.getPullRequest.mockResolvedValue({ merged: true, mergedAt });
+        github.findSuccessfulRunSince.mockResolvedValue(null);
+
+        await service.reconcile();
+
+        expect(findingRepository.update).not.toHaveBeenCalledWith(
+          'finding-1',
+          expect.objectContaining({ status: BugFindingStatus.RELEASED }),
+        );
+        expect(notificationService.notify).not.toHaveBeenCalled();
+      });
+
+      it('never guesses a deployable: an ally-web libs/ fix is not touched', async () => {
+        onlyMerged([
+          mergedRow({
+            repo: 'ally-web',
+            file: 'libs/ui-shared/src/button.tsx',
+          }),
+        ]);
+
+        await service.reconcile();
+
+        expect(github.findSuccessfulRunSince).not.toHaveBeenCalled();
+        expect(findingRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('skips a plan parent — its steps are released as a sequence', async () => {
+        onlyMerged([mergedRow()]);
+        findingRepository.listChildren.mockResolvedValue([
+          findingRow({ id: 'step-0', parentFindingId: 'finding-1' }),
+        ]);
+
+        await service.reconcile();
+
+        expect(github.findSuccessfulRunSince).not.toHaveBeenCalled();
+      });
+
+      it('stays quiet for a plan step: the row moves, no notification', async () => {
+        onlyMerged([mergedRow({ id: 'step-0', parentFindingId: 'parent-1' })]);
+        github.getPullRequest.mockResolvedValue({ merged: true, mergedAt });
+        github.findSuccessfulRunSince.mockResolvedValue({
+          id: '5152',
+          htmlUrl: 'https://github.com/run/5152',
+          status: 'completed',
+          conclusion: 'success',
+          createdAt: new Date(),
+        });
+
+        await service.reconcile();
+
+        expect(findingRepository.update).toHaveBeenCalledWith(
+          'step-0',
+          expect.objectContaining({ status: BugFindingStatus.RELEASED }),
+        );
+        expect(notificationService.notify).not.toHaveBeenCalled();
+      });
     });
 
     it('settles a green release as RELEASED and notifies', async () => {

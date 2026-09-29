@@ -43,6 +43,7 @@ import { BugFindingService } from './service/bug-finding.service';
 import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.service';
 import { BugHunterMetricsService } from './service/bug-hunter-metrics.service';
 import { BugFixSessionService } from './service/bug-fix-session.service';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
@@ -106,6 +107,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     LogsModule,
     PromptModule,
     LlmUsageModule,
+    LlmAgentModule,
     // The notebook Bug Hunter reads before hunting and writes at close — see
     // docs/bug-hunter-memory-adr.md. Exposed here on Bug Hunter's own two auth
     // surfaces rather than by AgentMemoryModule itself.

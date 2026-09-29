@@ -44,9 +44,12 @@ permissions:
 
 on:
   # Nightly, staggered per repo so five sweeps do not hit ally-be's pipeline
-  # endpoints and the Anthropic API in the same minute. ally-be: 02:15 UTC.
+  # endpoints and the model API in the same minute. Anchored so the first
+  # sweep lands at 06:00 India (00:30 UTC), then twenty minutes apart:
+  # ally-be 00:30, ally-web 00:50, ally-ai 01:10, ally-ai-learn 01:30,
+  # ally-mobile 01:50 UTC.
   schedule:
-    - cron: "15 2 * * *"
+    - cron: "30 0 * * *"
 
   workflow_dispatch:
     inputs:
@@ -198,7 +201,7 @@ jobs:
             echo "::error::Could not resolve Bug Hunter's configured models from ally-be."
             exit 1
           fi
-          [ -n "$ENGINE" ] && [ "$ENGINE" != "null" ] || ENGINE="claude-code"
+          [ -n "$ENGINE" ] && [ "$ENGINE" != "null" ] || ENGINE="gemini"
           echo "engine=$ENGINE" >> "$GITHUB_OUTPUT"
           echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
           # Also the model a gemini-engine sweep falls back to if it gets
@@ -319,7 +322,7 @@ jobs:
               "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
               | jq -r '.status // "unknown"')
             if [ "$STATUS" = "running" ]; then
-              echo "Gemini left the run '$STATUS' without closing it — falling back to Claude Code (${{ steps.models.outputs.escalation_model }}) for one retry."
+              echo "Gemini left the run '$STATUS' without closing it — retrying once with Gemini on a clean checkout."
 
               # Visible on the timeline even if the Claude retry goes on to
               # close the run cleanly — otherwise a clean Claude finish would
@@ -331,10 +334,10 @@ jobs:
               EXCERPT=$(jq -r '.response // empty' /tmp/claude-result.json 2>/dev/null | tail -c 400)
               REPORT_BODY=$(jq -n \
                 --arg repo "${{ steps.cfg.outputs.repo }}" \
-                --arg summary "Gemini's sweep left its run '$STATUS' without closing it — most likely its own loop-detector silently stopping a thrashing turn (gemini-cli-core gives no structured signal for this in --output-format json, so it can't be confirmed beyond the run being left '$STATUS'). Retrying automatically with Claude Code (${{ steps.models.outputs.escalation_model }})." \
+                --arg summary "Gemini's sweep left its run '$STATUS' without closing it — most likely its own loop-detector silently stopping a thrashing turn (gemini-cli-core gives no structured signal for this in --output-format json, so it can't be confirmed beyond the run being left '$STATUS'). Retrying automatically with Gemini." \
                 --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
                 --arg excerpt "$EXCERPT" \
-                '{repo: $repo, stage: "fix_attempt", summary: $summary, payload: {runUrl: $runUrl, fallback: "gemini-to-claude", geminiLastResponseExcerpt: $excerpt}}')
+                '{repo: $repo, stage: "fix_attempt", summary: $summary, payload: {runUrl: $runUrl, fallback: "gemini-retry", geminiLastResponseExcerpt: $excerpt}}')
               curl -sS -X POST \
                 -H "Content-Type: application/json" \
                 -H "x-api-key: $ALLY_BE_API_KEY" \
@@ -349,22 +352,18 @@ jobs:
               git checkout master --force
               git reset --hard origin/master
               git clean -fd
-              claude -p "$(cat /tmp/sweep-prompt.txt)" \
-                --permission-mode acceptEdits \
-                --model "${{ steps.models.outputs.escalation_model }}" \
-                --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
-                --max-turns 300 \
-                --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
-              echo "claude-code" > /tmp/actual-engine.txt
+              # No Claude path: Claude spend is a hard no, so the one retry is Gemini
+              # again on a clean checkout rather than Claude Code.
+              gemini "$(cat /tmp/sweep-prompt.txt)" \
+                --model "${{ steps.models.outputs.default_model }}" \
+                --approval-mode auto_edit \
+                --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
+                --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+              echo "gemini" > /tmp/actual-engine.txt
             fi
           else
-            claude -p "$(cat /tmp/sweep-prompt.txt)" \
-              --permission-mode acceptEdits \
-              --model "${{ steps.models.outputs.default_model }}" \
-              --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
-              --max-turns 300 \
-              --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
-            echo "claude-code" > /tmp/actual-engine.txt
+            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — only gemini is allowed (no Claude path). Set the engine to gemini in admin."
+            exit 1
           fi
 
       - name: Report actual token cost
