@@ -181,6 +181,13 @@ export const BUG_HUNT_VERIFIER_SUBAGENT = 'bug-verifier';
  * Shared instruction for when to reach for `BUG_HUNT_ESCALATION_SUBAGENT`,
  * used verbatim by both the sweep and fix-session prompts so the criteria
  * for escalating can't drift between the two protocols.
+ *
+ * Claude Code only — it names the Task tool. Prompts must go through
+ * `escalationGuidance(engine)` below, which substitutes the Gemini text when
+ * that engine is running: Gemini CLI has no subagents, and a protocol that
+ * tells it to invoke one sends it hunting for a tool that does not exist
+ * (the 2026-09 prompt audit found exactly that in the fix protocol's step 0a,
+ * which stayed Claude-shaped after the Verify phase had been made engine-aware).
  */
 export const BUG_HUNT_ESCALATION_GUIDANCE =
   `If this finding needs deeper reasoning than a routine fix — a root cause spanning ` +
@@ -193,6 +200,31 @@ export const BUG_HUNT_ESCALATION_GUIDANCE =
   `it already did, and continue the rest of the protocol yourself. Reserve this for findings ` +
   `that actually warrant it — judge by the bug's difficulty, not by how many attempts you have ` +
   `left; a routine fix does not need it.`;
+
+/**
+ * What a Gemini-engine session does where a Claude one would escalate.
+ *
+ * The criteria are the same; the action is different, because there is no
+ * stronger model to hand off to. Saying so is better than silence: an agent
+ * told "escalate when X" with no way to escalate either invents a tool call
+ * or quietly does nothing, and both look like a routine fix from outside.
+ */
+export const BUG_HUNT_ESCALATION_GUIDANCE_GEMINI =
+  `If this finding needs deeper reasoning than a routine fix — a root cause spanning ` +
+  `multiple files or modules, a change that sits in a guarded area (auth/permissions, ` +
+  `payments, migrations), or an attempt that already failed for a non-obvious reason — ` +
+  `there is no stronger model to hand it to on this engine (Gemini CLI has no subagents), ` +
+  `so do the deeper work yourself before touching anything: read the whole call path, not ` +
+  `the last error; hold the full failure chain in mind; write the regression test before the ` +
+  `fix; and say in your first fix_attempt report that this was a hard case. If it sits in a ` +
+  `guarded area and you are not certain, stop and hand it to a human via the needs_input path ` +
+  `rather than guessing.`;
+
+/** The escalation instruction for the engine actually running the prompt — see BUG_HUNT_ESCALATION_GUIDANCE. */
+export const escalationGuidance = (engine: string | undefined): string =>
+  engine === 'gemini'
+    ? BUG_HUNT_ESCALATION_GUIDANCE_GEMINI
+    : BUG_HUNT_ESCALATION_GUIDANCE;
 
 /**
  * Cap on an admin-rewritten bug description.

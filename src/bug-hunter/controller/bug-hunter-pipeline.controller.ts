@@ -496,6 +496,9 @@ export class BugHunterPipelineController {
   ): Promise<string> {
     const finding = await this.bugFindingService.getOne(id);
     const targetRepo = repo ?? finding.repo ?? '';
+    // Same reason the sweep prompt reads the engine: the escalation step
+    // names a Task-tool subagent that only exists on Claude Code.
+    const { engine } = await this.modelSettingsService.get();
     // Best-effort: a dossier that could not be assembled must not stop the
     // session from starting — the prompt then simply carries no dossier
     // section, which is what every session got before this existed.
@@ -511,6 +514,7 @@ export class BugHunterPipelineController {
       runId,
       apiBaseUrl: this.configService.publicApiBaseUrl,
       dossier,
+      engine,
     });
   }
 
