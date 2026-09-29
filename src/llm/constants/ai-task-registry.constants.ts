@@ -232,7 +232,10 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     trigger: 'Every learner turn, off the reply path',
     detail:
       "Derives the character's inner state — stance, affect, ledgers. Same cadence as " +
-      'agent_turn but detached, so its spend has to be arguable on its own.',
+      'agent_turn but detached, so its spend has to be arguable on its own. The same ' +
+      'call also proposes the delivery plan for the next turn (which catalog opener, ' +
+      'pause or short bridge line the reply starts with), so working-memory ' +
+      'scenarios need no separate filler/planner call.',
     kind: AiTaskKind.COMPLETION,
     provider: 'resolved',
     defaultModel: "the scenario's main LLM",
@@ -257,7 +260,9 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'Learner pauses and the agent must say something now',
     detail:
-      'Fast interim reply covering the gap while the real turn generates.',
+      'Fast interim reply covering the gap while the real turn generates. ' +
+      'Superseded, and not called, in sessions where the delivery plan is active ' +
+      '(DELIVERY_PLAN_ENABLED with fillers on): its bridge line plays instead.',
     hotPath: true,
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
@@ -268,15 +273,21 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     id: 'predictive-filler',
     task: LlmTask.THINKING_FILLER,
     runtime: LlmRuntime.AI_LEARN,
-    trigger: 'The agent needs a thinking filler',
+    trigger:
+      'The character finishes speaking (plans how the next reply starts)',
     detail:
-      "Batch-generated ahead of the turn, and in-turn from the learner's partial " +
-      'transcript so the played filler fits what is actually being said.',
-    hotPath: true,
+      'The delivery planner, for scenarios WITHOUT client working memory: one ' +
+      'structured call after each character turn, off the reply path, choosing ' +
+      "the next turn's opener from a fixed per-language catalog (or a pause, or " +
+      'a short bridge line). Working-memory scenarios get the same plan from ' +
+      'client-working-memory and make no call here. With DELIVERY_PLAN_ENABLED ' +
+      'off, the legacy filler generator records here instead — and that path ' +
+      "runs on the scenario's main LLM, not gpt-4o-mini (PREDICTIVE_FILLER_MODEL " +
+      'is defined but never read).',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-4o-mini',
-    configuredBy: 'PREDICTIVE_FILLER_MODEL / PREDICTIVE_FILLER_PROVIDER',
+    configuredBy: 'DELIVERY_PLANNER_MODEL / DELIVERY_PLANNER_MODEL_PROVIDER',
   },
   {
     id: 'backchannel-phrases',
@@ -419,7 +430,9 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       'Chirp 3 HD, ElevenLabs flash/turbo/multilingual_v2, Cartesia). Generative ' +
       'voices (ElevenLabs v3, Gemini-TTS, Hume) and anything unclassified get ' +
       'none, and their filler/back-channel/interim LLM calls are skipped too. A ' +
-      'worker-wide cache serves repeated phrases with no call. Recorded as ' +
+      'worker-wide cache serves repeated phrases with no call; turn openers come ' +
+      'from a fixed catalog rendered once per voice, so most are cache hits, plus ' +
+      'one bridge-line render per new delivery plan. Recorded as ' +
       'clip_tts per real synthesis (a cache hit costs nothing and records nothing); ' +
       "the session instance's own TTS metrics cover agent-tts only.",
     hotPath: true,
