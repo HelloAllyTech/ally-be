@@ -62,6 +62,31 @@ const CHARACTER_INTERVIEW_TRUNCATION_ERROR =
   'character was created. Your answers are all still here — ask for the ' +
   'character again and it will be written more concisely.';
 
+/**
+ * Appended to the system prompt for the tool-less wrap-up pass when no draft
+ * was saved this turn.
+ *
+ * Without it the wrap-up pass is free to write the sign-off the prompt asks
+ * for after a successful save — "the draft is ready for your review" — when
+ * nothing was saved at all. The admin then waits on a review form that never
+ * opens, in a session that never completes.
+ */
+const CHARACTER_INTERVIEW_WRAP_UP_NO_DRAFT_NOTE =
+  'You have used every tool call this turn allows, and NO character draft ' +
+  'was saved — save_character_draft never succeeded. Do not say or imply ' +
+  'that the character is ready, saved or waiting for review. In one or two ' +
+  'sentences, tell the admin the draft did not go through this time and ask ' +
+  'them to reply "try again".';
+
+/**
+ * Shown to the admin when a turn tried to save the draft, never succeeded,
+ * and ran out of tool calls — whatever the wrap-up pass then wrote.
+ */
+const CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR =
+  "The agent couldn't finish the character draft this time, so no character " +
+  'was created. Your answers are all still here — reply "try again" and it ' +
+  'will have another go.';
+
 /** Shown to the admin when the model kept producing unreadable tool calls. */
 const CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR =
   'The model kept returning an action this app could not read, so the turn ' +
@@ -539,11 +564,15 @@ export class CharacterInterviewOrchestratorService {
           `Interview session ${sessionId} hit the ${maxIterations}-iteration ` +
             'cap; making a tool-less wrap-up pass.',
         );
-        // No `tools` on this pass — that is what makes it a wrap-up.
+        // No `tools` on this pass — that is what makes it a wrap-up. Said in
+        // the system prompt rather than as a trailing message, which would
+        // follow the tool results with a second user turn in a row.
         const wrapUp = yield* this.runPass(provider, {
           model,
           maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
-          system,
+          system: characterDraft
+            ? system
+            : `${system}\n\n${CHARACTER_INTERVIEW_WRAP_UP_NO_DRAFT_NOTE}`,
           messages,
         });
         this.recordUsage(
@@ -571,6 +600,24 @@ export class CharacterInterviewOrchestratorService {
             data: {
               code: 'response_truncated',
               message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+            },
+          };
+        }
+
+        // The turn was trying to save and never did. The note above asks the
+        // model to say so, but the admin is not left relying on it: the turn
+        // is marked failed, so the reason survives a reload too.
+        const triedToSave = allToolCalls.some(
+          (call) => call.name === 'save_character_draft',
+        );
+        if (!characterDraft && triedToSave && !turnErrored) {
+          turnErrored = true;
+          turnError = CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR;
+          yield {
+            event: 'error',
+            data: {
+              code: 'draft_not_saved',
+              message: CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR,
             },
           };
         }
