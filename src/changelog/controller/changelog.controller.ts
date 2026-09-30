@@ -4,8 +4,13 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from 'src/auth/decorators/auth.metadata';
 
 import { GetPublicChangelogEntriesResponseDto } from '../dto/changelog-entry-response.dto';
+import {
+  CodeActivityResponseDto,
+  GetPublicCodeActivityDto,
+} from '../dto/code-activity.dto';
 import { GetPublicChangelogEntriesDto } from '../dto/get-public-changelog-entries.dto';
 import { ChangelogService } from '../service/changelog.service';
+import { CodeActivityService } from '../service/code-activity.service';
 
 /**
  * The public changelog feed, served to the helpline dashboard's
@@ -20,7 +25,10 @@ import { ChangelogService } from '../service/changelog.service';
 @ApiTags('Changelog')
 @Controller('v1/changelog')
 export class ChangelogController {
-  constructor(private readonly changelogService: ChangelogService) {}
+  constructor(
+    private readonly changelogService: ChangelogService,
+    private readonly codeActivityService: CodeActivityService,
+  ) {}
 
   @Get('public')
   @Public()
@@ -32,5 +40,21 @@ export class ChangelogController {
     @Query() query: GetPublicChangelogEntriesDto,
   ): Promise<GetPublicChangelogEntriesResponseDto> {
     return this.changelogService.findPublic(query);
+  }
+
+  @Get('public/code-activity')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Lines changed per UTC day, summed across the Ally repos (public, no auth required)',
+    description:
+      'Feeds the heatmap at the top of the changelog page. Totals only — the ' +
+      'per-repo split stays on the admin ship-volume chart.',
+  })
+  @ApiResponse({ status: 200, type: CodeActivityResponseDto })
+  async getPublicCodeActivity(
+    @Query() query: GetPublicCodeActivityDto,
+  ): Promise<CodeActivityResponseDto> {
+    return this.codeActivityService.getActivity(query);
   }
 }

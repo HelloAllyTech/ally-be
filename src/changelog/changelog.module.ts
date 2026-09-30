@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ChangelogController } from './controller/changelog.controller';
 import { ChangelogSourceService } from './service/changelog-source.service';
 import { ChangelogService } from './service/changelog.service';
+import { CodeActivityService } from './service/code-activity.service';
 
 /**
  * No TypeORM: the changelog is a file in another repo, not a table here.
@@ -11,7 +12,7 @@ import { ChangelogService } from './service/changelog.service';
  */
 @Module({
   controllers: [ChangelogController],
-  providers: [ChangelogSourceService, ChangelogService],
+  providers: [ChangelogSourceService, ChangelogService, CodeActivityService],
   exports: [ChangelogService],
 })
 export class ChangelogModule {}
