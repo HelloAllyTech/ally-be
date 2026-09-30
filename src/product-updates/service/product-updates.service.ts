@@ -214,10 +214,10 @@ export class ProductUpdatesService {
     const rows: { updateId: string; count: string }[] =
       await this.sourceRepository
         .createQueryBuilder('s')
-        .select('s.update_id', 'updateId')
+        .select('s.updateId', 'updateId')
         .addSelect('COUNT(*)', 'count')
-        .where('s.update_id IN (:...ids)', { ids: updateIds })
-        .groupBy('s.update_id')
+        .where('s.updateId IN (:...ids)', { ids: updateIds })
+        .groupBy('s.updateId')
         .getRawMany();
     return new Map(rows.map((row) => [row.updateId, Number(row.count)]));
   }

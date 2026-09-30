@@ -36,12 +36,12 @@ export class ProductUpdateRepository extends Repository<ProductUpdate> {
     const qb = this.createQueryBuilder('u')
       .where('u.audience = :audience', { audience: 'public' })
       .andWhere('u.hidden = false')
-      .andWhere('u.live_at IS NOT NULL');
+      .andWhere('u.liveAt IS NOT NULL');
     if (params.surface) {
       qb.andWhere(':surface = ANY(u.surfaces)', { surface: params.surface });
     }
     const [updates, count] = await qb
-      .orderBy('u.live_at', 'DESC')
+      .orderBy('u.liveAt', 'DESC')
       .addOrderBy('u.id', 'ASC')
       .limit(params.limit)
       .offset(params.offset)
@@ -62,19 +62,19 @@ export class ProductUpdateRepository extends Repository<ProductUpdate> {
   }): Promise<ProductUpdate[]> {
     return this.createQueryBuilder('u')
       .leftJoinAndSelect('u.sources', 's')
-      .where('u.last_merged_at >= :mergedSince', {
+      .where('u.lastMergedAt >= :mergedSince', {
         mergedSince: params.mergedSince,
       })
       .andWhere(
         new Brackets((qb) =>
           qb
-            .where('u.published_at IS NULL')
-            .orWhere('u.published_at >= :publishedSince', {
+            .where('u.publishedAt IS NULL')
+            .orWhere('u.publishedAt >= :publishedSince', {
               publishedSince: params.publishedSince,
             }),
         ),
       )
-      .orderBy('u.last_merged_at', 'DESC')
+      .orderBy('u.lastMergedAt', 'DESC')
       .take(params.limit)
       .getMany();
   }
@@ -90,8 +90,8 @@ export class ProductUpdateRepository extends Repository<ProductUpdate> {
     filters: AdminUpdateFilters,
   ): Promise<{ updates: ProductUpdate[]; count: number }> {
     const qb = this.createQueryBuilder('u');
-    if (filters.status === 'live') qb.andWhere('u.live_at IS NOT NULL');
-    if (filters.status === 'merged') qb.andWhere('u.live_at IS NULL');
+    if (filters.status === 'live') qb.andWhere('u.liveAt IS NOT NULL');
+    if (filters.status === 'merged') qb.andWhere('u.liveAt IS NULL');
     if (filters.audience) {
       qb.andWhere('u.audience = :audience', { audience: filters.audience });
     }
@@ -107,13 +107,13 @@ export class ProductUpdateRepository extends Repository<ProductUpdate> {
           inner
             .where('u.title ILIKE :search')
             .orWhere('u.summary ILIKE :search')
-            .orWhere('u.team_notes ILIKE :search'),
+            .orWhere('u.teamNotes ILIKE :search'),
         ),
         { search: `%${filters.search.trim()}%` },
       );
     }
     const [updates, count] = await qb
-      .orderBy('u.last_merged_at', 'DESC')
+      .orderBy('u.lastMergedAt', 'DESC')
       .addOrderBy('u.id', 'ASC')
       .limit(filters.limit)
       .offset(filters.offset)

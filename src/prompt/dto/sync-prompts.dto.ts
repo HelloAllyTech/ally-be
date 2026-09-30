@@ -97,6 +97,24 @@ export class SyncPromptItemDto {
   @IsArray()
   @IsString({ each: true })
   runtimes?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Provider a NEW prompt row starts on. Ignored for an existing row, whose ' +
+      'provider is an admin choice.',
+  })
+  @IsOptional()
+  @IsString()
+  defaultProvider?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Model a NEW prompt row starts on. Ignored for an existing row, whose ' +
+      'model is an admin choice.',
+  })
+  @IsOptional()
+  @IsString()
+  defaultModel?: string;
 }
 
 export class SyncPromptsDto {

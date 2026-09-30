@@ -4,5 +4,7 @@
   "category": "Product updates",
   "runtimes": [
     "ally-be"
-  ]
+  ],
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5"
 }

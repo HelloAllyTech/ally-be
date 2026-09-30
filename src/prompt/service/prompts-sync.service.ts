@@ -25,6 +25,16 @@ export interface PromptMeta {
    * model the consuming runtime cannot execute.
    */
   runtimes?: string[];
+  /**
+   * The model a NEW row starts on (`defaultProvider` + `defaultModel` in the
+   * sidecar). Applied only when sync creates the row: after that the model is
+   * an admin's choice in System Skills, and a redeploy must never undo it.
+   * For a call whose output quality depends on a stronger model than its tier
+   * default — and whose AI Tasks row must still show the truth, which a model
+   * hard-coded at the call site would not.
+   */
+  defaultProvider?: string;
+  defaultModel?: string;
 }
 
 @Injectable()
@@ -92,18 +102,35 @@ export class PromptsSyncService implements OnModuleInit {
         );
       }
 
+      const text = (value: unknown) =>
+        typeof value === 'string' && value.trim() ? value.trim() : undefined;
+      const defaultProvider = text(
+        data.defaultProvider ?? data.default_provider,
+      );
+      const defaultModel = text(data.defaultModel ?? data.default_model);
+
       if (
         name === undefined &&
         description === undefined &&
         category === undefined &&
         kind === undefined &&
         usesBlocks === undefined &&
-        runtimes === undefined
+        runtimes === undefined &&
+        defaultModel === undefined
       ) {
         return null;
       }
 
-      return { name, description, category, kind, usesBlocks, runtimes };
+      return {
+        name,
+        description,
+        category,
+        kind,
+        usesBlocks,
+        runtimes,
+        defaultProvider,
+        defaultModel,
+      };
     } catch {
       return null;
     }
@@ -173,6 +200,8 @@ export class PromptsSyncService implements OnModuleInit {
       kind?: string;
       usesBlocks?: string[];
       runtimes?: string[];
+      defaultProvider?: string;
+      defaultModel?: string;
     }[] = [];
 
     const scanDir = (dir: string, baseDir: string = dir): void => {
@@ -199,6 +228,8 @@ export class PromptsSyncService implements OnModuleInit {
           let kind: string | undefined;
           let usesBlocks: string[] | undefined;
           let runtimes: string[] | undefined;
+          let defaultProvider: string | undefined;
+          let defaultModel: string | undefined;
           if (meta) {
             if (meta.name !== undefined) name = meta.name;
             if (meta.description !== undefined) description = meta.description;
@@ -206,6 +237,8 @@ export class PromptsSyncService implements OnModuleInit {
             if (meta.kind !== undefined) kind = meta.kind;
             if (meta.usesBlocks !== undefined) usesBlocks = meta.usesBlocks;
             if (meta.runtimes !== undefined) runtimes = meta.runtimes;
+            defaultProvider = meta.defaultProvider;
+            defaultModel = meta.defaultModel;
           }
           items.push({
             promptCode,
@@ -217,6 +250,8 @@ export class PromptsSyncService implements OnModuleInit {
             kind,
             usesBlocks,
             runtimes,
+            defaultProvider,
+            defaultModel,
           });
         }
       }

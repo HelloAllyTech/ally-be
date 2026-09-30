@@ -1137,7 +1137,10 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'One call per batch of up to 30 clustered merges. Places each cluster as a new product ' +
       'update, onto an open one, or as noise, and writes its public and team text. The only ' +
       'model output that reaches the public changelog, so the reply is validated field by ' +
-      'field and anything unverifiable goes back to the queue. JSON mode.',
+      'field and anything unverifiable goes back to the queue. JSON mode. The prompt row ' +
+      'starts on openai/gpt-5 (its _meta sidecar default): side by side on real journal ' +
+      'weeks the tier default wrote noticeably more jargon into public text. The tier model ' +
+      'below is the fallback if the prompt model fails.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',

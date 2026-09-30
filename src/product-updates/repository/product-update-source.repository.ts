@@ -59,7 +59,7 @@ export class ProductUpdateSourceRepository extends Repository<ProductUpdateSourc
   async countNoiseSince(since: Date): Promise<number> {
     return this.createQueryBuilder('s')
       .where('s.status = :status', { status: ProductUpdateSourceStatus.NOISE })
-      .andWhere('s.consolidated_at >= :since', { since })
+      .andWhere('s.consolidatedAt >= :since', { since })
       .getCount();
   }
 }
