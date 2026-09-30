@@ -8,6 +8,7 @@ import {
   ConsolidationBatchResult,
   ProductUpdateConsolidationService,
 } from './product-update-consolidation.service';
+import { ProductUpdateSourceRepository } from '../repository/product-update-source.repository';
 import { ProductUpdateIngestService } from './product-update-ingest.service';
 import {
   LivenessResult,
@@ -31,6 +32,14 @@ const BACKFILL = {
   maxBatches: 80,
   lockSeconds: 4 * 60 * 60,
 };
+/**
+ * A scheduled pass that finds more waiting than this runs with backfill
+ * limits. The first pass after the feature is switched on finds the whole
+ * journal (~1,500 merges) waiting; at scheduled limits that is nine hours of
+ * half-hourly passes, so it catches up in one go instead — nobody has to
+ * remember to press a backfill button.
+ */
+const BACKLOG_FOR_BACKFILL = 150;
 
 export interface PipelineRunResult {
   trigger: 'scheduled' | 'manual' | 'backfill';
@@ -61,6 +70,7 @@ export class ProductUpdatePipelineService {
   );
 
   constructor(
+    private readonly sources: ProductUpdateSourceRepository,
     private readonly ingest: ProductUpdateIngestService,
     private readonly consolidation: ProductUpdateConsolidationService,
     private readonly liveness: ProductUpdateLivenessService,
@@ -73,6 +83,17 @@ export class ProductUpdatePipelineService {
   }
 
   /**
+   * Merges read but not yet placed. Before anything has ever been placed the
+   * whole journal is about to arrive, so a first pass counts as a backlog.
+   */
+  private async backlog(): Promise<number> {
+    const counts = await this.sources.countByStatus();
+    const placed = counts.consolidated + counts.noise;
+    if (placed === 0) return Number.MAX_SAFE_INTEGER;
+    return counts.pending + counts.enriched;
+  }
+
+  /**
    * Runs a pass, or returns null without running when one is already in
    * progress (or, for the schedule, when the feature is switched off).
    */
@@ -80,7 +101,10 @@ export class ProductUpdatePipelineService {
     trigger: PipelineRunResult['trigger'],
   ): Promise<PipelineRunResult | null> {
     if (trigger === 'scheduled' && !this.enabled) return null;
-    const limits = trigger === 'backfill' ? BACKFILL : SCHEDULED;
+    const limits =
+      trigger === 'backfill' || (await this.backlog()) > BACKLOG_FOR_BACKFILL
+        ? BACKFILL
+        : SCHEDULED;
     if (!(await this.redisService.acquireLock(LOCK_KEY, limits.lockSeconds))) {
       return null;
     }
