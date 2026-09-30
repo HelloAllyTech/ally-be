@@ -28,6 +28,10 @@
 #   ANTHROPIC_API_KEY   — for Claude Code
 #   GEMINI_API_KEY      — only consumed when the configured engine is "gemini"
 #                         (GET pipeline/models). A plain Google AI Studio key.
+#                         Also handed to opencode as GOOGLE_GENERATIVE_AI_API_KEY —
+#                         its google provider reads that name, not GEMINI_API_KEY.
+#   OPENAI_API_KEY      — optional; only consumed when the engine is "opencode" and
+#                         the configured model is an OpenAI one.
 #   ALLY_BE_API_KEY     — ally-be's platform API_KEY, for the pipeline endpoints
 #   BUG_HUNTER_GH_TOKEN — may push branches, open PRs and merge here. NOT the
 #                         default GITHUB_TOKEN: a PR opened with that token does
@@ -224,6 +228,45 @@ jobs:
           # to (nothing kept them in sync before).
           sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
           rm -f .claude/agents/bug-escalation.md.bak
+          # opencode: a multi-provider harness with the one thing Gemini CLI lacks —
+          # Task-tool subagents — so Verify and escalation come back on any
+          # vendor's model (spike, 2026-09-30). It names models as
+          # provider/model, so a bare id from settings gets its provider from
+          # the id's shape, the same rule scripts/builder/run-engine.sh uses.
+          # Its agents are the same two files as .claude/agents, converted to
+          # its frontmatter (mode, provider/model, permission) and written to
+          # the GLOBAL agents dir rather than ./.opencode so the agent can
+          # never commit them.
+          if [ "$ENGINE" = "opencode" ]; then
+            oc_model() {
+              case "$1" in
+                */*) printf '%s' "$1" ;;
+                claude-*) printf 'anthropic/%s' "$1" ;;
+                gemini-*) printf 'google/%s' "$1" ;;
+                gpt-* | o[0-9]-* | o[0-9]) printf 'openai/%s' "$1" ;;
+                *) printf '%s' "$1" ;;
+              esac
+            }
+            mkdir -p ~/.config/opencode/agents
+            for agent in bug-verifier bug-escalation; do
+              src=".claude/agents/${agent}.md"
+              desc=$(awk '/^description:/ { sub(/^description: */, ""); print; exit }' "$src")
+              body=$(awk 'BEGIN { n = 0 } /^---$/ && n < 2 { n++; next } n >= 2 { print }' "$src")
+              if [ "$agent" = "bug-verifier" ]; then
+                model=$(oc_model "$DEFAULT_MODEL")
+                perm=$'  edit: deny\n  write: deny\n  bash: allow'
+              else
+                model=$(oc_model "$ESCALATION_MODEL")
+                perm=$'  edit: allow\n  write: allow\n  bash: allow'
+              fi
+              {
+                printf -- '---\ndescription: %s\nmode: subagent\nmodel: %s\npermission:\n%s\n---\n' "$desc" "$model" "$perm"
+                printf '%s\n' "$body"
+              } > ~/.config/opencode/agents/${agent}.md
+            done
+            echo "oc_model=$(oc_model "$DEFAULT_MODEL")" >> "$GITHUB_OUTPUT"
+            echo "Engine is opencode — agents written to ~/.config/opencode/agents, default model $(oc_model "$DEFAULT_MODEL")."
+          fi
           # Best-effort: powers the findings list's model/provider label.
           # ally-be never learns this any other way, since the model is
           # resolved here, not at dispatch time — but losing this call must
@@ -244,6 +287,10 @@ jobs:
             # Claude Code without a second install step mid-fallback.
             npm install -g @anthropic-ai/claude-code@2.1.220
             claude --version
+          elif [ "${{ steps.models.outputs.engine }}" = "opencode" ]; then
+            # Pinned to the version Builder already runs in CI (scripts/builder/install-engine.sh).
+            npm install -g opencode-ai@1.18.32
+            opencode --version
           else
             npm install -g @anthropic-ai/claude-code@2.1.220
             claude --version
@@ -293,6 +340,11 @@ jobs:
           # Only consumed when engine=gemini. A plain Google AI Studio key —
           # see run-engine.sh's own note on why this isn't Vertex/Workspace auth.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # opencode's google provider reads THIS name, not GEMINI_API_KEY —
+          # Builder's spike found the binary contains both strings and only one
+          # is read. Same secret, second name.
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Needed here even though the agent's own curl/gh calls read the key
           # back from disk instead: this step's own script (not the agent)
           # checks the run's status below to decide whether to fall back, and
@@ -361,8 +413,68 @@ jobs:
                 --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
               echo "gemini" > /tmp/actual-engine.txt
             fi
+          elif [ "${{ steps.models.outputs.engine }}" = "opencode" ]; then
+            # Config in the GLOBAL dir, never ./opencode.json: anything written
+            # into the checkout is something the agent could commit.
+            mkdir -p ~/.config/opencode ~/.cache/opencode
+            cat > ~/.config/opencode/opencode.json <<'OCEOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "share": "disabled",
+            "autoupdate": false,
+            "permission": {
+              "edit": "allow",
+              "bash": { "*": "allow", "rm -rf /*": "deny", "git push --force*": "deny" },
+              "task": "allow",
+              "webfetch": "deny"
+            }
+          }
+          OCEOF
+            # opencode fetches its model catalogue from models.dev at start-up
+            # with a very long timeout; a stalled fetch looked exactly like a
+            # hung run in the 2026-09-30 spike. Seed the cache with a bounded
+            # curl first — if this fails, opencode falls back to fetching it.
+            curl -sSf -m 60 https://models.dev/api.json -o ~/.cache/opencode/models.json || true
+            # `--format default`, not json: json mode sat silent in the spike
+            # while default mode answered in seconds. Tokens and cost come from
+            # `opencode export` afterwards (see "Report actual token cost"),
+            # which is why stderr — where `--print-logs` names every session id,
+            # sub-agents included — is kept.
+            run_opencode() {
+              opencode run --format default --auto --print-logs \
+                --model "${{ steps.models.outputs.oc_model }}" \
+                "$(cat /tmp/sweep-prompt.txt)" 2> >(tee -a /tmp/opencode.log >&2) | tee -a /tmp/opencode-out.txt
+            }
+            : > /tmp/opencode.log; : > /tmp/opencode-out.txt
+            run_opencode
+            echo "opencode" > /tmp/actual-engine.txt
+
+            # Same stuck-check the gemini path runs: an agent that ended its
+            # turn mid-protocol leaves the run where it was. One retry on a
+            # clean checkout, recorded on the timeline so a clean second run
+            # never hides that the first one stalled.
+            STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+                "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
+                | jq -r '.status // "unknown"')
+            if [ "$STATUS" = "running" ]; then
+              echo "opencode left the run '$STATUS' without reporting an outcome — retrying once on a clean checkout."
+              EXCERPT=$(tail -c 400 /tmp/opencode-out.txt 2>/dev/null || true)
+              REPORT_BODY=$(jq -n \
+                --arg repo "${{ steps.cfg.outputs.repo }}" \
+                --arg summary "opencode's session left the run '$STATUS' without reporting an outcome. Retrying automatically once on a clean checkout." \
+                --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --arg excerpt "$EXCERPT" \
+                '{repo: $repo, stage: "fix_attempt", summary: $summary, payload: {runUrl: $runUrl, fallback: "opencode-retry", lastOutputExcerpt: $excerpt}}')
+              curl -sS -X POST -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" \
+                "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" -d "$REPORT_BODY" || true
+              git fetch origin master
+              git checkout master --force
+              git reset --hard origin/master
+              git clean -fd
+              run_opencode
+            fi
           else
-            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — only gemini is allowed (no Claude path). Set the engine to gemini in admin."
+            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — only gemini or opencode is allowed (no Claude path). Set the engine in admin."
             exit 1
           fi
 
@@ -411,7 +523,7 @@ jobs:
           # Claude overwrote /tmp/claude-result.json with Claude's own shape
           # — parsing it as Gemini's would silently zero it out again.
           ACTUAL_ENGINE=$(cat /tmp/actual-engine.txt 2>/dev/null || echo "${{ steps.models.outputs.engine }}")
-          if [ -s /tmp/claude-result.json ]; then
+          if [ -s /tmp/claude-result.json ] || [ "$ACTUAL_ENGINE" = "opencode" ]; then
             if [ "$ACTUAL_ENGINE" = "gemini" ]; then
               MODEL_USAGE=$(jq -c \
                 '[(.stats.models // {}) | to_entries[] | {model: .key, inputTokens: (.value.tokens.input // 0), outputTokens: (.value.tokens.candidates // 0), cacheReadInputTokens: (.value.tokens.cached // 0), cacheCreationInputTokens: 0}]' \
@@ -427,6 +539,22 @@ jobs:
               # cliReportedCostUsd null, so the tab correctly falls back to
               # the token-based estimate instead.
               BODY="{\"modelUsage\":${MODEL_USAGE}}"
+            elif [ "$ACTUAL_ENGINE" = "opencode" ]; then
+              # opencode's session export carries per-message `tokens` and
+              # `cost` (spike, 2026-09-30). Sub-agents run as child sessions,
+              # each logged as "created id=ses_…" by --print-logs, so export
+              # every session the log names and sum by model. Reasoning tokens
+              # are billed as output and counted with it.
+              MODEL_USAGE='[]'
+              CLI_COST=0
+              for SID in $(grep -oE 'created id=ses_[A-Za-z0-9]+' /tmp/opencode.log 2>/dev/null | sed 's/created id=//' | sort -u); do
+                opencode export "$SID" > "/tmp/oc-${SID}.json" 2>/dev/null || rm -f "/tmp/oc-${SID}.json"
+              done
+              if ls /tmp/oc-ses_*.json >/dev/null 2>&1; then
+                MODEL_USAGE=$(jq -sc '[.[] | .messages[]? | .info | select(.role == "assistant")] | group_by(.modelID) | map({model: .[0].modelID, inputTokens: (map(.tokens.input // 0) | add), outputTokens: (map((.tokens.output // 0) + (.tokens.reasoning // 0)) | add), cacheReadInputTokens: (map(.tokens.cache.read // 0) | add), cacheCreationInputTokens: (map(.tokens.cache.write // 0) | add)})' /tmp/oc-ses_*.json 2>/dev/null || echo '[]')
+                CLI_COST=$(jq -s '[.[] | .messages[]? | .info | select(.role == "assistant") | (.cost // 0)] | add // 0' /tmp/oc-ses_*.json 2>/dev/null || echo 0)
+              fi
+              BODY="{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}"
             else
               MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
               CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)

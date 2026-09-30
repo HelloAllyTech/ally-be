@@ -506,7 +506,7 @@ export class RecordBugHuntRunCostDto {
 }
 
 export class RecordBugHuntRunModelDto {
-  @ApiProperty({ description: '"claude-code" or "gemini".' })
+  @ApiProperty({ description: '"claude-code", "gemini" or "opencode".' })
   @IsString()
   @IsNotEmpty()
   engine!: string;
@@ -617,7 +617,9 @@ export class BugHunterModelSettingsDto {
 }
 
 export class UpdateBugHunterModelSettingsDto {
-  @ApiPropertyOptional({ description: '"claude-code" or "gemini".' })
+  @ApiPropertyOptional({
+    description: '"claude-code", "gemini" or "opencode".',
+  })
   @IsOptional()
   @IsString()
   engine?: string;

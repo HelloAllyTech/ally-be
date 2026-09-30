@@ -19,9 +19,19 @@
  * hasn't been built against) — so a `gemini`-engine run skips escalation entirely rather than
  * pretending to honor `escalationModel`. `escalationModel` stays a Claude-Code-only field.
  */
-/** The two values `engine` currently takes. Kept as plain `string` on the interface below,
- * same as Builder's own `defaultEngine` — no runtime enum validation on either. */
-export type BugHunterEngine = 'claude-code' | 'gemini';
+/**
+ * The values `engine` takes. Kept as plain `string` on the interface below,
+ * same as Builder's own `defaultEngine` — no runtime enum validation on either.
+ *
+ * `opencode` (added 2026-09-30) is a multi-provider harness rather than a
+ * vendor: it runs Anthropic, Google and OpenAI models alike, named as
+ * provider/model, and — unlike Gemini CLI — has Task-tool subagents, so the
+ * Verify phase's two verifiers and `escalationModel` both work on it whatever
+ * model is underneath. The workflows derive the provider from the model id's
+ * shape (`gemini-*` → google, `claude-*` → anthropic, `gpt-*` → openai), so
+ * settings keep storing bare ids. Builder already runs on it in CI.
+ */
+export type BugHunterEngine = 'claude-code' | 'gemini' | 'opencode';
 
 export interface BugHunterModelSettings {
   /** Which CLI the sweep/fix session runs on: a `BugHunterEngine` value. */
