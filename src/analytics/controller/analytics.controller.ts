@@ -257,6 +257,11 @@ import { PracticeDepthAnalyticsService } from '../service/practice-depth-analyti
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
 import { RoleplaySessionCostAnalyticsService } from '../service/roleplay-session-cost-analytics.service';
+import { XpPerMinuteAnalyticsService } from '../service/xp-per-minute-analytics.service';
+import {
+  XpPerMinuteQueryDto,
+  XpPerMinuteResponseDto,
+} from '../dto/xp-per-minute-analytics.dto';
 import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
 import { BugAgentPerformanceAnalyticsService } from '../service/bug-agent-performance-analytics.service';
@@ -328,6 +333,7 @@ export class AnalyticsController {
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
     private readonly roleplaySessionCostAnalyticsService: RoleplaySessionCostAnalyticsService,
+    private readonly xpPerMinuteAnalyticsService: XpPerMinuteAnalyticsService,
     private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
     private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
     private readonly bugAgentPerformanceAnalyticsService: BugAgentPerformanceAnalyticsService,
@@ -751,6 +757,32 @@ export class AnalyticsController {
     return this.roleplaySessionCostAnalyticsService.getRoleplaySessionCost(
       query,
     );
+  }
+
+  @Get('xp-per-minute')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'XP earned per minute of roleplay, by XP source (super-admin)',
+    description:
+      'All XP awarded in each period (the `xp_events` ledger, on `awardedOn`) ' +
+      'divided by the roleplay minutes practised in it (`user_daily_scores`, ' +
+      'the same figure as the Roleplay Minutes chart). The numerator is split ' +
+      'by XP source — roleplay (practice minutes, completion, depth ' +
+      'milestones), track items, debriefs & peer comments, weekly consistency, ' +
+      'retired rules — over the one shared denominator, so the parts sum to ' +
+      'the headline and the non-roleplay share shows how the learning ' +
+      'portfolio is shifting. Ratios are null in a period with no roleplay ' +
+      'minutes. Platform-wide, test orgs excluded.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP per roleplay minute retrieved successfully',
+    type: XpPerMinuteResponseDto,
+  })
+  async getXpPerMinute(
+    @Query() query: XpPerMinuteQueryDto,
+  ): Promise<XpPerMinuteResponseDto> {
+    return this.xpPerMinuteAnalyticsService.getXpPerMinute(query);
   }
 
   @Get('roleplay-session-cost/sessions/:sessionId')
