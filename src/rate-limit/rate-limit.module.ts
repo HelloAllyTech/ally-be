@@ -6,6 +6,7 @@ import { RedisModule } from '../redis/redis.module';
 import { RedisService } from '../redis/service/redis.service';
 import { AppConfigService } from '../config/config.service';
 import { AppConfigModule } from '../config/config.module';
+import { registeredThrottlers } from './rate-limit.throttlers';
 
 @Module({
   imports: [
@@ -17,18 +18,7 @@ import { AppConfigModule } from '../config/config.module';
         configService: AppConfigService,
         redisService: RedisService,
       ) => ({
-        throttlers: [
-          {
-            name: 'default',
-            limit: 100,
-            ttl: 1000,
-          },
-          {
-            name: 'otp',
-            limit: configService.rateLimit.otp.limit,
-            ttl: configService.rateLimit.otp.ttl,
-          },
-        ],
+        throttlers: registeredThrottlers(configService.rateLimit.otp),
         storage: new ThrottlerStorageRedisService(
           redisService.createClient('rate-limit'),
         ),

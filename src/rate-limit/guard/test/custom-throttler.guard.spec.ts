@@ -114,6 +114,17 @@ describe('CustomThrottlerGuard', () => {
       expect(result).toBe('user-123');
     });
 
+    it('should throw rather than fall back to the IP when key is userId and no user is set', async () => {
+      const rateLimitOptions: RateLimitOptions = { key: 'userId' };
+      const req = { ip: '192.168.1.1', _context: mockExecutionContext };
+
+      mockReflector.get.mockReturnValue(rateLimitOptions);
+
+      await expect((guard as any).getTracker(req)).rejects.toThrow(
+        "@RateLimit({ key: 'userId' }) ran before authentication",
+      );
+    });
+
     it('should return IP-based tracker when key is ip', async () => {
       const rateLimitOptions: RateLimitOptions = { key: 'ip' };
       const req = { ...mockRequest, _context: mockExecutionContext };
@@ -124,20 +135,20 @@ describe('CustomThrottlerGuard', () => {
       expect(result).toBe('192.168.1.1');
     });
 
-    it('should return first IP from ips array', async () => {
+    it('should use req.ip and ignore X-Forwarded-For, which trust proxy has already resolved', async () => {
       const req = {
-        ips: ['10.0.0.1', '192.168.1.1'],
-        ip: '192.168.1.1',
+        ip: '203.0.113.7',
+        headers: { 'x-forwarded-for': '198.51.100.66, 203.0.113.7' },
         _context: mockExecutionContext,
       };
 
       mockReflector.get.mockReturnValue(null);
 
       const result = await (guard as any).getTracker(req);
-      expect(result).toBe('10.0.0.1');
+      expect(result).toBe('203.0.113.7');
     });
 
-    it('should return req.ip if no ips array', async () => {
+    it('should default to the IP tracker when the route sets no key', async () => {
       const req = { ip: '192.168.1.1', _context: mockExecutionContext };
       mockReflector.get.mockReturnValue(null);
 

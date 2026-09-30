@@ -45,11 +45,22 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 
     const key = rateLimitOptions?.key || 'ip';
 
-    if (key === 'userId' && req.user?.id) {
+    if (key === 'userId') {
+      // Only reachable when this guard runs before the route's auth guard (see RateLimit).
+      // It used to fall back to the IP here, which quietly turned the bug-report route's
+      // per-user limit into one bucket per client address.
+      if (!req.user?.id) {
+        throw new Error(
+          `@RateLimit({ key: 'userId' }) ran before authentication on ` +
+            `${context?.getClass?.()?.name}.${context?.getHandler?.()?.name}`,
+        );
+      }
       return `user-${req.user.id}`;
     }
 
-    return req.ips?.[0] || req.ip || 'unknown';
+    // Already the client's address: main.ts sets `trust proxy` (TRUSTED_PROXY_HOPS). Don't
+    // read X-Forwarded-For here — its left-most entry is whatever the client sent.
+    return req.ip || 'unknown';
   }
 
   protected async getErrorMessage(
