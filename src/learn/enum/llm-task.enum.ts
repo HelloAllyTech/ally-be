@@ -127,6 +127,12 @@ export enum LlmTask {
   // text. Its own label because the input is a short commit list, not an
   // analytics window or telemetry aggregate.
   MOBILE_RELEASE_WHATS_NEW = 'mobile_release_whats_new',
+  // Product updates (src/product-updates): one call per batch of clustered
+  // merges, placing each cluster as a new product update, onto an open one, or
+  // as noise, and writing its public and team text. Scheduled half-hourly and
+  // on an admin's backfill, never on a request path. Its own label because it
+  // is the only call whose output reaches the public changelog.
+  PRODUCT_UPDATES_CONSOLIDATION = 'product_updates_consolidation',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

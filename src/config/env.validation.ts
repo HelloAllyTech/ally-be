@@ -153,6 +153,13 @@ export const validationSchema = Joi.object({
   // changelog feed. Optional: falls back to GITHUB_TOKEN, and with neither the
   // feed answers 503 instead of an empty list.
   GITHUB_CHANGELOG_TOKEN: Joi.string().optional(),
+  // Feature-level product updates (src/product-updates). Off unless enabled;
+  // with no digest recipients the daily email is skipped.
+  PRODUCT_UPDATES_ENABLED: Joi.string().valid('true', 'false').optional(),
+  PRODUCT_UPDATES_START: Joi.string().isoDate().optional(),
+  // Comma-separated addresses for the daily team digest.
+  PRODUCT_UPDATES_DIGEST_TO: Joi.string().allow('').optional(),
+  PRODUCT_UPDATES_DIGEST_HOUR: Joi.number().integer().min(0).max(23).optional(),
   /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
   PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
 

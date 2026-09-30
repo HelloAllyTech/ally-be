@@ -41,10 +41,14 @@ src/prompts/
 │   ├── _meta/
 │   │   └── interviewer_system.meta.json
 │   └── interviewer_system.txt
-└── ux_signals/
+├── ux_signals/
+│   ├── _meta/
+│   │   └── triage.meta.json
+│   └── triage.txt
+└── product_updates/
     ├── _meta/
-    │   └── triage.meta.json
-    └── triage.txt
+    │   └── consolidate.meta.json
+    └── consolidate.txt
 ```
 
 ### Agent system prompts
@@ -221,9 +225,13 @@ over accepting whatever arrived.
 
 ### Code-read one-shot prompts
 
-A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`
-holds the system prompt for a **single** call that a feature makes on demand, read through
-`getPromptByCode` like an agent prompt but not driving a conversation.
+A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/` or
+`product_updates/` holds the system prompt for a **single** call that a feature makes on demand
+or on a schedule, read through `getPromptByCode` like an agent prompt but not driving a
+conversation. `product_updates/consolidate.txt` is the one whose output reaches a public page
+(app.helloally.ai/blog/changelog) with no human step, so its reply is validated field by field
+and code enforces what the prompt asks — staff-only work stays internal — rather than trusting
+the model to comply.
 
 These deliberately do **not** degrade to a hardcoded fallback — they throw when the row is
 missing. The reasoning is the opposite of the agent case: an agent answering slightly worse

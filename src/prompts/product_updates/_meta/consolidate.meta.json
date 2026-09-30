@@ -1,0 +1,8 @@
+{
+  "name": "Product updates — consolidate merges",
+  "description": "Turns a batch of clustered merges into feature-level product updates: new, attached to an open update, or noise, with public and team text. Its public text reaches app.helloally.ai/blog/changelog automatically, so edits here change the public changelog's voice.",
+  "category": "Product updates",
+  "runtimes": [
+    "ally-be"
+  ]
+}
