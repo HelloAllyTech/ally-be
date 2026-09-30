@@ -8,6 +8,7 @@ import {
   VersioningType,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PostHog } from 'posthog-node';
@@ -20,6 +21,7 @@ import { JwtRefreshAuthGuard } from 'src/auth/guards/jwt-refresh-auth.guard';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { AuthService } from 'src/auth/service/auth.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TRUSTED_PROXY_HOPS } from 'src/common/constants/network.constants';
 import { TIME } from 'src/common/constants/time.constants';
 import { AppConfigService } from 'src/config/config.service';
 import { ErrorCode } from 'src/exception/error-code.enum';
@@ -92,8 +94,12 @@ async function boot(
   for (const [guard, stub] of guardStubs) {
     builder = builder.overrideGuard(guard).useValue(stub);
   }
-  const app = (await builder.compile()).createNestApplication();
-  // As main.ts does, so the paths below are the real ones.
+  const app = (
+    await builder.compile()
+  ).createNestApplication<NestExpressApplication>();
+  // As main.ts does: the real paths, and req.ip resolved through the load balancer, which
+  // the test client plays.
+  app.set('trust proxy', TRUSTED_PROXY_HOPS);
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI });
   await app.init();
@@ -251,6 +257,19 @@ describe('Rate-limited routes', () => {
 
       expect(accepted.headers['x-ratelimit-limit-otp']).toBe('5');
       expect(accepted.headers).not.toHaveProperty('x-ratelimit-limit');
+    });
+
+    // X-Forwarded-For as the load balancer leaves it; RFC 5737 documentation addresses.
+    it('counts each client behind the load balancer separately, and a spoofed address buys no fresh bucket', async () => {
+      const verifyFrom = (xForwardedFor: string) =>
+        verify().set('X-Forwarded-For', xForwardedFor);
+      for (let n = 1; n <= 5; n++) {
+        await verifyFrom('203.0.113.7').expect(200);
+      }
+      await verifyFrom('203.0.113.7').expect(429);
+
+      await verifyFrom('198.51.100.66, 203.0.113.7').expect(429);
+      await verifyFrom('203.0.113.8').expect(200);
     });
   });
 

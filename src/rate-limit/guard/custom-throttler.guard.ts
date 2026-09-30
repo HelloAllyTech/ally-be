@@ -58,7 +58,9 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       return `user-${req.user.id}`;
     }
 
-    return req.ips?.[0] || req.ip || 'unknown';
+    // Already the client's address: main.ts sets `trust proxy` (TRUSTED_PROXY_HOPS). Don't
+    // read X-Forwarded-For here — its left-most entry is whatever the client sent.
+    return req.ip || 'unknown';
   }
 
   protected async getErrorMessage(

@@ -12,6 +12,7 @@ import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfigService } from './config/config.service';
+import { TRUSTED_PROXY_HOPS } from './common/constants/network.constants';
 import { PostHog } from 'posthog-node';
 import { PostHogInterceptor } from 'posthog-node/nestjs';
 
@@ -22,6 +23,10 @@ async function bootstrap() {
       bufferLogs: true,
     });
     const appConfigService = app.get(AppConfigService);
+    // Resolve req.ip to the client rather than the load balancer in front of every
+    // deployment. Rate limits keyed by IP and both audit loggers read it; see
+    // TRUSTED_PROXY_HOPS for why it is a hop count and never `true`.
+    app.set('trust proxy', TRUSTED_PROXY_HOPS);
     app.enableCors({
       origin: (origin: any, callback: any) => {
         const allowedOrigins = appConfigService.cors.allowedOrigins;
