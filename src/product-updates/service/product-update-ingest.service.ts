@@ -92,7 +92,9 @@ export class ProductUpdateIngestService {
       journalLabel: entry.label,
       prNumber: entry.pr?.number ?? null,
       prUrl: entry.pr?.url ?? entry.compare?.url ?? null,
-      author: entry.pr?.author ?? entry.actor,
+      // Capped to the column: sources insert in batches of 500, so one
+      // oversized value would fail every entry in the pass.
+      author: (entry.pr?.author ?? entry.actor)?.slice(0, 120) ?? null,
       subjects: entry.pr
         ? [entry.pr.title]
         : entry.commits.map((commit) => commit.subject),

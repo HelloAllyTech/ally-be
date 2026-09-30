@@ -38,9 +38,12 @@ const HEADER = /^## (\S+) — ([\w.-]+)(?: \(([^)]*)\))?\s*$/;
 const LABEL_LINE =
   /^- \*\*(For release notes|Internal|Needs a release note):\*\* ?(.*)$/;
 const TECHNICAL_LINE = /^- \*\*Technical:\*\* (.*)$/;
-const PR_TECHNICAL = /^(.*) · \[#(\d+)\]\(([^)]+)\) · @(.*)$/;
+// The actor is the handle alone: a hand-corrected entry can trail a note after
+// it (`@ally-docs-bot[bot] _(corrected — …)_`), and that note must not become
+// the author, which is a varchar(120).
+const PR_TECHNICAL = /^(.*) · \[#(\d+)\]\(([^)]+)\) · @(\S+).*$/;
 const PUSH_TECHNICAL =
-  /^(\d+) commit\(s\)(?: · \[compare\]\(([^)]+)\))?(?: · @(.*))?$/;
+  /^(\d+) commit\(s\)(?: · \[compare\]\(([^)]+)\))?(?: · @(\S+).*)?$/;
 const COMMIT_LINE = /^\s+- (.*) \(([0-9a-f]{7,40})\)\s*$/;
 const COMPARE_URL = /\/compare\/([^./]+(?:\^)?)\.\.\.([0-9a-f]{7,40})/;
 

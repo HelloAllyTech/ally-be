@@ -92,6 +92,21 @@ describe('parseJournal', () => {
     expect(entries[0].actor).toBe('gksoriginals');
   });
 
+  it('keeps only the handle when a corrected entry trails a note after it', () => {
+    const { entries, skipped } = parseJournal(
+      PREAMBLE +
+        `## 2026-08-14T05:02:57Z — ally-ai-learn\n- **Internal:** Internal change with no visible impact.\n- **Technical:** chore: sync wiki routing index · [#142](https://github.com/HelloAllyTech/ally-ai-learn/pull/142) · @ally-docs-bot[bot] _(corrected — the original entry hit a since-fixed bug where a transient PR-lookup failure produced a blank technical line)_\n\n\n` +
+        `## 2026-08-13T05:02:57Z — ally-be\n- **Internal:** x\n- **Technical:** 1 commit(s) · @gksoriginals _(corrected)_\n  - fix: a (aaaaaaa)\n\n\n`,
+    );
+
+    expect(skipped).toBe(0);
+    expect(entries.map((e) => e.actor)).toEqual([
+      'gksoriginals',
+      'ally-docs-bot[bot]',
+    ]);
+    expect(entries[1].pr?.title).toBe('chore: sync wiki routing index');
+  });
+
   it('reads all three labels', () => {
     const { entries } = parseJournal(
       PREAMBLE +
