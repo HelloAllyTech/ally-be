@@ -39,6 +39,8 @@ import { LanguageMixAnalyticsService } from './service/language-mix-analytics.se
 import { LanguageMixAnalyticsRepository } from './repository/language-mix-analytics.repository';
 import { SkillGrowthAnalyticsService } from './service/skill-growth-analytics.service';
 import { SkillGrowthAnalyticsRepository } from './repository/skill-growth-analytics.repository';
+import { FoundationalSkillsAnalyticsService } from './service/foundational-skills-analytics.service';
+import { FoundationalSkillsAnalyticsRepository } from './repository/foundational-skills-analytics.repository';
 import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
 import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
 import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
@@ -200,6 +202,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     LanguageMixAnalyticsRepository,
     SkillGrowthAnalyticsService,
     SkillGrowthAnalyticsRepository,
+    FoundationalSkillsAnalyticsService,
+    FoundationalSkillsAnalyticsRepository,
     QualityDistributionAnalyticsService,
     QualityDistributionAnalyticsRepository,
     CompetencyMapAnalyticsService,
