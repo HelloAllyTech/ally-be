@@ -1484,6 +1484,16 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
       note: 'From per-model llm_usage rows tagged bug_hunter, joined to runs in the window',
     },
+    {
+      id: 'AAQ-165',
+      tab: 'Highlights',
+      subTab: 'Goals',
+      title: 'XP per Roleplay Minute',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/XpPerMinuteCard.tsx'),
+      note: 'All XP (xp_events) ÷ roleplay minutes (user_daily_scores, same as Roleplay Minutes), stacked by XP source over one denominator. Defaults to All time (KPI tile); /v1/analytics/xp-per-minute',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */

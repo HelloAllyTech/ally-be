@@ -65,6 +65,8 @@ import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
 import { RoleplaySessionCostAnalyticsService } from './service/roleplay-session-cost-analytics.service';
 import { RoleplaySessionCostAnalyticsRepository } from './repository/roleplay-session-cost-analytics.repository';
+import { XpPerMinuteAnalyticsService } from './service/xp-per-minute-analytics.service';
+import { XpPerMinuteAnalyticsRepository } from './repository/xp-per-minute-analytics.repository';
 import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
 import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
 import { FixSessionEngineCostAnalyticsService } from './service/fix-session-engine-cost-analytics.service';
@@ -224,6 +226,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RoleplayCostAnalyticsRepository,
     RoleplaySessionCostAnalyticsService,
     RoleplaySessionCostAnalyticsRepository,
+    XpPerMinuteAnalyticsService,
+    XpPerMinuteAnalyticsRepository,
     CodingAgentCostAnalyticsService,
     CodingAgentCostAnalyticsRepository,
     FixSessionEngineCostAnalyticsService,
