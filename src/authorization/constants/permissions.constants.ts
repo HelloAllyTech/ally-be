@@ -91,11 +91,6 @@ const PERMISSIONS = {
   VIEW_TENANT: 'view:tenant',
   EDIT_TENANT: 'edit:tenant',
   VIEW_TENANTS: 'view:tenants',
-  // Own-tenant settings — lets a tenant ADMIN view/edit ONLY their own tenant's
-  // settings (server-side scoped to the caller's JWT tenant), without the broad
-  // VIEW_TENANT/EDIT_TENANT super-admin permissions.
-  VIEW_OWN_TENANT_SETTINGS: 'view:own-tenant:settings',
-  EDIT_OWN_TENANT_SETTINGS: 'edit:own-tenant:settings',
 
   // === REFERENCE DOCUMENTS ===
   VIEW_REFERENCE_DOCUMENT: 'view:reference-document',
@@ -194,8 +189,8 @@ const PERMISSIONS = {
   // === COHORTS (a tenant's own MECE grouping of its users) ===
   // Own-tenant scoped via OwnTenantScopeGuard on every cohort route. VIEW also
   // gates the cohort member list, which is deliberately a narrow
-  // id/name/email/cohort projection of the tenant's own users — a tenant ADMIN
-  // gets it WITHOUT view:users and the platform-wide user-management payload.
+  // id/name/email/cohort projection of the tenant's own users rather than the
+  // platform-wide user-management payload behind view:users.
   VIEW_COHORTS: 'view:cohorts',
   EDIT_COHORTS: 'edit:cohorts',
 
@@ -251,9 +246,8 @@ const PERMISSIONS = {
   EDIT_ADMIN_BADGES: 'edit:admin:badges',
   VIEW_ADMIN_BADGES_FOR_SETTING: 'view:admin:badges-for-setting',
   // Assign/unassign a (global) badge to/from a tenant. Split out from
-  // EDIT_ADMIN_BADGES (which also gates global badge CRUD) so a tenant ADMIN
-  // can manage their own tenant's badge assignments — via OwnTenantScopeGuard —
-  // WITHOUT gaining the ability to create/edit/delete global badges.
+  // EDIT_ADMIN_BADGES (which also gates global badge CRUD) so assignment can be
+  // granted without the ability to create/edit/delete global badges.
   EDIT_BADGE_TENANT: 'edit:badge-tenant',
 
   // === COMMUNITY ===
@@ -621,50 +615,12 @@ const ADMIN_PERMISSIONS = [
   PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS,
   PERMISSIONS.EDIT_CUSTOM_FIELD_VALUES,
   PERMISSIONS.VIEW_SETTINGS_CUSTOM_FIELD_TYPES,
-  PERMISSIONS.EDIT_SETTINGS_CUSTOM_FIELD_TYPES,
 
-  // Org. Settings screen — manage the ADMIN's own tenant settings (scoped
-  // server-side to the caller's tenant). Summary sections/fields editing plus
-  // the own-tenant feature toggles.
-  PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS,
-  PERMISSIONS.VIEW_OWN_TENANT_SETTINGS,
-  PERMISSIONS.EDIT_OWN_TENANT_SETTINGS,
+  // No content-access, badge-assignment, cohort or own-tenant settings grants:
+  // those backed the consumer app's Org. Settings screen, which was removed, and
+  // were revoked by 1974700000000-RevokeTenantAdminOrgSettingsGrants. Tenant
+  // content access is managed from the admin console.
 
-  // Org. Settings — access management (own-tenant scoped via OwnTenantScopeGuard)
-  // Lets a tenant ADMIN manage the content-access assignments a SUPER_ADMIN
-  // manages, but ONLY for their own tenant. Every assign/unassign + per-tenant
-  // GET endpoint that takes a :tenantId is additionally guarded by
-  // OwnTenantScopeGuard, which pins non-SYSTEM_ACCESS callers to their JWT
-  // tenant — so these permissions cannot be used to touch another tenant.
-  // Scenarios
-  PERMISSIONS.VIEW_ADMIN_SCENARIOS,
-  PERMISSIONS.VIEW_ADMIN_SCENARIO,
-  PERMISSIONS.EDIT_SCENARIO_TENANT,
-  PERMISSIONS.DELETE_SCENARIO_TENANT,
-  // Scenario paths
-  PERMISSIONS.VIEW_ADMIN_SCENARIO_PATHS,
-  PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH,
-  PERMISSIONS.EDIT_SCENARIO_PATH_TENANT,
-  PERMISSIONS.DELETE_SCENARIO_PATH_TENANT,
-  // Cases
-  PERMISSIONS.VIEW_ADMIN_CASES,
-  PERMISSIONS.EDIT_CASE_TENANT,
-  PERMISSIONS.DELETE_CASE_TENANT,
-  // Tracks (Track 2.0)
-  PERMISSIONS.VIEW_ADMIN_TRACKS,
-  PERMISSIONS.VIEW_ADMIN_TRACK,
-  PERMISSIONS.EDIT_TRACK_TENANT,
-  PERMISSIONS.DELETE_TRACK_TENANT,
-  // Badges — assignment only (EDIT_BADGE_TENANT), NOT EDIT_ADMIN_BADGES, so a
-  // tenant ADMIN cannot create/edit/delete global badges.
-  PERMISSIONS.VIEW_ADMIN_BADGES,
-  PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING,
-  PERMISSIONS.EDIT_BADGE_TENANT,
-  // Cohorts — the tenant's own grouping of its users, and the per-cohort
-  // narrowing of the content assignments above. VIEW_COHORTS also serves the
-  // member list, which is why VIEW_USERS still is not granted here.
-  PERMISSIONS.VIEW_COHORTS,
-  PERMISSIONS.EDIT_COHORTS,
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. An ADMIN who is also a counsellor inherits it via
