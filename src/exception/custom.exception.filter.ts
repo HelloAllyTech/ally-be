@@ -34,7 +34,7 @@ export class CustomExceptionFilter implements ExceptionFilter {
       exception instanceof HttpException &&
       exception.getStatus() === HttpStatus.BAD_REQUEST &&
       request.url.startsWith('/api/v1/bug-hunter/runs/') &&
-      request.url.endsWith('/report')
+      (request.url.endsWith('/report') || request.url.endsWith('/findings'))
     ) {
       const message =
         (exception.getResponse() as any)?.message || exception.message;
@@ -42,10 +42,11 @@ export class CustomExceptionFilter implements ExceptionFilter {
         typeof message === 'string' &&
         (message.includes('Unexpected string in JSON') ||
           message.includes('Expected') ||
+          message.includes('Unterminated string in JSON') ||
           message.includes('Unexpected token'))
       ) {
         this.logger.warn(
-          `Suppressing BadRequestException for malformed JSON on bug hunter report endpoint: ${request.method} ${request.url} -> ${exception.name}: ${message}`,
+          `Suppressing BadRequestException for malformed JSON on bug hunter endpoint: ${request.method} ${request.url} -> ${exception.name}: ${message}`,
         );
 
         const response = ctx.getResponse<Response>();
