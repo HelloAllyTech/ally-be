@@ -200,6 +200,71 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
     );
   });
 
+  it('does not let the wrap-up pass announce a draft that was never saved', async () => {
+    // Every save_character_draft attempt is rejected until the iteration cap,
+    // so the tool-less wrap-up pass runs with nothing saved. It used to be free
+    // to write "the draft is ready for your review" — the admin then waited on
+    // a review form that never opened, in a session that never completed.
+    toolsExecute.mockResolvedValue({
+      modelResult: { ok: false, error: 'validation_failed', errors: ['age'] },
+      summary: 'Draft rejected: 1 validation error(s)',
+    });
+    let counter = 0;
+    streamMock.mockImplementation(() => {
+      counter += 1;
+      return counter <= MAX_ITERATIONS
+        ? makeStream([draftBlock(`tu-${counter}`)], 'tool_use')
+        : makeStream(
+            [{ type: 'text', text: 'Asha is ready for your review.' }],
+            'end_turn',
+          );
+    });
+
+    const frames = await collect();
+
+    expect(streamMock).toHaveBeenCalledTimes(MAX_ITERATIONS + 1);
+    // The wrap-up pass is told nothing was saved…
+    const wrapUpRequest = streamMock.mock.calls[MAX_ITERATIONS][0];
+    expect(wrapUpRequest.system).toContain('NO character draft was saved');
+    // …and the admin is told too, whatever the model wrote.
+    expect(frames.map((frame) => frame.event)).not.toContain('character_draft');
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('draft_not_saved');
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.errored).toBe(true);
+    expect(assistantRow.metadata.errorMessage).toContain(
+      'no character was created',
+    );
+  });
+
+  it('warns the wrap-up pass but raises no error when the turn never tried to save', async () => {
+    // A turn that spent its budget on other tools (corpus searches) has not
+    // failed at anything the admin needs to hear about.
+    const searchBlock = (id: string) => ({
+      type: 'tool_use',
+      id,
+      name: 'search_corpus',
+      input: { query: 'how does burnout present?' },
+    });
+    let counter = 0;
+    streamMock.mockImplementation(() => {
+      counter += 1;
+      return counter <= MAX_ITERATIONS
+        ? makeStream([searchBlock(`tu-${counter}`)], 'tool_use')
+        : makeStream(
+            [{ type: 'text', text: 'Let me keep going.' }],
+            'end_turn',
+          );
+    });
+
+    const frames = await collect();
+
+    expect(streamMock.mock.calls[MAX_ITERATIONS][0].system).toContain(
+      'NO character draft was saved',
+    );
+    expect(frames.map((frame) => frame.event)).not.toContain('error');
+  });
+
   it('retries an unreadable tool call rather than losing the turn', async () => {
     // Gemini returns MALFORMED_FUNCTION_CALL intermittently against a schema
     // this size. The candidate is empty, so treating it as a normal turn ends

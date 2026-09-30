@@ -877,7 +877,9 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An author builds a character in the interview agent',
     detail:
-      'Streamed turn, capped at 8 tool round-trips. Anthropic, OpenAI and Gemini all run ' +
+      'Streamed turn, capped at 8 tool round-trips; a turn that hits the cap makes one ' +
+      'more, tool-less wrap-up call, told when no draft was saved so it cannot announce ' +
+      'one. Anthropic, OpenAI and Gemini all run ' +
       'it — the turn loop goes through AgentLlmProviderFactory, and the provider is ' +
       'inferred from the model id when the prompt row does not name one, so setting a ' +
       'model is normally the whole change. `llm_usage` records whichever provider ran.',
