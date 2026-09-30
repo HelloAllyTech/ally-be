@@ -22,8 +22,11 @@ const PROMPT_CODE = 'product_updates_consolidate';
  * handful of team-note bullets. Reasoning tokens count against the budget on
  * the reasoning tier, and a reply cut off mid-JSON decides nothing — so the
  * budget is set well above the ~10k a 30-cluster batch was measured at.
+ * gpt-5 (the prompt's default) took 2.5–3 minutes per 20-cluster batch with
+ * open updates in the prompt; the timeout leaves room for a slow one, since a
+ * timed-out call is wasted and retried on the tier model.
  */
-const CONSOLIDATION_LLM = { MAX_TOKENS: 32000, TIMEOUT_MS: 300_000 };
+const CONSOLIDATION_LLM = { MAX_TOKENS: 32000, TIMEOUT_MS: 480_000 };
 
 /**
  * The one model call in product updates: a batch of clustered merges and the
