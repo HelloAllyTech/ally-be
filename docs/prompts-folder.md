@@ -41,10 +41,14 @@ src/prompts/
 │   ├── _meta/
 │   │   └── interviewer_system.meta.json
 │   └── interviewer_system.txt
-└── ux_signals/
+├── ux_signals/
+│   ├── _meta/
+│   │   └── triage.meta.json
+│   └── triage.txt
+└── product_updates/
     ├── _meta/
-    │   └── triage.meta.json
-    └── triage.txt
+    │   └── consolidate.meta.json
+    └── consolidate.txt
 ```
 
 ### Agent system prompts
@@ -221,9 +225,13 @@ over accepting whatever arrived.
 
 ### Code-read one-shot prompts
 
-A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`
-holds the system prompt for a **single** call that a feature makes on demand, read through
-`getPromptByCode` like an agent prompt but not driving a conversation.
+A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/` or
+`product_updates/` holds the system prompt for a **single** call that a feature makes on demand
+or on a schedule, read through `getPromptByCode` like an agent prompt but not driving a
+conversation. `product_updates/consolidate.txt` is the one whose output reaches a public page
+(app.helloally.ai/blog/changelog) with no human step, so its reply is validated field by field
+and code enforces what the prompt asks — staff-only work stays internal — rather than trusting
+the model to comply.
 
 These deliberately do **not** degrade to a hardcoded fallback — they throw when the row is
 missing. The reasoning is the opposite of the agent case: an agent answering slightly worse
@@ -277,6 +285,15 @@ subdir/_meta/<stem>.meta.json
   "category": "Translation"
 }
 ```
+
+**Default model (new rows only):** `defaultProvider` and `defaultModel` set the model a prompt's row
+**starts on** when sync creates it — e.g. `product_updates/_meta/consolidate.meta.json` starts on
+`openai` / `gpt-5`, because its output is public copy and the reasoning-tier default wrote too much
+jargon in side-by-side runs. Sync never applies them to a row that already exists: from then on the
+model is an admin's choice in System Skills, and a redeploy must not undo it. Prefer this to naming a
+model at the call site — the prompt row is the layer the AI Tasks screen reads, so the screen keeps
+showing what actually runs. The registry row's `provider`/`defaultModel` still describe the tier
+fallback, which the completion service retries on if the prompt's model fails.
 
 - **When sync runs** (app startup or POST `/api/v1/prompts/sync`), the service reads each prompt's `.meta.json` if present and uses it for `name` and `description` in the database.
 - **Dashboard:** The Admin Dashboard (ally-web) displays these names and descriptions. Editing name/description in the dashboard is overwritten on the next sync; prompt **content** is not (dashboard edits are stored in versions).

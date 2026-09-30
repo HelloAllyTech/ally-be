@@ -14,6 +14,36 @@ export interface WorkflowRun {
   createdAt: Date;
 }
 
+/** A successful run with both ends of it — when it started and when it finished. */
+export interface CompletedRun {
+  id: string;
+  htmlUrl: string;
+  startedAt: Date;
+  finishedAt: Date;
+}
+
+/**
+ * What a merged pull request was about: its words, not its merge state.
+ * Separate from `PullRequestInfo` so the Bug Hunter/Builder polling paths keep
+ * reading the small payload they always have.
+ */
+export interface PullRequestSummary {
+  title: string;
+  body: string | null;
+  headRef: string | null;
+  mergeCommitSha: string | null;
+  mergedAt: Date | null;
+  authorLogin: string | null;
+}
+
+/** The commits and files between two refs. */
+export interface CommitComparison {
+  commits: { sha: string; message: string; authorLogin: string | null }[];
+  files: string[];
+  /** GitHub caps a comparison at 250 commits and 300 files. */
+  truncated: boolean;
+}
+
 /** The subset of a GitHub pull request this module cares about. */
 export interface PullRequestInfo {
   merged: boolean;
@@ -962,6 +992,147 @@ export class GithubActionsService {
         error,
         `Could not read existing ${tagPrefix}* tags in ${repo}`,
       );
+    }
+  }
+
+  /**
+   * A merged pull request's title, description and branch — what product
+   * updates need to understand a change. Null when GitHub cannot be read.
+   */
+  async getPullRequestSummary(
+    repo: string,
+    number: number,
+  ): Promise<PullRequestSummary | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, `pulls/${number}`), {
+        headers: this.headers,
+        timeout: 15_000,
+      });
+      this.noteAuthOutcome();
+      return {
+        title: String(data?.title ?? ''),
+        body: typeof data?.body === 'string' ? data.body : null,
+        headRef: data?.head?.ref ? String(data.head.ref) : null,
+        mergeCommitSha: data?.merge_commit_sha
+          ? String(data.merge_commit_sha)
+          : null,
+        mergedAt: data?.merged_at ? new Date(data.merged_at) : null,
+        authorLogin: data?.user?.login ? String(data.user.login) : null,
+      };
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not read PR #${number} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * The commits (with full messages) and changed files between two refs.
+   *
+   * A third of Ally's landings are direct pushes, not pull requests, and a push
+   * is only ever described by the commits in its range — this is how product
+   * updates read one. `base` may be a parent reference (`<sha>^`), which the
+   * changelog notifier writes when a push has no usable `before`.
+   */
+  async compareCommits(
+    repo: string,
+    base: string,
+    head: string,
+  ): Promise<CommitComparison | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(
+        this.url(repo, `compare/${base}...${head}`),
+        { headers: this.headers, timeout: 20_000 },
+      );
+      this.noteAuthOutcome();
+      const commits = ((data?.commits ?? []) as any[]).map((commit) => ({
+        sha: String(commit?.sha ?? ''),
+        message: String(commit?.commit?.message ?? ''),
+        authorLogin: commit?.author?.login ? String(commit.author.login) : null,
+      }));
+      const files = ((data?.files ?? []) as any[])
+        .map((file) => (file?.filename ? String(file.filename) : null))
+        .filter((file): file is string => Boolean(file));
+      const totalCommits = Number(data?.total_commits ?? commits.length);
+      return {
+        commits,
+        files,
+        truncated: commits.length < totalCommits || files.length >= 300,
+      };
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not compare ${base}...${head} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Every successful run of a workflow started at or after `since`, oldest
+   * first — a release history, for deciding when merged changes went live.
+   *
+   * `findSuccessfulRunSince` answers "has it shipped yet" for one change; this
+   * answers it for hundreds at once from one listing. Pages until it passes
+   * `since` or reaches `maxPages`. Null when GitHub cannot be read at all, which
+   * a caller must treat as "unknown" rather than "never released".
+   */
+  async listSuccessfulRuns(params: {
+    repo: string;
+    workflow: string;
+    since: Date;
+    maxPages?: number;
+  }): Promise<CompletedRun[] | null> {
+    this.requireConfigured();
+    const runs: CompletedRun[] = [];
+    const maxPages = params.maxPages ?? 10;
+    try {
+      for (let page = 1; page <= maxPages; page += 1) {
+        const { data } = await axios.get(
+          this.url(params.repo, `actions/workflows/${params.workflow}/runs`),
+          {
+            headers: this.headers,
+            params: {
+              status: 'success',
+              per_page: 100,
+              page,
+              created: `>=${params.since.toISOString().slice(0, 10)}`,
+            },
+            timeout: 15_000,
+          },
+        );
+        this.noteAuthOutcome();
+        const batch = (data?.workflow_runs ?? []) as any[];
+        for (const run of batch) {
+          if (run?.conclusion !== 'success') continue;
+          const startedAt = new Date(run.run_started_at ?? run.created_at);
+          if (startedAt < params.since) continue;
+          runs.push({
+            id: String(run.id),
+            htmlUrl: run.html_url,
+            startedAt,
+            finishedAt: new Date(run.updated_at ?? run.created_at),
+          });
+        }
+        if (batch.length < 100) break;
+      }
+      return runs.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not list the release history of ${params.workflow} in ${params.repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
     }
   }
 

@@ -25,6 +25,11 @@ import {
 } from '../../bug-hunter/enum/bug-hunt-telemetry.enum';
 import { BugHunterEvalPromptKind } from '../../bug-hunter/enum/bug-hunter-eval.enum';
 import {
+  UPDATE_AUDIENCES,
+  UPDATE_KINDS,
+} from '../../product-updates/constants/product-update.constants';
+import { ProductUpdateSourceStatus } from '../../product-updates/entity/product-update-source.entity';
+import {
   AgentMemoryAgent,
   AgentMemoryEmbeddingStatus,
   AgentMemoryStatus,
@@ -152,6 +157,16 @@ describe('CHECK constraints cover their enums', () => {
     [
       'CHK_agent_memories_embedding_status',
       Object.values(AgentMemoryEmbeddingStatus),
+    ],
+    ['CHK_product_updates_kind', [...UPDATE_KINDS]],
+    ['CHK_product_updates_audience', [...UPDATE_AUDIENCES]],
+    [
+      'CHK_product_update_sources_status',
+      Object.values(ProductUpdateSourceStatus),
+    ],
+    [
+      'CHK_product_update_sources_journal_label',
+      ['public', 'internal', 'needs_release_note'],
     ],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);

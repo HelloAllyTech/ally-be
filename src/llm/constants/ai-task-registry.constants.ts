@@ -1127,6 +1127,43 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: 'mobile_release_whats_new',
   },
   {
+    id: 'product-updates-consolidate',
+    task: LlmTask.PRODUCT_UPDATES_CONSOLIDATION,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      'Scheduled: every 30 minutes while there are new merges, and in a batch loop during an admin-started backfill',
+    detail:
+      'One call per batch of up to 30 clustered merges. Places each cluster as a new product ' +
+      'update, onto an open one, or as noise, and writes its public and team text. The only ' +
+      'model output that reaches the public changelog, so the reply is validated field by ' +
+      'field and anything unverifiable goes back to the queue. JSON mode. The prompt row ' +
+      'starts on openai/gpt-5 (its _meta sidecar default): side by side on real journal ' +
+      'weeks the tier default wrote noticeably more jargon into public text. The tier model ' +
+      'below is the fallback if the prompt model fails.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'product_updates_consolidate',
+  },
+  {
+    id: 'changelog-journal-draft',
+    task: null,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      "Every merge to a release branch, in ally-changelog's append-entry.yml (GitHub Actions)",
+    detail:
+      'Drafts the one-line note on each entry of the per-merge journal (CHANGELOG.md). Runs in ' +
+      'ally-changelog, not in this service, so it records no llm_usage. Product updates read the ' +
+      'note as context; the public changelog is built from those updates, not from this line.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
+    configuredBy:
+      'MODEL in ally-changelog/.github/scripts/append_entry.py, keyed by the GEMINI_API_KEY secret of that repo',
+  },
+  {
     id: 'roadmap-ai',
     task: null,
     runtime: LlmRuntime.ALLY_BE,

@@ -105,6 +105,17 @@ export class ChangelogSourceService implements OnModuleInit {
     return this.refresh();
   }
 
+  /**
+   * The whole file, fetched now — for product updates, which read every entry
+   * (including the ones the public feed skips) and need the Technical lines
+   * this service's own parse discards. Uncached on purpose: its only caller
+   * runs every half hour, and it wants the entries that landed a minute ago.
+   * Throws on failure; the caller retries on its next run.
+   */
+  async fetchRawMarkdown(): Promise<string> {
+    return this.fetchMarkdown();
+  }
+
   private isFresh(cached: CachedChangelog | null): boolean {
     return Boolean(cached && Date.now() - cached.fetchedAt < REFRESH_AFTER_MS);
   }

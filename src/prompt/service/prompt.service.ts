@@ -552,6 +552,12 @@ export class PromptsService {
           availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
           runtimes: item.runtimes,
+          // A sidecar's default model applies to the new row only. The update
+          // branch below never touches provider/model: once the row exists
+          // they are an admin's choice, and a redeploy must not revert it.
+          ...(item.defaultModel
+            ? { provider: item.defaultProvider, model: item.defaultModel }
+            : {}),
           isObsolete: false,
         });
         const saved = await this.promptsRepository.save(prompt);

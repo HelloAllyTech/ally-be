@@ -815,3 +815,84 @@ describe('PromptsService', () => {
     });
   });
 });
+
+describe('PromptsService.syncPrompts — sidecar default model', () => {
+  const build = async () => {
+    const promptsRepository = {
+      findOne: jest.fn(),
+      create: jest.fn((values) => values),
+      save: jest.fn(async (values) => ({ id: 'p1', ...values })),
+      update: jest.fn(),
+      // The obsolete-marking pass builds a query first; this code matches no
+      // sync-source prefix, so it returns before running it.
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+      })),
+    };
+    const promptVersionRepository = {
+      create: jest.fn((values) => values),
+      save: jest.fn(async (values) => values),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PromptsService,
+        { provide: PromptsRepository, useValue: promptsRepository },
+        { provide: PromptVersionRepository, useValue: promptVersionRepository },
+        {
+          provide: PromptSharedService,
+          useValue: {
+            getPromptByCode: jest.fn(),
+            getPromptsByOptions: jest.fn(),
+          },
+        },
+        {
+          provide: PromptTranslationService,
+          useValue: { translatePrompt: jest.fn() },
+        },
+        {
+          provide: DataSource,
+          useValue: { transaction: jest.fn(), query: jest.fn() },
+        },
+      ],
+    }).compile();
+    return { service: module.get(PromptsService), promptsRepository };
+  };
+
+  const item = {
+    promptCode: 'product_updates_consolidate',
+    name: 'Product updates — consolidate merges',
+    description: 'x',
+    prompt: 'You keep the changelog.',
+    availableVariables: [],
+    defaultProvider: 'openai',
+    defaultModel: 'gpt-5',
+  };
+
+  it('starts a new row on the default model', async () => {
+    const { service, promptsRepository } = await build();
+    promptsRepository.findOne.mockResolvedValue(null);
+
+    await service.syncPrompts({ prompts: [item] } as any);
+
+    expect(promptsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai', model: 'gpt-5' }),
+    );
+  });
+
+  it('never changes the model of a row that already exists', async () => {
+    const { service, promptsRepository } = await build();
+    promptsRepository.findOne.mockResolvedValue({
+      id: 'p1',
+      promptCode: item.promptCode,
+      model: 'gemini-2.5-pro',
+      useDashboardOverride: false,
+    });
+
+    await service.syncPrompts({ prompts: [item] } as any);
+
+    const payload = promptsRepository.update.mock.calls[0]?.[1] ?? {};
+    expect(payload).not.toHaveProperty('model');
+    expect(payload).not.toHaveProperty('provider');
+  });
+});

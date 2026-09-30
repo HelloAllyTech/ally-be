@@ -76,6 +76,46 @@ export class AppConfigService {
     );
   }
 
+  /**
+   * Feature-level product updates (src/product-updates).
+   *
+   * - `enabled` gates the half-hourly pipeline and the daily digest. Off by
+   *   default: the pipeline calls GitHub and a model on a schedule, so an
+   *   environment opts in rather than discovering it on its bill.
+   * - `startAt` is the oldest journal entry turned into an update. The journal
+   *   began on 2026-08-13; the default replays all of it.
+   * - `digestTo` is who gets the daily email (comma-separated). Empty means no
+   *   email, even when enabled.
+   * - `digestHour` is the business-timezone (IST) hour it goes out.
+   */
+  get productUpdates() {
+    const start = new Date(
+      this.configService.get<string>(
+        'PRODUCT_UPDATES_START',
+        '2026-08-13T00:00:00Z',
+      ),
+    );
+    const hour = Number(
+      this.configService.get<string>('PRODUCT_UPDATES_DIGEST_HOUR', '18'),
+    );
+    return {
+      enabled:
+        String(
+          this.configService.get<string>('PRODUCT_UPDATES_ENABLED', 'false'),
+        ) === 'true',
+      startAt: Number.isNaN(start.getTime())
+        ? new Date('2026-08-13T00:00:00Z')
+        : start,
+      digestTo: (
+        this.configService.get<string>('PRODUCT_UPDATES_DIGEST_TO') ?? ''
+      )
+        .split(',')
+        .map((address) => address.trim())
+        .filter(Boolean),
+      digestHour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 18,
+    };
+  }
+
   get githubMobileRepo(): string {
     return this.configService.get<string>(
       'GITHUB_MOBILE_REPO',
