@@ -275,14 +275,15 @@ export class RoadmapOpportunityController {
    * path (Bug Hunter inbox row, vector indexing), so it needs no bespoke follow-up work to
    * show up where bugs are triaged.
    */
-  @UseGuards(JwtAuthGuard)
+  // @RateLimit stays ABOVE @UseGuards(JwtAuthGuard): guard decorators stack bottom-up, and
+  // the per-user throttle has to run after JwtAuthGuard has set req.user.
   @RateLimit({
     key: 'userId',
-    name: 'bugReport',
     limit: BUG_REPORT_RATE_LIMIT.LIMIT,
     ttl: BUG_REPORT_RATE_LIMIT.TTL_MS,
     errorMessage: 'Too many bug reports. Please try again later.',
   })
+  @UseGuards(JwtAuthGuard)
   @Post('bug-reports')
   @ApiOperation({
     summary: 'File a bug report as any logged-in user',

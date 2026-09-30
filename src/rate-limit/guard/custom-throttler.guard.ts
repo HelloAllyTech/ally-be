@@ -45,7 +45,16 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 
     const key = rateLimitOptions?.key || 'ip';
 
-    if (key === 'userId' && req.user?.id) {
+    if (key === 'userId') {
+      // Only reachable when this guard runs before the route's auth guard (see RateLimit).
+      // It used to fall back to the IP here, which quietly turned the bug-report route's
+      // per-user limit into one bucket per client address.
+      if (!req.user?.id) {
+        throw new Error(
+          `@RateLimit({ key: 'userId' }) ran before authentication on ` +
+            `${context?.getClass?.()?.name}.${context?.getHandler?.()?.name}`,
+        );
+      }
       return `user-${req.user.id}`;
     }
 

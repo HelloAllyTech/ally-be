@@ -114,6 +114,17 @@ describe('CustomThrottlerGuard', () => {
       expect(result).toBe('user-123');
     });
 
+    it('should throw rather than fall back to the IP when key is userId and no user is set', async () => {
+      const rateLimitOptions: RateLimitOptions = { key: 'userId' };
+      const req = { ip: '192.168.1.1', _context: mockExecutionContext };
+
+      mockReflector.get.mockReturnValue(rateLimitOptions);
+
+      await expect((guard as any).getTracker(req)).rejects.toThrow(
+        "@RateLimit({ key: 'userId' }) ran before authentication",
+      );
+    });
+
     it('should return IP-based tracker when key is ip', async () => {
       const rateLimitOptions: RateLimitOptions = { key: 'ip' };
       const req = { ...mockRequest, _context: mockExecutionContext };
