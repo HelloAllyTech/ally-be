@@ -27,6 +27,7 @@ import { ActivationAnalyticsService } from '../../service/activation-analytics.s
 import { CompletionRateAnalyticsService } from '../../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../../service/language-mix-analytics.service';
 import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytics.service';
+import { FoundationalSkillsAnalyticsService } from '../../service/foundational-skills-analytics.service';
 import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
 import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
@@ -217,6 +218,10 @@ describe('AnalyticsController', () => {
         {
           provide: SkillGrowthAnalyticsService,
           useValue: { getSkillGrowth: jest.fn() },
+        },
+        {
+          provide: FoundationalSkillsAnalyticsService,
+          useValue: { getFoundationalSkills: jest.fn() },
         },
         {
           provide: QualityDistributionAnalyticsService,

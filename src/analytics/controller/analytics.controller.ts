@@ -30,6 +30,8 @@ import { ScenarioUsageAnalyticsService } from '../service/scenario-usage-analyti
 import { QualityDistributionAnalyticsService } from '../service/quality-distribution-analytics.service';
 import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analytics.service';
 import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
+import { FoundationalSkillsAnalyticsService } from '../service/foundational-skills-analytics.service';
+import { FoundationalSkillsResponseDto } from '../dto/foundational-skills-analytics.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -320,6 +322,7 @@ export class AnalyticsController {
     private readonly completionRateAnalyticsService: CompletionRateAnalyticsService,
     private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
     private readonly skillGrowthAnalyticsService: SkillGrowthAnalyticsService,
+    private readonly foundationalSkillsAnalyticsService: FoundationalSkillsAnalyticsService,
     private readonly qualityDistributionAnalyticsService: QualityDistributionAnalyticsService,
     private readonly competencyMapAnalyticsService: CompetencyMapAnalyticsService,
     private readonly trackDropoffAnalyticsService: TrackDropoffAnalyticsService,
@@ -1238,6 +1241,31 @@ export class AnalyticsController {
     @Query() query: SkillGrowthQueryDto,
   ): Promise<SkillGrowthResponseDto> {
     return this.skillGrowthAnalyticsService.getSkillGrowth(query);
+  }
+
+  @Get('foundational-skills')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Foundational helping skills by practice volume (super-admin)',
+    description:
+      'Are learners getting better at the skills every helping conversation needs, ' +
+      "whatever scenarios they practise? Each learner's completed roleplay speech is " +
+      'cut into fixed 5,000-character slices of their OWN words, and each slice is ' +
+      'scored against the fixed foundational helping skills rubric (1-4), independent of every ' +
+      "scenario's competencies. Per cut: the learners who reached it, their average, " +
+      "the SAME learners' average at cut 1 and their mean paired change (the control " +
+      'for survivorship, since later cuts hold only those who kept practising), the ' +
+      'share showing an unhelpful behaviour, and per-skill averages. Averages are null ' +
+      'below `minSampleSize` while counts still travel. ALL-TIME and platform-wide by ' +
+      'design; test organisations excluded; one rubric version per response.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Foundational skills growth retrieved successfully',
+    type: FoundationalSkillsResponseDto,
+  })
+  async getFoundationalSkills(): Promise<FoundationalSkillsResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getFoundationalSkills();
   }
 
   @Get('skill-growth/learners')

@@ -1494,6 +1494,16 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/XpPerMinuteCard.tsx'),
       note: 'All XP (xp_events) ÷ roleplay minutes (user_daily_scores, same as Roleplay Minutes), stacked by XP source over one denominator. Defaults to All time (KPI tile); /v1/analytics/xp-per-minute',
     },
+    {
+      id: 'AAQ-166',
+      tab: 'Highlights',
+      subTab: 'Goals',
+      title: 'Foundational Helping Skills by Practice',
+      kind: 'chart',
+      chartType: 'LineChart',
+      componentFile: f('Analytics/FoundationalSkillsCard.tsx'),
+      note: "GET /v1/analytics/foundational-skills. Per 5,000-character cut of each learner's own roleplay speech: average foundational helping skills score (1-4) vs the same learners' first cut, n per point. Scenario-independent rubric in src/foundational-skills",
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */

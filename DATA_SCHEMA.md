@@ -687,6 +687,22 @@ Window-run generation records under `LlmTask.ANALYTICS_SUGGESTIONS`.
 > tables proposes dropping them. Adding a status, trigger or source value means a hand-written
 > migration.
 
+### 3.16 Foundational helping skills (`foundational-skills`)
+
+A passive, scenario-independent measure of whether learners' helping skills improve with practice
+(reference: `docs/foundational-helping-skills.md`). Every learner's completed roleplay speech is cut
+into fixed 5,000-character slices of their **own** words, and each slice is scored against one fixed
+rubric of 14 foundational helping skills, ignoring every scenario's own competencies. Written by a
+30-minute scheduler task (`FOUNDATIONAL_SKILLS_SCHEDULE=off` stops it); read by
+`GET /v1/analytics/foundational-skills` (Priority chart AAQ-166).
+
+| Table | Base | Key columns | Notes |
+|---|---|---|---|
+| `foundational_skill_cuts` | BaseWithoutTenant | `id` (uuid), `userId` (int — `scenario_sessions.counselorId`, no FK), `cutIndex` (int, CHECK ≥ 1), `tenant_id` (varchar, nullable — the session the cut closed in), `sessionIds` (uuid[]), `startSessionId`/`endSessionId` (uuid), `startMessageId`/`endMessageId` (int — `scenario_session_messages.id`), `startsMidSession`/`endsMidSession` (bool), `learnerChars`/`totalChars` (int), `closedSessionEndedAt` (timestamp) | One slice of a learner's practice. Sessions are consumed in the order they **ended**, and a cut closes on the helper turn that brings the learner's speech to 5,000 characters (code points), so a turn is never split and a cut may span sessions; the remainder of a split session carries into the next cut. **Append-only and rubric-independent**: unique `(userId, cutIndex)`, never redrawn, and no transcript text is copied — the window is re-read from `scenario_session_messages` by its bounds (fillers/interims excluded). Eligible sessions: `ENDED`+`COMPLETED`, ended ≥ 60 min ago, countable room, not `metadata.v2vTest`, not a test org. `tenant_id` exists only so a later test-org flag drops the cut at read time |
+| `foundational_skill_assessments` | BaseWithoutTenant | `id` (uuid), `cutId` (uuid, FK → cuts, CASCADE), `rubricVersion` (varchar(64)), `status` (varchar(16), CHECK `SCORED`/`FAILED`), `attempts` (smallint), `model` (varchar), `compositeScore` (numeric(4,2), CHECK 1–4, nullable), `hasUnhelpfulBehaviour` (bool), `skillLevels` (jsonb `{skill key: 1–4}`), `verdicts` (jsonb — per skill: opportunity, observed behaviour codes, not-applicable codes, level), `droppedTicks` (int), `promptTokens`/`completionTokens` (int), `error` (text), `scoredAt` | The judgement of one cut under one rubric version; unique `(cutId, rubricVersion)`. Bumping `FHS_RUBRIC_VERSION` leaves old rows and re-scores every cut; readers pin one version. A skill absent from `skillLevels` had **no opportunity** in the slice — not a low score. Levels are derived in code from behaviour codes (any unhelpful → 1), never by the model; evidence quotes are validated against the transcript and then discarded, so nothing here stores learner speech. `FAILED` rows (transport errors, unparseable replies, or a reply omitting any skill) retry hourly up to 3 attempts |
+
+> ⚠️ Both tables are hand-written SQL (migration `1974600000000`); never `migration:generate` them.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -773,6 +789,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | A recording or uploaded audio file | `scenario_session_recording`, `chat_audio_uploads` → S3 key |
 | Whether a *played thinking filler* fit the character and the moment | `filler_judgment_sessions` (denominator) + `filler_finding_annotations` (findings). Rates are per 100 **played fillers** and computed at read time — nothing here stores one |
 | Whether an AI-sender message was a real reply or a filler | `scenario_session_messages.metadata->>'utteranceKind'` — exclude `filler`/`interim` before counting turns |
+| Whether learners get better at foundational helping skills, independent of scenario | `foundational_skill_cuts` + `foundational_skill_assessments` (one rubric version at a time) |
 | Compliance / who-changed-what | `audit_logs`, plus `created_by`/`updated_by` on entities |
 
 ---

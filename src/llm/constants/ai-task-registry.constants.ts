@@ -1090,6 +1090,29 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: 'ux_signals_triage',
   },
   {
+    id: 'foundational-skills-judge',
+    task: LlmTask.FOUNDATIONAL_SKILLS_ASSESSMENT,
+    runtime: LlmRuntime.ALLY_BE,
+    // The call always names FHS_JUDGE_MODEL, which wins the resolution chain;
+    // the tier is only the floor LlmTargetResolverService insists on, and
+    // neverFallback means it is never actually used (the llm-preview pattern).
+    tier: LlmModelTier.REASONING,
+    neverFallback: true,
+    trigger:
+      'Scheduled: a learner crosses another 5,000 characters of roleplay speech',
+    detail:
+      "Scores one cut of a learner's own practice speech against the fixed foundational " +
+      'helping skills rubric (14 skills; non-verbal is not text-assessable) for the Priority tab growth chart. ' +
+      'Every 30 min, at most 24 cuts per tick; the first deploy backfills history. The model ' +
+      'is pinned in code rather than tier-resolved and never falls back, because the chart ' +
+      'compares scores across months and a substituted model would move the whole curve.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy:
+      'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned; changing it is a rubric version bump',
+  },
+  {
     id: 'mobile-release-whats-new',
     task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
     runtime: LlmRuntime.ALLY_BE,

@@ -115,6 +115,12 @@ export enum LlmTask {
   // own label because the input is telemetry aggregates rather than an
   // analytics window, so its token profile tracks detector count, not date range.
   UX_SIGNALS = 'ux_signals',
+  // Foundational helping skills (src/foundational-skills): one call per
+  // 5,000-character cut of a learner's roleplay speech, scoring it against the
+  // fixed foundational helping skills rubric. Scheduled, never on a request path. Its own
+  // label because it is analytics spend (deliberately absent from TASK_AREA, so
+  // it never counts towards the learner unit cost) with a transcript-sized input.
+  FOUNDATIONAL_SKILLS_ASSESSMENT = 'foundational_skills_assessment',
   // Mobile Releases admin page (src/mobile-releases): one call per
   // ios-whats-new-suggestion request, turning raw ally-mobile commit
   // subjects since the last release into a draft App Store "What's New"
