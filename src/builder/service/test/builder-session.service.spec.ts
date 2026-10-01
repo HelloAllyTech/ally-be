@@ -193,6 +193,36 @@ describe('BuilderSessionService', () => {
     });
   });
 
+  describe('getSessionDetail', () => {
+    it("names the session's creator, for the exported PRD's header", async () => {
+      const findCreatorName = jest.fn().mockResolvedValue('Asha Rao');
+      const detailService = new BuilderSessionService(
+        { builder: { defaultBudgetUsd: 25 } } as any,
+        { ...sessionRepository, findCreatorName } as any,
+        { listBySession: jest.fn().mockResolvedValue([]) } as any,
+        { listBySession: jest.fn().mockResolvedValue([]) } as any,
+        {
+          getPrdWithReadiness: jest.fn().mockResolvedValue({
+            doc: { draft: {}, versionNumber: 3 },
+            readiness: { score: 0, ready: false, sections: [], blockers: [] },
+          }),
+        } as any,
+        settingsService as any,
+        buildService as any,
+      );
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        createdBy: 1,
+      });
+
+      const detail = await detailService.getSessionDetail('session-1', 1);
+
+      expect(findCreatorName).toHaveBeenCalledWith(1);
+      expect(detail.createdByName).toBe('Asha Rao');
+      expect(detail.prdVersionNumber).toBe(3);
+    });
+  });
+
   describe('patchPrd', () => {
     const sessionInStatus = (status: BuilderSessionStatus) => {
       sessionRepository.findOne.mockResolvedValue({
