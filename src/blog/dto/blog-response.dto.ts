@@ -21,8 +21,10 @@ export class BlogResponseDto {
   @ApiProperty({ type: [String] })
   tags!: string[];
 
-  @ApiPropertyOptional()
-  category?: string | null;
+  @ApiProperty({
+    description: 'Cover fill (#RRGGBB) used when there is no header image',
+  })
+  coverColor!: string;
 
   @ApiPropertyOptional()
   authorName?: string | null;
@@ -41,6 +43,19 @@ export class BlogResponseDto {
 
   @ApiProperty()
   updatedAt!: Date;
+}
+
+export class BlogTagCountDto {
+  @ApiProperty()
+  tag!: string;
+
+  @ApiProperty({ description: 'Number of published posts carrying the tag' })
+  count!: number;
+}
+
+export class GetBlogTagsResponseDto {
+  @ApiProperty({ type: [BlogTagCountDto] })
+  tags!: BlogTagCountDto[];
 }
 
 export class GetBlogsResponseDto {

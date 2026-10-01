@@ -14,10 +14,15 @@ import isDuplicateKeyException, {
 import { LoggerService } from 'src/logger/logger.service';
 
 import {
+  BLOG_DEFAULT_COVER_COLOR,
   BLOG_IMAGE_MAX_SIZE_BYTES,
   BLOG_IMAGE_S3_PREFIX,
 } from '../constants/blog.constants';
-import { BlogResponseDto, GetBlogsResponseDto } from '../dto/blog-response.dto';
+import {
+  BlogResponseDto,
+  GetBlogTagsResponseDto,
+  GetBlogsResponseDto,
+} from '../dto/blog-response.dto';
 import { CreateBlogDto } from '../dto/create-blog.dto';
 import { GetBlogsQueryDto, GetPublicBlogsQueryDto } from '../dto/get-blogs.dto';
 import { UpdateBlogDto } from '../dto/update-blog.dto';
@@ -68,7 +73,7 @@ export class BlogService {
       tldr: entity.tldr ?? null,
       body: entity.body ?? null,
       tags: entity.tags ?? [],
-      category: entity.category ?? null,
+      coverColor: entity.coverColor ?? BLOG_DEFAULT_COVER_COLOR,
       authorName: entity.authorName ?? null,
       headerImageUrl: entity.headerImageUrl ?? null,
       status: entity.status,
@@ -134,7 +139,7 @@ export class BlogService {
       tldr: dto.tldr ?? null,
       body: sanitizeBlogHtml(dto.body) ?? null,
       tags: dto.tags ?? [],
-      category: dto.category ?? null,
+      coverColor: dto.coverColor ?? BLOG_DEFAULT_COVER_COLOR,
       authorName: dto.authorName ?? null,
       headerImageUrl: dto.headerImageUrl ?? null,
       status,
@@ -173,7 +178,7 @@ export class BlogService {
       existing.body = sanitizeBlogHtml(dto.body) ?? null;
     }
     if (dto.tags !== undefined) existing.tags = dto.tags ?? [];
-    if (dto.category !== undefined) existing.category = dto.category ?? null;
+    if (dto.coverColor !== undefined) existing.coverColor = dto.coverColor;
     if (dto.authorName !== undefined) {
       existing.authorName = dto.authorName ?? null;
     }
@@ -265,6 +270,10 @@ export class BlogService {
   ): Promise<GetBlogsResponseDto> {
     const { blogs, count } = await this.blogRepository.getPublishedBlogs(query);
     return { blogs: blogs.map((b) => this.toResponseDto(b)), count };
+  }
+
+  async getPublishedTags(): Promise<GetBlogTagsResponseDto> {
+    return { tags: await this.blogRepository.getPublishedTagCounts() };
   }
 
   async getPublishedBySlug(slug: string): Promise<BlogResponseDto> {

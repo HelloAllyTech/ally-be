@@ -21,7 +21,11 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
-import { BlogResponseDto, GetBlogsResponseDto } from '../dto/blog-response.dto';
+import {
+  BlogResponseDto,
+  GetBlogTagsResponseDto,
+  GetBlogsResponseDto,
+} from '../dto/blog-response.dto';
 import { CreateBlogDto } from '../dto/create-blog.dto';
 import { GetBlogsQueryDto, GetPublicBlogsQueryDto } from '../dto/get-blogs.dto';
 import { UpdateBlogDto } from '../dto/update-blog.dto';
@@ -49,6 +53,18 @@ export class BlogController {
     @Query() query: GetPublicBlogsQueryDto,
   ): Promise<GetBlogsResponseDto> {
     return this.blogService.getPublishedBlogs(query);
+  }
+
+  // Before 'public/:slug', or 'tags' would be read as a slug.
+  @Get('public/tags')
+  @Public()
+  @ApiOperation({
+    summary:
+      'List every tag used on a published post, with post counts (public, no auth required)',
+  })
+  @ApiResponse({ status: 200, type: GetBlogTagsResponseDto })
+  async getPublishedTags(): Promise<GetBlogTagsResponseDto> {
+    return this.blogService.getPublishedTags();
   }
 
   @Get('public/:slug')
