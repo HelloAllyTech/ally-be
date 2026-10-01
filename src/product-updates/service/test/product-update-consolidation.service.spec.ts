@@ -166,7 +166,7 @@ describe('ProductUpdateConsolidationService', () => {
     );
   });
 
-  it('keeps a staff-only change internal even when the model says public', async () => {
+  it('publishes a staff-only change when the model says public', async () => {
     const staff = source({
       id: 's1',
       repo: 'ally-be',
@@ -188,7 +188,7 @@ describe('ProductUpdateConsolidationService', () => {
     await service.consolidateBatch({ now: NOW, settleMs: 0 });
 
     expect(updateWrites.create).toHaveBeenCalledWith(
-      expect.objectContaining({ audience: 'internal' }),
+      expect.objectContaining({ audience: 'public' }),
     );
   });
 

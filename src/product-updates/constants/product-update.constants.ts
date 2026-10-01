@@ -6,9 +6,11 @@ export type UpdateKind = (typeof UPDATE_KINDS)[number];
 /**
  * Who may read an update.
  *
- *  - `public` — on the public changelog as soon as every change in it is live.
- *  - `internal` — Ally's own team only: staff tools, engineering, anything no
- *    customer can see. Reaches the team digest, never the public page.
+ *  - `public` — the default (decided 2026-10-01): anything of value to anyone,
+ *    customers or Ally's own team, including staff tools, reliability and bug
+ *    fixes. On the public changelog as soon as every change in it is live.
+ *  - `internal` — only work of no value to anyone (tidying, refactors nobody
+ *    can notice). Reaches the team digest, never the public page.
  *
  * Deliberately two values, not a review workflow: publishing is fully
  * automatic (decided 2026-09-30), and a wrong call is corrected afterwards by
