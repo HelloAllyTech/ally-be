@@ -315,16 +315,6 @@ export class DuplicatesResponseDto {
   @ApiProperty({ type: [DuplicateMatchDto] }) matches!: DuplicateMatchDto[];
 }
 
-export class AiReviewSuggestionDto {
-  @ApiProperty() issue!: string;
-  @ApiProperty() tip!: string;
-}
-
-export class AiReviewResponseDto {
-  @ApiProperty({ type: [AiReviewSuggestionDto] })
-  suggestions!: AiReviewSuggestionDto[];
-}
-
 export class AiReadinessCriterionDto {
   @ApiProperty() id!: string;
   @ApiProperty() label!: string;
@@ -337,72 +327,11 @@ export class AiReadinessCriteriaResponseDto {
 
   /**
    * The sizes an opportunity may be filed at (ROADMAP_FILEABLE_EFFORTS). Served with the
-   * checklist so the threshold has one home: the drawer renders a size row from this rather
-   * than hardcoding "S or M" in the bundle, where it would drift the first time the team
-   * decides an L is fileable after all.
+   * checklist so the threshold has one home, rather than a hardcoded "S or M" in a client
+   * bundle, where it would drift the first time the team decides an L is fileable after all.
    */
   @ApiProperty({ enum: RoadmapOpportunityEffort, isArray: true })
   fileableEfforts!: RoadmapOpportunityEffort[];
-}
-
-export class AiReadinessResultDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() passed!: boolean;
-  @ApiProperty() reason!: string;
-}
-
-export class AiReadinessResponseDto {
-  /** One entry per criterion, in the order the criteria are defined. */
-  @ApiProperty({ type: [AiReadinessResultDto] })
-  results!: AiReadinessResultDto[];
-
-  /**
-   * A proposed size for the same draft, from the same call — null when the model gives
-   * anything that is not a live effort value. A proposal, not a decision: the filer can
-   * override it in the drawer before filing, and anyone can change it afterwards.
-   */
-  @ApiProperty({ enum: RoadmapOpportunityEffort, nullable: true })
-  effort!: RoadmapOpportunityEffort | null;
-
-  /** One sentence on why that size. Empty when there is no size to explain. */
-  @ApiProperty() effortReason!: string;
-
-  /**
-   * A rewritten draft that would pass, offered only when something did NOT pass — null when
-   * every criterion is green and the size is fileable, because there is then nothing to
-   * propose. The drawer shows it under the failing rows behind an explicit "Use this"; it
-   * never replaces what the filer wrote on its own.
-   *
-   * It may contain [square-bracketed questions] where the original genuinely lacked something
-   * a criterion needs. That is the designed answer, not a defect: the alternative is a model
-   * inventing a user group or a benefit, and an invented fact filed as an opportunity is worse
-   * than a gap the filer can see and fill. Accepting one re-opens the gate (the description
-   * changed), so a bracket left in place cannot be filed.
-   */
-  @ApiProperty({ nullable: true })
-  redraft!: string | null;
-
-  /**
-   * This verdict, signed, to be handed back on `POST /opportunities` as `readinessToken`.
-   *
-   * The gate is enforced on the WRITE, not here — see RoadmapReadinessTokenService for why the
-   * server signs the reading the filer was shown instead of re-grading on create. Clients send
-   * it back verbatim and never read it: it is opaque, and the same verdicts are already in
-   * `results` in a form built for rendering.
-   *
-   * Issued whether or not the draft passed. A failing token is what lets a manager's override
-   * be recorded against the specific items it waved through.
-   */
-  @ApiProperty({
-    description:
-      'Opaque. Send back verbatim as `readinessToken` when filing. Expires; re-run the check ' +
-      'if the draft changes.',
-  })
-  token!: string;
-}
-
-export class AiEnhanceResponseDto {
-  @ApiProperty() enhanced!: string;
 }
 
 /** One criterion's live verdict, as the interview's checklist renders it. */
