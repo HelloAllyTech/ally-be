@@ -79,8 +79,23 @@ export class ProductUpdateRepository extends Repository<ProductUpdate> {
       .getMany();
   }
 
+  /** Only what liveness decides on — never the sources' bodies or file lists. */
   async findNotLive(): Promise<ProductUpdate[]> {
     return this.find({
+      select: {
+        id: true,
+        audience: true,
+        hidden: true,
+        liveAt: true,
+        publishedAt: true,
+        sources: {
+          id: true,
+          status: true,
+          gatesLiveness: true,
+          liveAt: true,
+          mergedAt: true,
+        },
+      },
       where: { liveAt: IsNull() },
       relations: { sources: true },
     });

@@ -9,8 +9,8 @@ const at = (iso: string) => new Date(iso);
 
 describe('ProductUpdateLivenessService', () => {
   let github: { isConfigured: boolean; listSuccessfulRuns: jest.Mock };
-  let sourceRepository: { find: jest.Mock; save: jest.Mock };
-  let updateRepository: { findNotLive: jest.Mock; save: jest.Mock };
+  let sourceRepository: { find: jest.Mock; update: jest.Mock };
+  let updateRepository: { findNotLive: jest.Mock; update: jest.Mock };
   let service: ProductUpdateLivenessService;
 
   const backend = {
@@ -40,11 +40,11 @@ describe('ProductUpdateLivenessService', () => {
     github = { isConfigured: true, listSuccessfulRuns: jest.fn() };
     sourceRepository = {
       find: jest.fn().mockResolvedValue([backend, admin]),
-      save: jest.fn(async (rows) => rows),
+      update: jest.fn(async () => ({ affected: 1 })),
     };
     updateRepository = {
       findNotLive: jest.fn(),
-      save: jest.fn(async (row) => row),
+      update: jest.fn(async () => ({ affected: 1 })),
     };
     service = new ProductUpdateLivenessService(
       github as unknown as GithubActionsService,
@@ -152,7 +152,7 @@ describe('ProductUpdateLivenessService', () => {
 
     expect(result.unreadable.sort()).toEqual(['ally-be', 'ally-web:admin']);
     expect(backend.liveAt).toBeNull();
-    expect(sourceRepository.save).not.toHaveBeenCalled();
+    expect(sourceRepository.update).not.toHaveBeenCalled();
   });
 
   it('lets a docs-only change ride along without waiting for a release', async () => {
@@ -164,5 +164,62 @@ describe('ProductUpdateLivenessService', () => {
     await service.refresh(at('2026-09-30T12:00:00Z'));
 
     expect(docs.liveAt).toEqual(docs.mergedAt);
+  });
+
+  it('writes only the live dates by id, never the whole loaded rows', async () => {
+    github.listSuccessfulRuns.mockResolvedValue([
+      {
+        id: '1',
+        htmlUrl: '',
+        startedAt: at('2026-09-30T09:52:35Z'),
+        finishedAt: at('2026-09-30T10:10:00Z'),
+      },
+    ]);
+    const update = {
+      id: 'u1',
+      audience: 'public',
+      hidden: false,
+      liveAt: null as Date | null,
+      publishedAt: null as Date | null,
+      sources: [backend, admin],
+    };
+    updateRepository.findNotLive.mockResolvedValue([update]);
+
+    await service.refresh(at('2026-09-30T12:00:00Z'));
+
+    expect(sourceRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          mergedAt: true,
+          deployables: true,
+          gatesLiveness: true,
+        },
+      }),
+    );
+    expect(sourceRepository.update).toHaveBeenCalledWith('s-be', {
+      liveAt: at('2026-09-30T10:10:00Z'),
+    });
+    expect(updateRepository.update).toHaveBeenCalledWith('u1', {
+      liveAt: at('2026-09-30T10:10:00Z'),
+      publishedAt: at('2026-09-30T10:10:00Z'),
+    });
+  });
+
+  it('does not wait on the retired marketing-site target a stored source still names', async () => {
+    const legacy = {
+      ...admin,
+      id: 's-legacy',
+      deployables: ['ally-web:web'],
+    };
+    sourceRepository.find.mockResolvedValue([legacy]);
+    github.listSuccessfulRuns.mockResolvedValue([]);
+    updateRepository.findNotLive.mockResolvedValue([]);
+
+    const result = await service.refresh(at('2026-09-30T12:00:00Z'));
+
+    expect(github.listSuccessfulRuns).not.toHaveBeenCalled();
+    expect(result.unreadable).toEqual([]);
+    expect(legacy.liveAt).toEqual(legacy.mergedAt);
   });
 });

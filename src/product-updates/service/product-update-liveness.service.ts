@@ -17,6 +17,7 @@ import {
   ReleaseHistory,
   ReleaseHistoryKey,
   changeLiveAt,
+  trackedDeployables,
 } from '../util/liveness.util';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +26,7 @@ const HISTORY_LIMIT_MS = 90 * DAY_MS;
 
 /**
  * Which workflow's successful runs mean "shipped" for each deployable. The
- * six server and web ones come from `RELEASE_TARGETS`, the table Bug Hunter
+ * five server and web ones come from `RELEASE_TARGETS`, the table Bug Hunter
  * and Builder release through, so a renamed workflow is fixed in one place.
  * ally-mobile has no entry there — it releases through store builds — so its
  * two workflows are named here.
@@ -39,7 +40,6 @@ const HISTORY_WORKFLOWS: Record<
   'ally-ai-learn': RELEASE_TARGETS['ally-ai-learn'],
   'ally-web:admin': RELEASE_TARGETS['ally-web:admin'],
   'ally-web:helpline': RELEASE_TARGETS['ally-web:helpline'],
-  'ally-web:web': RELEASE_TARGETS['ally-web:web'],
   'ally-mobile:build': {
     repo: 'ally-mobile',
     workflow: 'build-android-production.yml',
@@ -87,7 +87,16 @@ export class ProductUpdateLivenessService {
       unreadable: [],
     };
 
+    // Only the columns liveness reads, and writes by id below: a backfill has
+    // every merge waiting at once, and loading their bodies and file lists to
+    // `save()` them back ran a 512 MB task out of heap.
     const waiting = await this.sourceRepository.find({
+      select: {
+        id: true,
+        mergedAt: true,
+        deployables: true,
+        gatesLiveness: true,
+      },
       where: {
         status: ProductUpdateSourceStatus.CONSOLIDATED,
         liveAt: IsNull(),
@@ -134,10 +143,12 @@ export class ProductUpdateLivenessService {
           nowLive.push(source);
         }
       }
-      if (nowLive.length) {
-        await this.sourceRepository.save(nowLive);
-        result.sourcesLive = nowLive.length;
+      for (const source of nowLive) {
+        await this.sourceRepository.update(source.id, {
+          liveAt: source.liveAt,
+        });
       }
+      result.sourcesLive = nowLive.length;
     }
 
     // Any update not yet live whose gating changes all are.
@@ -165,7 +176,10 @@ export class ProductUpdateLivenessService {
         update.publishedAt = update.liveAt;
         result.published += 1;
       }
-      await this.updateRepository.save(update);
+      await this.updateRepository.update(update.id, {
+        liveAt: update.liveAt,
+        publishedAt: update.publishedAt,
+      });
       result.updatesLive += 1;
     }
 
@@ -191,7 +205,7 @@ export class ProductUpdateLivenessService {
     });
     for (const source of sources) {
       const list = pending.get(source.updateId!) ?? [];
-      for (const deployable of source.deployables) {
+      for (const deployable of trackedDeployables(source.deployables)) {
         if (!list.includes(deployable)) list.push(deployable);
       }
       pending.set(source.updateId!, list);

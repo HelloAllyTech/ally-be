@@ -22,8 +22,23 @@ export type Deployable =
   | 'ally-ai-learn'
   | 'ally-web:admin'
   | 'ally-web:helpline'
-  | 'ally-web:web'
   | 'ally-mobile';
+
+/**
+ * Deployables merged sources may still carry from before a target was retired.
+ * `ally-web:web` was the marketing site, which no longer lives in ally-web and
+ * has no release workflow to observe — waiting on it meant waiting forever.
+ */
+const RETIRED_DEPLOYABLES: ReadonlySet<string> = new Set(['ally-web:web']);
+
+/** The deployables a stored source must still wait on: retired targets wait on nothing. */
+export function trackedDeployables(
+  deployables: readonly string[],
+): Deployable[] {
+  return deployables.filter(
+    (deployable) => !RETIRED_DEPLOYABLES.has(deployable),
+  ) as Deployable[];
+}
 
 /**
  * The release workflows whose history decides liveness. ally-mobile is two:
@@ -38,7 +53,6 @@ export const RELEASE_HISTORY_KEYS = [
   'ally-ai-learn',
   'ally-web:admin',
   'ally-web:helpline',
-  'ally-web:web',
   'ally-mobile:build',
   'ally-mobile:promote',
 ] as const;
@@ -55,24 +69,21 @@ export type ReleaseHistory = Partial<Record<ReleaseHistoryKey, ReleaseRun[]>>;
 const WEB_APPS: [RegExp, Deployable][] = [
   [/^apps\/ally-admin-dashboard\//, 'ally-web:admin'],
   [/^apps\/ally-helpline-dashboard\//, 'ally-web:helpline'],
-  [/^apps\/ally-web\//, 'ally-web:web'],
 ];
 
 /** ally-changelog's `changed_apps` names, for when a file list is unavailable. */
 const WEB_APP_NAMES: Record<string, Deployable> = {
   'ally-admin-dashboard': 'ally-web:admin',
   'ally-helpline-dashboard': 'ally-web:helpline',
-  'ally-web': 'ally-web:web',
 };
 
 /**
  * Which deployables must release before this change is live.
  *
- * ally-web is a monorepo of three separately-tagged apps, so its answer comes
+ * ally-web is a monorepo of separately-tagged apps, so its answer comes
  * from the file paths. Shared `libs/` code ships inside every app that imports
  * it; the two product apps (admin and the helpline web app) are what users see,
- * so a libs change waits on both. The marketing site is left out unless its own
- * files changed. An ally-web change touching no app at all (root config,
+ * so a libs change waits on both. An ally-web change touching no app at all (root config,
  * tooling) waits on nothing.
  *
  * `infra` and anything unknown wait on nothing: nothing a user sees ships from
@@ -156,7 +167,7 @@ export function changeLiveAt(
   history: ReleaseHistory,
 ): Date | null {
   let latest = mergedAt;
-  for (const deployable of deployables) {
+  for (const deployable of trackedDeployables(deployables)) {
     const liveAt = deployableLiveAt(deployable, mergedAt, history);
     if (!liveAt) return null;
     if (liveAt.getTime() > latest.getTime()) latest = liveAt;
@@ -170,7 +181,7 @@ export function pendingDeployables(
   mergedAt: Date,
   history: ReleaseHistory,
 ): Deployable[] {
-  return deployables.filter(
+  return trackedDeployables(deployables).filter(
     (deployable) => !deployableLiveAt(deployable, mergedAt, history),
   );
 }

@@ -28,7 +28,6 @@ const DEPLOYABLE_LABELS: Record<string, string> = {
   'ally-ai-learn': 'voice agent',
   'ally-web:admin': 'admin console',
   'ally-web:helpline': 'web app',
-  'ally-web:web': 'marketing site',
   'ally-mobile': 'mobile store release',
 };
 

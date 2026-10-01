@@ -1,4 +1,5 @@
 import {
+  Deployable,
   ReleaseHistory,
   changeLiveAt,
   deployableLiveAt,
@@ -102,5 +103,23 @@ describe('changeLiveAt', () => {
   it('is live on merge when there is nothing to wait for', () => {
     const merged = at('2026-09-30T08:42:00Z');
     expect(changeLiveAt([], merged, history)).toEqual(merged);
+  });
+
+  it('ignores the retired marketing-site target a stored source still names', () => {
+    const merged = at('2026-09-30T08:42:00Z');
+    const stored = ['ally-be', 'ally-web:web'] as Deployable[];
+    expect(changeLiveAt(stored, merged, history)).toEqual(
+      at('2026-09-30T10:10:00Z'),
+    );
+    expect(pendingDeployables(stored, merged, history)).toEqual([]);
+  });
+});
+
+describe('deployablesFor after the marketing site left ally-web', () => {
+  it('maps the old app path and app name to nothing', () => {
+    expect(deployablesFor('ally-web', ['apps/ally-web/src/page.tsx'])).toEqual(
+      [],
+    );
+    expect(deployablesFor('ally-web', [], ['ally-web'])).toEqual([]);
   });
 });
