@@ -42,6 +42,13 @@ export class ScheduledTaskRunnerService {
     await this.runTasksForInterval('daily');
   }
 
+  // Mondays 02:00 UTC (07:30 IST) — for jobs whose input moves slowly and
+  // whose every run costs model calls, e.g. glossary lexeme mining.
+  @Cron(`0 0 2 * * 1`)
+  async runWeeklyTasks(): Promise<void> {
+    await this.runTasksForInterval('weekly');
+  }
+
   // 03:00 on the 1st of each month — for tasks with nothing to fire on that
   // isn't already stale a day later (e.g. re-checking a third-party catalog).
   @Cron(`0 0 3 1 * *`)

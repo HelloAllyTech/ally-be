@@ -54,6 +54,40 @@ export class GlossaryJobService {
     options: O,
     run: () => Promise<R>,
   ): Promise<GlossaryJob<R, O>> {
+    const job = await this.open<R, O>(kind, languageId, options);
+    void this.execute(job, run);
+    return job;
+  }
+
+  /**
+   * Run a job to completion under the same lock and record as `start` — for
+   * unattended callers (the weekly scheduler) that must neither overlap a
+   * manual run nor fire every language at once. Returns null, without
+   * running, when a run of this kind already holds the language.
+   */
+  async runExclusive<R, O>(
+    kind: GlossaryJobKind,
+    languageId: number,
+    options: O,
+    run: () => Promise<R>,
+  ): Promise<GlossaryJob<R, O> | null> {
+    let job: GlossaryJob<R, O>;
+    try {
+      job = await this.open<R, O>(kind, languageId, options);
+    } catch (error) {
+      if (error instanceof ConflictException) return null;
+      throw error;
+    }
+    await this.execute(job, run);
+    return this.get<R, O>(kind, languageId, job.jobId);
+  }
+
+  /** Take the (kind, language) lock and write the `running` record. */
+  private async open<R, O>(
+    kind: GlossaryJobKind,
+    languageId: number,
+    options: O,
+  ): Promise<GlossaryJob<R, O>> {
     const lockKey = this.lockKey(kind, languageId);
     if (!(await this.redis.acquireLock(lockKey, GLOSSARY_JOB_STALE_SECONDS))) {
       throw new ConflictException(
@@ -74,7 +108,6 @@ export class GlossaryJobService {
       await this.redis.releaseLock(lockKey).catch(() => undefined);
       throw error;
     }
-    void this.execute(job, run);
     return job;
   }
 

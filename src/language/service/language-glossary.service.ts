@@ -1588,6 +1588,21 @@ export class LanguageGlossaryService {
   }
 
   /**
+   * Languages with at least one proposal awaiting a verdict. The unattended
+   * adjudicator must visit these even when they have no recent judge
+   * annotations: lexeme mining queues proposals from transcripts alone, and a
+   * language like Marathi can go months without a style annotation, which
+   * would otherwise leave its mined pairs queued forever.
+   */
+  async queryLanguagesWithQueuedProposals(): Promise<{ id: number }[]> {
+    return this.annotationRepository.manager.query(
+      `SELECT DISTINCT s."languageId" AS id
+         FROM language_glossary_sections s
+        WHERE s.entries @> '[{"status": "proposed"}]'::jsonb`,
+    );
+  }
+
+  /**
    * tenant→profile map for one language, keyed by every alias a tenant ref
    * appears under (tenants.id as text AND tenants.code — annotation rows carry
    * either, matching the platform's dual-key tenant refs).

@@ -113,7 +113,8 @@ interface PairingVerdict {
  *
  * Never auto-accepts. Note that in an environment running the adjudication
  * scheduler in `apply` mode, queued proposals ARE decided automatically on its
- * next pass — the dry run is the human checkpoint.
+ * next pass, and the weekly scheduler runs it unattended (no human checkpoint
+ * by design — see GlossaryLexemeMiningSchedulerRegistrationService).
  */
 @Injectable()
 export class GlossaryLexemeMiningService {

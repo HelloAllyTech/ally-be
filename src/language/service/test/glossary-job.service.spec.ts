@@ -84,4 +84,36 @@ describe('GlossaryJobService', () => {
     ).rejects.toThrow('redis down');
     expect([...store.keys()]).toEqual([]);
   });
+
+  it('runExclusive waits for the run, and skips a language that is held', async () => {
+    const { redis } = memoryRedis();
+    const jobs = new GlossaryJobService(redis);
+
+    const done = await jobs.runExclusive(
+      'lexeme-mining',
+      6,
+      {},
+      async () => 42,
+    );
+    expect(done).toMatchObject({ status: 'succeeded', result: 42 });
+
+    await jobs.start(
+      'lexeme-mining',
+      8,
+      {},
+      () => new Promise(() => undefined),
+    );
+    const run = jest.fn();
+    expect(await jobs.runExclusive('lexeme-mining', 8, {}, run)).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('runExclusive records a failure instead of throwing', async () => {
+    const { redis } = memoryRedis();
+    const jobs = new GlossaryJobService(redis);
+    const failed = await jobs.runExclusive('lexeme-mining', 6, {}, async () => {
+      throw new Error('gemini down');
+    });
+    expect(failed).toMatchObject({ status: 'failed', error: 'gemini down' });
+  });
 });

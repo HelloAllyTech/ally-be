@@ -33,6 +33,7 @@ describe('GlossaryAdjudicationSchedulerRegistrationService', () => {
       queryCandidateLanguages: jest
         .fn()
         .mockResolvedValue([{ id: 6 }, { id: 2 }]),
+      queryLanguagesWithQueuedProposals: jest.fn().mockResolvedValue([]),
     };
     service = new GlossaryAdjudicationSchedulerRegistrationService(
       adjudication,
@@ -52,6 +53,21 @@ describe('GlossaryAdjudicationSchedulerRegistrationService', () => {
       respectBackoff: true,
     });
     expect(adjudication.adjudicateLanguage).toHaveBeenCalledTimes(2);
+  });
+
+  // Lexeme mining queues proposals from transcripts, so a language with no
+  // recent judge annotation must still be visited — once, even when it is in
+  // both lists.
+  it('also adjudicates languages that only have queued proposals', async () => {
+    glossaryService.queryLanguagesWithQueuedProposals.mockResolvedValue([
+      { id: 5 },
+      { id: '6' },
+    ]);
+    await service.tick('apply');
+    const visited = adjudication.adjudicateLanguage.mock.calls.map(
+      (c: any[]) => c[0],
+    );
+    expect(visited.sort()).toEqual([2, 5, 6]);
   });
 
   // The way to watch it work on real data before letting it write.

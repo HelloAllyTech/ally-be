@@ -60,11 +60,19 @@ export class GlossaryAdjudicationSchedulerRegistrationService implements OnModul
 
   /** Exposed for tests; one pass over every candidate language. */
   async tick(mode: 'preview' | 'apply'): Promise<void> {
-    const rows: { id: number }[] =
-      await this.glossaryService.queryCandidateLanguages([
+    // Languages consolidation may have proposed for, plus any language with a
+    // queued proposal from another source (lexeme mining reads transcripts,
+    // not annotations).
+    const [annotated, queued] = await Promise.all([
+      this.glossaryService.queryCandidateLanguages([
         ...GLOSSARY_CONSOLIDATION_DIMENSIONS,
-      ]);
-    for (const { id } of rows) {
+      ]),
+      this.glossaryService.queryLanguagesWithQueuedProposals(),
+    ]);
+    const ids = [
+      ...new Set([...annotated, ...queued].map((r) => Number(r.id))),
+    ];
+    for (const id of ids) {
       try {
         const result = await this.adjudicationService.adjudicateLanguage(id, {
           apply: mode === 'apply',

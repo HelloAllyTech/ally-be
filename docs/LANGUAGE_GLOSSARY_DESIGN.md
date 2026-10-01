@@ -594,7 +594,17 @@ prompt adds nothing, and its cap stranded the first run — Tamil's pairs went t
 2320/2000 tokens and were deferred forever ("cap blocked core_style"). Migration `1973800000000`
 moved those still-proposed pairs to the on-demand target and repointed their batch record. Duplicates and `contradicted` pairs are not written. It never
 auto-accepts, **but in an environment running §6.3 in `apply` mode the queued proposals are
-decided on the adjudicator's next pass** — the dry run is the human checkpoint. Each entry also
+decided on the adjudicator's next pass**. There is no human checkpoint by design (team decision
+2026-10-01: nobody reviews each language; the loop ships and learner feedback decides — a bad pair
+is undone by rejecting or archiving its rule).
+
+**Weekly, unattended.** `GlossaryLexemeMiningSchedulerRegistrationService` runs every Monday
+02:00 UTC (the scheduler's `weekly` interval) for every language with a published glossary except
+English, one language after another under the same per-language lock as the manual endpoint (a
+language a manual run holds is skipped until next week). Mode from
+`GLOSSARY_LEXEME_MINING_SCHEDULE` (`write` default | `dry` | `off`). The hourly adjudicator
+visits every language with a queued proposal, not only those with recent judge annotations —
+mining reads transcripts, so Marathi or Kannada could otherwise keep mined pairs queued forever. Each entry also
 records `swapSafe`: a single-token pair of an agreement-free class (discourse marker,
 conjunction, lexeme) that is not an address form, i.e. one a runtime output swap could apply
 without breaking the sentence. Nothing reads `swapSafe` yet.

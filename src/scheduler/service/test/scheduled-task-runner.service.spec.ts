@@ -103,4 +103,14 @@ describe('ScheduledTaskRunnerService — leader guard', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
+
+  it('runs weekly-interval tasks the same as any other interval', async () => {
+    await setup(true);
+    const handler = jest.fn().mockResolvedValue(undefined);
+    scheduledTaskRegistry.register('weekly', 'test-weekly-task', handler);
+
+    await service.runWeeklyTasks();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });
