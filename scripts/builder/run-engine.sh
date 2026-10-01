@@ -720,6 +720,52 @@ engine_produced_nothing() {
   return 0
 }
 
+# Did the engine write a tool call as prose instead of making it?
+#
+# Gemini's tell is `call:<tool>{…}` in a text part — the shape of its own
+# function-call syntax, flattened into the reply. Looked for anywhere in the
+# result rather than only at its end, because the model sometimes adds a
+# sentence after the call it believes it made.
+wrote_tool_calls_as_text() {
+  local result_file="$1"
+  [ -s "$result_file" ] || return 1
+  jq -r '.result // ""' "$result_file" 2>/dev/null \
+    | grep -qE '(^|[^A-Za-z0-9_])call:[A-Za-z_][A-Za-z0-9_.-]*\{'
+}
+
+# A phase rerun overwrites its result file, and the spend of the attempt it
+# replaced has to survive that or the scoreboard under-reports what the phase
+# cost. Without `final`, the current result is banked into `<file>.spent`; with
+# it, whatever was banked is added onto the result the phase ends with.
+fold_spent_into() {
+  local result_file="$1" mode="${2:-bank}" spent="${1}.spent" merged
+  if [ "$mode" = final ]; then
+    [ -s "$spent" ] && [ -s "$result_file" ] || { rm -f "$spent"; return 0; }
+    merged="$(jq -c --slurpfile s "$spent" '
+      .total_cost_usd = ((.total_cost_usd // 0) + ($s[0].total_cost_usd // 0))
+      | .usage.input_tokens = ((.usage.input_tokens // 0) + ($s[0].usage.input_tokens // 0))
+      | .usage.output_tokens = ((.usage.output_tokens // 0) + ($s[0].usage.output_tokens // 0))
+      | .usage.cached_tokens = ((.usage.cached_tokens // 0) + ($s[0].usage.cached_tokens // 0))
+    ' "$result_file" 2>/dev/null || true)"
+    [ -n "$merged" ] && printf '%s\n' "$merged" > "$result_file"
+    rm -f "$spent"
+    return 0
+  fi
+  [ -s "$result_file" ] || return 0
+  if [ -s "$spent" ]; then
+    merged="$(jq -c --slurpfile s "$spent" '
+      { total_cost_usd: ((.total_cost_usd // 0) + ($s[0].total_cost_usd // 0)),
+        usage: { input_tokens: ((.usage.input_tokens // 0) + ($s[0].usage.input_tokens // 0)),
+                 output_tokens: ((.usage.output_tokens // 0) + ($s[0].usage.output_tokens // 0)),
+                 cached_tokens: ((.usage.cached_tokens // 0) + ($s[0].usage.cached_tokens // 0)) } }
+    ' "$result_file" 2>/dev/null || true)"
+    [ -n "$merged" ] && printf '%s\n' "$merged" > "$spent"
+  else
+    cp "$result_file" "$spent"
+  fi
+  : > "$result_file"
+}
+
 run_agent() {
   # No turn cap and no per-phase dollar ceiling. Both were Claude Code flags —
   # --max-turns and --max-budget-usd — and opencode has neither, so the
@@ -803,14 +849,60 @@ run_agent() {
         echo "Continuing opencode session ${OPENCODE_CODER_SESSION}."
       fi
 
-      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
-        ${oc_session[@]+"${oc_session[@]}"} \
-        --model "$oc_model" \
-        --agent "$agent" \
-        --format json \
-        --auto \
-        "$(cat "$prompt_file")" \
-      | node "$FORWARDER" --result-out "$result_file" || rc=$?
+      # ── Tool calls written as prose ─────────────────────────────────────
+      #
+      # Gemini, now and then, stops calling tools and starts WRITING them:
+      # `call:bash{command:ls -F repos}` arrives as a text part, the step
+      # finishes with reason `stop`, and opencode — correctly — ends the run,
+      # because nothing was called. Nothing fails and nothing errors. The
+      # phase simply returns having done nothing.
+      #
+      # It cost session 178e6598 its whole ladder on 2026-10-01. Every coding
+      # attempt ended on its second step, every gate read "unchanged", and
+      # because the attempts share one session the transcript each inherited
+      # was the poisoned one: by attempt 4 the model was describing a fix to a
+      # file it had never opened, in tests it had never run. Four attempts,
+      # $0.12, and a verdict blaming a diff that did not exist.
+      #
+      # So it is caught here, where the evidence is: the result text. A phase
+      # that ended on a written call is run again COLD — a fresh session, the
+      # same prompt — because continuing the one that produced it is exactly
+      # what made it worse. And the coder's shared session is dropped, so the
+      # next attempt does not inherit it either.
+      local text_call_retries="${BUILDER_TEXT_CALL_RETRIES:-2}"
+      local text_call_try=0
+      rm -f "${result_file}.spent"
+      while :; do
+        rc=0
+        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
+          ${oc_session[@]+"${oc_session[@]}"} \
+          --model "$oc_model" \
+          --agent "$agent" \
+          --format json \
+          --auto \
+          "$(cat "$prompt_file")" \
+        | node "$FORWARDER" --result-out "$result_file" || rc=$?
+
+        [ "$rc" = "0" ] || break
+        wrote_tool_calls_as_text "$result_file" || break
+
+        if [ "$AGENT_PHASE" = code ]; then
+          OPENCODE_CODER_SESSION=
+        fi
+        if [ "$text_call_try" -ge "$text_call_retries" ]; then
+          echo "::warning::${oc_model} still wrote its tool calls as text after ${text_call_try} cold retries." >&2
+          break
+        fi
+        text_call_try=$((text_call_try + 1))
+        echo "::warning::${oc_model} wrote a tool call as text instead of making it; rerunning this phase in a fresh session (${text_call_try}/${text_call_retries})." >&2
+        curl -sS -X POST "${API}/events" \
+          -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+          -d "$(jq -nc --arg m "$oc_model" '{events:[{type:"text",payload:{text:("The model (" + $m + ") wrote its tool calls out as text instead of making them, so this phase did nothing. Running it again in a fresh session.")}}]}')" \
+          >/dev/null 2>&1 || true
+        fold_spent_into "$result_file"
+        oc_session=()
+      done
+      fold_spent_into "$result_file" final
       ;;
 
     *)
@@ -1176,6 +1268,19 @@ if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
     "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
+
+  # A planner that said nothing at all. gemini-2.5-flash, on the small-build
+  # profile, has answered the plan prompt with a single step of ZERO output
+  # tokens and reason `stop` — seen on 2026-09-25 and again on 2026-10-01 — so
+  # the coder ran with no plan and no warning. One retry on the coder's model,
+  # billed as its own row so the scoreboard shows what the cheap tier cost.
+  if [ "$PLANNER_MODEL" != "$CODER_MODEL" ] &&
+     [ -z "$(jq -r '.result // "" | gsub("^\\s+|\\s+$"; "")' "${RESULTS_DIR}/plan.json" 2>/dev/null || true)" ]; then
+    echo "::warning::${PLANNER_MODEL} returned an empty plan; planning again on ${CODER_MODEL}." >&2
+    run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
+      "$CODER_MODEL" "$PLANNER_TOOLS" "$PLAN_TIMEOUT" || true
+    report_phase_cost plan-retry "$CODER_MODEL" "${RESULTS_DIR}/plan.json"
+  fi
   # The plan is the output; the tree is not. A planner that has already written
   # the change hands the coder a diff it did not make and cannot explain, and
   # spends the planner tier doing it.
@@ -1279,8 +1384,11 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     previous_attempt_model="$attempt_model"
 
     # Carried to the next attempt. Empty for an engine that reports no session,
-    # which leaves every attempt cold exactly as before.
-    if [ -z "${OPENCODE_CODER_SESSION:-}" ]; then
+    # which leaves every attempt cold exactly as before. Never one whose
+    # transcript ends in tool calls written as text: continuing it teaches the
+    # next attempt the same habit.
+    if [ -z "${OPENCODE_CODER_SESSION:-}" ] &&
+       ! wrote_tool_calls_as_text "${RESULTS_DIR}/code-${attempt}.json"; then
       OPENCODE_CODER_SESSION="$(jq -r '.session_id // empty' \
         "${RESULTS_DIR}/code-${attempt}.json" 2>/dev/null || true)"
       [ -n "${OPENCODE_CODER_SESSION:-}" ] &&

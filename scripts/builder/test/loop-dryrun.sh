@@ -211,6 +211,28 @@ if [ "${DRYRUN_ENGINE_EXIT:-}" = "1" ] && [ "$phase" = "build" ]; then
   exit 3
 fi
 
+# A coder that writes its tool calls as prose instead of making them — Gemini's
+# `call:bash{…}` — on its first DRYRUN_TEXT_CALL invocations, then behaves.
+# Records which session each build invocation was given, so the scenario can
+# prove the retry ran cold rather than continuing the poisoned conversation.
+if [ -n "${DRYRUN_TEXT_CALL:-}" ] && [ "$phase" = "build" ]; then
+  n=$(( $(cat /tmp/builder-dryrun-textcall-count 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > /tmp/builder-dryrun-textcall-count
+  session_arg="cold"
+  prev=""
+  for arg in "$@"; do
+    [ "$prev" = "--session" ] && session_arg="$arg"
+    prev="$arg"
+  done
+  echo "$session_arg" >> /tmp/builder-dryrun-textcall-sessions
+  if [ "$n" -le "$DRYRUN_TEXT_CALL" ]; then
+    echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_poisoned"}'
+    echo '{"type":"text","part":{"type":"text","text":"Exploring first.call:bash{command:ls -F repos}"},"sessionID":"ses_poisoned"}'
+    echo '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":3,"input":2,"output":1,"cache":{"read":0}},"cost":0.25},"sessionID":"ses_poisoned"}'
+    exit 0
+  fi
+fi
+
 # A phase that never returns. opencode has no turn cap and no mid-run dollar
 # ceiling, so the wall clock in run_agent is the only bound on a stuck phase —
 # which is exactly why that bound exists.
@@ -421,7 +443,8 @@ run_scenario() {
   # the previous scenario silences the next one's reporting entirely.
   rm -f /tmp/builder-paused /tmp/builder-dryrun-verify-count \
         /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it \
-        /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md
+        /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md \
+        /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -792,6 +815,25 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = engine-dead ]; then
   # The whole point: no attempts are spent repeating something that cannot run.
   check "spends no remediation attempts" 0 "$(count_in_log 'GET remediate-prompt')"
   check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
+fi
+
+# ── 11c. tool calls written as text ────────────────────────────────────────
+#
+# Gemini sometimes writes `call:bash{…}` as prose and stops, so a phase "ends"
+# having called nothing. Session 178e6598 spent its whole ladder that way on
+# 2026-10-01, each attempt continuing the poisoned conversation. The phase is
+# rerun cold, its spend is kept, and the poisoned session is never continued.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = text-calls ]; then
+  run_scenario text-calls DRYRUN_TEXT_CALL=1 DRYRUN_PR_BODY=1
+  check "finished the run" 0 "$EXIT_CODE"
+  check "said why it reran" yes \
+    "$(grep -q 'wrote a tool call as text' "${WORK}/text-calls.out" && echo yes || echo no)"
+  check "reran the coder cold" "cold cold" \
+    "$(tr '\n' ' ' < /tmp/builder-dryrun-textcall-sessions | sed 's/ $//')"
+  check "never continued the poisoned session" no \
+    "$(grep -q 'ses_poisoned' /tmp/builder-dryrun-textcall-sessions && echo yes || echo no)"
+  check "billed both runs of the phase" yes \
+    "$(grep -q 'COST code-1:0.75' "$LOG_FILE" && echo yes || echo no)"
 fi
 
 # ── 12. the runner itself failing ──────────────────────────────────────────
