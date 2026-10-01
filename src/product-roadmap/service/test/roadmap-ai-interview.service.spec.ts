@@ -160,21 +160,35 @@ describe('RoadmapAiService.interviewTurn', () => {
     expect(turn.draft?.description).toBe('A well-formed draft');
   });
 
-  it('hands over unsized rather than storing an effort that is not a live size', async () => {
-    const { service } = build(
-      allMet({
-        draft: {
-          description: 'A well-formed draft',
-          productGoal: null,
-          effort: 'medium-ish',
-        },
-      }),
-    );
+  it.each([
+    ['too big to file', 'l'],
+    ['not a live size', 'medium-ish'],
+    ['unsized', null],
+  ])(
+    'keeps interviewing rather than handing over a draft that is %s',
+    async (_label, effort) => {
+      // `create` refuses anything above the fileable sizes, and there is no override any more —
+      // so a draft handed over at this size would be one the admin can never file.
+      const { service, issue } = build(
+        allMet({
+          reply: 'Here is your draft.',
+          draft: {
+            description: 'A well-formed draft',
+            productGoal: null,
+            effort,
+          },
+        }),
+      );
 
-    const turn = await service.interviewTurn([]);
+      const turn = await service.interviewTurn([]);
 
-    expect(turn.draft?.effort).toBeNull();
-  });
+      expect(turn.draft).toBeNull();
+      expect(turn.readinessToken).toBeNull();
+      expect(issue).not.toHaveBeenCalled();
+      // Not the model's "here is your draft", which would announce something not on screen.
+      expect(turn.reply).toMatch(/more than one opportunity/);
+    },
+  );
 
   /** The first call carries no transcript: that is how the client asks for the opening question. */
   it('asks the model to open the interview when there are no messages', async () => {

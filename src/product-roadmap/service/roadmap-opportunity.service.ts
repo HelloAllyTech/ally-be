@@ -172,18 +172,12 @@ export class RoadmapOpportunityService {
        */
       canManage?: boolean;
       /**
-       * The FULL manage tier — the permission AND the product_roadmap_manage toggle. Consulted
-       * only by `readinessOverride`, and deliberately a different value from `canManage`: see
-       * RoadmapAccessService.canManageBoard for why the permission alone separates nobody.
-       */
-      canManageBoard?: boolean;
-      /**
        * Whether the readiness gate applies to this call at all.
        *
        * False for the internal `/bug-reports` path, which shares this method: a bug report is a
        * single guided prompt from a consumer who has never seen a checklist, and grading one
        * against "names the user group it affects" would refuse every real report. The gate is a
-       * property of the IDEA-filing form, not of this table.
+       * property of the IDEA-filing path, not of this table.
        */
       enforceReadiness?: boolean;
     },
@@ -201,9 +195,7 @@ export class RoadmapOpportunityService {
       await this.assertEligibleOwner(dto.ownerUserId);
     }
 
-    const readiness = extra?.enforceReadiness
-      ? await this.resolveReadiness(userId, dto, extra?.canManageBoard === true)
-      : null;
+    if (extra?.enforceReadiness) this.assertReady(userId, dto);
 
     const referenceImages = this.normaliseReferenceImages(dto.referenceImages);
 
@@ -215,11 +207,6 @@ export class RoadmapOpportunityService {
         // `?? null` so an omitted effort files as unsized rather than undefined — the column
         // is nullable and "not sized" is a real state, not a missing value.
         effort: dto.effort ?? null,
-        // Null for the ordinary case — passed, or not graded at all. Set together, enforced by
-        // a CHECK constraint (migration 1952000000000).
-        readinessOverriddenBy: readiness?.overriddenBy ?? null,
-        readinessOverriddenAt: readiness?.overriddenBy ? new Date() : null,
-        readinessFailedCriteria: readiness?.failedCriteria ?? null,
         // Only ever the id. The legacy free-text `owner` column stays untouched on a new row —
         // it is a text FK into roadmap_opportunity_owners(name) and writing both is what the
         // update path documents as the thing that 500s. See update().
@@ -302,39 +289,28 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * The readiness gate, applied to one filing.
-   *
-   * Returns what to stamp on the row: `overriddenBy` set only when a manager actually spent an
-   * override, and `failedCriteria` recording what was red when they did.
+   * The readiness gate, applied to one filing. Returns nothing: a filing either passes or is
+   * refused.
    *
    * ## The rule, in the order it is checked
    *
    * 1. NO TOKEN. Refused once ROADMAP_READINESS_REQUIRE_TOKEN is true; until then, warned about
-   *    and allowed, because ally-be deploys ahead of the client that sends one and the bundle
-   *    in production today sends nothing. This is the only leniency here and it is temporary —
-   *    see the constant for the flip.
+   *    and allowed. This is the only leniency here and it is temporary — see the constant for
+   *    the flip.
    * 2. A TOKEN THAT DOES NOT VERIFY. Always a 400, flag or no flag: tampered, expired, graded
    *    against different text, or issued against a criteria set that has since changed. The
    *    token service raises these with wording a filer can act on.
    * 3. THE VERDICT. Red criteria come from the token. The SIZE rule is applied to the effort
-   *    being filed rather than the one in the token, because correcting a size the model got
-   *    wrong is an explicit, documented exemption — a re-run would recompute the size and
-   *    overwrite the correction, so a human could never override the model at all. What that
-   *    permits is filing an S the model called XL; what it still blocks is filing an XL.
-   * 4. THE OVERRIDE. A failing verdict needs `readinessOverride` AND the full manage tier. A
-   *    non-manager asking for one is a 403 rather than a 400: they sent a well-formed request
-   *    they are not allowed to make. A caller who does not ask at all gets a 400 naming what
-   *    failed, which is the ordinary "not ready yet" answer.
+   *    being filed rather than the one in the token, so it is enforced whatever the client
+   *    sends: filing an XL is refused even with a token minted for an S.
    *
-   * An override on a PASSING verdict is ignored rather than refused, and nothing is stamped:
-   * there was nothing to override, and a row marked as waved-through when it was not would be
-   * worse than no mark at all.
+   * There is NO override. It existed for the retired blank form, where a manager could file
+   * against a verdict they judged wrong. The guided interview — now the only filing client —
+   * mints a token only for a draft that met every criterion at a fileable size, so the escape
+   * hatch had nothing left to open, and a gate with no client asking to bypass it should not
+   * keep the bypass.
    */
-  private async resolveReadiness(
-    userId: number,
-    dto: CreateOpportunityDto,
-    canManageBoard: boolean,
-  ): Promise<{ overriddenBy: number | null; failedCriteria: string[] | null }> {
+  private assertReady(userId: number, dto: CreateOpportunityDto): void {
     if (!dto.readinessToken) {
       if (ROADMAP_READINESS_REQUIRE_TOKEN) {
         throw new BadRequestException(
@@ -347,7 +323,7 @@ export class RoadmapOpportunityService {
         `[ROADMAP] Opportunity filed with no readiness token by user ${userId}. ` +
           `Readiness was NOT enforced for this filing.`,
       );
-      return { overriddenBy: null, failedCriteria: null };
+      return;
     }
 
     const verdict = this.readinessToken.verify(dto.readinessToken, {
@@ -356,36 +332,20 @@ export class RoadmapOpportunityService {
     });
 
     const failed = [...verdict.failedCriteria];
-    // `size` rather than a criterion id: the size row is derived by the client and the server
-    // from ROADMAP_FILEABLE_EFFORTS, and has no entry in ROADMAP_READINESS_CRITERIA. Kept in
-    // the same list so one field answers "what was red?".
+    // `size` rather than a criterion id: the size rule is derived from ROADMAP_FILEABLE_EFFORTS
+    // and has no entry in ROADMAP_READINESS_CRITERIA. Kept in the same list so one message
+    // answers "what was red?".
     const effortFileable =
       dto.effort != null &&
       (ROADMAP_FILEABLE_EFFORTS as readonly string[]).includes(dto.effort);
     if (!effortFileable) failed.push('size');
 
-    if (failed.length === 0) {
-      return { overriddenBy: null, failedCriteria: null };
-    }
-
-    if (!dto.readinessOverride) {
+    if (failed.length > 0) {
       throw new BadRequestException(
         `This opportunity is not ready to file yet (${failed.join(', ')}). ` +
-          `Address the checklist, or ask a roadmap manager to override it.`,
+          `Keep the interview going until every item is met.`,
       );
     }
-
-    if (!canManageBoard) {
-      throw new ForbiddenException(
-        'Only a roadmap manager can override the readiness check.',
-      );
-    }
-
-    this.logger.info(
-      `[ROADMAP] User ${userId} overrode the readiness check, filing against: ` +
-        `${failed.join(', ')}.`,
-    );
-    return { overriddenBy: userId, failedCriteria: failed };
   }
 
   /**

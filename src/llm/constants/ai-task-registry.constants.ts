@@ -1168,9 +1168,13 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     task: null,
     runtime: LlmRuntime.ALLY_BE,
     tier: LlmModelTier.REASONING,
-    trigger: 'Someone runs the guided opportunity interview',
+    trigger:
+      'Someone files a roadmap opportunity (the guided interview), or the board classifies, de-duplicates or assesses one',
     detail:
-      "Interview turns, opportunity drafting, and the Builder drawer's split/merge guard.",
+      'Interview turns — the only way to file an opportunity — plus goal classification, the ' +
+      "duplicate check's confirmation pass, goal-impact assessment, interview-note summaries, " +
+      "Claude-prompt generation, and the Builder drawer's split/merge guard. The standalone " +
+      'readiness check, review and enhance calls were removed with the blank filing form.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
