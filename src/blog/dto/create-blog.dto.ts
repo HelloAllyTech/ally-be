@@ -5,9 +5,14 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
+import {
+  BLOG_COVER_COLOR_PATTERN,
+  BLOG_DEFAULT_COVER_COLOR,
+} from '../constants/blog.constants';
 import { BlogStatus } from '../enum/blog-status.enum';
 
 export class CreateBlogDto {
@@ -47,11 +52,16 @@ export class CreateBlogDto {
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiPropertyOptional({ description: 'Category', example: 'Product Updates' })
+  @ApiPropertyOptional({
+    description:
+      'Cover fill (#RRGGBB) shown in place of the header image when there is none',
+    example: BLOG_DEFAULT_COVER_COLOR,
+  })
   @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  category?: string;
+  @Matches(BLOG_COVER_COLOR_PATTERN, {
+    message: 'coverColor must be a #RRGGBB hex colour',
+  })
+  coverColor?: string;
 
   @ApiPropertyOptional({
     description: 'Author display name shown as the byline',

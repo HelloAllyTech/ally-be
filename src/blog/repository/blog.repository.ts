@@ -16,14 +16,13 @@ export class BlogRepository extends Repository<Blog> {
     super(Blog, dataSource.createEntityManager());
   }
 
-  // Admin listing — all statuses, optional search/status/category filters.
+  // Admin listing — all statuses, optional search/status filters.
   async getBlogs(
     options: GetBlogsQueryDto,
   ): Promise<{ blogs: Blog[]; count: number }> {
     const {
       search,
       status,
-      category,
       limit = 20,
       offset = 0,
       sortBy = BlogSortBy.CREATED_AT,
@@ -44,9 +43,6 @@ export class BlogRepository extends Repository<Blog> {
     if (status) {
       qb.andWhere('blog.status = :status', { status });
     }
-    if (category) {
-      qb.andWhere('blog.category = :category', { category });
-    }
 
     qb.orderBy(`blog.${sortBy}`, sortOrder.toUpperCase() as 'ASC' | 'DESC')
       .limit(limit)
@@ -60,7 +56,7 @@ export class BlogRepository extends Repository<Blog> {
   async getPublishedBlogs(
     options: GetPublicBlogsQueryDto,
   ): Promise<{ blogs: Blog[]; count: number }> {
-    const { search, category, tag, limit = 20, offset = 0 } = options;
+    const { search, tag, limit = 20, offset = 0 } = options;
 
     const qb = this.createQueryBuilder('blog').where('blog.status = :status', {
       status: BlogStatus.PUBLISHED,
@@ -75,9 +71,6 @@ export class BlogRepository extends Repository<Blog> {
         }),
       );
     }
-    if (category) {
-      qb.andWhere('blog.category = :category', { category });
-    }
     if (tag) {
       // tags is a jsonb string array — match membership.
       qb.andWhere('blog.tags @> :tag::jsonb', { tag: JSON.stringify([tag]) });
@@ -90,6 +83,26 @@ export class BlogRepository extends Repository<Blog> {
 
     const [blogs, count] = await qb.getManyAndCount();
     return { blogs, count };
+  }
+
+  // Every tag used on a published post, most-used first, for the public
+  // blog's tag filter. Counted here rather than from a page of posts so a tag
+  // on an older post still appears once the feed has more than one page.
+  async getPublishedTagCounts(): Promise<{ tag: string; count: number }[]> {
+    const rows: { tag: string; count: string }[] = await this.query(
+      `SELECT t.tag AS tag, COUNT(*) AS count
+       FROM "blogs" b,
+         jsonb_array_elements_text(
+           CASE WHEN jsonb_typeof(b."tags") = 'array' THEN b."tags" ELSE '[]'::jsonb END
+         ) AS t(tag)
+       WHERE b."status" = $1
+         AND b."deletedAt" IS NULL
+         AND btrim(t.tag) <> ''
+       GROUP BY t.tag
+       ORDER BY COUNT(*) DESC, lower(t.tag) ASC`,
+      [BlogStatus.PUBLISHED],
+    );
+    return rows.map((row) => ({ tag: row.tag, count: Number(row.count) }));
   }
 
   async findPublishedBySlug(slug: string): Promise<Blog | null> {

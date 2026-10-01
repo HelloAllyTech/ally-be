@@ -38,11 +38,6 @@ export class GetBlogsQueryDto {
   @IsEnum(BlogStatus)
   status?: BlogStatus;
 
-  @ApiPropertyOptional({ description: 'Filter by category' })
-  @IsOptional()
-  @IsString()
-  category?: string;
-
   @ApiPropertyOptional({ description: 'Number of records to return' })
   @IsOptional()
   @Type(() => Number)
@@ -83,11 +78,6 @@ export class GetPublicBlogsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by category' })
-  @IsOptional()
-  @IsString()
-  category?: string;
 
   @ApiPropertyOptional({ description: 'Filter by tag' })
   @IsOptional()

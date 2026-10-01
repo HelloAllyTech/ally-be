@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+import { BLOG_DEFAULT_COVER_COLOR } from '../constants/blog.constants';
 import { BlogStatus } from '../enum/blog-status.enum';
 
 /**
@@ -40,8 +41,14 @@ export class Blog extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
   tags!: string[];
 
-  @Column({ type: 'varchar', length: 120, nullable: true })
-  category?: string | null;
+  // Fill shown in place of the header image when there is none (#RRGGBB).
+  @Column({
+    type: 'varchar',
+    name: 'cover_color',
+    length: 7,
+    default: BLOG_DEFAULT_COVER_COLOR,
+  })
+  coverColor!: string;
 
   // Display name of the post's author (free-form; distinct from created_by which
   // references the super-admin user who authored the record).
