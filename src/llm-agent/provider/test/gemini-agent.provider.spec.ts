@@ -228,6 +228,57 @@ describe('GeminiAgentProvider', () => {
     ]);
   });
 
+  it('keeps text that follows a tool result in a turn of its own', async () => {
+    // An answered question replays as ask_admin's result followed by the
+    // admin's answer. Merged into one turn, gemini-2.5-pro returns an empty
+    // STOP — the interview went silent after every answer until the admin
+    // typed "continue".
+    const captured: any[] = [];
+    const provider = new GeminiAgentProvider(
+      'key',
+      fakeClient([chunk([{ text: 'ok' }], 'STOP')], captured),
+    );
+
+    await drain(
+      provider,
+      request({
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 't1', name: 'ask_admin', input: {} },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 't1',
+                content: '{"ok":true}',
+              },
+            ],
+          },
+          { role: 'user', content: 'Option A' },
+        ],
+      }),
+    );
+
+    expect(captured[0].contents).toEqual([
+      {
+        role: 'model',
+        parts: [{ functionCall: { name: 'ask_admin', args: {} } }],
+      },
+      {
+        role: 'user',
+        parts: [
+          { functionResponse: { name: 'ask_admin', response: { ok: true } } },
+        ],
+      },
+      { role: 'user', parts: [{ text: 'Option A' }] },
+    ]);
+  });
+
   it('sanitises tool schemas and omits parameters for no-argument tools', async () => {
     const captured: any[] = [];
     const provider = new GeminiAgentProvider(

@@ -172,8 +172,25 @@ export class GeminiAgentProvider implements IAgentLlmProvider {
       }
       // Gemini expects alternating turns; our tool-result turns can otherwise
       // land next to a following user message.
+      //
+      // Except text landing after a functionResponse. Merged into one turn,
+      // gemini-2.5-pro answers it with an empty STOP — zero output tokens, a
+      // bare "\n" — and it is exactly the shape of every answered question:
+      // ask_admin's result followed by the admin's answer. Session 178e6598
+      // (2026-10-01) went blank after 7 of 7 answers and the admin had to type
+      // "continue" each time. Replayed locally, the merged turn went blank
+      // every time; the same parts as two consecutive user turns answered 7/7.
       const last = contents[contents.length - 1];
-      if (last?.role === role) {
+      const hasFunctionResponse = (p: any[]) =>
+        p.some((part) => part.functionResponse);
+      if (
+        last?.role === role &&
+        !(
+          role === 'user' &&
+          hasFunctionResponse(last.parts) &&
+          !hasFunctionResponse(parts)
+        )
+      ) {
         last.parts.push(...parts);
         return;
       }

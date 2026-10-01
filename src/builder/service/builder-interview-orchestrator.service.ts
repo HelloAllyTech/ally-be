@@ -478,7 +478,11 @@ export class BuilderInterviewOrchestratorService {
 
         const contentBlocks: any[] = finalMessage.content ?? [];
         for (const block of contentBlocks) {
-          if (block?.type === 'text' && block.text) {
+          // Whitespace is not a reply. Gemini's empty STOP arrives as a bare
+          // "\n", and counted as text it slipped past the empty-pass retry
+          // below: the turn settled blank and the admin had to type
+          // "continue" to get the interview moving again.
+          if (block?.type === 'text' && block.text?.trim()) {
             textParts.push(block.text);
           }
         }

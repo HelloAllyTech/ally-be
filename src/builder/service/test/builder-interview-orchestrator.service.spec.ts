@@ -410,6 +410,22 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     expect(calls[calls.length - 1][1].content).toBe('Here on the second pass.');
   });
 
+  // Gemini's empty STOP is a bare "\n", not an empty content array. Counted as
+  // text, it settled the turn blank and the admin had to type "continue".
+  it('retries a turn that came back with only whitespace', async () => {
+    streams = [
+      fakeStream([{ type: 'text', text: '\n' }], 'end_turn'),
+      fakeStream([{ type: 'text', text: 'Back on track.' }], 'end_turn'),
+    ];
+
+    const frames = await drain();
+
+    expect(provider.stream).toHaveBeenCalledTimes(2);
+    expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    expect(calls[calls.length - 1][1].content).toBe('Back on track.');
+  });
+
   it('flags a turn that came back with nothing in it, three times over', async () => {
     streams = [
       fakeStream([], 'end_turn'),
