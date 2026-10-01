@@ -10,10 +10,12 @@
  * One deployable unit: which workflow releases it and what its version tags
  * look like.
  *
- * `ally-web` is a monorepo with three independently-tagged apps, which is why
+ * `ally-web` is a monorepo with two independently-tagged apps, which is why
  * this is keyed by deployable rather than by repo — see
  * `resolveReleaseTarget`, and note that a fix touching `libs/` is deliberately
- * NOT auto-resolvable, since it ships in all three.
+ * NOT auto-resolvable, since it ships in both. (The marketing site that was
+ * once a third app, `apps/ally-web`, no longer lives here and has no release
+ * workflow; a path under it resolves to nothing, so a human decides.)
  *
  * `ally-mobile` is absent: it releases through App Store / Play Store build
  * workflows, not a dispatchable production-release pipeline, so a merged fix
@@ -62,23 +64,17 @@ export const RELEASE_TARGETS: Record<string, ReleaseTarget> = {
     tagPrefix: 'helpline-v',
     label: 'Helpline dashboard (CloudFront)',
   },
-  'ally-web:web': {
-    repo: 'ally-web',
-    workflow: 'production-release-web.yaml',
-    tagPrefix: 'web-v',
-    label: 'Marketing site',
-  },
 };
 
 /**
  * Which deployable a finding belongs to.
  *
  * Single-app repos answer from `repo` alone. `ally-web` needs the file path,
- * because its three apps tag and deploy separately — and when the path doesn't
- * name exactly one app (a `libs/ui-shared` change ships in all three, a null
+ * because its two apps tag and deploy separately — and when the path doesn't
+ * name exactly one app (a `libs/ui-shared` change ships in both, a null
  * file names none), this returns null rather than picking one. The caller
  * turns that into a refusal telling the admin to release manually: guessing
- * which of three production frontends to deploy is exactly the ambiguous case
+ * which production frontend to deploy is exactly the ambiguous case
  * that should reach a human.
  */
 export function resolveReleaseTarget(
@@ -93,7 +89,6 @@ export function resolveReleaseTarget(
     return RELEASE_TARGETS['ally-web:admin'];
   if (file.includes('apps/ally-helpline-dashboard'))
     return RELEASE_TARGETS['ally-web:helpline'];
-  if (file.includes('apps/ally-web')) return RELEASE_TARGETS['ally-web:web'];
   return null;
 }
 
@@ -106,7 +101,7 @@ export function resolveReleaseTarget(
  *
  *  - it can span deployables. One ally-web pull request touching both the admin
  *    and helpline apps has to release both, or half of it is live.
- *  - it can touch shared code. A change under `libs/` ships inside all three
+ *  - it can touch shared code. A change under `libs/` ships inside both
  *    frontends, so releasing only the apps whose paths happened to match would
  *    silently under-deploy it.
  *

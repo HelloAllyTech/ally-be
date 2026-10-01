@@ -1459,6 +1459,8 @@ describe('resolveReleaseTarget', () => {
 
   it.each([
     ['ally-web', 'libs/ui-shared/src/Button.tsx'],
+    // The retired marketing site: no release workflow exists to dispatch.
+    ['ally-web', 'apps/ally-web/src/page.tsx'],
     ['ally-web', null],
     ['ally-mobile', 'src/App.tsx'],
     [null, 'src/app.ts'],
