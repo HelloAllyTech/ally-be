@@ -286,15 +286,19 @@ export class BuilderSessionService {
       prd: Record<string, any>;
       prdVersionNumber: number;
       readiness: BuilderPrdReadiness;
+      /** For the exported PRD's header only — never part of the build's context. */
+      createdByName: string | null;
     }
   > {
     const session = await this.getSession(sessionId, userId);
-    const [messages, { doc, readiness }] = await Promise.all([
+    const [messages, { doc, readiness }, createdByName] = await Promise.all([
       this.messageRepository.listBySession(sessionId),
       this.prdService.getPrdWithReadiness(sessionId, userId),
+      this.sessionRepository.findCreatorName(session.createdBy),
     ]);
     return {
       ...session,
+      createdByName,
       messages,
       prd: doc.draft as unknown as Record<string, any>,
       prdVersionNumber: doc.versionNumber,

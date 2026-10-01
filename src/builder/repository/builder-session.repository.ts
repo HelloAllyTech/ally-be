@@ -34,4 +34,24 @@ export class BuilderSessionRepository extends Repository<BuilderSession> {
     const count = await this.count({ where: { slug }, withDeleted: true });
     return count > 0;
   }
+
+  /**
+   * Display name of the admin who started a session, for the exported PRD's
+   * "Built by" line. Read by raw query rather than through UserService: the
+   * builder module has no reason to depend on the user module for one column,
+   * and importing from `src/user/service/*` is a known boot-time cycle risk.
+   *
+   * Falls back to the email when the name is blank (bulk-created accounts
+   * leave it empty), and to null when the user row is gone.
+   */
+  async findCreatorName(
+    userId: number | null | undefined,
+  ): Promise<string | null> {
+    if (!userId) return null;
+    const rows: { label: string | null }[] = await this.dataSource.query(
+      `SELECT COALESCE(NULLIF(TRIM(name), ''), email) AS label FROM users WHERE id = $1`,
+      [userId],
+    );
+    return rows[0]?.label ?? null;
+  }
 }
