@@ -385,8 +385,16 @@ export class RoadmapOpportunityController {
     return this.splitMergeService.split(user.id, id, dto.parts);
   }
 
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  /**
+   * Gated on BUILDER access, not on the roadmap's manage rule. Opening a card in Builder used to
+   * ride `product_roadmap_manage`, which meant every curator could start builds and nobody could
+   * be given the Builder hand-off without also being handed the whole board. Builder access is
+   * already granted per-admin and is what the session itself needs — every Builder endpoint the
+   * drawer then calls checks it — so it is the honest gate. VIEW_PRODUCT_ROADMAP because the
+   * caller is acting on a card they must be able to see.
+   */
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_PRODUCT_ROADMAP, PERMISSIONS.EDIT_BUILDER],
   })
   @Post('opportunities/:id/builder-session')
   @ApiOperation({
@@ -394,9 +402,8 @@ export class RoadmapOpportunityController {
     description:
       'Idempotent: returns the existing session when one is already linked, so pressing the ' +
       'button twice resumes rather than starting a second interview. `created: true` means the ' +
-      'client must send the returned `seedMessage` as the first interview turn. Gated on the ' +
-      "ROADMAP's manage rule; Builder's own toggle and edit permission are checked in the " +
-      'service, because a roadmap manager is not automatically a Builder user.',
+      'client must send the returned `seedMessage` as the first interview turn. Gated on ' +
+      'Builder access (the Builder toggle and edit permission), not on roadmap management.',
   })
   @ApiResponse({ status: 201, type: OpenBuilderSessionResponseDto })
   openBuilderSession(

@@ -71,9 +71,9 @@ export class RoadmapBuilderService {
       };
     }
 
-    // Builder's own gate, enforced here because this route is gated on the ROADMAP's rules.
-    // Calling BuilderSessionService straight from a roadmap endpoint would otherwise let a
-    // roadmap manager start builds on an instance where Builder is switched off entirely.
+    // Builder's own gate. The route now carries the same check, so this is the backstop for any
+    // future caller that is not behind it: calling BuilderSessionService straight from roadmap
+    // code must never start a build for someone without Builder access.
     await this.assertBuilderAccess(userId);
 
     const session = await this.builderSessionService.createSession(userId, {
