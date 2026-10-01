@@ -278,10 +278,12 @@ export function buildClusters(
 }
 
 /**
- * Admin console areas only Ally's own team uses. A change confined to these is
- * never customer news, however the model is tempted to phrase it — "You can
- * now choose Gemini as an AI engine for Bug Hunter" reached the public page
- * five times in one morning under the old per-merge drafter.
+ * Admin console areas only Ally's own team uses. A change confined to these
+ * is still public by default (decided 2026-10-01: value to Ally's own team
+ * counts), but the model is told so it writes for that reader and keeps
+ * vendor names out — "You can now choose Gemini as an AI engine for Bug
+ * Hunter" reached the public page five times in one morning under the old
+ * per-merge drafter.
  */
 const STAFF_ONLY_PATHS = [
   /^src\/(bug-hunter|builder|product-roadmap|analytics|analytics-agent|analytics-suggestions|ux-signals|mobile-releases|lab|logs|release|github|changelog|product-updates|blog)\//,
@@ -345,9 +347,9 @@ const NEUTRAL_PATHS = [
 /**
  * True when a change is confined to staff-only areas — every file that says
  * where the change shows up sits in one, or it names an admin analytics chart
- * (`AAQ-123` ids belong to the super-admin chart registry). The consolidation
- * job enforces this as a verdict, not a hint: a cluster made only of such
- * changes is never public, whatever the model says.
+ * (`AAQ-123` ids belong to the super-admin chart registry). A hint to the
+ * model about who the change is for, not a verdict on its audience: staff-only
+ * work is public by default like everything else of value.
  */
 export function looksStaffOnly(source: SourceSignalsInput): boolean {
   // A change that reaches a customer app is never staff-only, whatever its

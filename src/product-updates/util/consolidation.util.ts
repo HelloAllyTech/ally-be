@@ -261,9 +261,9 @@ function readDraft(
   }
   const filled = {
     teamNotes: '',
-    // A missing audience is the one gap filled conservatively: an update the
-    // model did not say was public stays off the public page.
-    audience: 'internal' as UpdateAudience,
+    // Public is the default (decided 2026-10-01). A missing audience gets it
+    // too, at a low confidence, so the digest puts it in front of a person.
+    audience: 'public' as UpdateAudience,
     confidence: draft.audience ? 0.5 : 0.3,
     ...draft,
   };
@@ -442,23 +442,18 @@ export function jargonIn(text: string): string[] {
 export const JARGON_CONFIDENCE_CAP = 0.4;
 
 /**
- * The rules no model reply can override, applied to a draft before it is saved:
+ * The rule no model reply can override, applied to a draft before it is saved:
+ * a public draft whose title or summary carries jargon keeps its text but has
+ * its confidence capped, which is what puts it in front of a person.
  *
- *  - a draft made only of staff-only changes is internal, full stop;
- *  - a public draft whose title or summary carries jargon keeps its text but
- *    has its confidence capped, which is what puts it in front of a person.
+ * Staff-only work is no longer forced internal. Public is the default for
+ * anything of value to anyone, Ally's own team included (decided 2026-10-01);
+ * a wrong call is corrected from the admin table's audience toggle.
  */
 export function enforceGuards<T extends Partial<DraftUpdate>>(
   draft: T,
-  options: { staffOnly: boolean },
 ): T & { guardNotes: string[] } {
   const guarded = { ...draft, guardNotes: [] as string[] };
-  if (options.staffOnly && guarded.audience === 'public') {
-    guarded.audience = 'internal';
-    guarded.guardNotes.push(
-      'Every change in it is in a staff-only area, so it was kept internal.',
-    );
-  }
   if (guarded.audience === 'public') {
     const found = jargonIn(`${guarded.title ?? ''}\n${guarded.summary ?? ''}`);
     if (found.length) {
