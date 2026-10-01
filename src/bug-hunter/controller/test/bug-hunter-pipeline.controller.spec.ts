@@ -20,15 +20,19 @@ describe('BugHunterPipelineController', () => {
   let controller: BugHunterPipelineController;
   let agentMemoryService: AgentMemoryService;
   let bugFindingService: BugFindingService;
+  let module: TestingModule;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       controllers: [BugHunterPipelineController],
       providers: [
         { provide: BugHunterService, useValue: {} },
         { provide: BugFindingService, useValue: { setStatus: jest.fn() } },
         { provide: BugHunterFinderDataService, useValue: {} },
-        { provide: BugFixSessionService, useValue: {} },
+        {
+          provide: BugFixSessionService,
+          useValue: { deleteBranchAfterAgentMerge: jest.fn() },
+        },
         { provide: AppConfigService, useValue: {} },
         { provide: BugHunterModelSettingsService, useValue: {} },
         {
@@ -53,6 +57,58 @@ describe('BugHunterPipelineController', () => {
     );
     agentMemoryService = module.get<AgentMemoryService>(AgentMemoryService);
     bugFindingService = module.get<BugFindingService>(BugFindingService);
+  });
+
+  describe('patchFinding when the agent reports its own merge', () => {
+    const merged = {
+      id: 'finding-2',
+      repo: 'ally-ai-learn',
+      prUrl: 'https://github.com/helloallytech/ally-ai-learn/pull/255',
+      status: BugFindingStatus.MERGED,
+      title: 't',
+      description: 'd',
+      metadata: {},
+    };
+
+    it('asks the session service to delete the branch as a backstop to --delete-branch (OPP-0750)', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue(merged);
+      const sessions = module.get<BugFixSessionService>(BugFixSessionService);
+
+      await controller.patchFinding('finding-2', {
+        status: BugFindingStatus.MERGED,
+      });
+
+      expect(sessions.deleteBranchAfterAgentMerge).toHaveBeenCalledWith(merged);
+    });
+
+    it('still returns the finding when the branch delete throws', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue(merged);
+      const sessions = module.get<BugFixSessionService>(BugFixSessionService);
+      (sessions.deleteBranchAfterAgentMerge as jest.Mock).mockRejectedValue(
+        new Error('GitHub down'),
+      );
+
+      const dto = await controller.patchFinding('finding-2', {
+        status: BugFindingStatus.MERGED,
+      });
+
+      expect(dto.status).toBe(BugFindingStatus.MERGED);
+    });
+
+    it('does not touch GitHub for any other status', async () => {
+      (bugFindingService.setStatus as jest.Mock).mockResolvedValue({
+        ...merged,
+        status: BugFindingStatus.PR_OPENED,
+      });
+      const sessions = module.get<BugFixSessionService>(BugFixSessionService);
+
+      await controller.patchFinding('finding-2', {
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: merged.prUrl,
+      });
+
+      expect(sessions.deleteBranchAfterAgentMerge).not.toHaveBeenCalled();
+    });
   });
 
   describe('patchFinding with a post-mortem', () => {

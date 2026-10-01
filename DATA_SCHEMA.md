@@ -473,7 +473,11 @@ PR merged — a release an engineer cut from GitHub rather than from the tab —
 `reconcileOutOfBandReleases`, with `release_run_id`/`release_run_url` set, `release_tag` NULL (the run does
 not say which tag it shipped) and `released_by` NULL; the `released` event's payload carries
 `outOfBand: true`. Findings whose deployable cannot be resolved (`libs/` in ally-web, ally-mobile) and plan
-parents are left alone.
+parents are left alone. Every route to `merged` also deletes the PR's head branch (OPP-0750): the agent merges
+with `--delete-branch`, the admin Merge button and `reconcilePrOpenedFindings` call `GithubActionsService.deleteBranch`,
+and the agent's own `merged` PATCH triggers a backstop delete. The `merged` event's payload carries `branch` and
+`branchDeleted` (false when GitHub did not name the branch, the head was a fork, or the delete failed — a
+warning, never a status rollback).
 
 **Sweeps are now actually triggered.** Until migration `1910000000000`'s change nothing started
 one: `bug_hunt_runs.trigger='scheduled'` was a valid value with no producer anywhere, there was no

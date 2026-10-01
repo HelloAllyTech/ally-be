@@ -59,6 +59,8 @@ describe('buildFixSessionPrompt', () => {
     const prompt = build({ repo: 'ally-ai-learn' }, 'ally-ai-learn');
 
     expect(prompt).toContain('gh pr merge --squash');
+    // OPP-0750: the branch goes with the merge.
+    expect(prompt).toContain('gh pr merge --squash --delete-branch');
     expect(prompt).toContain('gh pr checks --watch');
     expect(prompt).toMatch(/do NOT tag a release or deploy/i);
   });

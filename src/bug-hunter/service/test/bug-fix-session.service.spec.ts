@@ -72,6 +72,7 @@ describe('BugFixSessionService', () => {
     findRunSince: jest.Mock;
     getRun: jest.Mock;
     getPullRequest: jest.Mock;
+    deleteBranch: jest.Mock;
     findSuccessfulRunSince: jest.Mock;
     nextPatchTag: jest.Mock;
     cancelRun: jest.Mock;
@@ -109,6 +110,9 @@ describe('BugFixSessionService', () => {
       findSuccessfulRunSince: jest.fn().mockResolvedValue(null),
       nextPatchTag: jest.fn(),
       cancelRun: jest.fn().mockResolvedValue(undefined),
+      deleteBranch: jest
+        .fn()
+        .mockResolvedValue({ outcome: 'deleted', message: null }),
     };
     notificationService = { notify: jest.fn() };
     repoClassifier = {
@@ -690,6 +694,112 @@ describe('BugFixSessionService', () => {
         expect.objectContaining({
           findingId: 'finding-1',
           stage: BugHuntEventStage.MERGED,
+        }),
+      );
+    });
+
+    it("deletes the merged PR's branch and records it on the merged event (OPP-0750)", async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+        headRef: 'bughunter/fix-tooltip-overflow',
+        headIsFork: false,
+      });
+
+      await service.reconcile();
+
+      expect(github.deleteBranch).toHaveBeenCalledWith(
+        'ally-web',
+        'bughunter/fix-tooltip-overflow',
+      );
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.MERGED,
+          payload: expect.objectContaining({
+            branch: 'bughunter/fix-tooltip-overflow',
+            branchDeleted: true,
+          }),
+        }),
+      );
+    });
+
+    it("leaves a fork's branch alone and still records the merge", async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/843',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+        headRef: 'their-branch',
+        headIsFork: true,
+      });
+
+      await service.reconcile();
+
+      expect(github.deleteBranch).not.toHaveBeenCalled();
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.MERGED,
+          payload: expect.objectContaining({ branchDeleted: false }),
+        }),
+      );
+    });
+
+    it('still flips to MERGED when the branch delete itself fails — cleanup never rolls a merge back', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/844',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        mergedAt: new Date(),
+        headRef: 'bughunter/x',
+        headIsFork: false,
+      });
+      github.deleteBranch.mockRejectedValue(new Error('GitHub down'));
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.MERGED,
+          payload: expect.objectContaining({
+            branch: 'bughunter/x',
+            branchDeleted: false,
+          }),
         }),
       );
     });

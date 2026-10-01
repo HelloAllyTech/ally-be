@@ -439,6 +439,10 @@ describe('buildSweepPrompt', () => {
       expect(p).not.toContain('gh pr merge --admin');
     });
 
+    it('deletes the branch with the merge (OPP-0750)', () => {
+      expect(mergeable()).toContain('gh pr merge --squash --delete-branch');
+    });
+
     it('tells a protected repo it cannot merge, separately from the mobile rule', () => {
       // Same fix as in the fix-session prompt: the sweep spent its Fix phase
       // opening PRs and then failing at a merge its token could never perform.

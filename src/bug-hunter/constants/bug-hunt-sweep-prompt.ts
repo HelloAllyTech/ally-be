@@ -361,7 +361,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
             : `  - genuinely trivial: a lint/type-only fix, or a single-file change plus its test.`,
           neverMerges
             ? ''
-            : `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: wait for the PR's own checks with "gh pr checks --watch --fail-fast", then "gh pr merge --squash" — never "--admin", which would bypass the very run that is your second opinion here. If the checks go red, leave the PR open and report an error stage instead. On a green merge, PATCH to {"status":"merged"} and report merged.`,
+            : `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: wait for the PR's own checks with "gh pr checks --watch --fail-fast", then "gh pr merge --squash --delete-branch" — never "--admin", which would bypass the very run that is your second opinion here. If the checks go red, leave the PR open and report an error stage instead. On a green merge, PATCH to {"status":"merged"} and report merged.`,
           `Never tag a release and never deploy. Promoting anything to production is a separate decision an admin makes in the Bug Hunter tab.`,
           ``,
         ]

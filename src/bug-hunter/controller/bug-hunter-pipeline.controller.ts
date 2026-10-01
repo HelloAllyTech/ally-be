@@ -66,6 +66,7 @@ import {
   RecordBugHunterEvalRunDto,
 } from '../dto/bug-hunter-eval.dto';
 import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
+import { BugFindingStatus } from '../enum/bug-finding.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
@@ -659,6 +660,18 @@ export class BugHunterPipelineController {
     // here, which is the point: a person's decision is what these defer to.
     await this.policyService.assertTransitionAllowed(id, body);
     const finding = await this.bugFindingService.setStatus(id, body);
+    // The agent's own merge path. Its protocol merges with --delete-branch,
+    // so this usually finds the branch already gone; it is the backstop for a
+    // session that merged and then ran out of time before deleting
+    // (OPP-0750). Best-effort: the merge is recorded, a cleanup failure must
+    // not read to the runner as "the PATCH did not land".
+    if (body.status === BugFindingStatus.MERGED) {
+      try {
+        await this.bugFixSessionService.deleteBranchAfterAgentMerge(finding);
+      } catch {
+        // Logged inside the session service; nothing more to do here.
+      }
+    }
     // A post-mortem's repo gotcha is a lesson about the repo, not the bug —
     // exactly what the notebook is for. Written as a candidate for the hourly
     // curator, like every agent-authored entry, and best-effort: the session

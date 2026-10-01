@@ -45,6 +45,9 @@ export interface CommitComparison {
 }
 
 /** The subset of a GitHub pull request this module cares about. */
+/** Branches `deleteBranch` refuses to touch, whoever asks. */
+const PROTECTED_BRANCHES = new Set(['master', 'main', 'develop', 'production']);
+
 export interface PullRequestInfo {
   merged: boolean;
   htmlUrl: string;
@@ -61,7 +64,25 @@ export interface PullRequestInfo {
    * still computing it. `behind` is the one Builder can do something about.
    */
   mergeableState: string | null;
+  /**
+   * The head branch's name (`bughunter/fix-…`), so a caller that merged the PR
+   * can delete the branch it came from. Null when GitHub did not say.
+   */
+  headRef: string | null;
+  /**
+   * True when the head lives in a different repository than the base — a
+   * fork. Nothing here may delete a branch it does not own, so callers skip
+   * branch deletion when this is set.
+   */
+  headIsFork: boolean;
 }
+
+/** What became of a branch-delete request — see `deleteBranch`. */
+export type BranchDeleteOutcome =
+  | 'deleted'
+  | 'already_gone'
+  | 'refused'
+  | 'failed';
 
 /**
  * The combined state of every check on a commit, as one word.
@@ -349,6 +370,13 @@ export class GithubActionsService {
         mergeableState: data?.mergeable_state
           ? String(data.mergeable_state)
           : null,
+        headRef: data?.head?.ref ? String(data.head.ref) : null,
+        headIsFork: Boolean(
+          data?.head?.repo?.full_name &&
+          data?.base?.repo?.full_name &&
+          String(data.head.repo.full_name).toLowerCase() !==
+            String(data.base.repo.full_name).toLowerCase(),
+        ),
       };
     } catch (error) {
       this.noteAuthOutcome(error);
@@ -570,6 +598,65 @@ export class GithubActionsService {
         (error instanceof Error ? error.message : String(error));
       this.logger.warn(`Could not merge PR #${number} in ${repo}: ${message}`);
       return { merged: false, message };
+    }
+  }
+
+  /**
+   * Delete a branch after its pull request merged (OPP-0750).
+   *
+   * Every merge path Bug Hunter has — the agent's own `gh pr merge`, the
+   * admin's Merge button here, and a human merging in GitHub's review UI
+   * that `reconcilePrOpenedFindings` later notices — used to leave the
+   * `bughunter/…` branch behind, because no repo has GitHub's own
+   * "automatically delete head branches" switched on and nothing else
+   * cleaned up. This is the explicit delete those paths call, so the
+   * behaviour does not depend on a repository setting staying set.
+   *
+   * Refuses the default branches outright whatever the caller says, and a
+   * 422 "Reference does not exist" is reported as `already_gone` rather than
+   * a failure: the agent's `--delete-branch` and this call race, and the
+   * second one losing is the expected outcome, not an error. Never throws —
+   * a merge has already happened by the time this runs, and a cleanup
+   * failure must not turn a landed fix into a 500.
+   */
+  async deleteBranch(
+    repo: string,
+    branch: string,
+  ): Promise<{ outcome: BranchDeleteOutcome; message: string | null }> {
+    const name = branch.trim().replace(/^refs\/heads\//, '');
+    if (!name || PROTECTED_BRANCHES.has(name.toLowerCase())) {
+      return {
+        outcome: 'refused',
+        message: `refusing to delete branch "${branch}"`,
+      };
+    }
+    this.requireConfigured();
+    try {
+      await axios.delete(
+        this.url(
+          repo,
+          `git/refs/heads/${name
+            .split('/')
+            .map((segment) => encodeURIComponent(segment))
+            .join('/')}`,
+        ),
+        { headers: this.headers, timeout: 15_000 },
+      );
+      return { outcome: 'deleted', message: null };
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response
+        ?.status;
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ??
+        (error instanceof Error ? error.message : String(error));
+      if (status === 422 || status === 404) {
+        return { outcome: 'already_gone', message };
+      }
+      this.logger.warn(
+        `Could not delete branch ${name} in ${repo}: ${message}`,
+      );
+      return { outcome: 'failed', message };
     }
   }
 

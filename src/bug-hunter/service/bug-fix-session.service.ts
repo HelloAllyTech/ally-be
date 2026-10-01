@@ -30,7 +30,10 @@ import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
-import { GithubActionsService } from 'src/github/service/github-actions.service';
+import {
+  GithubActionsService,
+  PullRequestInfo,
+} from 'src/github/service/github-actions.service';
 import { ProductionReleaseService } from 'src/release/service/production-release.service';
 import {
   BugHunterRepoClassifierService,
@@ -493,6 +496,7 @@ export class BugFixSessionService {
         status: BugFindingStatus.MERGED,
       });
       await this.releaseLinkedRoadmapOpportunity(finding);
+      await this.deleteMergedBranch(finding.repo, pr);
       return this.bugFindingService.getOne(finding.id);
     }
     if (pr.state === 'closed') {
@@ -551,12 +555,13 @@ export class BugFixSessionService {
     finding.status = BugFindingStatus.MERGED;
     await this.releaseLinkedRoadmapOpportunity(finding);
     await this.checkForAndRecordReversals(finding, decidedAt);
+    const branch = await this.deleteMergedBranch(finding.repo, pr);
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,
       repo: finding.repo,
       stage: BugHuntEventStage.MERGED,
       summary: `User ${userId} merged ${finding.prUrl} from the Bug Hunter tab.`,
-      payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber },
+      payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber, ...branch },
     });
 
     return this.bugFindingService.getOne(finding.id);
@@ -1104,12 +1109,13 @@ export class BugFixSessionService {
           finding,
           pr.mergedAt ?? new Date(),
         );
+        const branch = await this.deleteMergedBranch(finding.repo, pr);
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
           repo: finding.repo,
           stage: BugHuntEventStage.MERGED,
           summary: `${finding.prUrl} was merged.`,
-          payload: { prUrl: finding.prUrl, mergedAt: pr.mergedAt },
+          payload: { prUrl: finding.prUrl, mergedAt: pr.mergedAt, ...branch },
         });
       } catch (error) {
         this.logger.warn(
@@ -1118,6 +1124,59 @@ export class BugFixSessionService {
           }`,
         );
       }
+    }
+  }
+
+  /**
+   * The agent reported its own merge (PATCH → `merged`, see
+   * `BugHunterPipelineController.patchFinding`). Its protocol tells it to merge
+   * with `--delete-branch`, so most of the time the branch is already gone and
+   * this comes back `already_gone`; it exists for the session that merged and
+   * then died before the delete, which used to be the commonest way a branch
+   * was left behind. Best-effort, like every branch delete here.
+   */
+  async deleteBranchAfterAgentMerge(finding: BugFinding): Promise<void> {
+    if (!finding.repo || !finding.prUrl) return;
+    const prNumber = BugFixSessionService.prNumberFrom(finding.prUrl);
+    if (!prNumber) return;
+    const pr = await this.github.getPullRequest(finding.repo, prNumber);
+    if (!pr?.merged) return;
+    await this.deleteMergedBranch(finding.repo, pr);
+  }
+
+  /**
+   * Delete the branch a just-merged PR came from (OPP-0750). Returns what to
+   * record on the `merged` event: which branch, and whether it is gone.
+   *
+   * Skipped, with `branchDeleted: false`, when GitHub did not name the head
+   * branch or the head is a fork (not ours to delete). Never throws: the
+   * merge has happened, and cleanup failing is a warning on the row, not a
+   * reason to roll the status back or 500 the caller.
+   */
+  private async deleteMergedBranch(
+    repo: string,
+    pr: Pick<PullRequestInfo, 'headRef' | 'headIsFork'> | null,
+  ): Promise<{ branch: string | null; branchDeleted: boolean }> {
+    const branch = pr?.headRef ?? null;
+    if (!branch || pr?.headIsFork) return { branch, branchDeleted: false };
+    try {
+      const { outcome, message } = await this.github.deleteBranch(repo, branch);
+      if (outcome === 'failed' || outcome === 'refused') {
+        this.logger.warn(
+          `Merged PR's branch ${branch} in ${repo} was not deleted (${outcome}): ${message ?? ''}`,
+        );
+      }
+      return {
+        branch,
+        branchDeleted: outcome === 'deleted' || outcome === 'already_gone',
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not delete branch ${branch} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return { branch, branchDeleted: false };
     }
   }
 

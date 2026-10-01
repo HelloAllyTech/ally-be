@@ -230,3 +230,120 @@ describe('GithubActionsService.getCheckRollup', () => {
     expect(rollup?.failed).toEqual(['Jest']);
   });
 });
+
+describe('GithubActionsService.deleteBranch', () => {
+  let service: GithubActionsService;
+  const configService = {
+    githubToken: 'gh-token',
+    githubOrg: 'helloallytech',
+  } as unknown as AppConfigService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new GithubActionsService(configService);
+  });
+
+  it('deletes the ref, encoding each path segment but keeping the slashes', async () => {
+    mockedAxios.delete.mockResolvedValue({ status: 204, data: '' });
+
+    expect(
+      await service.deleteBranch('ally-be', 'bughunter/fix-malformed json'),
+    ).toEqual({ outcome: 'deleted', message: null });
+    expect(mockedAxios.delete).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /repos\/helloallytech\/ally-be\/git\/refs\/heads\/bughunter\/fix-malformed%20json$/,
+      ),
+      expect.anything(),
+    );
+  });
+
+  it('reports a branch that is already gone as already_gone, not a failure — the agent and the server race for the same delete', async () => {
+    mockedAxios.delete.mockRejectedValue(
+      Object.assign(new Error('Unprocessable'), {
+        response: {
+          status: 422,
+          data: { message: 'Reference does not exist' },
+        },
+      }),
+    );
+
+    expect(await service.deleteBranch('ally-be', 'bughunter/x')).toEqual({
+      outcome: 'already_gone',
+      message: 'Reference does not exist',
+    });
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it('refuses the default branches without calling GitHub, whatever the caller asks', async () => {
+    for (const name of ['master', 'main', 'refs/heads/master', ' Main ']) {
+      const result = await service.deleteBranch('ally-be', name);
+      expect(result.outcome).toBe('refused');
+    }
+    expect(mockedAxios.delete).not.toHaveBeenCalled();
+  });
+
+  it('returns failed, with a warning, on any other error instead of throwing', async () => {
+    mockedAxios.delete.mockRejectedValue(
+      Object.assign(new Error('boom'), {
+        response: { status: 500, data: { message: 'Server Error' } },
+      }),
+    );
+
+    expect(await service.deleteBranch('ally-be', 'bughunter/x')).toEqual({
+      outcome: 'failed',
+      message: 'Server Error',
+    });
+    expect(mockLogger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('GithubActionsService.getPullRequest', () => {
+  let service: GithubActionsService;
+  const configService = {
+    githubToken: 'gh-token',
+    githubOrg: 'helloallytech',
+  } as unknown as AppConfigService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new GithubActionsService(configService);
+  });
+
+  it('names the head branch and tells a same-repo head from a fork', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        merged: true,
+        html_url: 'https://github.com/helloallytech/ally-be/pull/1',
+        merged_at: '2026-10-01T06:00:00Z',
+        state: 'closed',
+        closed_at: '2026-10-01T06:00:00Z',
+        head: {
+          sha: 'abc',
+          ref: 'bughunter/fix-x',
+          repo: { full_name: 'HelloAllyTech/ally-be' },
+        },
+        base: { repo: { full_name: 'helloallytech/ally-be' } },
+      },
+    });
+    const same = await service.getPullRequest('ally-be', 1);
+    expect(same).toMatchObject({
+      headRef: 'bughunter/fix-x',
+      headIsFork: false,
+    });
+
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        merged: false,
+        state: 'open',
+        head: {
+          sha: 'abc',
+          ref: 'feature',
+          repo: { full_name: 'someone/ally-be' },
+        },
+        base: { repo: { full_name: 'helloallytech/ally-be' } },
+      },
+    });
+    const fork = await service.getPullRequest('ally-be', 2);
+    expect(fork).toMatchObject({ headRef: 'feature', headIsFork: true });
+  });
+});
