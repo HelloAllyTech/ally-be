@@ -302,7 +302,7 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.PRODUCT_ROADMAP_MANAGE,
     label: 'Product Roadmap — Manage',
     description:
-      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge, month-board lane moves, pinning a saved view for everyone, and opening a Builder session from a card. Viewing and voting stay open to every admin.',
+      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge, month-board lane moves, and pinning a saved view for everyone. Viewing and voting stay open to every admin. Opening a card in Builder is not part of this — it follows the Builder toggle.',
     legacyGrants: SDA_ONLY,
   },
   {
@@ -330,7 +330,7 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.BUILDER,
     label: 'Builder',
     description:
-      'Interview an agent into a PRD, then have it build the feature and open pull requests for review.',
+      'Interview an agent into a PRD, then have it build the feature and open pull requests for review — from the Builder tab or from a Product Roadmap card.',
     legacyGrants: SUPER_ADMIN_TIER,
   },
   {
