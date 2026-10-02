@@ -348,6 +348,46 @@ describe('DynamicI18nService', () => {
     expect(secondRun).toBeNull();
   });
 
+  it('ciSync replaces a blank draft value with the repo text, and never writes a blank itself', async () => {
+    // What the repo sync script leaves behind when it runs without a key —
+    // and what reached production on 2026-10-01: the key exists, the text is "".
+    await writeJson(path.join(rootDir, '.drafts', 'kn.json'), {
+      common: { title: '', nested: { cta: 'Prarambhisi' } },
+    });
+
+    const manifest = await service.ciSync({
+      kn: {
+        common: {
+          title: 'Namaskara {{name}}',
+          // A blank in the incoming file must not clobber a real draft value…
+          nested: { cta: '' },
+          // …and must not be added as a "new" key either.
+          brandNew: '',
+        },
+      },
+    });
+
+    expect(manifest).toMatchObject({ currentVersion: 'v1' });
+    const draft = await readJson<{
+      common: { title: string; nested: { cta: string }; brandNew?: string };
+    }>(path.join(rootDir, '.drafts', 'kn.json'));
+    expect(draft.common.title).toBe('Namaskara {{name}}');
+    expect(draft.common.nested.cta).toBe('Prarambhisi');
+    expect(draft.common.brandNew).toBeUndefined();
+
+    // Nothing left to fill, so the same payload is a no-op.
+    const secondRun = await service.ciSync({
+      kn: {
+        common: {
+          title: 'Namaskara {{name}}',
+          nested: { cta: '' },
+          brandNew: '',
+        },
+      },
+    });
+    expect(secondRun).toBeNull();
+  });
+
   it('returns compact i18n audit log entries with resolved user names', async () => {
     const loggedAt = new Date('2026-04-29T04:31:45.000Z');
     auditLogService.listByEventTypes.mockResolvedValue([
