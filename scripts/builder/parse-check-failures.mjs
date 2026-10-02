@@ -35,14 +35,33 @@ if (!tallyPath || !outPath) {
 /** Named failures from a check's log, newest framework conventions first. */
 export function extractFailures(log) {
   const found = new Set();
-  const lines = log.split('\n');
+  // Colour codes first. Vitest wraps its FAIL badge in them even on a runner
+  // (`\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m src/…`), so not one anchored pattern
+  // below ever matched an ally-web failure. With nothing parsed on either side,
+  // gate-verdict read "red before, red now" as nothing new, and ally-web's test
+  // check passed every build, whatever it broke.
+  const lines = log.replace(/\x1b\[[0-9;]*m/g, '').split('\n');
 
   for (const line of lines) {
+    // vitest: " FAIL  |ally-admin-dashboard| src/a.test.tsx > suite > case",
+    // and without the |project| tag under nx. Keeps the whole line: the
+    // file alone would let a new failing case hide behind an old one in the
+    // same file.
+    const vitestFail = line.match(/^\s*FAIL\s+((?:\|[^|]+\|\s+)?\S+\s+(?:>|\[).*?)\s*$/);
+    if (vitestFail) {
+      found.add(vitestFail[1].replace(/\s+/g, ' '));
+      continue;
+    }
+
     // jest / vitest: "FAIL src/foo/bar.spec.ts" or "✕ does the thing"
     const jestFile = line.match(/^\s*FAIL\s+(\S+)/);
     if (jestFile) found.add(jestFile[1]);
 
-    const jestCase = line.match(/^\s*[✕×]\s+(.+?)(?:\s+\(\d+\s*ms\))?\s*$/);
+    // jest prints "(12 ms)", vitest a bare "12ms". Strip either kind of
+    // duration, otherwise the same failure gets a different name every run.
+    const jestCase = line.match(
+      /^\s*[✕×]\s+(.+?)(?:\s+\(?\d+(?:\.\d+)?\s*m?s\)?)?\s*$/,
+    );
     if (jestCase) found.add(jestCase[1].trim());
 
     // pytest: "FAILED tests/test_foo.py::test_bar - AssertionError"
@@ -75,6 +94,11 @@ export function extractFailures(log) {
     //   "> nx run ally-admin-dashboard:test  [existing outputs match]"
     const nxTarget = line.match(/^\s*[✖✗]\s+nx run\s+(\S+)/);
     if (nxTarget) found.add(nxTarget[1]);
+
+    // Under GitHub Actions nx prints a collapsible group header instead:
+    //   "::group::❌ > nx run ally-admin-dashboard:test"
+    const nxGroup = line.match(/^::group::❌\s*>\s*nx run\s+(\S+)/);
+    if (nxGroup) found.add(nxGroup[1]);
 
     // "Failed tasks: ally-admin-dashboard:test, ally-helpline-dashboard:test"
     const nxFailedList = line.match(/^\s*Failed tasks?:\s*(.+)$/i);

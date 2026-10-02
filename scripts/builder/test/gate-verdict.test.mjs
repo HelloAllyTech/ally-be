@@ -227,6 +227,39 @@ test('names eslint findings', () => {
   assert.ok(found[0].startsWith('src/foo.ts:12'));
 });
 
+// The exact bytes a GitHub runner gets from vitest. Before colour codes were
+// stripped, this parsed to [], and ally-web's test check passed every build.
+const RED_FAIL = '\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m';
+
+test('names vitest failures through colour codes', () => {
+  const found = parse(
+    `${RED_FAIL} |ally-admin-dashboard| src/a.test.tsx\x1b[2m > \x1b[22msuite\x1b[2m > \x1b[22mkeeps the value\n` +
+      '\x1b[31m   \x1b[31m×\x1b[31m suite > keeps the value\x1b[39m\x1b[32m 70\x1b[2mms\x1b[22m\x1b[39m\n',
+  );
+  assert.ok(found.includes('|ally-admin-dashboard| src/a.test.tsx > suite > keeps the value'));
+  // The duration would rename the failure on every run.
+  assert.ok(found.includes('suite > keeps the value'));
+});
+
+test('a vitest failure that also failed on master is carried over, a new one blocks', () => {
+  const baseline = parse(`${RED_FAIL} src/old.test.ts > suite > was already red\n`);
+  const current = parse(
+    `${RED_FAIL} src/old.test.ts > suite > was already red\n` +
+      `${RED_FAIL} src/new.test.tsx [ src/new.test.tsx ]\n`,
+  );
+  const { verdict, events } = verdictFor({
+    current: { checks: { test: { passed: false, failures: current } } },
+    baseline: { checks: { test: { passed: false, failures: baseline } } },
+  });
+  assert.equal(verdict, 'blocked');
+  assert.deepEqual(events[0].payload.newFailures, ['src/new.test.tsx [ src/new.test.tsx ]']);
+  assert.deepEqual(events[0].payload.preExistingFailures, ['src/old.test.ts > suite > was already red']);
+});
+
+test('names the failed project from nx group headers on a runner', () => {
+  assert.ok(parse('::group::❌ > nx run ally-helpline-dashboard:test\n').includes('ally-helpline-dashboard:test'));
+});
+
 test('returns nothing rather than guessing on unfamiliar output', () => {
   // A line we cannot attribute is better dropped than invented: a wrong
   // failure identity makes a pre-existing failure look new.

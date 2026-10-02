@@ -100,6 +100,20 @@ if [ ! -f "$commands_json" ]; then
   }
 fi
 
+# The repo's working tree as one git tree id, uncommitted and untracked edits
+# included (ignored files are not). It goes through a throwaway copy of the
+# index, so the real index and the branch stay untouched. Prints nothing when
+# git cannot do it, and an empty id never matches anything.
+tree_of() {
+  local dir="$1" index tmp
+  index="$(git -C "$dir" rev-parse --path-format=absolute --git-path index 2>/dev/null)" || return 0
+  tmp="$(mktemp)"
+  cp "$index" "$tmp" 2>/dev/null || : > "$tmp"
+  GIT_INDEX_FILE="$tmp" git -C "$dir" add -A >/dev/null 2>&1 \
+    && GIT_INDEX_FILE="$tmp" git -C "$dir" write-tree 2>/dev/null
+  rm -f "$tmp"
+}
+
 post_gate_event() {
   curl -sS -X POST "${API}/events" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
@@ -177,6 +191,20 @@ for dir in repos/*/; do
     continue
   }
 
+  # A remediation round usually fixes one repo and leaves the others alone, and
+  # re-running an untouched repo's checks gives the same answer at the same
+  # cost. Run 2 of session 178e6598 spent four rounds re-checking ally-web while
+  # its fixes went into ally-be lint. So results from an earlier round in this
+  # job are reused when the tree is byte-for-byte the same. The verdict below is
+  # still recomputed and re-posted, so the round's gate_result events are there
+  # and any baseline captured since is used.
+  tree="$(tree_of "$dir")"
+  if [ -n "$tree" ] && [ -f "${GATE_DIR}/${repo}.json" ] \
+    && [ "$(cat "${GATE_DIR}/${repo}.tree" 2>/dev/null)" = "$tree" ]; then
+    echo "  unchanged since the last gate round (tree ${tree:0:12}); reusing its results"
+    checked_any=true
+  else
+  rm -f "${GATE_DIR}/${repo}.tree"
   : > "${GATE_DIR}/${repo}.checks"
   # Cheapest first: a typecheck that fails makes the test run pointless, and
   # finding out in thirty seconds instead of ten minutes is a whole remediation
@@ -201,6 +229,12 @@ for dir in repos/*/; do
     --tally "${GATE_DIR}/${repo}.checks" \
     --repo "$repo" \
     --out "${GATE_DIR}/${repo}.json" || true
+  # Hashed after the checks, not before: a formatter or codegen a check runs
+  # can rewrite the tree, and the next round must compare against what was
+  # actually judged.
+  tree="$(tree_of "$dir")"
+  [ -n "$tree" ] && printf '%s\n' "$tree" > "${GATE_DIR}/${repo}.tree"
+  fi
 
   # A baseline is only needed to excuse a failure, so it is computed only when
   # there is one to excuse. The happy path — which is most runs — never pays for

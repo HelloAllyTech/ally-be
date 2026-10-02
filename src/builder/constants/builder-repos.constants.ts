@@ -84,14 +84,29 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     repo: 'ally-web',
     description:
       'Nx monorepo of the three frontends: admin dashboard, helpline and web. Shared libs under libs/.',
-    test: 'npx nx run-many -t test --skip-nx-cache',
+    // vitest from the repo root, not `nx run-many`. vitest.workspace.ts covers
+    // the same three projects nx does (both admin and helpline dashboards, plus
+    // ui-shared, all `vitest run`), and running it from the root tags every
+    // failure `|project| file > case`. The gate's affected run below prints
+    // that same shape, and the baseline only excuses a failure whose name
+    // matches exactly.
+    test: 'npx vitest run',
     // vitest directly, from the repo root. nx puts a cache and a project
     // resolver between the agent and the one file it wants to run, and its
     // `include` pattern then ignores the path it was given.
     singleTest: 'npx vitest run',
-    // No --skip-nx-cache here on purpose: between the baseline and the gate the
-    // local Nx cache is exactly what we want to hit.
-    affectedTest: 'npx nx affected -t test --base=origin/master',
+    // Only the specs that import what this branch changed (`vitest related`
+    // walks the module graph), not every spec in each touched project.
+    // `nx affected` ran whole projects: 5,631 admin plus 3,170 helpline tests,
+    // ~6 minutes per gate round, re-run in every remediation round of a build
+    // that changed two files. The related set for those two files was 96 spec
+    // files and finished in under 20s. Working tree vs origin/master, so
+    // uncommitted edits count. Deletions are dropped because related can't
+    // resolve a missing path. With no source changed there is nothing to relate.
+    affectedTest:
+      "files=$(git diff --name-only --diff-filter=d origin/master -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mts' '*.mjs'); " +
+      'if [ -z "$files" ]; then echo "No changed source files; no related specs to run."; ' +
+      'else npx vitest related --run --passWithNoTests $files; fi',
     lint: 'npx nx run-many -t lint --skip-nx-cache',
     typecheck: 'npx tsc -b --pretty false',
     e2eCapable: true,
