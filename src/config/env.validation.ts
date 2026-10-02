@@ -122,7 +122,7 @@ export const validationSchema = Joi.object({
   APPLE_BUNDLE_IDS: Joi.string().required(),
 
   // OpenAI
-  OPENAI_API_KEY: Joi.string().optional(),
+  OPENAI_API_KEY: Joi.string().optional().allow(''),
   OPENAI_TRANSLATION_MODEL: Joi.string().default('gpt-4o-mini'),
 
   // AI Chat
