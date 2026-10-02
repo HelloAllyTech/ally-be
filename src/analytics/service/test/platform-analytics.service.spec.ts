@@ -59,6 +59,7 @@ describe('PlatformAnalyticsService', () => {
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
       getVoiceLatencyByLanguage: jest.fn().mockResolvedValue([]),
+      getVoiceLatencyByVoiceModel: jest.fn().mockResolvedValue([]),
       getVoiceLatencyDataFloor: jest
         .fn()
         .mockResolvedValue(new Date('2024-02-10T08:30:00.000Z')),
@@ -488,11 +489,13 @@ describe('PlatformAnalyticsService', () => {
           avgCacheHitRatePct: 78,
           // A masked bucket: most turns were fronted by a filler, so avgMs is
           // the wait-to-any-voice and avgReplyLatencyMs is the pipeline's own.
-          firstAudioFillerTurns: 7,
+          firstAudioFillerTurns: 5,
+          firstAudioOpenerBridgeTurns: 2,
           firstAudioInterimTurns: 2,
           firstAudioReplyTurns: 3,
           firstAudioUnknownTurns: 0,
           avgFirstAudioFillerMs: 480,
+          avgFirstAudioOpenerBridgeMs: 350,
           avgFirstAudioInterimMs: 900,
           avgFirstAudioReplyMs: 5200,
           avgReplyLatencyMs: 5100,
@@ -512,10 +515,12 @@ describe('PlatformAnalyticsService', () => {
           avgCacheHitRatePct: null,
           // Transcript-derived rows carry no provenance at all.
           firstAudioFillerTurns: 0,
+          firstAudioOpenerBridgeTurns: 0,
           firstAudioInterimTurns: 0,
           firstAudioReplyTurns: 0,
           firstAudioUnknownTurns: 4,
           avgFirstAudioFillerMs: null,
+          avgFirstAudioOpenerBridgeMs: null,
           avgFirstAudioInterimMs: null,
           avgFirstAudioReplyMs: null,
           avgReplyLatencyMs: null,
@@ -541,7 +546,63 @@ describe('PlatformAnalyticsService', () => {
         llmTtftTargetMs: 1500,
         points,
         byLanguage: [],
+        byVoiceModel: [],
       });
+    });
+
+    it('includes the per-voice-model first-audio split over the same window and language as the trend', async () => {
+      const byVoiceModel = [
+        {
+          ttsModel: 'cartesia/sonic-2',
+          turns: 120,
+          fillerTurns: 60,
+          openerBridgeTurns: 10,
+          interimTurns: 20,
+          replyTurns: 30,
+          unknownTurns: 0,
+          p50FirstAudioMs: 900,
+          p50ReplyLatencyMs: 3200,
+        },
+        {
+          // Generative voice: no spoken masking, so everything is reply-first.
+          ttsModel: 'elevenlabs/eleven_v3',
+          turns: 40,
+          fillerTurns: 0,
+          openerBridgeTurns: 0,
+          interimTurns: 0,
+          replyTurns: 40,
+          unknownTurns: 0,
+          p50FirstAudioMs: 3400,
+          p50ReplyLatencyMs: 3400,
+        },
+        {
+          ttsModel: 'unknown',
+          turns: 15,
+          fillerTurns: 0,
+          openerBridgeTurns: 0,
+          interimTurns: 0,
+          replyTurns: 0,
+          unknownTurns: 15,
+          p50FirstAudioMs: 2000,
+          p50ReplyLatencyMs: null,
+        },
+      ];
+      repo.getVoiceLatencyByVoiceModel.mockResolvedValue(byVoiceModel);
+
+      const result = await service.getVoiceLatency({
+        range: '30d',
+        language: 'hi-IN',
+      });
+
+      const [trendStart, trendEnd, , trendLanguage] =
+        repo.getVoiceLatencyByBucket.mock.calls[0];
+      expect(repo.getVoiceLatencyByVoiceModel).toHaveBeenCalledWith(
+        trendStart,
+        trendEnd,
+        trendLanguage,
+      );
+      expect(trendLanguage).toBe('hi-IN');
+      expect(result.byVoiceModel).toEqual(byVoiceModel);
     });
 
     it('includes the language breakdown alongside the bucketed trend', async () => {

@@ -15,6 +15,51 @@ import { resolveSqlBucket } from '../util/analytics-window.util';
  */
 export type AnalyticsBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
+// ---- First-audio provenance SQL (scenario_session_turn_metrics `m`) ----
+// Shared by the bucketed trend and the per-voice-model breakdown so the two can
+// never disagree on what counts as which kind of first audio.
+
+/**
+ * A filler that played as an opener's "bridge line" (ally-ai-learn v1.48.0+):
+ * recorded as firstAudioSource='filler' with `openerBridge` JSON `true`. A
+ * jsonb equality, so a string "true" or a malformed value is NOT a bridge.
+ */
+const FIRST_AUDIO_OPENER_BRIDGE_SQL =
+  `(m."metadata"->>'firstAudioSource' = 'filler' ` +
+  `AND m."metadata"->'openerBridge' = 'true'::jsonb)`;
+/**
+ * A thinking-filler that was NOT an opener bridge. Excludes the bridge turns
+ * so a 100%-stacked split never counts one turn twice. The COALESCE keeps a
+ * missing `openerBridge` key (every pre-v1.48.0 row) on the filler side.
+ */
+const FIRST_AUDIO_FILLER_SQL =
+  `(m."metadata"->>'firstAudioSource' = 'filler' ` +
+  `AND NOT COALESCE(m."metadata"->'openerBridge' = 'true'::jsonb, false))`;
+const FIRST_AUDIO_INTERIM_SQL = `m."metadata"->>'firstAudioSource' = 'interim'`;
+const FIRST_AUDIO_REPLY_SQL = `m."metadata"->>'firstAudioSource' = 'reply'`;
+const FIRST_AUDIO_UNKNOWN_SQL = `m."metadata"->>'firstAudioSource' IS NULL`;
+/** Turns carrying any recorded first-audio provenance. */
+const FIRST_AUDIO_INSTRUMENTED_SQL = `m."metadata"->>'firstAudioSource' IS NOT NULL`;
+
+/**
+ * Unmasked time to the real reply: replyLatencyMs when a filler/interim
+ * front-ran it, else the response latency itself (which already IS the reply
+ * on unmasked turns). jsonb_typeof guards the cast so one malformed metadata
+ * value cannot fail the whole query.
+ */
+const REPLY_LATENCY_SQL =
+  `COALESCE(CASE WHEN jsonb_typeof(m."metadata"->'replyLatencyMs') = 'number' ` +
+  `THEN (m."metadata"->>'replyLatencyMs')::numeric END, ` +
+  `m."responseLatencyMs")`;
+
+/**
+ * The TTS voice model a turn was spoken with (`metadata.ttsModel`,
+ * "provider/model", written by the voice agent on every new turn row). Rows
+ * predating it — or carrying an empty string — bucket as 'unknown' rather
+ * than being dropped, so the breakdown always sums to the window's turns.
+ */
+const TTS_MODEL_SQL = `COALESCE(NULLIF(m."metadata"->>'ttsModel', ''), 'unknown')`;
+
 export interface AgentJoinReliabilityBucketRow {
   bucket: string;
   totalSessions: number;
@@ -104,8 +149,20 @@ export interface VoiceLatencyBucketRow {
   // say which it was, so a bucket's headline latency can be read against how
   // many of its turns were masked — otherwise a rise in filler coverage looks
   // like a latency improvement.
-  /** Turns whose first audio was a thinking-filler. */
+  /**
+   * Turns whose first audio was a thinking-filler. EXCLUDES opener-bridge
+   * turns (see {@link firstAudioOpenerBridgeTurns}), which are also recorded
+   * as 'filler' — counting them here too would double-count them in the
+   * stacked split.
+   */
   firstAudioFillerTurns: number;
+  /**
+   * Turns whose first audio was a filler played as an opener's bridge line
+   * (`firstAudioSource = 'filler'` AND `openerBridge` is JSON true;
+   * ally-ai-learn v1.48.0+). Its own count so a rise in bridges is not read
+   * as a rise in thinking-filler coverage.
+   */
+  firstAudioOpenerBridgeTurns: number;
   /** Turns whose first audio was a predictive interim reply. */
   firstAudioInterimTurns: number;
   /** Turns whose first audio was the real reply (nothing masked it). */
@@ -119,8 +176,13 @@ export interface VoiceLatencyBucketRow {
    */
   firstAudioUnknownTurns: number;
 
-  /** Mean time-to-first-voice (ms) for filler-first turns. Null if none. */
+  /**
+   * Mean time-to-first-voice (ms) for filler-first turns, opener bridges
+   * excluded. Null if none.
+   */
   avgFirstAudioFillerMs: number | null;
+  /** Mean time-to-first-voice (ms) for opener-bridge turns. Null if none. */
+  avgFirstAudioOpenerBridgeMs: number | null;
   /** Mean time-to-first-voice (ms) for interim-first turns. Null if none. */
   avgFirstAudioInterimMs: number | null;
   /** Mean time-to-first-voice (ms) for reply-first turns. Null if none. */
@@ -159,6 +221,41 @@ export interface VoiceLatencyByLanguageRow {
    * window have the field populated (e.g. pre-rollout data).
    */
   avgSttFinalizeMs: number | null;
+}
+
+/**
+ * The first-audio split for one TTS voice model over the whole window (no
+ * time bucketing). Generative voices (e.g. `elevenlabs/eleven_v3`) cannot
+ * play spoken masking, so all their turns are reply-first: a shift in the
+ * voice mix moves the headline time-to-first-voice without the pipeline
+ * changing at all. This is the view that tells those two apart.
+ */
+export interface VoiceLatencyByVoiceModelRow {
+  /**
+   * `metadata.ttsModel` ("provider/model", e.g. "elevenlabs/eleven_v3"), or
+   * 'unknown' for rows written before the voice agent recorded it.
+   */
+  ttsModel: string;
+  /** Live-pipeline turns spoken with this voice model. */
+  turns: number;
+  /** Thinking-filler-first turns, opener bridges excluded. */
+  fillerTurns: number;
+  /** Turns whose first audio was an opener's bridge line. */
+  openerBridgeTurns: number;
+  /** Predictive-interim-first turns. */
+  interimTurns: number;
+  /** Turns where the real reply was the first audio (unmasked). */
+  replyTurns: number;
+  /** Turns with no `firstAudioSource` recorded — never assumed unmasked. */
+  unknownTurns: number;
+  /** Median (p50) time to the first audio of any kind (ms); null with no turns. */
+  p50FirstAudioMs: number | null;
+  /**
+   * Median (p50) time to the REAL reply (ms), over instrumented turns only —
+   * same expression and exclusion rule as `p50ReplyLatencyMs` on
+   * {@link VoiceLatencyBucketRow}. Null when none are instrumented.
+   */
+  p50ReplyLatencyMs: number | null;
 }
 
 export interface VoiceLatencyOverallRow {
@@ -757,37 +854,43 @@ export class PlatformAnalyticsRepository {
       );
 
     // What spoke first. `responseLatencyMs` is time-to-first-audio, so a
-    // filler or interim reply can own it; these counts + per-source means keep
-    // "we got faster" and "we masked more" distinguishable. Turns with no
-    // recorded provenance are counted separately, never assumed unmasked.
-    const firstAudioIs = (kind: string) =>
-      `m."metadata"->>'firstAudioSource' = '${kind}'`;
-    for (const [kind, alias] of [
-      ['filler', 'firstAudioFillerTurns'],
-      ['interim', 'firstAudioInterimTurns'],
-      ['reply', 'firstAudioReplyTurns'],
+    // filler, opener bridge or interim reply can own it; these counts +
+    // per-source means keep "we got faster" and "we masked more"
+    // distinguishable. The filler and bridge conditions are disjoint, so the
+    // five counts partition the bucket. Turns with no recorded provenance are
+    // counted separately, never assumed unmasked.
+    for (const [condition, countAlias, avgAlias] of [
+      [
+        FIRST_AUDIO_FILLER_SQL,
+        'firstAudioFillerTurns',
+        'avgFirstAudioFillerMs',
+      ],
+      [
+        FIRST_AUDIO_OPENER_BRIDGE_SQL,
+        'firstAudioOpenerBridgeTurns',
+        'avgFirstAudioOpenerBridgeMs',
+      ],
+      [
+        FIRST_AUDIO_INTERIM_SQL,
+        'firstAudioInterimTurns',
+        'avgFirstAudioInterimMs',
+      ],
+      [FIRST_AUDIO_REPLY_SQL, 'firstAudioReplyTurns', 'avgFirstAudioReplyMs'],
     ] as const) {
-      qb.addSelect(`COUNT(*) FILTER (WHERE ${firstAudioIs(kind)})::int`, alias);
+      qb.addSelect(`COUNT(*) FILTER (WHERE ${condition})::int`, countAlias);
       qb.addSelect(
-        `round(avg(m."responseLatencyMs") FILTER ` +
-          `(WHERE ${firstAudioIs(kind)}))::int`,
-        `avgFirstAudio${kind[0].toUpperCase()}${kind.slice(1)}Ms`,
+        `round(avg(m."responseLatencyMs") FILTER (WHERE ${condition}))::int`,
+        avgAlias,
       );
     }
     qb.addSelect(
-      `COUNT(*) FILTER (WHERE m."metadata"->>'firstAudioSource' IS NULL)::int`,
+      `COUNT(*) FILTER (WHERE ${FIRST_AUDIO_UNKNOWN_SQL})::int`,
       'firstAudioUnknownTurns',
     );
 
-    // Unmasked time to the real reply: replyLatencyMs when a filler/interim
-    // front-ran it, else the response latency itself (which already IS the
-    // reply on unmasked turns). jsonb_typeof guards the cast so one
-    // malformed metadata value cannot fail the whole query.
-    const replyLatencyExpr =
-      `COALESCE(CASE WHEN jsonb_typeof(m."metadata"->'replyLatencyMs') = 'number' ` +
-      `THEN (m."metadata"->>'replyLatencyMs')::numeric END, ` +
-      `m."responseLatencyMs")`;
-    const instrumented = `m."metadata"->>'firstAudioSource' IS NOT NULL`;
+    // Unmasked time to the real reply — see REPLY_LATENCY_SQL.
+    const replyLatencyExpr = REPLY_LATENCY_SQL;
+    const instrumented = FIRST_AUDIO_INSTRUMENTED_SQL;
     qb.addSelect(
       `round(avg(${replyLatencyExpr}) FILTER (WHERE ${instrumented}))::int`,
       'avgReplyLatencyMs',
@@ -842,10 +945,12 @@ export class PlatformAnalyticsRepository {
         p95LlmTtftMs: number | null;
         avgCacheHitRatePct: number | null;
         firstAudioFillerTurns: number;
+        firstAudioOpenerBridgeTurns: number;
         firstAudioInterimTurns: number;
         firstAudioReplyTurns: number;
         firstAudioUnknownTurns: number;
         avgFirstAudioFillerMs: number | null;
+        avgFirstAudioOpenerBridgeMs: number | null;
         avgFirstAudioInterimMs: number | null;
         avgFirstAudioReplyMs: number | null;
         avgReplyLatencyMs: number | null;
@@ -872,10 +977,14 @@ export class PlatformAnalyticsRepository {
       // Counts are real zeros (no turns of that kind), so they coerce to 0 —
       // unlike the latencies beside them, which stay null when unpopulated.
       firstAudioFillerTurns: Number(r.firstAudioFillerTurns) || 0,
+      firstAudioOpenerBridgeTurns: Number(r.firstAudioOpenerBridgeTurns) || 0,
       firstAudioInterimTurns: Number(r.firstAudioInterimTurns) || 0,
       firstAudioReplyTurns: Number(r.firstAudioReplyTurns) || 0,
       firstAudioUnknownTurns: Number(r.firstAudioUnknownTurns) || 0,
       avgFirstAudioFillerMs: toNullableNumber(r.avgFirstAudioFillerMs),
+      avgFirstAudioOpenerBridgeMs: toNullableNumber(
+        r.avgFirstAudioOpenerBridgeMs,
+      ),
       avgFirstAudioInterimMs: toNullableNumber(r.avgFirstAudioInterimMs),
       avgFirstAudioReplyMs: toNullableNumber(r.avgFirstAudioReplyMs),
       avgReplyLatencyMs: toNullableNumber(r.avgReplyLatencyMs),
@@ -945,6 +1054,103 @@ export class PlatformAnalyticsRepository {
       p95Ms: Number(r.p95Ms) || 0,
       avgSttFinalizeMs:
         r.avgSttFinalizeMs != null ? Number(r.avgSttFinalizeMs) : null,
+    }));
+  }
+
+  /**
+   * The first-audio split per TTS voice model (`metadata.ttsModel`), over the
+   * whole window (no time bucketing) — the "did the voice mix move the
+   * headline?" view beside {@link getVoiceLatencyByBucket}. Generative voices
+   * cannot play spoken masking, so their turns are all reply-first; a shift
+   * toward them reads as a latency regression on the time-to-first-voice
+   * trend even though the pipeline is unchanged.
+   *
+   * Live-pipeline only, same as {@link getVoiceLatencyByLanguage}. Unlike
+   * that query it honours the optional `language` filter, the same way
+   * {@link getVoiceLatencyOverall} does, because it is read against the
+   * (language-filtered) first-audio split it sits under. Rows without a
+   * `ttsModel` (written before the agent recorded it) group as 'unknown',
+   * never dropped. Grouped/ordered by the raw expression, not the output
+   * alias, for the same reason given on {@link getVoiceLatencyByLanguage}.
+   */
+  async getVoiceLatencyByVoiceModel(
+    start: Date,
+    end: Date,
+    language?: string,
+  ): Promise<VoiceLatencyByVoiceModelRow[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(TTS_MODEL_SQL, 'ttsModel')
+      .addSelect('COUNT(*)::int', 'turns');
+    for (const [condition, alias] of [
+      [FIRST_AUDIO_FILLER_SQL, 'fillerTurns'],
+      [FIRST_AUDIO_OPENER_BRIDGE_SQL, 'openerBridgeTurns'],
+      [FIRST_AUDIO_INTERIM_SQL, 'interimTurns'],
+      [FIRST_AUDIO_REPLY_SQL, 'replyTurns'],
+      [FIRST_AUDIO_UNKNOWN_SQL, 'unknownTurns'],
+    ] as const) {
+      qb.addSelect(`COUNT(*) FILTER (WHERE ${condition})::int`, alias);
+    }
+    qb.addSelect(
+      `round(percentile_cont(0.5) WITHIN GROUP ` +
+        `(ORDER BY m."responseLatencyMs"))::int`,
+      'p50FirstAudioMs',
+    ).addSelect(
+      `round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ${REPLY_LATENCY_SQL}) ` +
+        `FILTER (WHERE ${FIRST_AUDIO_INSTRUMENTED_SQL}))::int`,
+      'p50ReplyLatencyMs',
+    );
+
+    qb.from('scenario_session_turn_metrics', 'm');
+    if (language) {
+      qb.innerJoin(
+        'scenario_sessions',
+        's',
+        's.id = m."scenarioSessionId"',
+      ).leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(s.metadata->>'languageId', '')::int`,
+      );
+    }
+    qb.where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'));
+    if (language) {
+      qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
+    }
+
+    const rows = await qb
+      .groupBy(TTS_MODEL_SQL)
+      .orderBy('COUNT(*)', 'DESC')
+      .addOrderBy(TTS_MODEL_SQL, 'ASC')
+      .getRawMany<{
+        ttsModel: string;
+        turns: number;
+        fillerTurns: number;
+        openerBridgeTurns: number;
+        interimTurns: number;
+        replyTurns: number;
+        unknownTurns: number;
+        p50FirstAudioMs: number | null;
+        p50ReplyLatencyMs: number | null;
+      }>();
+
+    const toNullableNumber = (v: number | null): number | null =>
+      v == null ? null : Number(v);
+
+    return rows.map((r) => ({
+      ttsModel: r.ttsModel,
+      turns: Number(r.turns) || 0,
+      fillerTurns: Number(r.fillerTurns) || 0,
+      openerBridgeTurns: Number(r.openerBridgeTurns) || 0,
+      interimTurns: Number(r.interimTurns) || 0,
+      replyTurns: Number(r.replyTurns) || 0,
+      unknownTurns: Number(r.unknownTurns) || 0,
+      p50FirstAudioMs: toNullableNumber(r.p50FirstAudioMs),
+      p50ReplyLatencyMs: toNullableNumber(r.p50ReplyLatencyMs),
     }));
   }
 

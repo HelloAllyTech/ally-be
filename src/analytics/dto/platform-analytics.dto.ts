@@ -1192,9 +1192,20 @@ export class VoiceLatencyPointDto {
     description:
       'Turns whose first audio was a thinking-filler. avgMs/p50Ms/p95Ms ' +
       'measure time to the first audio the learner heard, so these turns ' +
-      'are timed to the filler, not to the reply.',
+      'are timed to the filler, not to the reply. Excludes opener-bridge ' +
+      'turns (firstAudioOpenerBridgeTurns), which are also recorded as ' +
+      "'filler', so the split never counts a turn twice.",
   })
   firstAudioFillerTurns!: number;
+
+  @ApiProperty({
+    description:
+      "Turns whose first audio was a filler played as an opener's bridge " +
+      "line (firstAudioSource='filler' AND openerBridge is JSON true; " +
+      'ally-ai-learn v1.48.0+). Counted apart from thinking-fillers so a ' +
+      'rise in bridges does not read as a rise in filler coverage.',
+  })
+  firstAudioOpenerBridgeTurns!: number;
 
   @ApiProperty({
     description: 'Turns whose first audio was a predictive interim reply.',
@@ -1216,10 +1227,18 @@ export class VoiceLatencyPointDto {
   firstAudioUnknownTurns!: number;
 
   @ApiProperty({
-    description: 'Mean time-to-first-voice (ms) for filler-first turns.',
+    description:
+      'Mean time-to-first-voice (ms) for filler-first turns, opener bridges ' +
+      'excluded.',
     nullable: true,
   })
   avgFirstAudioFillerMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for opener-bridge turns.',
+    nullable: true,
+  })
+  avgFirstAudioOpenerBridgeMs!: number | null;
 
   @ApiProperty({
     description: 'Mean time-to-first-voice (ms) for interim-first turns.',
@@ -1277,6 +1296,67 @@ export class VoiceLatencyByLanguageRowDto {
     nullable: true,
   })
   avgSttFinalizeMs!: number | null;
+}
+
+/**
+ * The first-audio split for one TTS voice model over the whole window — see
+ * {@link PlatformAnalyticsRepository.getVoiceLatencyByVoiceModel}.
+ */
+export class VoiceLatencyByVoiceModelRowDto {
+  @ApiProperty({
+    description:
+      "metadata.ttsModel ('provider/model', e.g. 'elevenlabs/eleven_v3'), " +
+      "or 'unknown' for rows written before the voice agent recorded it.",
+  })
+  ttsModel!: string;
+
+  @ApiProperty({
+    description: 'Live-pipeline turns spoken with this voice model',
+  })
+  turns!: number;
+
+  @ApiProperty({
+    description: 'Thinking-filler-first turns, opener bridges excluded',
+  })
+  fillerTurns!: number;
+
+  @ApiProperty({
+    description: "Turns whose first audio was an opener's bridge line",
+  })
+  openerBridgeTurns!: number;
+
+  @ApiProperty({ description: 'Predictive-interim-first turns' })
+  interimTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns where the real reply was the first audio (unmasked)',
+  })
+  replyTurns!: number;
+
+  @ApiProperty({
+    description:
+      'Turns with no firstAudioSource recorded — reported separately, ' +
+      'never assumed unmasked.',
+  })
+  unknownTurns!: number;
+
+  @ApiProperty({
+    description:
+      'Median (p50) time to the first audio of any kind (ms); null with no turns',
+    nullable: true,
+    type: Number,
+  })
+  p50FirstAudioMs!: number | null;
+
+  @ApiProperty({
+    description:
+      'Median (p50) time to the REAL reply (ms), instrumented turns only — ' +
+      'same rule as p50ReplyLatencyMs on the points. Null when none are ' +
+      'instrumented.',
+    nullable: true,
+    type: Number,
+  })
+  p50ReplyLatencyMs!: number | null;
 }
 
 /**
@@ -1356,6 +1436,17 @@ export class VoiceLatencyResponseDto {
     type: [VoiceLatencyByLanguageRowDto],
   })
   byLanguage!: VoiceLatencyByLanguageRowDto[];
+
+  @ApiProperty({
+    description:
+      'Live-pipeline first-audio split (filler / opener bridge / interim / ' +
+      'reply / unknown) plus p50 first-audio and p50 real-reply latency, ' +
+      "one row per TTS voice model (metadata.ttsModel; 'unknown' when " +
+      'unrecorded), over the same window AND language filter as `points`. ' +
+      'Sorted by turns, most first.',
+    type: [VoiceLatencyByVoiceModelRowDto],
+  })
+  byVoiceModel!: VoiceLatencyByVoiceModelRowDto[];
 
   @ApiProperty({
     type: VoiceLatencyOverallDto,

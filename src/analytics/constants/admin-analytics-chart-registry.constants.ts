@@ -1504,6 +1504,15 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/FoundationalSkillsCard.tsx'),
       note: "GET /v1/analytics/foundational-skills. Per 5,000-character cut of each learner's own roleplay speech: average foundational helping skills score (1-4) vs the same learners' first cut, n per point. Scenario-independent rubric in src/foundational-skills",
     },
+    {
+      id: 'AAQ-167',
+      tab: 'Latency & reliability',
+      title: 'Heard first, by voice model',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/tabs/LatencyTab.tsx'),
+      note: "Companion to AAQ-085: the same first-audio split per TTS voice model (metadata.ttsModel, 'unknown' when unrecorded) over the whole window, from /v1/analytics/voice-latency byVoiceModel. Generative voices (e.g. elevenlabs/eleven_v3) cannot play spoken masking, so a voice-mix shift shows up here rather than as an unexplained regression",
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
