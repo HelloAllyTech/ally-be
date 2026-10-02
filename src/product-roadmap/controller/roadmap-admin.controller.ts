@@ -44,10 +44,7 @@ import {
   UpdateInterviewNoteDto,
 } from '../dto/roadmap-content.dto';
 import {
-  AiEnhanceResponseDto,
   AiReadinessCriteriaResponseDto,
-  AiReadinessResponseDto,
-  AiReviewResponseDto,
   AiTextResponseDto,
   DuplicatesResponseDto,
   OpportunityInterviewTurnResponseDto,
@@ -479,9 +476,10 @@ export class RoadmapAdminController {
   // ── AI helpers ────────────────────────────────────────────────────────────
 
   /**
-   * The checklist itself. Served rather than duplicated in the client so that editing
-   * ROADMAP_READINESS_CRITERIA is the entire change — a second copy in the admin bundle would
-   * drift, and the drift would show up as a checklist item the grader never grades.
+   * The checklist itself — what the guided interview grades and shows as it goes. Served rather
+   * than duplicated in the client so that editing ROADMAP_READINESS_CRITERIA is the entire
+   * change — a second copy in the admin bundle would drift, and the drift would show up as a
+   * checklist item the grader never grades.
    */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Get('ai/readiness/criteria')
@@ -502,63 +500,6 @@ export class RoadmapAdminController {
         ...ROADMAP_FILEABLE_EFFORTS,
       ] as RoadmapOpportunityEffort[],
     };
-  }
-
-  /**
-   * Grade a draft. One verdict per criterion, and every one of them must be green before it can
-   * be filed — so this fails closed by construction; see RoadmapAiService.checkReadiness.
-   *
-   * The response carries the verdict SIGNED (`token`), and `POST /opportunities` is what
-   * enforces it: the checklist used to be gated only by the admin drawer's `canSave`, which
-   * made it a discipline the client kept rather than a rule. See RoadmapReadinessTokenService.
-   *
-   * VOTE tier, matching who may file: a gate you cannot ask about is a gate nobody can pass.
-   */
-  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
-  @Post('ai/readiness')
-  @ApiOperation({ summary: 'Grade a draft against the readiness checklist' })
-  @ApiResponse({ status: 201, type: AiReadinessResponseDto })
-  readiness(@Body() dto: AiDraftDto): Promise<AiReadinessResponseDto> {
-    // The goal is passed through so the signed verdict is BOUND to it — the drawer treats a
-    // goal change as invalidating the verdicts, and that rule is now enforced server-side. The
-    // grader itself still reads the description alone; see RoadmapReadinessTokenService.
-    return this.aiService.checkReadiness(dto.description, dto.productGoal);
-  }
-
-  /**
-   * @deprecated The admin "New opportunity" modal's Review button was removed, and nothing
-   * else calls this. Kept serving so any client still holding the old bundle degrades to a
-   * working request rather than a 404; delete once no traffic is seen on it.
-   */
-  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
-  @Post('ai/review')
-  @ApiOperation({
-    summary: 'Critique a draft; at most 3 issue/tip pairs',
-    deprecated: true,
-    description:
-      'Deprecated: no caller. The Add Opportunity modal no longer offers Review.',
-  })
-  @ApiResponse({ status: 201, type: AiReviewResponseDto })
-  review(@Body() dto: AiDraftDto): Promise<AiReviewResponseDto> {
-    return this.aiService.reviewDraft(dto.description);
-  }
-
-  /**
-   * @deprecated The admin drawer's "Improve wording" button was removed, and nothing else
-   * calls this. Kept serving for the same reason as ai/review above — an old bundle should
-   * degrade to a working request rather than a 404 — and deletable once traffic is zero.
-   */
-  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
-  @Post('ai/enhance')
-  @ApiOperation({
-    summary: 'Rewrite a draft',
-    deprecated: true,
-    description:
-      'Deprecated: no caller. The Add Opportunity drawer no longer offers a rewrite.',
-  })
-  @ApiResponse({ status: 201, type: AiEnhanceResponseDto })
-  enhance(@Body() dto: AiDraftDto): Promise<AiEnhanceResponseDto> {
-    return this.aiService.enhanceDraft(dto.description);
   }
 
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
@@ -595,18 +536,15 @@ export class RoadmapAdminController {
   }
 
   /**
-   * MANAGE-GATED, unlike every other ai/* route here, which sit on the VOTE tier.
+   * The only way to file an opportunity from the admin board, so it sits on the VOTE tier —
+   * exactly who may file (`POST /opportunities`). It was manage-gated while it was an
+   * experimental second door beside a blank form; with the form retired, leaving it there would
+   * have taken filing away from everyone who can vote but not manage.
    *
-   * Not a security judgement — an interview writes nothing until its draft is filed through
-   * `POST /opportunities`, which has its own VOTE gate. It is a rollout one: this is an
-   * experimental second way to file, and putting it on the manage tier keeps it in front of the
-   * handful of admins who can also fix what it produces while the interview itself is still
-   * being tuned. Widening it later is a one-line change; narrowing it after everyone has found
-   * it is not.
+   * An interview writes nothing until its draft is filed, which has its own VOTE gate and
+   * verifies the token minted here.
    */
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/opportunity-interview')
   @ApiOperation({
     summary: 'One turn of the guided opportunity interview',

@@ -363,8 +363,9 @@ const PERMISSIONS = {
   // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
   // monthly votes, comment, keep your own saved views), and EDIT is the management
   // surface (stages, editing/deleting anyone's opportunity, goals/owners,
-  // split/merge, month-board lane moves, opening a Builder session, pinning a
-  // view for everyone).
+  // split/merge, month-board lane moves, pinning a view for everyone). Opening a
+  // card in Builder is NOT here — it is gated on Builder access (the BUILDER
+  // toggle + EDIT_BUILDER).
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
   VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
   EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',

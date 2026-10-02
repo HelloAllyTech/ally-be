@@ -11,7 +11,7 @@ import {
 } from '../constants/product-roadmap.constants';
 import { RoadmapOpportunityEffort } from '../enum/roadmap-opportunity.enum';
 
-/** What `POST ai/readiness` decided, recovered from a token on the way back in. */
+/** What the guided interview's grading decided, recovered from a token on the way back in. */
 export interface VerifiedReadiness {
   /** Criterion ids that did NOT pass. Empty means every graded item was green. */
   failedCriteria: string[];
@@ -38,7 +38,8 @@ interface ReadinessTokenPayload {
 }
 
 /**
- * Signs the readiness verdict on the way out of `POST ai/readiness`, and verifies it on the way
+ * Signs the readiness verdict on the way out of the guided interview
+ * (`POST ai/opportunity-interview`, once every criterion is met), and verifies it on the way
  * into `POST /opportunities`.
  *
  * ## Why a token rather than re-grading on create
@@ -57,19 +58,18 @@ interface ReadinessTokenPayload {
  * ## What the signature binds, and why each part
  *
  * - The DESCRIPTION hash and the PRODUCT GOAL hash. These make staleness a server-side rule
- *   rather than a React one: `checkedAgainst` in the drawer reverts the checklist to pending
- *   when either changes, and this is the same rule where it cannot be skipped. Pass a throwaway
- *   sentence, swap in anything, file — that is the bypass this closes.
+ *   rather than a client one: the interview shows its draft read-only for exactly this reason,
+ *   and this is the same rule where it cannot be skipped. Pass a throwaway sentence, swap in
+ *   anything, file — that is the bypass this closes.
  * - The CRITERIA FINGERPRINT. Editing ROADMAP_READINESS_CRITERIA is expected (its docblock says
  *   so), and a token issued against the old set must not be spendable against the new one — a
  *   criterion added today would otherwise read as passed on every token in flight. Self-
  *   invalidating, so nobody has to remember.
  * - The EXPIRY. A verdict is a reading of a draft at a moment, not a permanent credential.
  *
- * The product goal is bound even though the grader does not currently read it (checkReadiness
- * grades the description alone). That is deliberate: the drawer treats the goal as an input the
- * verdicts describe, and this service's job is to enforce the client's own contract rather than
- * to quietly narrow it. If the grader starts reading the goal, nothing here changes.
+ * The product goal is bound because the interview proposes it alongside the draft: the token
+ * vouches for that exact description under that exact goal, and filing it under another one is
+ * a different draft.
  *
  * ## Key derivation
  *
@@ -160,12 +160,9 @@ export class RoadmapReadinessTokenService {
   /**
    * Verify a token against the draft actually being filed.
    *
-   * `proposedEffort` comes back but is NOT what the size rule should be applied to. Correcting a
-   * size the model got wrong is an explicit, documented exemption — the drawer lets a human
-   * change it without re-running the check, because a re-run would recompute the size and
-   * overwrite the correction, which would mean no human could ever override the model. So the
-   * size rule is applied to the effort being FILED (see RoadmapOpportunityService.create), and
-   * this value is here for logging and for anyone comparing the two later.
+   * `proposedEffort` comes back but is NOT what the size rule is applied to: that is the effort
+   * being FILED (see RoadmapOpportunityService.assertReady), so the rule holds whatever a client
+   * sends. This value is here for logging and for anyone comparing the two later.
    *
    * @throws BadRequestException on anything that is not a token this server issued for this
    * exact draft, still inside its window.
@@ -208,19 +205,19 @@ export class RoadmapReadinessTokenService {
 
     if (payload.v !== 1) {
       throw new BadRequestException(
-        'Please run the readiness check again — its result format has changed.',
+        'The readiness result format has changed. Press "Keep talking" to refresh the draft.',
       );
     }
 
     if (!Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
       throw new BadRequestException(
-        'The readiness check has expired. Please run it again.',
+        'The draft has expired. Press "Keep talking" to refresh it.',
       );
     }
 
     if (payload.c !== RoadmapReadinessTokenService.criteriaFingerprint()) {
       throw new BadRequestException(
-        'The readiness checklist has changed. Please run the check again.',
+        'The readiness checklist has changed. Press "Keep talking" to redraft against it.',
       );
     }
 
@@ -232,9 +229,9 @@ export class RoadmapReadinessTokenService {
       RoadmapReadinessTokenService.sha256(against.productGoal ?? '');
     if (!descriptionMatches || !goalMatches) {
       // The interesting rejection, and the one a legitimate filer can hit by editing after a
-      // pass. Worded as the drawer words it rather than as a validation failure.
+      // pass. Worded for the filer rather than as a validation failure.
       throw new BadRequestException(
-        'This has changed since the readiness check ran. Please run it again.',
+        'This has changed since the interview drafted it. Press "Keep talking" to redraft it.',
       );
     }
 

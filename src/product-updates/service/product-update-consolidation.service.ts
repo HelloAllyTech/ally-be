@@ -193,12 +193,7 @@ export class ProductUpdateConsolidationService {
           await this.markNoise(sources, params.now, manager);
           result.noise += sources.length;
         } else if (decision.action === 'new') {
-          const guarded = enforceGuards(decision.update, {
-            staffOnly: sources.every((source) =>
-              looksStaffOnly(signalsOf(source)),
-            ),
-          });
-          const { guardNotes, ...draft } = guarded;
+          const { guardNotes, ...draft } = enforceGuards(decision.update);
           const update = await this.createUpdate(manager, draft, sources, {
             model: result.model,
             reason: [decision.reason, ...guardNotes].filter(Boolean).join(' '),
@@ -209,11 +204,7 @@ export class ProductUpdateConsolidationService {
         } else {
           const update = openById.get(decision.updateId);
           if (!update) continue;
-          const { guardNotes, ...draft } = enforceGuards(decision.update, {
-            staffOnly: sources.every((source) =>
-              looksStaffOnly(signalsOf(source)),
-            ),
-          });
+          const { guardNotes, ...draft } = enforceGuards(decision.update);
           await this.reviseUpdate(manager, update, draft, sources, {
             model: result.model,
             reason: [decision.reason, ...guardNotes].filter(Boolean).join(' '),
@@ -356,15 +347,12 @@ export class ProductUpdateConsolidationService {
     if (meta.model) update.model = meta.model;
     if (meta.reason) update.decisionReason = meta.reason;
     // The revised text as a whole, not just the fields this reply changed.
-    const recheck = enforceGuards(
-      {
-        title: update.title,
-        summary: update.summary,
-        audience: update.audience,
-        confidence: update.confidence,
-      },
-      { staffOnly: false },
-    );
+    const recheck = enforceGuards({
+      title: update.title,
+      summary: update.summary,
+      audience: update.audience,
+      confidence: update.confidence,
+    });
     update.confidence = recheck.confidence ?? update.confidence;
 
     await manager.getRepository(ProductUpdate).save(update);

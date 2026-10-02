@@ -230,8 +230,10 @@ A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_
 or on a schedule, read through `getPromptByCode` like an agent prompt but not driving a
 conversation. `product_updates/consolidate.txt` is the one whose output reaches a public page
 (app.helloally.ai/blog/changelog) with no human step, so its reply is validated field by field
-and code enforces what the prompt asks — staff-only work stays internal — rather than trusting
-the model to comply.
+and code enforces what the prompt asks — public text carrying jargon is capped at low confidence so
+the team digest flags it — rather than trusting the model to comply. Since 2026-10-01 public is the
+default audience, staff-tool work included; internal is kept for work of no value to anyone, and a
+wrong call is corrected from the admin console's audience toggle.
 
 These deliberately do **not** degrade to a hardcoded fallback — they throw when the row is
 missing. The reasoning is the opposite of the agent case: an agent answering slightly worse

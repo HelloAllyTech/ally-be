@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 
 import { User } from 'src/user/entity/user.entity';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
@@ -26,7 +26,8 @@ import {
  *
  * Before this, `create()` validated a description length and a product goal and saved: the whole
  * checklist lived in the admin drawer's `canSave`, so a vote-tier token plus curl filed anything
- * at any size, and the "only managers may override" rule was a boolean in a React component.
+ * at any size. There is no override: the blank form that offered one is gone, and a failing
+ * verdict is refused for everyone.
  *
  * These tests are about the rule, not about the signature — RoadmapReadinessTokenService has its
  * own suite for that, and the token service is stubbed here so a verdict can be stated directly.
@@ -132,7 +133,7 @@ describe('RoadmapOpportunityService — readiness gate', () => {
     service = module.get(RoadmapOpportunityService);
   });
 
-  /** The shape the controller sends: a token, and the two manage answers resolved separately. */
+  /** The shape the controller sends: a token, and enforcement switched on. */
   const file = (
     dto: Partial<Parameters<RoadmapOpportunityService['create']>[1]> = {},
     extra: Partial<Parameters<RoadmapOpportunityService['create']>[2]> = {},
@@ -152,23 +153,20 @@ describe('RoadmapOpportunityService — readiness gate', () => {
 
   const savedRow = () => opportunityRepository.create.mock.calls[0][0];
 
-  it('files a passing draft, with nothing stamped', async () => {
+  it('files a passing draft', async () => {
     givenVerdict([]);
 
     await file();
 
-    expect(savedRow()).toMatchObject({
-      readinessOverriddenBy: null,
-      readinessOverriddenAt: null,
-      readinessFailedCriteria: null,
-    });
+    expect(opportunityRepository.save).toHaveBeenCalled();
+    expect(savedRow()).toMatchObject({ description: DRAFT, productGoal: GOAL });
   });
 
   /**
    * The hole this closes. Previously this same call — a valid description and goal, nothing
    * else — filed the row, because the checklist only ever ran in the browser.
    */
-  it('refuses a failing draft with no override, naming what failed', async () => {
+  it('refuses a failing draft, naming what failed', async () => {
     givenVerdict(['specific', 'who_it_affects']);
 
     await expect(file()).rejects.toThrow(BadRequestException);
@@ -177,49 +175,21 @@ describe('RoadmapOpportunityService — readiness gate', () => {
   });
 
   /**
-   * The permission that was decorative until now: the drawer hid the toggle from a non-manager,
-   * and that was the only thing enforcing it.
+   * The override is gone, not hidden. An admin bundle from before this change still sends
+   * `readinessOverride: true` from its toggle; it must buy nothing, for a manager or anyone else.
    */
-  it('refuses an override from a caller who cannot manage the board', async () => {
+  it('refuses a failing draft even when a stale client asks to override it', async () => {
     givenVerdict(['specific']);
 
     await expect(
-      file({ readinessOverride: true }, { canManageBoard: false }),
-    ).rejects.toThrow(ForbiddenException);
+      file({ readinessOverride: true } as never, { canManage: true }),
+    ).rejects.toThrow(BadRequestException);
     expect(opportunityRepository.save).not.toHaveBeenCalled();
   });
 
   /**
-   * `canManageBoard`, NOT `canManage`. The permission alone sits on every platform admin since
-   * the role collapse, so a rule that consulted it would grant the override to read-only admins
-   * — which is exactly what the feature toggle exists to prevent.
-   */
-  it('is not satisfied by the permission alone', async () => {
-    givenVerdict(['specific']);
-
-    await expect(
-      file(
-        { readinessOverride: true },
-        { canManage: true, canManageBoard: false },
-      ),
-    ).rejects.toThrow(ForbiddenException);
-  });
-
-  it('files an overridden draft and stamps who did it and what was red', async () => {
-    givenVerdict(['specific']);
-
-    await file({ readinessOverride: true }, { canManageBoard: true });
-
-    const row = savedRow();
-    expect(row.readinessOverriddenBy).toBe(7);
-    expect(row.readinessOverriddenAt).toBeInstanceOf(Date);
-    expect(row.readinessFailedCriteria).toEqual(['specific']);
-  });
-
-  /**
    * Size is part of the gate, and it is graded against the effort being FILED rather than the
-   * one in the token — correcting a size the model got wrong is a documented exemption, since a
-   * re-run would recompute the size and overwrite the correction.
+   * one in the token, so it holds whatever the client sends.
    */
   it('blocks a draft sized above what may be filed, even with every criterion green', async () => {
     givenVerdict([], RoadmapOpportunityEffort.XL);
@@ -235,10 +205,7 @@ describe('RoadmapOpportunityService — readiness gate', () => {
 
     await file({ effort: RoadmapOpportunityEffort.S });
 
-    expect(savedRow()).toMatchObject({
-      effort: RoadmapOpportunityEffort.S,
-      readinessOverriddenBy: null,
-    });
+    expect(savedRow()).toMatchObject({ effort: RoadmapOpportunityEffort.S });
   });
 
   /** Unsized is not a pass: "we could not tell how big this is" has to mean "not yet". */
@@ -246,21 +213,6 @@ describe('RoadmapOpportunityService — readiness gate', () => {
     givenVerdict([], null);
 
     await expect(file({ effort: null })).rejects.toThrow(/size/);
-  });
-
-  /**
-   * Ignored rather than refused: there was nothing to override, and marking the row as
-   * waved-through when it was not would be worse than not marking it.
-   */
-  it('ignores an override on a draft that passed anyway', async () => {
-    givenVerdict([]);
-
-    await file({ readinessOverride: true }, { canManageBoard: true });
-
-    expect(savedRow()).toMatchObject({
-      readinessOverriddenBy: null,
-      readinessFailedCriteria: null,
-    });
   });
 
   /**
@@ -280,7 +232,7 @@ describe('RoadmapOpportunityService — readiness gate', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('no readiness token'),
     );
-    expect(savedRow()).toMatchObject({ readinessOverriddenBy: null });
+    expect(opportunityRepository.save).toHaveBeenCalled();
   });
 
   /**

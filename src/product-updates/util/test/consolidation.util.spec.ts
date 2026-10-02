@@ -1,6 +1,8 @@
 import {
   ClusterInput,
+  JARGON_CONFIDENCE_CAP,
   buildConsolidationInput,
+  enforceGuards,
   extractJson,
   parseConsolidationOutput,
   summariseFiles,
@@ -177,7 +179,7 @@ describe('parseConsolidationOutput', () => {
     expect(parsed.problems.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('keeps an update private when the model leaves out the audience', () => {
+  it('makes an update public when the model leaves out the audience', () => {
     const parsed = parseConsolidationOutput(
       JSON.stringify({
         decisions: [newDecision(['c1'], { audience: 'everyone' })],
@@ -188,7 +190,7 @@ describe('parseConsolidationOutput', () => {
 
     expect(parsed.decisions[0]).toMatchObject({
       action: 'new',
-      update: { audience: 'internal', confidence: 0.85 },
+      update: { audience: 'public', confidence: 0.85 },
     });
   });
 
@@ -227,5 +229,32 @@ describe('parseConsolidationOutput', () => {
 
     expect(parsed.decisions).toEqual([]);
     expect(parsed.unresolvedClusterIds).toEqual(['c1']);
+  });
+});
+
+describe('enforceGuards', () => {
+  it('leaves the audience to the model, staff tools included', () => {
+    const guarded = enforceGuards({
+      title: 'Bug Hunter deletes merged fix branches automatically',
+      summary: 'Once its fix is merged, Bug Hunter tidies up after itself.',
+      audience: 'public',
+      confidence: 0.9,
+    });
+
+    expect(guarded).toMatchObject({ audience: 'public', confidence: 0.9 });
+    expect(guarded.guardNotes).toEqual([]);
+  });
+
+  it('caps the confidence of public text that carries jargon', () => {
+    const guarded = enforceGuards({
+      title: 'Roleplays retry the API after a timeout',
+      summary: 'Fewer sessions end early.',
+      audience: 'public',
+      confidence: 0.9,
+    });
+
+    expect(guarded.audience).toBe('public');
+    expect(guarded.confidence).toBe(JARGON_CONFIDENCE_CAP);
+    expect(guarded.guardNotes[0]).toMatch(/technical term/);
   });
 });

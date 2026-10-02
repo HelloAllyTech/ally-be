@@ -217,9 +217,6 @@ export const ROADMAP_DUPLICATES = {
  * admins get runtime editability without a bespoke settings table.
  */
 export const ROADMAP_PROMPT_CODES = {
-  READINESS_CHECK: 'roadmap_readiness_check',
-  REVIEW_DRAFT: 'roadmap_review_draft',
-  ENHANCE_DRAFT: 'roadmap_enhance_draft',
   CLASSIFY_GOAL: 'roadmap_classify_goal',
   DUPLICATE_CHECK: 'roadmap_duplicate_check',
   GOAL_IMPACT: 'roadmap_goal_impact',
@@ -235,16 +232,16 @@ export const ROADMAP_PROMPT_CODES = {
 } as const;
 
 /**
- * The readiness checklist the "Check readiness" button grades a draft against, and the gate on
- * filing: every item must come back green before the opportunity can be filed.
+ * The readiness checklist the guided interview grades a draft against as it goes, and the gate
+ * on filing: every item must be met before the opportunity can be filed.
  *
  * EXPECTED TO CHANGE. It lives here, server-side, as the single source of truth: the admin
- * drawer renders whatever this returns rather than holding its own copy, so editing this array
- * is the whole change. The ids are the join key between the criteria the UI shows and the
+ * interview renders whatever this returns rather than holding its own copy, so editing this
+ * array is the whole change. The ids are the join key between the criteria the UI shows and the
  * verdicts the model returns, so treat an id as permanent once shipped — renaming one silently
  * drops its verdict and fails that item closed. (Renaming is nonetheless safe to DO: verdicts
- * live in the drawer's local state for the length of one draft and are never persisted against
- * a filed row.)
+ * live in the interview's local state for the length of one conversation and are never
+ * persisted against a filed row.)
  *
  * These five apply the team's discovery guidance at the point of filing (Stacks: "Filter
  * opportunities by specificity and validation criteria"), with two deliberate departures from
@@ -265,7 +262,7 @@ export const ROADMAP_PROMPT_CODES = {
  *   — so that the model cannot pass "small enough" while sizing the same draft XL.
  * - EVIDENCE ("more than one person said this"). It is a validation test, not a clarity test,
  *   and it failed real gaps spotted internally or derived from a bug report.
- * - USER-STORY FORMAT. Carried by the field placeholder and by the redraft, never gated: a
+ * - USER-STORY FORMAT. Carried by the interview's drafting, never gated: a
  *   clear plain-English opportunity must not be blocked over its shape, and criteria 3-5
  *   already grade the content the format would carry.
  */
@@ -301,17 +298,11 @@ export const ROADMAP_READINESS_CRITERIA = [
  * The sizes an opportunity may be filed at. Anything larger is not one opportunity — it is a
  * set of them, and Stacks ("Select leaf-node opportunities for iterative value delivery") is
  * explicit that value lands by solving a series of smaller ones in succession rather than
- * taking a whole set at once. So L and up BLOCK filing, with the redraft asked to narrow the
- * draft to a single shippable slice.
+ * taking a whole set at once. So L and up BLOCK filing: the interview withholds the draft and
+ * asks which single shippable slice to keep, and `POST /opportunities` refuses the rest.
  *
- * Served to the drawer alongside the criteria so the threshold lives in one place; the drawer
- * renders it as a sixth checklist row rather than as a hidden rule that greys out the button
- * for no visible reason.
- *
- * Sized against the effort currently in the field, which the filer may correct: the model
- * sizes from prose and gets it wrong both ways, and a gate a human cannot answer to is a gate
- * people route around by writing vaguer drafts. Correcting the size to something fileable is
- * an explicit act, visible in the row that turns green.
+ * Served alongside the criteria so the threshold lives in one place. Applied to the effort
+ * being FILED, not the one in the token, so it holds whatever a client sends.
  */
 export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
 
@@ -327,10 +318,9 @@ export const ROADMAP_EFFORT_UNSIZED = 'unsized';
 /**
  * How long a signed readiness verdict stays spendable.
  *
- * Generous rather than tight: the drawer stays open while someone reads five reasons, considers
- * the rewrite, corrects a size and picks an owner, and every expiry costs a legitimate filer a
- * re-run of a model call that will say the same thing. Short enough that a token cannot be
- * hoarded and replayed against a draft written next week.
+ * Generous rather than tight: the interview stays open while someone reads the draft and the
+ * duplicates it may match, and every expiry costs a legitimate filer another interview turn.
+ * Short enough that a token cannot be hoarded and replayed against a draft written next week.
  *
  * Expiry fails CLOSED — an expired token is refused, not waved through — so the cost of being
  * wrong here is an annoyance, never a hole. See RoadmapReadinessTokenService.
@@ -350,8 +340,8 @@ export const ROADMAP_READINESS_TOKEN_TTL_MS = 30 * 60 * 1000;
  * with either verifier.
  *
  * Bump the version suffix to invalidate every token in flight (a criteria change that must not
- * be spendable against old verdicts, say). Every open drawer then needs one more click of
- * "Check readiness", which is the intended cost.
+ * be spendable against old verdicts, say). Every open interview then needs one more turn,
+ * which is the intended cost.
  */
 export const ROADMAP_READINESS_TOKEN_KEY_LABEL = 'roadmap-readiness-token-v1';
 
@@ -366,8 +356,7 @@ export const ROADMAP_READINESS_TOKEN_KEY_LABEL = 'roadmap-readiness-token-v1';
  * So the rollout is: ship this false, ship the client that sends tokens, watch for the
  * `filed with no readiness token` warning to stop appearing in production logs, then flip it
  * true in a follow-up release. Until it is true, a caller who simply omits the token is not
- * gated — a TAMPERED or STALE or EXPIRED token is always refused, and the override permission
- * below is enforced from day one either way.
+ * gated — a TAMPERED or STALE or EXPIRED token is always refused.
  */
 export const ROADMAP_READINESS_REQUIRE_TOKEN = false;
 

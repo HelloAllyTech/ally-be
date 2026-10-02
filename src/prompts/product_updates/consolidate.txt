@@ -15,10 +15,15 @@ WHERE A CHANGE SHOWS UP (surfaces)
 A change to how roleplay characters speak, listen, pause, remember or score shows up wherever learners practise: web_app and mobile_app.
 
 WHO CAN SEE IT (audience)
-- public: anything a customer can see or feel. Customers are learners, counsellors, organisation admins and content authors.
-- internal: anything only Ally's own team sees. These are ALWAYS internal, however the input describes them: Bug Hunter; Builder; the product roadmap and its votes; the admin console's Analytics section and every chart in it (Highlights, Priority, Goals, Testing, Suggestions, Product management, and anything with a chart id such as AAQ-123); AI Lab; AI Tasks; the Language Model and Speech Recognition catalogues; prompts and System Skills; translations and tooltips management; the blog editor; Logs; Mobile Releases; UX Signals; glossary review; product updates and the changelog itself; cost, token and usage tracking; which AI vendor or model runs something; CI, tests, lint, docs, release tooling, infrastructure and refactors with no visible change.
-A cluster marked "Hint: staff-only files" touched only staff-only areas of the code. Treat it as internal unless the change plainly reaches customers.
-When you are unsure who can see a change, choose internal and give a confidence below 0.5.
+Public is the default. Every update that is of value to anyone, a customer or Ally's own team, is public. Customers are learners, counsellors, organisation admins and content authors; Ally's own team uses staff tools such as Bug Hunter, Builder, the product roadmap, the admin console's Analytics section, AI Lab and the blog editor. Work on those staff tools is public too.
+These are always of value, and so public:
+- anything new, better or fixed that a customer or Ally's team can see or use;
+- reliability and stability: fewer crashes, errors or failed sessions, retries that recover, things that load or connect more dependably, faster screens;
+- bug fixes of any size that someone could have run into, including ones only Ally's team could have hit;
+- infrastructure, monitoring and security work that makes Ally more dependable, described by what it protects or improves, never by how it was built.
+Internal is only for a change of no value to anyone: basic correctional work nobody could notice, such as renaming or tidying code, a refactor with no change in behaviour, or a typo in text nobody reads. Make it an internal update, not noise, so Ally's team can still find it and make it public.
+A cluster marked "Hint: staff-only files" touched only Ally's staff tools. It is still public when it has value; write it for Ally's team, and put it on admin_console.
+When you are unsure whether a change is of value, choose public and give a confidence below 0.5, so a person reads it.
 
 KIND
 - new: a capability people did not have before.
@@ -44,7 +49,8 @@ Write for a counsellor or an organisation admin who has never seen the code. The
 - Never name a person, organisation, customer, school or helpline, even when the input does.
 - Ground every claim in the input. Never name a screen, feature or activity the input does not mention. A plain true sentence beats a specific invented one.
 - Write to the reader where it reads naturally ("you can now ...").
-- If you cannot describe a change without technical words, it is almost certainly internal. Changes to logging, error messages nobody sees, internal data, retries or monitoring are internal.
+- If a change is hard to describe without technical words, describe its effect instead: what is now less likely to go wrong, or what now recovers by itself. Reliability, retries, monitoring and security work are public when they make Ally more dependable; only a change with no effect anyone could notice is internal.
+- Work on Ally's staff tools may name the tool (Bug Hunter, Builder, the roadmap, Analytics), since that is what Ally's team calls it. The rules above still apply: no vendor or model names, no code words.
 - title: at most 80 characters, sentence case, no full stop at the end. Lead with the outcome.
 - summary: one or two sentences, at most 280 characters.
 
@@ -52,10 +58,11 @@ Examples of turning input into public text:
 - "fix(watchdog): increase session stall threshold to 120s" becomes title "Roleplays no longer end early when a reply takes a moment", summary "A roleplay now waits longer for the character's reply before giving up, so a slow moment no longer ends your practice session."
 - "fix: increase bey video actor timeout" becomes title "Video roleplays connect more reliably", summary "Video roleplays now wait long enough for the video character to join, so a slow connection no longer stops the session from starting."
 - "feat(helpline): lead /learn with the XP level card, not the streak" becomes title "Your level now leads the Learn page", summary "The Learn page opens with your current level and how much XP you need for the next one, the same progress you see on your Progress page."
+- "fix(be): retry badge assignment after a transient database error" becomes title "Badges are no longer missed after a brief hiccup", summary "When awarding a badge hits a brief problem, Ally now tries again, so you get the badge you earned instead of losing it."
 - "feat(openers): drive turn openers from a working-memory delivery plan" plus "feat(openers): ship breath and sigh openers" becomes title "Characters pause and react more naturally before they reply", summary "Before answering, a roleplay character now fills the pause the way a person would, with a breath, a sigh or a short phrase in the roleplay's language, instead of repeating the same filler."
 
 WRITING INTERNAL UPDATES
-- title and summary in the same plain style, for Ally's own team. Internal names (Bug Hunter, Builder, Analytics tab names) are fine.
+- title and summary in the same plain style, for Ally's own team. Internal names are fine.
 
 TEAM NOTES (every update)
 Two to five short markdown bullets for Ally's team, each starting with "- ": what changed and why; where to find it and how to turn it on (feature toggles, per-simulation settings, permissions, who can see it); anything to watch. Factual, not promotional. Internal names are fine here. Do not list the pull requests or commits; they are attached separately.

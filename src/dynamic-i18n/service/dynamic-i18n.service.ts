@@ -470,17 +470,25 @@ export class DynamicI18nService {
         if (!this.isObject(content)) continue;
 
         const draftNamespace = this.getNamespace(draftLanguage, namespace);
+        // A blank draft value is a missing translation, not a translation: the
+        // repo's sync script writes "" for every key it could not translate,
+        // and on 2026-10-01 one such run reached the live bundles through this
+        // very endpoint, which then refused to replace the blanks because the
+        // keys "existed". So a key counts as present only when it has text,
+        // and a blank in the incoming locale never overwrites or adds anything.
         const draftKeys = new Set(
-          this.flattenStrings(draftNamespace).map((e) => e.key),
+          this.flattenStrings(draftNamespace)
+            .filter((e) => e.value.trim() !== '')
+            .map((e) => e.key),
         );
 
         const newEntries = this.flattenStrings(content).filter(
-          (e) => !draftKeys.has(e.key),
+          (e) => e.value.trim() !== '' && !draftKeys.has(e.key),
         );
         if (newEntries.length === 0) continue;
 
         this.logger.log(
-          `[ciSync] ${language}/${namespace}: adding ${newEntries.length} new key(s)`,
+          `[ciSync] ${language}/${namespace}: adding ${newEntries.length} new or previously blank key(s)`,
         );
 
         for (const { key, value } of newEntries) {
