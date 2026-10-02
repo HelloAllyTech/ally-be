@@ -66,6 +66,28 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
       );
     });
 
+    it('splits a bridge line played alone from the legacy interim', async () => {
+      const { repository, qb } = build();
+
+      await repository.getVoiceLatencyByBucket(start, end, 'week');
+
+      const sel = selectsByAlias(qb);
+      const alone = sel.get('firstAudioBridgeTurns')!;
+      expect(alone).toContain(`m."metadata"->>'firstAudioSource' = 'interim'`);
+      expect(alone).toContain(`m."metadata"->>'interimSource' = 'bridge'`);
+
+      // Legacy keeps unlabelled interim rows (pre-interimSource) rather than
+      // guessing; IS DISTINCT FROM so a NULL label stays on this side.
+      const legacy = sel.get('firstAudioInterimTurns')!;
+      expect(legacy).toContain(`m."metadata"->>'firstAudioSource' = 'interim'`);
+      expect(legacy).toContain(
+        `m."metadata"->>'interimSource' IS DISTINCT FROM 'bridge'`,
+      );
+      expect(sel.get('avgFirstAudioBridgeMs')).toContain(
+        `m."metadata"->>'interimSource' = 'bridge'`,
+      );
+    });
+
     it('maps the bridge count to a number and its mean to null when absent', async () => {
       const { repository } = build([
         {
@@ -82,11 +104,13 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           firstAudioFillerTurns: '4',
           firstAudioOpenerBridgeTurns: '3',
           firstAudioInterimTurns: '1',
+          firstAudioBridgeTurns: '0',
           firstAudioReplyTurns: '2',
           firstAudioUnknownTurns: '0',
           avgFirstAudioFillerMs: '500',
           avgFirstAudioOpenerBridgeMs: '420',
           avgFirstAudioInterimMs: '800',
+          avgFirstAudioBridgeMs: null,
           avgFirstAudioReplyMs: '3000',
           avgReplyLatencyMs: '3100',
           p50ReplyLatencyMs: '3000',
@@ -106,11 +130,13 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           firstAudioFillerTurns: '2',
           firstAudioOpenerBridgeTurns: null,
           firstAudioInterimTurns: '0',
+          firstAudioBridgeTurns: '0',
           firstAudioReplyTurns: '0',
           firstAudioUnknownTurns: '0',
           avgFirstAudioFillerMs: '500',
           avgFirstAudioOpenerBridgeMs: null,
           avgFirstAudioInterimMs: null,
+          avgFirstAudioBridgeMs: null,
           avgFirstAudioReplyMs: null,
           avgReplyLatencyMs: null,
           p50ReplyLatencyMs: null,
@@ -212,6 +238,7 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           fillerTurns: '0',
           openerBridgeTurns: '0',
           interimTurns: '0',
+          bridgeTurns: '0',
           replyTurns: '40',
           unknownTurns: '0',
           p50FirstAudioMs: '3400',
@@ -223,6 +250,7 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           fillerTurns: '0',
           openerBridgeTurns: '0',
           interimTurns: '0',
+          bridgeTurns: '0',
           replyTurns: '0',
           unknownTurns: '15',
           p50FirstAudioMs: '2000',
@@ -239,6 +267,7 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           fillerTurns: 0,
           openerBridgeTurns: 0,
           interimTurns: 0,
+          bridgeTurns: 0,
           replyTurns: 40,
           unknownTurns: 0,
           p50FirstAudioMs: 3400,
@@ -250,6 +279,7 @@ describe('PlatformAnalyticsRepository first-audio split', () => {
           fillerTurns: 0,
           openerBridgeTurns: 0,
           interimTurns: 0,
+          bridgeTurns: 0,
           replyTurns: 0,
           unknownTurns: 15,
           p50FirstAudioMs: 2000,

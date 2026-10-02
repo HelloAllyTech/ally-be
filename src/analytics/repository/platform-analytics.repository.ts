@@ -35,7 +35,22 @@ const FIRST_AUDIO_OPENER_BRIDGE_SQL =
 const FIRST_AUDIO_FILLER_SQL =
   `(m."metadata"->>'firstAudioSource' = 'filler' ` +
   `AND NOT COALESCE(m."metadata"->'openerBridge' = 'true'::jsonb, false))`;
-const FIRST_AUDIO_INTERIM_SQL = `m."metadata"->>'firstAudioSource' = 'interim'`;
+/**
+ * The delivery plan's bridge line played on its own (ally-ai-learn v1.49.1+):
+ * firstAudioSource='interim' with `interimSource` 'bridge'.
+ */
+const FIRST_AUDIO_BRIDGE_SQL =
+  `(m."metadata"->>'firstAudioSource' = 'interim' ` +
+  `AND m."metadata"->>'interimSource' = 'bridge')`;
+/**
+ * The legacy predictive interim reply. Includes interim rows with no
+ * `interimSource` (everything before it was recorded): those were all the
+ * legacy interim or an unlabelled bridge, and guessing which would invent the
+ * split. Disjoint from FIRST_AUDIO_BRIDGE_SQL.
+ */
+const FIRST_AUDIO_INTERIM_SQL =
+  `(m."metadata"->>'firstAudioSource' = 'interim' ` +
+  `AND m."metadata"->>'interimSource' IS DISTINCT FROM 'bridge')`;
 const FIRST_AUDIO_REPLY_SQL = `m."metadata"->>'firstAudioSource' = 'reply'`;
 const FIRST_AUDIO_UNKNOWN_SQL = `m."metadata"->>'firstAudioSource' IS NULL`;
 /** Turns carrying any recorded first-audio provenance. */
@@ -163,8 +178,17 @@ export interface VoiceLatencyBucketRow {
    * as a rise in thinking-filler coverage.
    */
   firstAudioOpenerBridgeTurns: number;
-  /** Turns whose first audio was a predictive interim reply. */
+  /**
+   * Turns whose first audio was the legacy predictive interim reply, plus
+   * interim turns recorded before `interimSource` existed.
+   */
   firstAudioInterimTurns: number;
+  /**
+   * Turns whose first audio was the delivery plan's bridge line played on its
+   * own (`interimSource = 'bridge'`). A bridge AFTER an opener is
+   * firstAudioOpenerBridgeTurns instead.
+   */
+  firstAudioBridgeTurns: number;
   /** Turns whose first audio was the real reply (nothing masked it). */
   firstAudioReplyTurns: number;
   /**
@@ -183,8 +207,10 @@ export interface VoiceLatencyBucketRow {
   avgFirstAudioFillerMs: number | null;
   /** Mean time-to-first-voice (ms) for opener-bridge turns. Null if none. */
   avgFirstAudioOpenerBridgeMs: number | null;
-  /** Mean time-to-first-voice (ms) for interim-first turns. Null if none. */
+  /** Mean time-to-first-voice (ms) for legacy-interim-first turns. Null if none. */
   avgFirstAudioInterimMs: number | null;
+  /** Mean time-to-first-voice (ms) for bridge-line-first turns. Null if none. */
+  avgFirstAudioBridgeMs: number | null;
   /** Mean time-to-first-voice (ms) for reply-first turns. Null if none. */
   avgFirstAudioReplyMs: number | null;
 
@@ -242,8 +268,10 @@ export interface VoiceLatencyByVoiceModelRow {
   fillerTurns: number;
   /** Turns whose first audio was an opener's bridge line. */
   openerBridgeTurns: number;
-  /** Predictive-interim-first turns. */
+  /** Legacy-interim-first turns (and interim turns predating the label). */
   interimTurns: number;
+  /** Turns whose first audio was a bridge line played on its own. */
+  bridgeTurns: number;
   /** Turns where the real reply was the first audio (unmasked). */
   replyTurns: number;
   /** Turns with no `firstAudioSource` recorded — never assumed unmasked. */
@@ -857,7 +885,7 @@ export class PlatformAnalyticsRepository {
     // filler, opener bridge or interim reply can own it; these counts +
     // per-source means keep "we got faster" and "we masked more"
     // distinguishable. The filler and bridge conditions are disjoint, so the
-    // five counts partition the bucket. Turns with no recorded provenance are
+    // six counts partition the bucket. Turns with no recorded provenance are
     // counted separately, never assumed unmasked.
     for (const [condition, countAlias, avgAlias] of [
       [
@@ -874,6 +902,11 @@ export class PlatformAnalyticsRepository {
         FIRST_AUDIO_INTERIM_SQL,
         'firstAudioInterimTurns',
         'avgFirstAudioInterimMs',
+      ],
+      [
+        FIRST_AUDIO_BRIDGE_SQL,
+        'firstAudioBridgeTurns',
+        'avgFirstAudioBridgeMs',
       ],
       [FIRST_AUDIO_REPLY_SQL, 'firstAudioReplyTurns', 'avgFirstAudioReplyMs'],
     ] as const) {
@@ -947,11 +980,13 @@ export class PlatformAnalyticsRepository {
         firstAudioFillerTurns: number;
         firstAudioOpenerBridgeTurns: number;
         firstAudioInterimTurns: number;
+        firstAudioBridgeTurns: number;
         firstAudioReplyTurns: number;
         firstAudioUnknownTurns: number;
         avgFirstAudioFillerMs: number | null;
         avgFirstAudioOpenerBridgeMs: number | null;
         avgFirstAudioInterimMs: number | null;
+        avgFirstAudioBridgeMs: number | null;
         avgFirstAudioReplyMs: number | null;
         avgReplyLatencyMs: number | null;
         p50ReplyLatencyMs: number | null;
@@ -979,6 +1014,7 @@ export class PlatformAnalyticsRepository {
       firstAudioFillerTurns: Number(r.firstAudioFillerTurns) || 0,
       firstAudioOpenerBridgeTurns: Number(r.firstAudioOpenerBridgeTurns) || 0,
       firstAudioInterimTurns: Number(r.firstAudioInterimTurns) || 0,
+      firstAudioBridgeTurns: Number(r.firstAudioBridgeTurns) || 0,
       firstAudioReplyTurns: Number(r.firstAudioReplyTurns) || 0,
       firstAudioUnknownTurns: Number(r.firstAudioUnknownTurns) || 0,
       avgFirstAudioFillerMs: toNullableNumber(r.avgFirstAudioFillerMs),
@@ -986,6 +1022,7 @@ export class PlatformAnalyticsRepository {
         r.avgFirstAudioOpenerBridgeMs,
       ),
       avgFirstAudioInterimMs: toNullableNumber(r.avgFirstAudioInterimMs),
+      avgFirstAudioBridgeMs: toNullableNumber(r.avgFirstAudioBridgeMs),
       avgFirstAudioReplyMs: toNullableNumber(r.avgFirstAudioReplyMs),
       avgReplyLatencyMs: toNullableNumber(r.avgReplyLatencyMs),
       p50ReplyLatencyMs: toNullableNumber(r.p50ReplyLatencyMs),
@@ -1086,6 +1123,7 @@ export class PlatformAnalyticsRepository {
       [FIRST_AUDIO_FILLER_SQL, 'fillerTurns'],
       [FIRST_AUDIO_OPENER_BRIDGE_SQL, 'openerBridgeTurns'],
       [FIRST_AUDIO_INTERIM_SQL, 'interimTurns'],
+      [FIRST_AUDIO_BRIDGE_SQL, 'bridgeTurns'],
       [FIRST_AUDIO_REPLY_SQL, 'replyTurns'],
       [FIRST_AUDIO_UNKNOWN_SQL, 'unknownTurns'],
     ] as const) {
@@ -1132,6 +1170,7 @@ export class PlatformAnalyticsRepository {
         fillerTurns: number;
         openerBridgeTurns: number;
         interimTurns: number;
+        bridgeTurns: number;
         replyTurns: number;
         unknownTurns: number;
         p50FirstAudioMs: number | null;
@@ -1147,6 +1186,7 @@ export class PlatformAnalyticsRepository {
       fillerTurns: Number(r.fillerTurns) || 0,
       openerBridgeTurns: Number(r.openerBridgeTurns) || 0,
       interimTurns: Number(r.interimTurns) || 0,
+      bridgeTurns: Number(r.bridgeTurns) || 0,
       replyTurns: Number(r.replyTurns) || 0,
       unknownTurns: Number(r.unknownTurns) || 0,
       p50FirstAudioMs: toNullableNumber(r.p50FirstAudioMs),

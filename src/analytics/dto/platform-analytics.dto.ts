@@ -1208,9 +1208,19 @@ export class VoiceLatencyPointDto {
   firstAudioOpenerBridgeTurns!: number;
 
   @ApiProperty({
-    description: 'Turns whose first audio was a predictive interim reply.',
+    description:
+      'Turns whose first audio was the legacy predictive interim reply, ' +
+      'plus interim turns recorded before interimSource existed.',
   })
   firstAudioInterimTurns!: number;
+
+  @ApiProperty({
+    description:
+      "Turns whose first audio was the delivery plan's bridge line played on " +
+      "its own (interimSource='bridge'). A bridge after an opener is " +
+      'firstAudioOpenerBridgeTurns.',
+  })
+  firstAudioBridgeTurns!: number;
 
   @ApiProperty({
     description: 'Turns whose first audio was the real reply (unmasked).',
@@ -1241,10 +1251,17 @@ export class VoiceLatencyPointDto {
   avgFirstAudioOpenerBridgeMs!: number | null;
 
   @ApiProperty({
-    description: 'Mean time-to-first-voice (ms) for interim-first turns.',
+    description:
+      'Mean time-to-first-voice (ms) for legacy-interim-first turns.',
     nullable: true,
   })
   avgFirstAudioInterimMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for bridge-line-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioBridgeMs!: number | null;
 
   @ApiProperty({
     description: 'Mean time-to-first-voice (ms) for reply-first turns.',
@@ -1325,8 +1342,16 @@ export class VoiceLatencyByVoiceModelRowDto {
   })
   openerBridgeTurns!: number;
 
-  @ApiProperty({ description: 'Predictive-interim-first turns' })
+  @ApiProperty({
+    description:
+      'Legacy-interim-first turns (and interim turns predating the label)',
+  })
   interimTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns whose first audio was a bridge line on its own',
+  })
+  bridgeTurns!: number;
 
   @ApiProperty({
     description: 'Turns where the real reply was the first audio (unmasked)',
