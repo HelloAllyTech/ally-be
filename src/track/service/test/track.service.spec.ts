@@ -203,9 +203,7 @@ describe('TrackService', () => {
       mockDataSource.transaction.mockImplementation((cb) =>
         cb({
           getRepository: (repo: any) => {
-            if (
-              repo.name === 'TrackItemCompletionCriteriaVersion'
-            ) {
+            if (repo.name === 'TrackItemCompletionCriteriaVersion') {
               return mockCriteriaVersionRepo;
             }
             return {

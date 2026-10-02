@@ -326,8 +326,6 @@ export class TrackService {
           }
         }
 
-
-
         // `idx_track_sections_track_id_order` / `idx_track_items_section_id_order`
         // are non-deferred unique indexes: Postgres checks them per statement, not
         // at commit. If a section/item's order shifted (e.g. a component was

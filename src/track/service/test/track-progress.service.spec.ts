@@ -68,23 +68,34 @@ describe('TrackProgressService', () => {
   describe('getEffectiveCompletionCriteria', () => {
     it('should return criteria from version when lock exists', async () => {
       const progress = { id: 'progress-id', trackItemId: 'item-id' };
-      const lock = { trackItemProgressId: 'progress-id', criteriaVersionId: 'version-id' };
-      const version = { id: 'version-id', completionCriteria: { minScore: 90 } };
+      const lock = {
+        trackItemProgressId: 'progress-id',
+        criteriaVersionId: 'version-id',
+      };
+      const version = {
+        id: 'version-id',
+        completionCriteria: { minScore: 90 },
+      };
 
       const getRepoMock = jest.fn();
-      const progressRepoMock = { findOne: jest.fn().mockResolvedValue(progress) };
+      const progressRepoMock = {
+        findOne: jest.fn().mockResolvedValue(progress),
+      };
       const lockRepoMock = { findOne: jest.fn().mockResolvedValue(lock) };
       const versionRepoMock = { findOne: jest.fn().mockResolvedValue(version) };
 
       getRepoMock.mockImplementation((repo: any) => {
         if (repo.name === 'TrackItemProgress') return progressRepoMock;
         if (repo.name === 'TrackItemProgressCriteriaLock') return lockRepoMock;
-        if (repo.name === 'TrackItemCompletionCriteriaVersion') return versionRepoMock;
+        if (repo.name === 'TrackItemCompletionCriteriaVersion')
+          return versionRepoMock;
         return { findOne: jest.fn() };
       });
       mockDataSource.getRepository = getRepoMock;
 
-      const criteria = await (service as any).getEffectiveCompletionCriteria('progress-id');
+      const criteria = await (service as any).getEffectiveCompletionCriteria(
+        'progress-id',
+      );
       expect(criteria).toEqual({ minScore: 90 });
     });
 
@@ -93,7 +104,9 @@ describe('TrackProgressService', () => {
       const item = { id: 'item-id', completionCriteria: { minScore: 80 } };
 
       const getRepoMock = jest.fn();
-      const progressRepoMock = { findOne: jest.fn().mockResolvedValue(progress) };
+      const progressRepoMock = {
+        findOne: jest.fn().mockResolvedValue(progress),
+      };
       const lockRepoMock = { findOne: jest.fn().mockResolvedValue(null) };
       const itemRepoMock = { findOne: jest.fn().mockResolvedValue(item) };
 
@@ -105,17 +118,30 @@ describe('TrackProgressService', () => {
       });
       mockDataSource.getRepository = getRepoMock;
 
-      const criteria = await (service as any).getEffectiveCompletionCriteria('progress-id');
+      const criteria = await (service as any).getEffectiveCompletionCriteria(
+        'progress-id',
+      );
       expect(criteria).toEqual({ minScore: 80 });
     });
   });
 
   describe('completeItem', () => {
     it('should create a lock on completion if one does not exist', async () => {
-      const progress = { id: 'progress-id', trackItemId: 'item-id', trackEnrollmentId: 'enroll-id' };
-      const item = { id: 'item-id', trackId: 'track-id', completionCriteria: { minScore: 80 } };
+      const progress = {
+        id: 'progress-id',
+        trackItemId: 'item-id',
+        trackEnrollmentId: 'enroll-id',
+      };
+      const item = {
+        id: 'item-id',
+        trackId: 'track-id',
+        completionCriteria: { minScore: 80 },
+      };
       const enrollment = { id: 'enroll-id' };
-      const version = { id: 'version-id', completionCriteria: { minScore: 80 } };
+      const version = {
+        id: 'version-id',
+        completionCriteria: { minScore: 80 },
+      };
 
       const mockLockRepo = {
         findOne: jest.fn().mockResolvedValue(null),
@@ -142,8 +168,10 @@ describe('TrackProgressService', () => {
       mockDataSource.transaction.mockImplementation(async (cb) => {
         return cb({
           getRepository: (repo: any) => {
-            if (repo.name === 'TrackItemProgressCriteriaLock') return mockLockRepo;
-            if (repo.name === 'TrackItemCompletionCriteriaVersion') return mockVersionRepo;
+            if (repo.name === 'TrackItemProgressCriteriaLock')
+              return mockLockRepo;
+            if (repo.name === 'TrackItemCompletionCriteriaVersion')
+              return mockVersionRepo;
             if (repo.name === 'TrackItemProgress') return mockProgressRepo;
             if (repo.name === 'TrackItem') return mockItemRepo;
             if (repo.name === 'TrackEnrollment') return mockEnrollmentRepo;
@@ -164,23 +192,48 @@ describe('TrackProgressService', () => {
   describe('reevaluateProgress', () => {
     it('should complete items that now meet the criteria', async () => {
       const enrollmentId = 'enroll-id';
-      const progress1 = { id: 'progress-1', trackItemId: 'item-1', status: 'UNLOCKED', score: 85 };
-      const item1 = { id: 'item-1', type: TrackItemType.ROLEPLAY, completionCriteria: { minScore: 90 } };
-      const progress2 = { id: 'progress-2', trackItemId: 'item-2', status: 'UNLOCKED' };
-      const item2 = { id: 'item-2', type: TrackItemType.QUIZ, completionCriteria: { passScore: 80 } };
+      const progress1 = {
+        id: 'progress-1',
+        trackItemId: 'item-1',
+        status: 'UNLOCKED',
+        score: 85,
+      };
+      const item1 = {
+        id: 'item-1',
+        type: TrackItemType.ROLEPLAY,
+        completionCriteria: { minScore: 90 },
+      };
+      const progress2 = {
+        id: 'progress-2',
+        trackItemId: 'item-2',
+        status: 'UNLOCKED',
+      };
+      const item2 = {
+        id: 'item-2',
+        type: TrackItemType.QUIZ,
+        completionCriteria: { passScore: 80 },
+      };
       const attempt2 = { scorePct: 85 };
 
-      const completeItemSpy = jest.spyOn(service, 'completeItem').mockResolvedValue(null as any);
+      const completeItemSpy = jest
+        .spyOn(service, 'completeItem')
+        .mockResolvedValue(null as any);
 
       const getRepoMock = jest.fn();
-      const progressRepoMock = { find: jest.fn().mockResolvedValue([progress1, progress2]) };
-      const itemRepoMock = { findOne: jest.fn().mockImplementation(({ where: { id } }) => {
-        if (id === 'item-1') return item1;
-        if (id === 'item-2') return item2;
-        return null;
-      })};
-      const quizAttemptRepoMock = { findOne: jest.fn().mockResolvedValue(attempt2) };
-      
+      const progressRepoMock = {
+        find: jest.fn().mockResolvedValue([progress1, progress2]),
+      };
+      const itemRepoMock = {
+        findOne: jest.fn().mockImplementation(({ where: { id } }) => {
+          if (id === 'item-1') return item1;
+          if (id === 'item-2') return item2;
+          return null;
+        }),
+      };
+      const quizAttemptRepoMock = {
+        findOne: jest.fn().mockResolvedValue(attempt2),
+      };
+
       const lockRepoMock = { findOne: jest.fn().mockResolvedValue(null) };
 
       getRepoMock.mockImplementation((repo: any) => {
@@ -191,20 +244,25 @@ describe('TrackProgressService', () => {
         return { findOne: jest.fn(), find: jest.fn() };
       });
       mockDataSource.getRepository = getRepoMock;
-      
+
       // Mock getEffectiveCompletionCriteria to return new criteria
-      const getEffectiveCompletionCriteriaSpy = jest.spyOn(service as any, 'getEffectiveCompletionCriteria');
-      getEffectiveCompletionCriteriaSpy.mockImplementation(async (progressId) => {
-        if (progressId === 'progress-1') return { minScore: 80 };
-        if (progressId === 'progress-2') return { passScore: 80 };
-        return null;
-      });
+      const getEffectiveCompletionCriteriaSpy = jest.spyOn(
+        service as any,
+        'getEffectiveCompletionCriteria',
+      );
+      getEffectiveCompletionCriteriaSpy.mockImplementation(
+        async (progressId) => {
+          if (progressId === 'progress-1') return { minScore: 80 };
+          if (progressId === 'progress-2') return { passScore: 80 };
+          return null;
+        },
+      );
 
       await service.reevaluateProgress(enrollmentId);
 
       expect(completeItemSpy).toHaveBeenCalledWith('progress-1', {});
       expect(completeItemSpy).toHaveBeenCalledWith('progress-2', {});
-      
+
       completeItemSpy.mockRestore();
       getEffectiveCompletionCriteriaSpy.mockRestore();
     });

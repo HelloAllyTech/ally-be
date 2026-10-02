@@ -227,7 +227,8 @@ export class TrackProgressService {
       return NOOP_RESULT;
     }
 
-    const effectiveCriteria = await this.getEffectiveCompletionCriteria(trackItemProgressId);
+    const effectiveCriteria =
+      await this.getEffectiveCompletionCriteria(trackItemProgressId);
 
     const callDurationInSeconds = (callDuration ?? 0) / 1000;
     const minDurationSeconds =
@@ -340,9 +341,13 @@ export class TrackProgressService {
       });
 
       const lockRepo = manager.getRepository(TrackItemProgressCriteriaLock);
-      const lock = await lockRepo.findOne({ where: { trackItemProgressId: progress.id } });
+      const lock = await lockRepo.findOne({
+        where: { trackItemProgressId: progress.id },
+      });
       if (!lock) {
-        const versionRepo = manager.getRepository(TrackItemCompletionCriteriaVersion);
+        const versionRepo = manager.getRepository(
+          TrackItemCompletionCriteriaVersion,
+        );
         let latestVersion = await versionRepo.findOne({
           where: { trackItemId: item.id },
           order: { createdAt: 'DESC' },
@@ -506,7 +511,9 @@ export class TrackProgressService {
     });
 
     for (const progress of progressRows) {
-      const item = await itemRepo.findOne({ where: { id: progress.trackItemId } });
+      const item = await itemRepo.findOne({
+        where: { id: progress.trackItemId },
+      });
       if (!item) continue;
 
       const effectiveCriteria = await this.getEffectiveCompletionCriteria(
@@ -532,7 +539,8 @@ export class TrackProgressService {
           shouldComplete = true;
         }
       } else if (item.type === TrackItemType.VIDEO) {
-        const watchPct = (progress.meta as TrackItemProgressMeta)?.watchPct ?? 0;
+        const watchPct =
+          (progress.meta as any)?.watchPct ?? 0;
         if (watchPct >= (effectiveCriteria.watchPct ?? 101)) {
           shouldComplete = true;
         }
@@ -549,21 +557,31 @@ export class TrackProgressService {
     manager?: EntityManager,
   ): Promise<TrackItemCompletionCriteria | null> {
     const repositoryProvider = manager || this.dataSource;
-    const lockRepo = repositoryProvider.getRepository(TrackItemProgressCriteriaLock);
-    const versionRepo = repositoryProvider.getRepository(TrackItemCompletionCriteriaVersion);
+    const lockRepo = repositoryProvider.getRepository(
+      TrackItemProgressCriteriaLock,
+    );
+    const versionRepo = repositoryProvider.getRepository(
+      TrackItemCompletionCriteriaVersion,
+    );
     const itemRepo = repositoryProvider.getRepository(TrackItem);
     const progressRepo = repositoryProvider.getRepository(TrackItemProgress);
 
-    const progress = await progressRepo.findOne({ where: { id: trackItemProgressId } });
+    const progress = await progressRepo.findOne({
+      where: { id: trackItemProgressId },
+    });
     if (!progress) return null;
 
     const lock = await lockRepo.findOne({ where: { trackItemProgressId } });
     if (lock) {
-      const version = await versionRepo.findOne({ where: { id: lock.criteriaVersionId } });
+      const version = await versionRepo.findOne({
+        where: { id: lock.criteriaVersionId },
+      });
       return version?.completionCriteria ?? null;
     }
 
-    const item = await itemRepo.findOne({ where: { id: progress.trackItemId } });
+    const item = await itemRepo.findOne({
+      where: { id: progress.trackItemId },
+    });
     return item?.completionCriteria ?? null;
   }
 }

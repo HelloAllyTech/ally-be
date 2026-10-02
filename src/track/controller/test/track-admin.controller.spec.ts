@@ -28,11 +28,11 @@ describe('TrackAdminController', () => {
         { provide: TrackProgressService, useValue: mockTrackProgressService },
       ],
     })
-    .overrideGuard(PermissionsGuard)
-    .useValue({ canActivate: () => true })
-    .overrideGuard(OwnTenantScopeGuard)
-    .useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(OwnTenantScopeGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<TrackAdminController>(TrackAdminController);
   });
@@ -45,7 +45,9 @@ describe('TrackAdminController', () => {
     it('should call trackProgressService.getCompletedLearnerCount', async () => {
       const itemId = 'item-id';
       await controller.getCompletedLearnerCount(itemId);
-      expect(mockTrackProgressService.getCompletedLearnerCount).toHaveBeenCalledWith(itemId);
+      expect(
+        mockTrackProgressService.getCompletedLearnerCount,
+      ).toHaveBeenCalledWith(itemId);
     });
   });
 

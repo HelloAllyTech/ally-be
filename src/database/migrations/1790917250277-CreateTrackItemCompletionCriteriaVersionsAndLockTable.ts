@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateTrackItemCompletionCriteriaVersionsAndLockTable1790917250277
-  implements MigrationInterface
-{
+export class CreateTrackItemCompletionCriteriaVersionsAndLockTable1790917250277 implements MigrationInterface {
   name = 'CreateTrackItemCompletionCriteriaVersionsAndLockTable1790917250277';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -22,9 +20,15 @@ export class CreateTrackItemCompletionCriteriaVersionsAndLockTable1790917250277
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "public"."idx_track_item_progress_criteria_lock_criteria_version_id"`);
+    await queryRunner.query(
+      `DROP INDEX "public"."idx_track_item_progress_criteria_lock_criteria_version_id"`,
+    );
     await queryRunner.query(`DROP TABLE "track_item_progress_criteria_lock"`);
-    await queryRunner.query(`DROP INDEX "public"."idx_track_item_completion_criteria_versions_track_item_id"`);
-    await queryRunner.query(`DROP TABLE "track_item_completion_criteria_versions"`);
+    await queryRunner.query(
+      `DROP INDEX "public"."idx_track_item_completion_criteria_versions_track_item_id"`,
+    );
+    await queryRunner.query(
+      `DROP TABLE "track_item_completion_criteria_versions"`,
+    );
   }
 }

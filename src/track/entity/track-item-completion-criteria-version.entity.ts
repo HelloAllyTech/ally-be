@@ -9,17 +9,17 @@ import { TrackItemCompletionCriteria } from '../type/track.type';
 @Entity({ name: 'track_item_completion_criteria_versions' })
 export class TrackItemCompletionCriteriaVersion {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ name: 'track_item_id', type: 'uuid' })
-  trackItemId: string;
+  trackItemId!: string;
 
   @Column({ name: 'completion_criteria', type: 'jsonb' })
-  completionCriteria: TrackItemCompletionCriteria;
+  completionCriteria!: TrackItemCompletionCriteria;
 
   @Column({ name: 'created_by_id', type: 'integer' })
-  createdById: number;
+  createdById!: number;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
-  createdAt: Date;
+  createdAt!: Date;
 }
