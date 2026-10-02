@@ -539,8 +539,7 @@ export class TrackProgressService {
           shouldComplete = true;
         }
       } else if (item.type === TrackItemType.VIDEO) {
-        const watchPct =
-          (progress.meta as any)?.watchPct ?? 0;
+        const watchPct = (progress.meta as any)?.watchPct ?? 0;
         if (watchPct >= (effectiveCriteria.watchPct ?? 101)) {
           shouldComplete = true;
         }
