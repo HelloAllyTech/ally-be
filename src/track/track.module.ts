@@ -8,6 +8,7 @@ import { CaseModule } from 'src/case/case.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
+import { UserModule } from 'src/user/user.module';
 import { TrackAdminController } from './controller/track-admin.controller';
 import { TrackLearnerController } from './controller/track-learner.controller';
 import { TrackComponentTemplateController } from './controller/track-component-template.controller';
@@ -54,6 +55,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     LlmUsageModule,
     LlmAgentModule,
     CohortModule,
+    UserModule,
   ],
   controllers: [
     TrackAdminController,

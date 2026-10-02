@@ -12,6 +12,9 @@ import { UpsertTrackStructureDto } from '../../dto/upsert-track-structure.dto';
 import { TrackItemType } from '../../type/track.type';
 import { QuizQuestionType } from '../../type/quiz.type';
 import { Track } from '../../entity/track.entity';
+import { UserService } from 'src/user/service/user.service';
+import { TrackItemRepository } from 'src/track/repository/track-item.repository';
+import * as trackStructureValidator from '../track-structure.validator';
 
 const mockDataSource = {
   transaction: jest.fn(),
@@ -21,6 +24,10 @@ const mockTrackRepository = {
   findOne: jest.fn(),
   save: jest.fn(),
   update: jest.fn(),
+};
+
+const mockTrackItemRepository = {
+  findOne: jest.fn(),
 };
 
 const mockTrackEnrollmentRepository = {
@@ -47,6 +54,10 @@ const mockTrackTranslationService = {
   handleSourceChanged: jest.fn(),
 };
 
+const mockUserService = {
+  getUsersByIds: jest.fn(),
+};
+
 describe('TrackService', () => {
   let service: TrackService;
 
@@ -56,6 +67,7 @@ describe('TrackService', () => {
         TrackService,
         { provide: DataSource, useValue: mockDataSource },
         { provide: TrackRepository, useValue: mockTrackRepository },
+        { provide: TrackItemRepository, useValue: mockTrackItemRepository },
         {
           provide: TrackEnrollmentRepository,
           useValue: mockTrackEnrollmentRepository,
@@ -71,6 +83,7 @@ describe('TrackService', () => {
           provide: TrackTranslationService,
           useValue: mockTrackTranslationService,
         },
+        { provide: UserService, useValue: mockUserService },
       ],
     }).compile();
 
@@ -134,6 +147,85 @@ describe('TrackService', () => {
       await expect(
         service.upsertStructure(trackId, dto),
       ).resolves.not.toThrow();
+    });
+
+    it('should create a version when completionCriteria changes on a live course', async () => {
+      const trackId = 'test-track-id';
+      const itemId = 'item-1';
+      const existingSections = [
+        {
+          id: 'section-1',
+          title: 'Section 1',
+          description: 'sec-desc',
+          order: 1,
+          items: [
+            {
+              id: itemId,
+              type: TrackItemType.ROLEPLAY,
+              order: 1,
+              title: 'Roleplay',
+              description: 'item-desc',
+              scenarioId: 123,
+              caseId: null,
+              content: null,
+              completionCriteria: { minScore: 80 },
+              hasDiscussion: false,
+            },
+          ],
+        },
+      ];
+
+      const dto: UpsertTrackStructureDto = {
+        sections: JSON.parse(JSON.stringify(existingSections)),
+      };
+      dto.sections[0].items[0].completionCriteria = { minScore: 90 };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(true);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: existingSections,
+      } as any);
+      mockScenarioSharedService.getScenarioByIds.mockResolvedValue([
+        { id: 123 },
+      ] as any);
+
+      const signatureSpy = jest.spyOn(
+        trackStructureValidator,
+        'computeStructuralSignature',
+      );
+      signatureSpy.mockReturnValue('same-signature');
+
+      const mockCriteriaVersionRepo = {
+        save: jest.fn(),
+      };
+
+      mockDataSource.transaction.mockImplementation((cb) =>
+        cb({
+          getRepository: (repo: any) => {
+            if (
+              repo.name === 'TrackItemCompletionCriteriaVersion'
+            ) {
+              return mockCriteriaVersionRepo;
+            }
+            return {
+              softDelete: jest.fn(),
+              update: jest.fn(),
+              save: jest.fn().mockResolvedValue({ id: 'new-section-id' }),
+            };
+          },
+        }),
+      );
+
+      await service.upsertStructure(trackId, dto);
+
+      expect(mockCriteriaVersionRepo.save).toHaveBeenCalledWith({
+        trackItemId: itemId,
+        completionCriteria: { minScore: 80 }, // old value
+        createdById: undefined, // userId is not set in test context
+      });
+
+      signatureSpy.mockRestore();
     });
   });
 

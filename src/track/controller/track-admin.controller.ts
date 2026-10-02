@@ -24,6 +24,7 @@ import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.de
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AssignmentStatus, SuccessResponse } from 'src/common/type/common.type';
 import { TrackService } from '../service/track.service';
+import { TrackProgressService } from '../service/track-progress.service';
 import { TrackTenantService } from '../service/track-tenant.service';
 import { TrackMediaService } from '../service/track-media.service';
 import {
@@ -61,6 +62,7 @@ export class TrackAdminController {
     private readonly trackTenantService: TrackTenantService,
     private readonly trackMediaService: TrackMediaService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly trackProgressService: TrackProgressService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
@@ -126,6 +128,24 @@ export class TrackAdminController {
   @Get('tracks/:id')
   async getTrackById(@Param('id', ParseUUIDPipe) id: string) {
     return this.trackService.getTrackById(id);
+  }
+
+  @ApiOperation({
+    summary: 'Get the number of learners who have completed a track item',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_TRACK])
+  @Get('items/:id/completed-learners-count')
+  async getCompletedLearnerCount(@Param('id', ParseUUIDPipe) id: string) {
+    return this.trackProgressService.getCompletedLearnerCount(id);
+  }
+
+  @ApiOperation({
+    summary: 'Get the criteria change history for a track item',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_TRACK])
+  @Get('items/:id/criteria-history')
+  async getCriteriaHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.trackService.getCriteriaHistory(id);
   }
 
   @ApiOperation({ summary: 'Create track (draft)' })

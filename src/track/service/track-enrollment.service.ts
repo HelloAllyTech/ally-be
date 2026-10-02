@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SessionItemStatus } from 'src/common/type/common.type';
 import { CaseSessionService } from 'src/case/service/case-session.service';
@@ -42,6 +42,7 @@ import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { GameContent } from '../type/game.type';
+import { TrackItemCompletionCriteriaVersion } from '../entity/track-item-completion-criteria-version.entity';
 import {
   sanitizeQuizForLearner,
   sanitizeQuizQuestionForLearner,
@@ -917,10 +918,782 @@ export class TrackEnrollmentService {
     };
   }
 
+    const progressByItemId = new Map(
+      progressRows.map((row) => [row.trackItemId, row]),
+    );
+
+    const allItemIds = structure.sections.flatMap((s) => s.items.map((i) => i.id));
+    const versions = await this.dataSource
+      .getRepository(TrackItemCompletionCriteriaVersion)
+      .find({
+        where: { trackItemId: In(allItemIds) },
+      });
+    const itemsWithHistory = new Set(versions.map((v) => v.trackItemId));
+
+    // The saved per-course choice wins over the app language, and both lose to
+    // reality: an unpublished language reads in English.
+    const resolvedLanguage =
+      await this.trackLocalizationService.resolveLearnerLanguage(
+        trackId,
+        enrollment?.languageCode,
+        languageCode,
+      );
+    const [translation, languages] = await Promise.all([
+      this.trackLocalizationService.resolvePublished(trackId, resolvedLanguage),
+      this.trackLocalizationService.listLearnerLanguages(trackId),
+    ]);
+    const translated = this.trackLocalizationService.localizeTrack(
+      structure as any,
+      translation,
+    );
+
+    return {
+      id: structure.id,
+      title: translated.title,
+      description: translated.description,
+      coverImageUrl: structure.coverImageUrl,
+      status: structure.status,
+      totalItems: structure.totalItems,
+      simulationsCount: structure.sections.reduce(
+        (sum, section) =>
+          sum +
+          section.items.filter((item) => item.type === TrackItemType.ROLEPLAY)
+            .length,
+        0,
+      ),
+      estimatedDurationMinutes: structure.estimatedDurationMinutes,
+      enrolled: !!enrollment,
+      trackEnrollmentId: enrollment?.id ?? null,
+      completedItems: enrollment?.completedItems ?? 0,
+      completedAt: enrollment?.completedAt ?? null,
+      /** What the learner is reading now, and what else they can switch to. */
+      languageCode: resolvedLanguage,
+      availableLanguages: languages,
+      sections: structure.sections.map((section) => {
+        const localizedSection = this.trackLocalizationService.localizeSection(
+          section as any,
+          translation,
+        );
+        return {
+          id: section.id,
+          title: localizedSection.title,
+          description: localizedSection.description,
+          order: section.order,
+          items: section.items.map((item) =>
+            this.toLearnerItem(
+              this.trackLocalizationService.localizeItem(item, translation),
+              progressByItemId.get(item.id),
+              this.fallbackReasonFor(item, translation),
+              itemsWithHistory.has(item.id),
+            ),
+          ),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Why an item will read in English despite the learner picking another
+   * language, or null when it reads in their language. Surfaced per item so a
+   * learner meets "this lesson is in English" on the card rather than as a
+   * surprise once the video starts.
+   */
+  private fallbackReasonFor(
+    item: TrackItem,
+    translation: TrackTranslation | null,
+  ): TrackTranslationFallbackReason | null {
+    if (!translation) return null;
+    if (
+      item.type === TrackItemType.VIDEO &&
+      !this.trackLocalizationService.hasLocalisedMedia(item, translation)
+    ) {
+      return TrackTranslationFallbackReason.VIDEO_NOT_LOCALISED;
+    }
+    if (item.type === TrackItemType.CASE) {
+      return TrackTranslationFallbackReason.CASE_NOT_TRANSLATED;
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Language choice
+   * ---------------------------------------------------------------- */
+
+  /** Languages this course is published in, for the learner's picker. */
+  async getTrackLanguages(trackId: string) {
+    const languages =
+      await this.trackLocalizationService.listLearnerLanguages(trackId);
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      this.requireUserId(),
+    );
+    return {
+      languages,
+      selectedLanguageCode: enrollment?.languageCode ?? null,
+    };
+  }
+
+  /**
+   * Persists the learner's language for this course.
+   *
+   * Requires enrollment, because the choice lives on the enrollment row — and
+   * because it is the language their answers will be marked in. Switching
+   * mid-course is safe: progress rows are keyed by item id, which does not
+   * change with language.
+   */
+  async setTrackLanguage(trackId: string, languageCode: string) {
+    const userId = this.requireUserId();
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      userId,
+    );
+    if (!enrollment) {
+      throw new BadRequestException(
+        'Enroll in this course before choosing a language for it.',
+      );
+    }
+
+    const languages =
+      await this.trackLocalizationService.listLearnerLanguages(trackId);
+    if (!languages.some((option) => option.languageCode === languageCode)) {
+      throw new BadRequestException(
+        'This course is not available in that language.',
+      );
+    }
+
+    await this.trackEnrollmentRepository.update(enrollment.id, {
+      languageCode,
+    });
+    return { languageCode };
+  }
+
+  /** Idempotent enrollment: creates the enrollment + ALL progress rows. */
+  async enroll(trackId: string, appLanguageCode?: string) {
+    const userId = this.requireUserId();
+    const tenantId = ExecutionManager.getTenantId();
+
+    const existing = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      userId,
+    );
+    if (existing) {
+      return { trackEnrollmentId: existing.id, alreadyEnrolled: true };
+    }
+
+    const structure =
+      await this.trackSharedService.getTrackWithStructure(trackId);
+    await this.assertTrackAvailable(structure);
+    if (structure.status !== TrackStatus.ACTIVE) {
+      throw new BadRequestException('This track is not open for enrollment');
+    }
+    const orderedItems = structure.sections.flatMap((section) => section.items);
+    if (orderedItems.length === 0) {
+      throw new BadRequestException('This track has no content yet');
+    }
+
+    // Seed the per-course language from the app language they enrolled in, so
+    // a Hindi-UI learner opening a Hindi-published course starts in Hindi
+    // without touching the picker. Falls back to English when the course is not
+    // published in their app language.
+    const initialLanguage =
+      await this.trackLocalizationService.resolveLearnerLanguage(
+        trackId,
+        null,
+        appLanguageCode,
+      );
+
+    const enrollmentId = await this.dataSource.transaction(async (manager) => {
+      const enrollmentRepo = manager.getRepository(TrackEnrollment);
+      const progressRepo = manager.getRepository(TrackItemProgress);
+      const enrollment = await enrollmentRepo.save({
+        trackId,
+        userId,
+        tenantId,
+        languageCode: initialLanguage,
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      });
+      await progressRepo.save(
+        orderedItems.map((item, index) =>
+          progressRepo.create({
+            trackEnrollmentId: enrollment.id,
+            trackItemId: item.id,
+            userId,
+            status:
+              index === 0
+                ? SessionItemStatus.UNLOCKED
+                : SessionItemStatus.LOCKED,
+          }),
+        ),
+      );
+      return enrollment.id;
+    });
+
+    this.logger.info(`User ${userId} enrolled in track ${trackId}`);
+    return { trackEnrollmentId: enrollmentId, alreadyEnrolled: false };
+  }
+
+  /**
+   * Open a component. Gated on UNLOCKED/COMPLETED (replay of a completed item
+   * is allowed and has no progression side effects). Returns the type-specific
+   * payload the player renders.
+   */
+  async startItem(trackItemId: string) {
+    const { item, sourceItem, progress, languageCode } =
+      await this.getPermittedItemProgress(trackItemId);
+
+    if (!progress.startedAt) {
+      await this.trackItemProgressRepository.update(progress.id, {
+        startedAt: new Date(),
+      });
+    }
+    await this.touchEnrollment(progress.trackEnrollmentId);
+
+    switch (item.type) {
+      case TrackItemType.ROLEPLAY: {
+        const lastScenarioSessionId =
+          progress.status === SessionItemStatus.COMPLETED
+            ? await this.scenarioSharedService.getLatestScenarioSessionIdByTrackItemProgressId(
+                progress.id,
+              )
+            : null;
+        const scenarioTranslated =
+          await this.trackLocalizationService.hasScenarioTranslation(
+            item.scenarioId,
+            languageCode,
+          );
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          scenarioId: item.scenarioId,
+          completionCriteria: item.completionCriteria ?? null,
+          lastScenarioSessionId,
+          /** The roleplay runs in the scenario's own translated language, which
+           *  is translated separately from the course. */
+          languageFallbackReason: scenarioTranslated
+            ? null
+            : TrackTranslationFallbackReason.SCENARIO_NOT_TRANSLATED,
+        };
+      }
+
+      case TrackItemType.CASE: {
+        let caseSession =
+          await this.caseSessionService.getUserCaseSessionByCaseId(
+            item.caseId!,
+          );
+        if (!caseSession) {
+          // Returns only the first session-item id — re-read the session row.
+          await this.caseSessionService.createUserCaseSession(item.caseId!);
+          caseSession =
+            await this.caseSessionService.getUserCaseSessionByCaseId(
+              item.caseId!,
+            );
+        }
+        if (!caseSession) {
+          throw new BadRequestException(
+            'Could not start a case session for this component',
+          );
+        }
+        if (progress.caseSessionId !== caseSession.id) {
+          await this.trackItemProgressRepository.update(progress.id, {
+            caseSessionId: caseSession.id,
+          });
+        }
+        // The learner may have finished this case elsewhere already.
+        if (
+          caseSession.completedAt &&
+          progress.status !== SessionItemStatus.COMPLETED
+        ) {
+          await this.trackProgressService.completeItem(progress.id, {});
+        }
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          caseId: item.caseId,
+          caseSessionId: caseSession.id,
+          caseCompleted: !!caseSession.completedAt,
+        };
+      }
+
+      case TrackItemType.QUIZ: {
+        const quiz = item.content as QuizContent;
+        const attemptsUsed =
+          await this.trackQuizAttemptRepository.countByProgressId(progress.id);
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          quiz: sanitizeQuizForLearner(
+            quiz,
+            `${progress.id}:${attemptsUsed + 1}`,
+          ),
+          attemptsUsed,
+          maxAttempts: quiz.settings.maxAttempts ?? null,
+        };
+      }
+
+      case TrackItemType.ANNOTATED_ARTIFACT: {
+        const annotation = item.content as AnnotationContent;
+        const attemptsUsed =
+          await this.trackAnnotationAttemptRepository.countByProgressId(
+            progress.id,
+          );
+        // A learner reopening a finished annotation is almost always coming
+        // back for the author's notes, so the last graded attempt ships with
+        // the payload rather than making them re-mark to see it.
+        const lastAttempt = attemptsUsed
+          ? await this.trackAnnotationAttemptRepository.findLatestByProgressId(
+              progress.id,
+            )
+          : null;
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          annotation: sanitizeAnnotationForLearner(annotation),
+          attemptsUsed,
+          maxAttempts: annotation.settings.maxAttempts ?? null,
+          lastResult: lastAttempt
+            ? buildAnnotationAttemptView(lastAttempt, annotation, attemptsUsed)
+            : null,
+        };
+      }
+
+      case TrackItemType.GAME: {
+        const game = item.content as GameContent;
+        /**
+         * Completing on open is what makes a game skippable. Progression is
+         * SEQUENTIAL, so an item that is never completed leaves everything
+         * after it LOCKED — a learner who bounced off the game would be stuck
+         * behind it. Opening it is the whole requirement; playing, replaying
+         * and walking away are all equally fine.
+         */
+        const completion = await this.trackProgressService.completeItem(
+          progress.id,
+          {},
+        );
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          gameKey: game.gameKey,
+          intro: game.intro ?? null,
+          bestScore: progress.meta?.bestGameScore ?? null,
+          playCount: progress.meta?.gamePlayCount ?? 0,
+          completion,
+        };
+      }
+
+      case TrackItemType.ARTICLE: {
+        if (!progress.meta?.articleFirstOpenedAt) {
+          await this.trackItemProgressRepository.update(progress.id, {
+            meta: {
+              ...(progress.meta ?? {}),
+              articleFirstOpenedAt: new Date().toISOString(),
+            },
+          });
+        }
+        const article = item.content as ArticleContent;
+        const questions = articleQuestionsInReadingOrder(article);
+        const answered = progress.meta?.answeredArticleQuestions ?? {};
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          html: article.html,
+          minReadSeconds: item.completionCriteria?.minReadSeconds ?? 0,
+          questions: questions.map((question) =>
+            buildArticleQuestionView(question, answered[question.id]),
+          ),
+          answeredQuestionCount: questions.filter(
+            (question) => answered[question.id],
+          ).length,
+        };
+      }
+
+      case TrackItemType.VIDEO: {
+        const video = item.content as VideoContent;
+        const sourceVideo = sourceItem.content as VideoContent | undefined;
+        // Interjections only ever fire on S3-hosted video — see
+        // `validateInterjections` — so a non-S3 source simply carries none.
+        const interjections =
+          video.source === VideoSource.S3 ? (video.interjections ?? []) : [];
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          source: video.source,
+          url: video.url,
+          durationSeconds: video.durationSeconds ?? null,
+          requiredWatchPct: item.completionCriteria?.watchPct ?? 90,
+          maxWatchedPct: progress.meta?.maxWatchedPct ?? 0,
+          interjections: interjections.map((interjection) => ({
+            id: interjection.id,
+            timestampSeconds: interjection.timestampSeconds,
+            question: sanitizeQuizQuestionForLearner(interjection.question),
+            answered: progress.meta?.answeredInterjections?.[interjection.id],
+          })),
+          /**
+           * A video is a file, not text — it is only in the learner's language
+           * if the trainer supplied a localised cut. `localizeItem` swaps the
+           * URL when they did, so an unchanged URL means English.
+           */
+          languageFallbackReason:
+            languageCode && video.url === sourceVideo?.url
+              ? TrackTranslationFallbackReason.VIDEO_NOT_LOCALISED
+              : null,
+        };
+      }
+
+      case TrackItemType.JOURNAL: {
+        const journal = item.content as JournalContent;
+        const entries = await this.trackJournalEntryRepository.findByProgressId(
+          progress.id,
+        );
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          prompts: journal.prompts,
+          savedResponses: entries.map((entry) => ({
+            promptId: entry.promptId,
+            response: entry.response,
+            submittedAt: entry.submittedAt,
+          })),
+        };
+      }
+
+      default:
+        throw new BadRequestException(`Unknown component type: ${item.type}`);
+    }
+  }
+
+  /** Mark an article read; completes the item (honouring minReadSeconds). */
+  async markArticleRead(trackItemId: string) {
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.ARTICLE) {
+      throw new BadRequestException('This component is not an article');
+    }
+    /**
+     * Inline questions are the point of the article that carries them: a
+     * mark-as-read button that completed the item regardless would let a
+     * learner scroll past every one of them and still progress, which is
+     * exactly the shortcut the questions exist to close.
+     */
+    const unanswered = unansweredArticleQuestionCount(item, progress);
+    if (unanswered > 0) {
+      throw new BadRequestException(
+        unanswered === 1
+          ? 'Answer the question in this article before continuing.'
+          : `Answer the ${unanswered} questions in this article before continuing.`,
+      );
+    }
+    const minReadSeconds = item.completionCriteria?.minReadSeconds ?? 0;
+    if (minReadSeconds > 0 && progress.meta?.articleFirstOpenedAt) {
+      const openedAt = new Date(progress.meta.articleFirstOpenedAt).getTime();
+      const elapsedSeconds = (Date.now() - openedAt) / 1000;
+      if (elapsedSeconds < minReadSeconds) {
+        throw new BadRequestException(
+          'Please spend a little more time with this article before continuing.',
+        );
+      }
+    }
+    const result = await this.trackProgressService.completeItem(progress.id, {
+      meta: { articleReadAt: new Date().toISOString() },
+    });
+    return { ...result };
+  }
+
+  /** Monotonic watch-progress reporting; completes at the required pct. */
+  async reportVideoProgress(trackItemId: string, watchedPct: number) {
+    if (typeof watchedPct !== 'number' || watchedPct < 0 || watchedPct > 100) {
+      throw new BadRequestException('watchedPct must be between 0 and 100');
+    }
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.VIDEO) {
+      throw new BadRequestException('This component is not a video');
+    }
+
+    const maxWatchedPct = Math.max(
+      progress.meta?.maxWatchedPct ?? 0,
+      watchedPct,
+    );
+    await this.trackItemProgressRepository.update(progress.id, {
+      meta: { ...(progress.meta ?? {}), maxWatchedPct },
+    });
+
+    const requiredPct = item.completionCriteria?.watchPct ?? 90;
+    if (
+      maxWatchedPct >= requiredPct &&
+      progress.status !== SessionItemStatus.COMPLETED
+    ) {
+      const result = await this.trackProgressService.completeItem(progress.id, {
+        meta: { maxWatchedPct },
+      });
+      return { maxWatchedPct, ...result };
+    }
+    return {
+      maxWatchedPct,
+      completed: progress.status === SessionItemStatus.COMPLETED,
+      unlockedItemIds: [],
+      sectionCompleted: false,
+      trackCompleted: false,
+    };
+  }
+
+  /**
+   * Grade one video interjection answer and record it on the progress row.
+   * Gates playback only — an interjection never completes or scores the
+   * VIDEO item itself; that stays entirely driven by `reportVideoProgress`'s
+   * watch-percentage logic.
+   */
+  async submitInterjectionAnswer(
+    trackItemId: string,
+    interjectionId: string,
+    answer: QuizAnswer,
+  ) {
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.VIDEO) {
+      throw new BadRequestException('This component is not a video');
+    }
+
+    const video = item.content as VideoContent;
+    const interjection = (video.interjections ?? []).find(
+      (candidate) => candidate.id === interjectionId,
+    );
+    if (!interjection) {
+      throw new NotFoundException('Interjection not found');
+    }
+
+    const grading = autogradeQuestion(interjection.question, answer);
+    await this.trackItemProgressRepository.update(progress.id, {
+      meta: {
+        ...(progress.meta ?? {}),
+        answeredInterjections: {
+          ...(progress.meta?.answeredInterjections ?? {}),
+          [interjectionId]: {
+            passed: !!grading.correct,
+            pointsAwarded: grading.pointsAwarded,
+          },
+        },
+      },
+    });
+
+    return { correct: grading.correct, grading };
+  }
+
+  /**
+   * Answer one inline article question. Graded on the spot against the key the
+   * learner never receives, recorded on the progress row, and — unlike a video
+   * interjection — counted towards completing the item: an article whose
+   * questions have all been answered is finished, provided any `minReadSeconds`
+   * dwell rule has also been met.
+   *
+   * The answer is final. Returning the correct option alongside the verdict is
+   * what lets the player show *which* answer was right rather than only that
+   * the learner was wrong, and it is safe precisely because the question can
+   * never be answered again.
+   */
+  async submitArticleQuestionAnswer(
+    trackItemId: string,
+    questionId: string,
+    selectedOptionId: string,
+  ) {
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.ARTICLE) {
+      throw new BadRequestException('This component is not an article');
+    }
+
+    const article = item.content as ArticleContent;
+    const questions = articleQuestionsInReadingOrder(article);
+    const question = questions.find((candidate) => candidate.id === questionId);
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    const answeredSoFar = progress.meta?.answeredArticleQuestions ?? {};
+    if (answeredSoFar[questionId]) {
+      throw new BadRequestException('You have already answered this question.');
+    }
+
+    if (!question.options.some((option) => option.id === selectedOptionId)) {
+      throw new BadRequestException('Choose one of the given options.');
+    }
+
+    const grading = autogradeQuestion(question, {
+      questionId,
+      selectedOptionIds: [selectedOptionId],
+    });
+    const record: AnsweredArticleQuestion = {
+      selectedOptionId,
+      correct: !!grading.correct,
+      answeredAt: new Date().toISOString(),
+    };
+    const answered = { ...answeredSoFar, [questionId]: record };
+    await this.trackItemProgressRepository.update(progress.id, {
+      meta: { ...(progress.meta ?? {}), answeredArticleQuestions: answered },
+    });
+
+    const answeredQuestionCount = questions.filter(
+      (candidate) => answered[candidate.id],
+    ).length;
+    const allAnswered = answeredQuestionCount === questions.length;
+
+    /**
+     * Both gates still apply. An author who set a dwell time on an article
+     * meant the reading to take that long, and answering the last question
+     * early does not make that untrue — the learner finishes with the
+     * mark-as-read button once the clock is satisfied, which by then is the
+     * only thing left holding them.
+     */
+    const completion =
+      allAnswered &&
+      progress.status !== SessionItemStatus.COMPLETED &&
+      this.hasMetArticleDwellTime(item, progress)
+        ? await this.trackProgressService.completeItem(progress.id, {
+            meta: {
+              answeredArticleQuestions: answered,
+              articleReadAt: new Date().toISOString(),
+            },
+          })
+        : null;
+
+    return {
+      correct: record.correct,
+      selectedOptionId,
+      correctOptionId: question.correctOptionIds[0],
+      explanation: question.explanation ?? null,
+      answeredQuestionCount,
+      totalQuestionCount: questions.length,
+      completion,
+    };
+  }
+
+  /** Whether an article's `minReadSeconds` rule (if any) is already satisfied. */
+  private hasMetArticleDwellTime(
+    item: TrackItem,
+    progress: TrackItemProgress,
+  ): boolean {
+    const minReadSeconds = item.completionCriteria?.minReadSeconds ?? 0;
+    if (minReadSeconds <= 0) return true;
+    const openedAt = progress.meta?.articleFirstOpenedAt;
+    if (!openedAt) return true;
+    return (Date.now() - new Date(openedAt).getTime()) / 1000 >= minReadSeconds;
+  }
+
+  /** First non-completed unlocked item — the "continue" pointer. */
+  async getNextItem(trackId: string) {
+    const userId = this.requireUserId();
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      userId,
+    );
+    if (!enrollment) {
+      throw new NotFoundException('You are not enrolled in this track');
+    }
+    const structure =
+      await this.trackSharedService.getTrackWithStructure(trackId);
+    const progressRows =
+      await this.trackItemProgressRepository.findByEnrollmentId(enrollment.id);
+    const progressByItemId = new Map(
+      progressRows.map((row) => [row.trackItemId, row]),
+    );
+
+    const translation = await this.trackLocalizationService.resolvePublished(
+      trackId,
+      enrollment.languageCode,
+    );
+
+    for (const section of structure.sections) {
+      for (const item of section.items) {
+        const progress = progressByItemId.get(item.id);
+        if (progress && progress.status === SessionItemStatus.UNLOCKED) {
+          const localizedSection =
+            this.trackLocalizationService.localizeSection(
+              section as any,
+              translation,
+            );
+          return {
+            trackCompleted: false,
+            nextItem: {
+              ...this.toLearnerItem(
+                this.trackLocalizationService.localizeItem(item, translation),
+                progress,
+                this.fallbackReasonFor(item, translation),
+              ),
+              sectionId: section.id,
+              sectionTitle: localizedSection.title,
+            },
+          };
+        }
+      }
+    }
+    return { trackCompleted: !!enrollment.completedAt, nextItem: null };
+  }
+
+  /**
+   * Shared gate for all learner item endpoints: the item must exist, the
+   * caller must be enrolled, and the row must be UNLOCKED or COMPLETED.
+   *
+   * The returned `item` is **localised to the learner's enrolled language**.
+   * Every learner content and grading path funnels through here, which is what
+   * makes translation safe for assessed components: a Hindi learner's
+   * fill-blank answer is compared against the Hindi `acceptedAnswers` they were
+   * shown, and an open-ended answer is graded against the Hindi rubric.
+   *
+   * The language comes from the enrollment row, never from the request. A
+   * client cannot ask to be marked in a language other than the one it
+   * rendered, and it cannot dodge a translation by omitting a query param.
+   *
+   * `sourceItem` is the untranslated row, for callers that need the authored
+   * values (nothing may write to it — item ids anchor progress rows).
+   */
+  async getPermittedItemProgress(trackItemId: string): Promise<{
+    item: TrackItem;
+    sourceItem: TrackItem;
+    progress: TrackItemProgress;
+    enrollment: TrackEnrollment;
+    languageCode: string | null;
+  }> {
+    const userId = this.requireUserId();
+    const item = await this.dataSource
+      .getRepository(TrackItem)
+      .findOne({ where: { id: trackItemId } });
+    if (!item) {
+      throw new NotFoundException('Track component not found');
+    }
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      item.trackId,
+      userId,
+    );
+    if (!enrollment) {
+      throw new ForbiddenException('You are not enrolled in this track');
+    }
+    const progress = await this.trackItemProgressRepository.findOne({
+      where: { trackEnrollmentId: enrollment.id, trackItemId: item.id },
+    });
+    if (!progress) {
+      throw new NotFoundException('Track component progress not found');
+    }
+    if (progress.status === SessionItemStatus.LOCKED) {
+      throw new BadRequestException(
+        'This component is locked. Complete the previous one to unlock it.',
+      );
+    }
+
+    const translation = await this.trackLocalizationService.resolvePublished(
+      item.trackId,
+      enrollment.languageCode,
+    );
+
+    return {
+      item: this.trackLocalizationService.localizeItem(item, translation),
+      sourceItem: item,
+      progress,
+      enrollment,
+      languageCode: translation ? (enrollment.languageCode ?? null) : null,
+    };
+  }
+
   private toLearnerItem(
     item: TrackItem,
     progress?: TrackItemProgress,
     fallbackReason: TrackTranslationFallbackReason | null = null,
+    hasCriteriaHistory?: boolean,
   ) {
     return {
       id: item.id,
@@ -934,6 +1707,7 @@ export class TrackEnrollmentService {
       scenarioId: item.scenarioId ?? null,
       caseId: item.caseId ?? null,
       completionCriteria: item.completionCriteria ?? null,
+      hasCriteriaHistory: hasCriteriaHistory ?? false,
       contentMeta: this.buildContentMeta(item),
       hasDiscussion: item.hasDiscussion ?? false,
       status: progress?.status ?? SessionItemStatus.LOCKED,
@@ -1117,3 +1891,4 @@ function buildArticleQuestionView(
     explanation: answered ? (question.explanation ?? null) : null,
   };
 }
+

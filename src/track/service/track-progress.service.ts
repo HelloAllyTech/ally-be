@@ -13,7 +13,14 @@ import { TrackSection } from '../entity/track-section.entity';
 import { TrackTenant } from '../entity/track-tenant.entity';
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
 import { TrackItemRepository } from '../repository/track-item.repository';
-import { TrackItemProgressMeta, TrackItemType } from '../type/track.type';
+import { TrackQuizAttempt } from '../entity/track-quiz-attempt.entity';
+import {
+  TrackItemProgressMeta,
+  TrackItemCompletionCriteria,
+  TrackItemType,
+} from '../type/track.type';
+import { TrackItemCompletionCriteriaVersion } from '../entity/track-item-completion-criteria-version.entity';
+import { TrackItemProgressCriteriaLock } from '../entity/track-item-progress-criteria-lock.entity';
 
 export const TRACK_EVENTS = {
   ITEM_COMPLETED: 'track.item.completed',
@@ -220,9 +227,11 @@ export class TrackProgressService {
       return NOOP_RESULT;
     }
 
+    const effectiveCriteria = await this.getEffectiveCompletionCriteria(trackItemProgressId);
+
     const callDurationInSeconds = (callDuration ?? 0) / 1000;
     const minDurationSeconds =
-      item.completionCriteria?.minDurationSeconds ??
+      effectiveCriteria?.minDurationSeconds ??
       this.configService.simulationPath
         ?.simulationPathItemMinDurationForCompletion ??
       0;
@@ -233,7 +242,7 @@ export class TrackProgressService {
       return NOOP_RESULT;
     }
 
-    const minScore = item.completionCriteria?.minScore;
+    const minScore = effectiveCriteria?.minScore;
     if (!meetsMinimumScore(score, minScore)) {
       this.logger.info(
         `Track roleplay score ${score} below minScore ${minScore} for progress ${trackItemProgressId}`,
@@ -329,6 +338,33 @@ export class TrackProgressService {
         ...(score !== undefined ? { score } : {}),
         ...(meta ? { meta: { ...(progress.meta ?? {}), ...meta } } : {}),
       });
+
+      const lockRepo = manager.getRepository(TrackItemProgressCriteriaLock);
+      const lock = await lockRepo.findOne({ where: { trackItemProgressId: progress.id } });
+      if (!lock) {
+        const versionRepo = manager.getRepository(TrackItemCompletionCriteriaVersion);
+        let latestVersion = await versionRepo.findOne({
+          where: { trackItemId: item.id },
+          order: { createdAt: 'DESC' },
+        });
+
+        if (!latestVersion) {
+          // This path is taken when an item is completed against criteria that
+          // have never been modified by a trainer. A version is created on the
+          // fly to lock the learner's progress to the criteria they passed with.
+          // The `createdById` is the learner's ID, which differs from trainer-
+          // initiated versions.
+          latestVersion = await versionRepo.save({
+            trackItemId: item.id,
+            completionCriteria: item.completionCriteria,
+            createdById: progress.userId,
+          });
+        }
+        await lockRepo.save({
+          trackItemProgressId: progress.id,
+          criteriaVersionId: latestVersion.id,
+        });
+      }
 
       // Ordered walk of the whole track to find what comes next.
       const [sections, items, progressRows] = await Promise.all([
@@ -445,5 +481,89 @@ export class TrackProgressService {
     } catch (error) {
       this.logger.error(`Failed to emit track progress events: ${error}`);
     }
+  }
+
+  async getCompletedLearnerCount(
+    trackItemId: string,
+  ): Promise<{ count: number }> {
+    const count =
+      await this.trackItemProgressRepository.countUsersCompletedByTrackItem(
+        trackItemId,
+      );
+    return { count };
+  }
+
+  async reevaluateProgress(trackEnrollmentId: string): Promise<void> {
+    const progressRepo = this.dataSource.getRepository(TrackItemProgress);
+    const itemRepo = this.dataSource.getRepository(TrackItem);
+    const quizAttemptRepo = this.dataSource.getRepository(TrackQuizAttempt);
+
+    const progressRows = await progressRepo.find({
+      where: {
+        trackEnrollmentId,
+        status: Not(SessionItemStatus.COMPLETED),
+      },
+    });
+
+    for (const progress of progressRows) {
+      const item = await itemRepo.findOne({ where: { id: progress.trackItemId } });
+      if (!item) continue;
+
+      const effectiveCriteria = await this.getEffectiveCompletionCriteria(
+        progress.id,
+      );
+
+      if (!effectiveCriteria) continue;
+
+      let shouldComplete = false;
+      if (item.type === TrackItemType.QUIZ) {
+        const lastAttempt = await quizAttemptRepo.findOne({
+          where: { trackItemProgressId: progress.id },
+          order: { attemptNumber: 'DESC' },
+        });
+        if (
+          lastAttempt &&
+          meetsMinimumScore(lastAttempt.scorePct, effectiveCriteria.passScore)
+        ) {
+          shouldComplete = true;
+        }
+      } else if (item.type === TrackItemType.ROLEPLAY) {
+        if (meetsMinimumScore(progress.score, effectiveCriteria.minScore)) {
+          shouldComplete = true;
+        }
+      } else if (item.type === TrackItemType.VIDEO) {
+        const watchPct = (progress.meta as TrackItemProgressMeta)?.watchPct ?? 0;
+        if (watchPct >= (effectiveCriteria.watchPct ?? 101)) {
+          shouldComplete = true;
+        }
+      }
+
+      if (shouldComplete) {
+        await this.completeItem(progress.id, {});
+      }
+    }
+  }
+
+  private async getEffectiveCompletionCriteria(
+    trackItemProgressId: string,
+    manager?: EntityManager,
+  ): Promise<TrackItemCompletionCriteria | null> {
+    const repositoryProvider = manager || this.dataSource;
+    const lockRepo = repositoryProvider.getRepository(TrackItemProgressCriteriaLock);
+    const versionRepo = repositoryProvider.getRepository(TrackItemCompletionCriteriaVersion);
+    const itemRepo = repositoryProvider.getRepository(TrackItem);
+    const progressRepo = repositoryProvider.getRepository(TrackItemProgress);
+
+    const progress = await progressRepo.findOne({ where: { id: trackItemProgressId } });
+    if (!progress) return null;
+
+    const lock = await lockRepo.findOne({ where: { trackItemProgressId } });
+    if (lock) {
+      const version = await versionRepo.findOne({ where: { id: lock.criteriaVersionId } });
+      return version?.completionCriteria ?? null;
+    }
+
+    const item = await itemRepo.findOne({ where: { id: progress.trackItemId } });
+    return item?.completionCriteria ?? null;
   }
 }

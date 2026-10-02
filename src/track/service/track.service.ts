@@ -47,6 +47,7 @@ import {
   UpsertTrackStructureDto,
 } from '../dto/upsert-track-structure.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { TrackItemCompletionCriteriaVersion } from '../entity/track-item-completion-criteria-version.entity';
 import {
   computeStructuralSignature,
   validateTrackStructure,
@@ -54,6 +55,8 @@ import {
 import { sanitizeDeep } from '../util/sanitize-structure.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackTranslationService } from './track-translation.service';
+import { UserService } from 'src/user/service/user.service';
+import { TrackItemRepository } from '../repository/track-item.repository';
 
 @Injectable()
 export class TrackService {
@@ -68,6 +71,8 @@ export class TrackService {
     private readonly caseSharedService: CaseSharedService,
     private readonly tenantService: TenantService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly trackItemRepository: TrackItemRepository,
+    private readonly userService: UserService,
   ) {}
 
   async getTracks(filters?: TrackFilterOptions) {
@@ -274,6 +279,9 @@ export class TrackService {
       await this.dataSource.transaction(async (manager) => {
         const sectionRepo = manager.getRepository(TrackSection);
         const itemRepo = manager.getRepository(TrackItem);
+        const criteriaVersionRepo = manager.getRepository(
+          TrackItemCompletionCriteriaVersion,
+        );
 
         const incomingSectionIds = dto.sections
           .map((s) => s.id)
@@ -294,6 +302,31 @@ export class TrackService {
         if (removedItemIds.length > 0) {
           await itemRepo.softDelete({ id: In(removedItemIds) });
         }
+
+        if (hasEnrollments) {
+          for (const section of dto.sections) {
+            for (const item of section.items) {
+              if (!item.id) continue;
+              const existingItem = existing.sections
+                .flatMap((s) => s.items)
+                .find((i) => i.id === item.id);
+
+              if (
+                existingItem &&
+                JSON.stringify(existingItem.completionCriteria) !==
+                  JSON.stringify(item.completionCriteria)
+              ) {
+                await criteriaVersionRepo.save({
+                  trackItemId: item.id,
+                  completionCriteria: existingItem.completionCriteria,
+                  createdById: userId,
+                });
+              }
+            }
+          }
+        }
+
+
 
         // `idx_track_sections_track_id_order` / `idx_track_items_section_id_order`
         // are non-deferred unique indexes: Postgres checks them per statement, not
@@ -365,6 +398,48 @@ export class TrackService {
 
     this.logger.info(`Track ${id} structure saved (${totalItems} items)`);
     return { success: true };
+  }
+
+  async getCriteriaHistory(trackItemId: string) {
+    const versionRepo = this.dataSource.getRepository(
+      TrackItemCompletionCriteriaVersion,
+    );
+    const versions = await versionRepo.find({
+      where: { trackItemId },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (versions.length === 0) {
+      return [];
+    }
+
+    const item = await this.trackItemRepository.findOne({
+      where: { id: trackItemId },
+    });
+    if (!item) {
+      throw new NotFoundException('Track item not found');
+    }
+
+    const userIds = versions.map((v) => v.createdById).filter((id) => id);
+    const users = await this.userService.getUsersByIds(userIds);
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const history = [];
+    const allCriteria = [
+      ...versions.map((v) => v.completionCriteria),
+      item.completionCriteria,
+    ];
+
+    for (let i = 0; i < versions.length; i++) {
+      const user = userMap.get(versions[i].createdById);
+      history.push({
+        oldValue: allCriteria[i],
+        newValue: allCriteria[i + 1],
+        updatedAt: versions[i].createdAt,
+        updatedBy: user ? { id: user.id, name: user.name } : null,
+      });
+    }
+    return history;
   }
 
   async deleteTrack(id: string): Promise<SuccessResponse> {

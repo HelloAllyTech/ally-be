@@ -16,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { TrackProgressService } from '../service/track-progress.service';
 import { TrackEnrollmentService } from '../service/track-enrollment.service';
 import { TrackQuizService } from '../service/track-quiz.service';
 import { TrackJournalService } from '../service/track-journal.service';
@@ -42,6 +43,7 @@ import {
 @Controller('v1/learn')
 export class TrackLearnerController {
   constructor(
+    private readonly trackProgressService: TrackProgressService,
     private readonly trackEnrollmentService: TrackEnrollmentService,
     private readonly trackQuizService: TrackQuizService,
     private readonly trackJournalService: TrackJournalService,
@@ -101,6 +103,18 @@ export class TrackLearnerController {
   ) {
     // The app language seeds the course's language when it is published in it.
     return this.trackEnrollmentService.enroll(trackId, dto?.languageCode);
+  }
+
+  @ApiOperation({
+    summary:
+      'Re-evaluates progress for an enrollment against the latest completion criteria. Called on page load.',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TRACK])
+  @Post('enrollments/:enrollmentId/reevaluate-progress')
+  async reevaluateProgress(
+    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+  ) {
+    return this.trackProgressService.reevaluateProgress(enrollmentId);
   }
 
   @ApiOperation({
