@@ -1629,7 +1629,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       subTab: 'Skills',
       title: 'Behaviours that moved',
       kind: 'chart',
-      chartType: 'GroupedBarChart',
+      chartType: 'custom (change rows)',
       componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
       note: 'Per rubric behaviour (unhelpful / basic / advanced): share of paired panel learners showing it in the start vs now window, biggest movers first. /v1/analytics/foundational-skills/progress behaviours',
     },
