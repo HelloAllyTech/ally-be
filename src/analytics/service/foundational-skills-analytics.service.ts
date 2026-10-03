@@ -129,7 +129,9 @@ export class FoundationalSkillsAnalyticsService {
           `Independent of every scenario's own competencies. Scores are comparable only within ` +
           `rubric version ${FHS_RUBRIC_VERSION}; a new version re-scores every slice. Later cuts ` +
           `contain only the learners who kept practising, so compare each point with its ` +
-          `"same learners' first cut" line, not with the first point.`,
+          `"same learners' cut ${baselineCut}" line, not with the first point — and read the ` +
+          `change against its 95% interval: one whose interval includes zero is not ` +
+          `distinguishable from noise. AI-judged; not yet checked against trained human raters.`,
       },
       computedAt: new Date().toISOString(),
     };
