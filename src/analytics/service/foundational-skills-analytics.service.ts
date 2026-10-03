@@ -8,6 +8,9 @@ import {
 } from 'src/foundational-skills/constants/helping-skills-rubric.constants';
 import {
   FoundationalSkillsCutDto,
+  FoundationalSkillsLearnerDto,
+  FoundationalSkillsLearnersQueryDto,
+  FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
 import { MIN_COHORT_SIZE } from '../repository/cohort-analytics.repository';
@@ -101,6 +104,74 @@ export class FoundationalSkillsAnalyticsService {
           `contain only the learners who kept practising, so compare each point with its ` +
           `"same learners' first cut" line, not with the first point.`,
       },
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * The people behind a point on the chart, one row each with every scored
+   * cut. No sample floor here — this is a drill-down to individuals, gated the
+   * same as the skill-growth learner list, not an aggregate that one learner
+   * could swing. Behaviour codes travel; transcript text and evidence quotes
+   * are never stored, so they cannot leak.
+   */
+  async getLearners(
+    query: FoundationalSkillsLearnersQueryDto,
+  ): Promise<FoundationalSkillsLearnersResponseDto> {
+    const minCut = query.minCut ?? 1;
+    const limit = query.limit ?? 100;
+    const offset = query.offset ?? 0;
+    const { total, rows } = await this.repository.getLearnerCuts(
+      FHS_RUBRIC_VERSION,
+      minCut,
+      limit,
+      offset,
+    );
+
+    const byLearner = new Map<number, FoundationalSkillsLearnerDto>();
+    for (const row of rows) {
+      let learner = byLearner.get(row.userId);
+      if (!learner) {
+        learner = {
+          id: row.userId,
+          name: row.name,
+          tenantId: row.tenantId,
+          cutsReached: 0,
+          changeSinceFirstCut: null,
+          cuts: [],
+        };
+        byLearner.set(row.userId, learner);
+      }
+      learner.cuts.push({
+        cut: row.cut,
+        closedAt: row.closedAt.toISOString(),
+        compositeScore: round2(row.score) as number,
+        hasUnhelpfulBehaviour: row.unhelpful,
+        skillLevels: row.levels,
+        observed: [
+          ...new Set(row.verdicts.flatMap((v) => v.observed ?? [])),
+        ].sort(),
+      });
+      learner.cutsReached = Math.max(learner.cutsReached, row.cut);
+      learner.tenantId = row.tenantId ?? learner.tenantId;
+    }
+
+    for (const learner of byLearner.values()) {
+      const first = learner.cuts.find((c) => c.cut === 1);
+      const last = learner.cuts[learner.cuts.length - 1];
+      learner.changeSinceFirstCut =
+        first && last
+          ? round2(last.compositeScore - first.compositeScore)
+          : null;
+    }
+
+    return {
+      rubricVersion: FHS_RUBRIC_VERSION,
+      minCut,
+      total,
+      limit,
+      offset,
+      learners: [...byLearner.values()],
       computedAt: new Date().toISOString(),
     };
   }

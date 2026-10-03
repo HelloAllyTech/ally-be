@@ -31,7 +31,11 @@ import { QualityDistributionAnalyticsService } from '../service/quality-distribu
 import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analytics.service';
 import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
 import { FoundationalSkillsAnalyticsService } from '../service/foundational-skills-analytics.service';
-import { FoundationalSkillsResponseDto } from '../dto/foundational-skills-analytics.dto';
+import {
+  FoundationalSkillsLearnersQueryDto,
+  FoundationalSkillsLearnersResponseDto,
+  FoundationalSkillsResponseDto,
+} from '../dto/foundational-skills-analytics.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -1266,6 +1270,30 @@ export class AnalyticsController {
   })
   async getFoundationalSkills(): Promise<FoundationalSkillsResponseDto> {
     return this.foundationalSkillsAnalyticsService.getFoundationalSkills();
+  }
+
+  @Get('foundational-skills/learners')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Learners behind the foundational skills chart (super-admin)',
+    description:
+      'The drill-down behind GET /v1/analytics/foundational-skills: one row per ' +
+      'learner with a scored cut at `minCut` (the same membership rule as the ' +
+      "chart's per-cut count, so `minCut=5` is exactly the cut-5 cohort), carrying " +
+      'every scored cut — composite (1-4), unhelpful flag, per-skill levels and the ' +
+      'behaviour codes the judge saw. Same rubric version and test-organisation ' +
+      'exclusion as the chart. No sample floor: it lists individuals, like the ' +
+      'skill-growth learner list. Behaviour codes only; no transcript text exists to return.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Learner cut series retrieved successfully',
+    type: FoundationalSkillsLearnersResponseDto,
+  })
+  async getFoundationalSkillsLearners(
+    @Query() query: FoundationalSkillsLearnersQueryDto,
+  ): Promise<FoundationalSkillsLearnersResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getLearners(query);
   }
 
   @Get('skill-growth/learners')

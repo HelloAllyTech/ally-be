@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
  * Foundational helping skills by practice volume — the Priority tab chart.
@@ -157,6 +159,144 @@ export class FoundationalSkillsResponseDto {
 
   @ApiProperty({ type: FoundationalSkillsProvenanceDto })
   provenance!: FoundationalSkillsProvenanceDto;
+
+  @ApiProperty()
+  computedAt!: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-learner drill-down: GET /v1/analytics/foundational-skills/learners
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class FoundationalSkillsLearnersQueryDto {
+  @ApiProperty({
+    description:
+      'Only learners with a scored cut at this index — the same rule as the ' +
+      "chart's per-cut `learners`, so `minCut=5` returns exactly the people " +
+      'behind the cut-5 point. Every scored cut of each learner is returned.',
+    required: false,
+    default: 1,
+    minimum: 1,
+    maximum: 1000,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  minCut?: number;
+
+  @ApiProperty({
+    description: 'Learners per page',
+    required: false,
+    default: 100,
+    minimum: 1,
+    maximum: 500,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @ApiProperty({ required: false, default: 0, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
+export class FoundationalSkillsLearnerCutDto {
+  @ApiProperty({ description: '1-based cut index' })
+  cut!: number;
+
+  @ApiProperty({
+    description:
+      'When the session the cut closed in ended — its place in calendar time',
+  })
+  closedAt!: string;
+
+  @ApiProperty({ description: 'Mean of the assessable skills, 1–4' })
+  compositeScore!: number;
+
+  @ApiProperty({
+    description: 'Any assessed skill scored 1 (an unhelpful behaviour seen)',
+    nullable: true,
+    type: Boolean,
+  })
+  hasUnhelpfulBehaviour!: boolean | null;
+
+  @ApiProperty({
+    description:
+      '`{ "<skill key>": level }` for the skills this cut gave an opportunity ' +
+      'for. An absent key means not assessable here, not a low score',
+    type: 'object',
+    additionalProperties: { type: 'number' },
+  })
+  skillLevels!: Record<string, number>;
+
+  @ApiProperty({
+    description:
+      'Behaviour codes the judge saw, `<skill>.<u|b|a><n>` (unhelpful / basic / ' +
+      'advanced), sorted. Text for each code is in the rubric; no transcript text',
+    type: [String],
+  })
+  observed!: string[];
+}
+
+export class FoundationalSkillsLearnerDto {
+  @ApiProperty({ description: 'users.id' })
+  id!: number;
+
+  @ApiProperty({ nullable: true, type: String })
+  name!: string | null;
+
+  @ApiProperty({
+    description: 'Tenant of the session the latest returned cut closed in',
+    nullable: true,
+    type: String,
+  })
+  tenantId!: string | null;
+
+  @ApiProperty({ description: 'Highest scored cut index' })
+  cutsReached!: number;
+
+  @ApiProperty({
+    description:
+      'Latest cut minus cut 1; null when cut 1 has no scored result. Each ' +
+      'end is one judged slice, so read it alongside the full series',
+    nullable: true,
+    type: Number,
+  })
+  changeSinceFirstCut!: number | null;
+
+  @ApiProperty({ type: [FoundationalSkillsLearnerCutDto] })
+  cuts!: FoundationalSkillsLearnerCutDto[];
+}
+
+export class FoundationalSkillsLearnersResponseDto {
+  @ApiProperty()
+  rubricVersion!: string;
+
+  @ApiProperty()
+  minCut!: number;
+
+  @ApiProperty({ description: 'Learners matching `minCut`, across all pages' })
+  total!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  offset!: number;
+
+  @ApiProperty({
+    type: [FoundationalSkillsLearnerDto],
+    description: 'Ordered by user id',
+  })
+  learners!: FoundationalSkillsLearnerDto[];
 
   @ApiProperty()
   computedAt!: string;
