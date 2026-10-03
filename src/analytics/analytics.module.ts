@@ -41,6 +41,8 @@ import { SkillGrowthAnalyticsService } from './service/skill-growth-analytics.se
 import { SkillGrowthAnalyticsRepository } from './repository/skill-growth-analytics.repository';
 import { FoundationalSkillsAnalyticsService } from './service/foundational-skills-analytics.service';
 import { FoundationalSkillsAnalyticsRepository } from './repository/foundational-skills-analytics.repository';
+import { FoundationalSkillsBenchmarkAnalyticsService } from './service/foundational-skills-benchmark.service';
+import { FoundationalSkillsBenchmarkAnalyticsRepository } from './repository/foundational-skills-benchmark.repository';
 import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
 import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
 import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
@@ -204,6 +206,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     SkillGrowthAnalyticsRepository,
     FoundationalSkillsAnalyticsService,
     FoundationalSkillsAnalyticsRepository,
+    FoundationalSkillsBenchmarkAnalyticsService,
+    FoundationalSkillsBenchmarkAnalyticsRepository,
     QualityDistributionAnalyticsService,
     QualityDistributionAnalyticsRepository,
     CompetencyMapAnalyticsService,

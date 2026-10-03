@@ -1673,6 +1673,16 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
       note: 'Panel learners with start, now, change, skills up/down and unhelpful flags; opens a per-learner panel from /v1/analytics/foundational-skills/learners?userId=. /v1/analytics/foundational-skills/progress learners',
     },
+    {
+      id: 'AAQ-189',
+      tab: 'Highlights',
+      subTab: 'Helping skills',
+      title: 'Benchmark scenario, before and after',
+      kind: 'chart',
+      chartType: 'custom (paired slope)',
+      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      note: 'One slope per learner from their FIRST to their LATEST scored session of the SAME benchmark roleplay (scenarios.metadata.fhsBenchmark), counted only when the latest came at least 3 more 5,000-character cuts of practice after the first; a learner with several benchmark scenarios counts once, on the one with the most practice between. Paired mean change with a bootstrap CI and sign test, per-skill where assessable in both; averages null below minSampleSize. /v1/analytics/foundational-skills/benchmark',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
