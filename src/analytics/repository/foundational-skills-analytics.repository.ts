@@ -21,6 +21,19 @@ export interface FoundationalSkillsSkillRow {
   avgScore: number;
 }
 
+/** One scored cut of one learner, for the per-learner drill-down. */
+export interface FoundationalSkillsLearnerCutRow {
+  userId: number;
+  name: string | null;
+  tenantId: string | null;
+  cut: number;
+  closedAt: Date;
+  score: number;
+  unhelpful: boolean | null;
+  levels: Record<string, number>;
+  verdicts: { skill: string; observed?: string[] }[];
+}
+
 export interface FoundationalSkillsCoverageRow {
   learners: number;
   cutsSealed: number;
@@ -31,6 +44,18 @@ export interface FoundationalSkillsCoverageRow {
 
 const num = (v: unknown): number | null =>
   v === null || v === undefined ? null : Number(v);
+
+const toLearnerCutRow = (r: any): FoundationalSkillsLearnerCutRow => ({
+  userId: Number(r.user_id),
+  name: (r.name as string | null) ?? null,
+  tenantId: (r.tenant_id as string | null) ?? null,
+  cut: Number(r.cut),
+  closedAt: new Date(r.closed_at),
+  score: Number(r.score),
+  unhelpful: r.unhelpful ?? null,
+  levels: r.levels ?? {},
+  verdicts: Array.isArray(r.verdicts) ? r.verdicts : [],
+});
 
 /**
  * Reads the foundational-skills measure (src/foundational-skills) for the
@@ -114,6 +139,75 @@ export class FoundationalSkillsAnalyticsRepository {
     }));
   }
 
+  /**
+   * Every scored cut of the learners who have a scored cut at `minCut` — the
+   * same membership rule the chart's `learners` count uses, so `minCut = 5`
+   * returns exactly the people behind the cut-5 point. Paged by user id, so a
+   * page boundary never splits one learner's cuts. `userId` narrows to one
+   * learner (the Skills tab's per-person panel).
+   */
+  async getLearnerCuts(
+    rubricVersion: string,
+    opts: { minCut: number; limit: number; offset: number; userId?: number },
+  ): Promise<{ total: number; rows: FoundationalSkillsLearnerCutRow[] }> {
+    const userFilter = opts.userId !== undefined ? 'AND user_id = $3' : '';
+    const userParams = opts.userId !== undefined ? [opts.userId] : [];
+    const n = userParams.length;
+    const [rows, [count]] = await Promise.all([
+      this.dataSource.query(
+        `
+        WITH scored AS (${this.scoredCte()}),
+        page AS (
+          SELECT DISTINCT user_id FROM scored WHERE cut = $2 ${userFilter}
+           ORDER BY user_id LIMIT $${3 + n} OFFSET $${4 + n}
+        )
+        ${this.learnerCutSelect('JOIN page p ON p.user_id = s.user_id')}
+        `,
+        [rubricVersion, opts.minCut, ...userParams, opts.limit, opts.offset],
+      ),
+      this.dataSource.query(
+        `
+        WITH scored AS (${this.scoredCte()})
+        SELECT COUNT(DISTINCT user_id)::int AS total
+          FROM scored WHERE cut = $2 ${userFilter}
+        `,
+        [rubricVersion, opts.minCut, ...userParams],
+      ),
+    ]);
+    return {
+      total: Number(count?.total ?? 0),
+      rows: rows.map(toLearnerCutRow),
+    };
+  }
+
+  /**
+   * Every scored cut of every learner, for the Skills sub-tab's in-memory
+   * analysis. Fine at today's volume (hundreds of cuts); revisit — a summary
+   * table or SQL-side aggregation — before it reaches the tens of thousands.
+   */
+  async getAllLearnerCuts(
+    rubricVersion: string,
+  ): Promise<FoundationalSkillsLearnerCutRow[]> {
+    const rows = await this.dataSource.query(
+      `
+      WITH scored AS (${this.scoredCte()})
+      ${this.learnerCutSelect('')}
+      `,
+      [rubricVersion],
+    );
+    return rows.map(toLearnerCutRow);
+  }
+
+  private learnerCutSelect(join: string): string {
+    return `
+      SELECT s.user_id, u.name, s.tenant_id, s.cut, s.closed_at,
+             s.score, s.unhelpful, s.levels, s.verdicts
+        FROM scored s
+        ${join}
+        LEFT JOIN users u ON u.id = s.user_id
+       ORDER BY s.user_id, s.cut`;
+  }
+
   /** How far scoring has got under this version, so a thin chart can say why. */
   async getCoverage(
     rubricVersion: string,
@@ -147,7 +241,10 @@ export class FoundationalSkillsAnalyticsRepository {
       SELECT c."userId" AS user_id, c."cutIndex" AS cut,
              a."compositeScore"::float AS score,
              a."hasUnhelpfulBehaviour" AS unhelpful,
-             a."skillLevels" AS levels
+             a."skillLevels" AS levels,
+             a.verdicts AS verdicts,
+             c."tenant_id" AS tenant_id,
+             c."closedSessionEndedAt" AS closed_at
         FROM foundational_skill_cuts c
         JOIN foundational_skill_assessments a ON a."cutId" = c.id
        WHERE a."rubricVersion" = $1

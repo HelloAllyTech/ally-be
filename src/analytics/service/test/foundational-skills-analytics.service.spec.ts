@@ -99,4 +99,174 @@ describe('FoundationalSkillsAnalyticsService', () => {
     expect(res.coverage).toEqual(coverage);
     expect(res.provenance.note).toContain(FHS_RUBRIC_VERSION);
   });
+
+  describe('getLearners', () => {
+    const cutRow = (userId: number, cut: number, extra: Partial<any> = {}) => ({
+      userId,
+      name: `Learner ${userId}`,
+      tenantId: 't-1',
+      cut,
+      closedAt: new Date(`2026-09-0${cut}T10:00:00Z`),
+      score: 2,
+      unhelpful: false,
+      levels: { verbal: 3 },
+      verdicts: [],
+      ...extra,
+    });
+
+    const buildLearners = (rows: any[], total = 1) => {
+      const repository = {
+        getLearnerCuts: jest.fn().mockResolvedValue({ total, rows }),
+      };
+      return {
+        repository,
+        service: new FoundationalSkillsAnalyticsService(repository as any),
+      };
+    };
+
+    it('defaults the query and pins the current rubric version', async () => {
+      const { repository, service } = buildLearners([]);
+      const res = await service.getLearners({});
+      expect(repository.getLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        { minCut: 1, limit: 100, offset: 0, userId: undefined },
+      );
+      expect(res).toMatchObject({ minCut: 1, limit: 100, offset: 0 });
+    });
+
+    it('passes minCut and paging through', async () => {
+      const { repository, service } = buildLearners([], 24);
+      const res = await service.getLearners({
+        minCut: 5,
+        limit: 10,
+        offset: 20,
+      });
+      expect(repository.getLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        { minCut: 5, limit: 10, offset: 20, userId: undefined },
+      );
+      expect(res.total).toBe(24);
+    });
+
+    it('groups cuts per learner and computes change since cut 1', async () => {
+      const { service } = buildLearners(
+        [
+          cutRow(7, 1, { score: 2.1 }),
+          cutRow(7, 2, { score: 2.456, unhelpful: true }),
+          cutRow(9, 1, { score: 2.5 }),
+        ],
+        2,
+      );
+      const { learners } = await service.getLearners({});
+      expect(learners).toHaveLength(2);
+      expect(learners[0]).toMatchObject({
+        id: 7,
+        name: 'Learner 7',
+        cutsReached: 2,
+        changeSinceFirstCut: 0.36,
+      });
+      expect(learners[0].cuts[1]).toMatchObject({
+        cut: 2,
+        compositeScore: 2.46,
+        hasUnhelpfulBehaviour: true,
+        closedAt: '2026-09-02T10:00:00.000Z',
+      });
+      expect(learners[1].changeSinceFirstCut).toBe(0);
+    });
+
+    it('flattens observed behaviour codes, deduped and sorted', async () => {
+      const { service } = buildLearners([
+        cutRow(7, 1, {
+          verdicts: [
+            { skill: 'verbal', observed: ['verbal.b2', 'verbal.b1'] },
+            { skill: 'goals', observed: ['goals.u1'] },
+            { skill: 'hope' },
+            { skill: 'verbal', observed: ['verbal.b1'] },
+          ],
+        }),
+      ]);
+      const [learner] = (await service.getLearners({})).learners;
+      expect(learner.cuts[0].observed).toEqual([
+        'goals.u1',
+        'verbal.b1',
+        'verbal.b2',
+      ]);
+    });
+
+    it('leaves the change null when cut 1 has no scored result', async () => {
+      const { service } = buildLearners([cutRow(7, 2), cutRow(7, 3)]);
+      const [learner] = (await service.getLearners({ minCut: 2 })).learners;
+      expect(learner.changeSinceFirstCut).toBeNull();
+      expect(learner.cutsReached).toBe(3);
+    });
+  });
+
+  describe('getProgress', () => {
+    const row = (
+      userId: number,
+      cut: number,
+      levels: Record<string, number>,
+    ) => ({
+      userId,
+      name: `Learner ${userId}`,
+      tenantId: 't-1',
+      cut,
+      closedAt: new Date('2026-09-01T00:00:00Z'),
+      score: 2,
+      unhelpful: false,
+      levels,
+      verdicts: [{ skill: 'verbal', observed: ['verbal.b1'] }],
+    });
+
+    it('reads every scored cut under the current version and serves the thresholds', async () => {
+      const rows = Array.from({ length: 25 }, (_, i) => [
+        row(i + 1, 1, { verbal: 2 }),
+        row(i + 1, 2, { verbal: 3 }),
+      ]).flat();
+      const repository = {
+        getAllLearnerCuts: jest.fn().mockResolvedValue(rows),
+      };
+      const service = new FoundationalSkillsAnalyticsService(repository as any);
+
+      const res = await service.getProgress({});
+
+      expect(repository.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+      );
+      expect(res).toMatchObject({
+        rubricVersion: FHS_RUBRIC_VERSION,
+        minSampleSize: 20,
+        minCohortSize: 5,
+        measuredLearners: 25,
+        cuts: 2,
+        cohortOptions: [{ cuts: 2, learners: 25 }],
+        windows: { early: [1], late: [2] },
+      });
+      expect(res.thresholds.trendMinCuts).toBe(4);
+      expect(res.skills.find((s) => s.skill === 'verbal')).toMatchObject({
+        pairedLearners: 25,
+        change: 1,
+        improved: 25,
+      });
+      expect(res.behaviours.find((b) => b.code === 'verbal.b1')).toMatchObject({
+        earlyPct: 100,
+        latePct: 100,
+      });
+      expect(res.provenance.note).toContain('cuts 1');
+    });
+  });
+
+  it('passes a userId filter through to the learner read', async () => {
+    const repository = {
+      getLearnerCuts: jest.fn().mockResolvedValue({ total: 0, rows: [] }),
+    };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+    await service.getLearners({ userId: 42 });
+    expect(repository.getLearnerCuts).toHaveBeenCalledWith(FHS_RUBRIC_VERSION, {
+      minCut: 1,
+      limit: 100,
+      offset: 0,
+      userId: 42,
+    });
+  });
 });

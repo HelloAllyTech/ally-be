@@ -221,7 +221,11 @@ describe('AnalyticsController', () => {
         },
         {
           provide: FoundationalSkillsAnalyticsService,
-          useValue: { getFoundationalSkills: jest.fn() },
+          useValue: {
+            getFoundationalSkills: jest.fn(),
+            getLearners: jest.fn(),
+            getProgress: jest.fn(),
+          },
         },
         {
           provide: QualityDistributionAnalyticsService,
