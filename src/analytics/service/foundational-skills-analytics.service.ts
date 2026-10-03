@@ -13,6 +13,7 @@ import {
   FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsProgressQueryDto,
   FoundationalSkillsProgressResponseDto,
+  FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
 import { MIN_COHORT_SIZE } from '../repository/cohort-analytics.repository';
@@ -24,7 +25,9 @@ import {
   FHS_PROGRESS_THRESHOLDS,
   ProgressLearner,
   computeProgress,
+  countLevelMismatches,
 } from '../util/foundational-skills-progress.util';
+import { deriveLevel } from 'src/foundational-skills/util/skill-scoring.util';
 // One floor for every judged score on the platform — see SkillGrowthAnalyticsService.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
 
@@ -51,9 +54,12 @@ export class FoundationalSkillsAnalyticsService {
     private readonly repository: FoundationalSkillsAnalyticsRepository,
   ) {}
 
-  async getFoundationalSkills(): Promise<FoundationalSkillsResponseDto> {
+  async getFoundationalSkills(
+    query: FoundationalSkillsQueryDto = {},
+  ): Promise<FoundationalSkillsResponseDto> {
+    const baselineCut = query.baselineCut === 2 ? 2 : 1;
     const [cutRows, skillRows, coverage] = await Promise.all([
-      this.repository.getCutRows(FHS_RUBRIC_VERSION),
+      this.repository.getCutRows(FHS_RUBRIC_VERSION, baselineCut),
       this.repository.getSkillRows(FHS_RUBRIC_VERSION),
       this.repository.getCoverage(FHS_RUBRIC_VERSION),
     ]);
@@ -75,6 +81,16 @@ export class FoundationalSkillsAnalyticsService {
         pairedAvgScore: floor(row.baselineLearners, row.pairedAvgScore),
         baselineAvgScore: floor(row.baselineLearners, row.baselineAvgScore),
         pairedChange: floor(row.baselineLearners, row.pairedChange),
+        pairedChangeCi:
+          row.baselineLearners >= MIN_SCORE_SAMPLE_SIZE &&
+          row.pairedChange !== null &&
+          row.pairedChangeSd !== null
+            ? normalCi(
+                row.pairedChange,
+                row.pairedChangeSd,
+                row.baselineLearners,
+              )
+            : null,
         unhelpfulPct:
           row.learners >= MIN_SCORE_SAMPLE_SIZE && row.unhelpfulShare !== null
             ? Math.round(row.unhelpfulShare * 1000) / 10
@@ -91,6 +107,7 @@ export class FoundationalSkillsAnalyticsService {
     return {
       rubricVersion: FHS_RUBRIC_VERSION,
       cutSizeLearnerChars: FHS_CUT_LEARNER_CHARS,
+      baselineCut,
       minSampleSize: MIN_SCORE_SAMPLE_SIZE,
       scoreDomain: [1, 4],
       skills: FHS_RUBRIC.map((i) => ({
@@ -136,6 +153,10 @@ export class FoundationalSkillsAnalyticsService {
       { minCut, limit, offset, userId: query.userId },
     );
 
+    const scenarios = await this.repository.getSessionScenarios([
+      ...new Set(rows.flatMap((r) => r.sessionIds)),
+    ]);
+
     const byLearner = new Map<number, FoundationalSkillsLearnerDto>();
     for (const row of rows) {
       let learner = byLearner.get(row.userId);
@@ -159,6 +180,11 @@ export class FoundationalSkillsAnalyticsService {
         observed: [
           ...new Set(row.verdicts.flatMap((v) => v.observed ?? [])),
         ].sort(),
+        sessions: row.sessionIds.map((sessionId) => ({
+          sessionId,
+          scenarioId: scenarios.get(sessionId)?.scenarioId ?? null,
+          scenarioTitle: scenarios.get(sessionId)?.scenarioTitle ?? null,
+        })),
       });
       learner.cutsReached = Math.max(learner.cutsReached, row.cut);
       learner.tenantId = row.tenantId ?? learner.tenantId;
@@ -197,10 +223,20 @@ export class FoundationalSkillsAnalyticsService {
   ): Promise<FoundationalSkillsProgressResponseDto> {
     const rows = await this.repository.getAllLearnerCuts(FHS_RUBRIC_VERSION);
     const learners = groupByLearner(rows);
+    const rubricByKey = new Map(FHS_RUBRIC.map((sk) => [sk.key, sk]));
+    const levelChecks = countLevelMismatches(
+      rows.map((r) => r.verdicts),
+      (skill, observed, notApplicable) => {
+        const def = rubricByKey.get(skill);
+        return def ? deriveLevel(def, observed, notApplicable) : null;
+      },
+    );
     const result = computeProgress(learners, {
       requestedCuts: query.cuts,
+      baselineFrom: query.baselineFrom === 2 ? 2 : 1,
       sampleFloor: MIN_SCORE_SAMPLE_SIZE,
       minCohort: MIN_COHORT_SIZE,
+      levelChecks,
     });
     return {
       rubricVersion: FHS_RUBRIC_VERSION,
@@ -220,8 +256,11 @@ export class FoundationalSkillsAnalyticsService {
         note:
           `"Start" and "now" compare the SAME learners: those whose first ${result.cuts} cuts are all scored, ` +
           `start = mean of cuts ${result.windows.early.join(', ')}, now = mean of cuts ` +
-          `${result.windows.late.join(', ')}. Averages and shares over fewer than ${MIN_SCORE_SAMPLE_SIZE} ` +
-          `learners are withheld. Rubric ${FHS_RUBRIC_VERSION}; test organisations excluded.`,
+          `${result.windows.late.join(', ')}. Every change carries a paired bootstrap 95% CI and an exact ` +
+          `sign test, and is called a move only when the CI excludes zero. Averages and shares over fewer ` +
+          `than ${MIN_SCORE_SAMPLE_SIZE} learners are withheld. Scores come from an AI judge not yet checked ` +
+          `against trained human raters: practice feedback, not a clinical assessment. Rubric ` +
+          `${FHS_RUBRIC_VERSION}; test organisations excluded.`,
       },
       computedAt: new Date().toISOString(),
     };
@@ -257,4 +296,13 @@ function groupByLearner(
     learner.cuts.sort((a, b) => a.cut - b.cut);
   }
   return [...byUser.values()];
+}
+
+/** Normal-approximation 95% CI of a mean change from its SD and n (2dp). */
+function normalCi(mean: number, sd: number, n: number): [number, number] {
+  const half = (1.96 * sd) / Math.sqrt(n);
+  return [
+    Math.round((mean - half) * 100) / 100,
+    Math.round((mean + half) * 100) / 100,
+  ];
 }

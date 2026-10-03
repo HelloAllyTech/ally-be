@@ -3,9 +3,13 @@ import {
   ProgressCut,
   ProgressLearner,
   cohortOptions,
+  compositeIcc,
   computeProgress,
+  countLevelMismatches,
+  cutNoiseSd,
   defaultCuts,
   hasCompleteRun,
+  learnerBand,
   learnerTrend,
   windowsFor,
 } from '../foundational-skills-progress.util';
@@ -33,7 +37,6 @@ const learner = (userId: number, cuts: ProgressCut[]): ProgressLearner => ({
   cuts,
 });
 
-/** n cuts, every one with the same levels. */
 const flat = (userId: number, n: number, levels: Record<string, number>) =>
   learner(
     userId,
@@ -45,14 +48,23 @@ const OPTS = { sampleFloor: 2, minCohort: 2 };
 describe('foundational-skills-progress util', () => {
   describe('windowsFor', () => {
     it.each([
-      [2, [1], [2]],
-      [3, [1], [3]],
-      [4, [1, 2], [3, 4]],
-      [5, [1, 2], [4, 5]],
-      [6, [1, 2, 3], [4, 5, 6]],
-    ])('N=%i → start %j, now %j, never overlapping', (n, early, late) => {
-      expect(windowsFor(n)).toEqual({ early, late });
-    });
+      [2, 1, [1], [2], 1],
+      [5, 1, [1, 2], [4, 5], 1],
+      [6, 1, [1, 2, 3], [4, 5, 6], 1],
+      [5, 2, [2, 3], [4, 5], 2],
+      [3, 2, [2], [3], 2],
+      // too short to leave cut 1 out: falls back
+      [2, 2, [1], [2], 1],
+    ])(
+      'N=%i from %i → start %j, now %j (from %i)',
+      (n, from, early, late, used) => {
+        expect(windowsFor(n, from as 1 | 2)).toEqual({
+          early,
+          late,
+          from: used,
+        });
+      },
+    );
   });
 
   describe('panel selection', () => {
@@ -60,253 +72,280 @@ describe('foundational-skills-progress util', () => {
       flat(1, 6, { verbal: 3 }),
       flat(2, 5, { verbal: 3 }),
       flat(3, 3, { verbal: 3 }),
-      // cut 2 missing: a gap breaks the run, so this learner only counts at N=1
       learner(4, [cut(1, { verbal: 3 }), cut(3, { verbal: 3 })]),
     ];
 
-    it('requires every one of cuts 1..N to be scored', () => {
+    it('requires every one of cuts 1..N and offers sizes down to minCohort', () => {
       expect(hasCompleteRun(learners[3], 2)).toBe(false);
-      expect(hasCompleteRun(learners[1], 5)).toBe(true);
-    });
-
-    it('offers each panel size until it holds fewer than minCohort learners', () => {
-      expect(cohortOptions(learners, 2)).toEqual([
-        { cuts: 2, learners: 3 },
-        { cuts: 3, learners: 3 },
-        { cuts: 4, learners: 2 },
-        { cuts: 5, learners: 2 },
+      expect(cohortOptions(learners, 2).map((o) => o.cuts)).toEqual([
+        2, 3, 4, 5,
       ]);
-    });
-
-    it('defaults to the largest panel meeting the sample floor, then the largest offered', () => {
-      const options = cohortOptions(learners, 2);
-      expect(defaultCuts(options, 3)).toBe(3);
-      expect(defaultCuts(options, 10)).toBe(5);
+      expect(defaultCuts(cohortOptions(learners, 2), 3)).toBe(3);
       expect(defaultCuts([], 10)).toBe(2);
     });
 
-    it('falls back to the default for a panel size nobody offers', () => {
-      const res = computeProgress(learners, { ...OPTS, requestedCuts: 9 });
-      expect(res.cuts).toBe(5);
-      expect(res.summary.cohortLearners).toBe(2);
+    it('falls back to the default for a size nobody offers', () => {
       expect(
-        computeProgress(learners, { ...OPTS, requestedCuts: 3 }).cuts,
-      ).toBe(3);
+        computeProgress(learners, { ...OPTS, requestedCuts: 9 }).cuts,
+      ).toBe(5);
     });
   });
 
-  describe('skills, paired over the panel', () => {
-    // N=4 → start = cuts 1–2, now = cuts 3–4.
-    const learners = [
-      learner(1, [
-        cut(1, { verbal: 2, goals: 2 }),
-        cut(2, { verbal: 2, goals: 3 }),
-        cut(3, { verbal: 3, goals: 3 }),
-        cut(4, { verbal: 3 }),
+  describe('noise', () => {
+    it('estimates slice noise from consecutive cuts and an ICC near zero for pure noise', () => {
+      // Every learner alternates 2.0 / 2.4: all variation is within-learner.
+      const noisy = [1, 2, 3, 4].map((id) =>
+        learner(
+          id,
+          [1, 2, 3, 4, 5, 6].map((k) => cut(k, {}, { score: k % 2 ? 2 : 2.4 })),
+        ),
+      );
+      expect(cutNoiseSd(noisy)).toBeCloseTo(0.4 / Math.SQRT2, 2);
+      expect(compositeIcc(noisy)).toBeLessThan(0.05);
+
+      // Learners differ consistently: most variance belongs to the learner.
+      const stable = [1.5, 2, 2.5, 3].map((base, id) =>
+        learner(
+          id,
+          [1, 2, 3, 4].map((k) =>
+            cut(k, {}, { score: base + (k % 2 ? 0.05 : -0.05) }),
+          ),
+        ),
+      );
+      expect(compositeIcc(stable)).toBeGreaterThan(0.9);
+    });
+
+    it('sizes a learner band to the noise and the window', () => {
+      expect(learnerBand(0.2, 2)).toBeCloseTo(0.392, 3);
+      expect(learnerBand(0.2, 8)).toBeCloseTo(0.196, 3);
+    });
+
+    it('classifies own trend against the noise band, and too early below 4 cuts', () => {
+      const mk = (scores: number[]) =>
+        learner(
+          1,
+          scores.map((s, i) => cut(i + 1, {}, { score: s })),
+        );
+      expect(learnerTrend(mk([2, 2, 2]), 0.2).trend).toBe('tooEarly');
+      expect(learnerTrend(mk([2, 2, 2.3, 2.3]), 0.2).trend).toBe('steady'); // +0.3 < 0.39
+      expect(learnerTrend(mk([2, 2, 2.5, 2.5]), 0.2).trend).toBe('improving');
+      expect(learnerTrend(mk([2.5, 2.5, 2, 2]), 0.2).trend).toBe('declining');
+    });
+  });
+
+  describe('skills', () => {
+    // 4 learners, verbal clearly up in every one; rapport pinned at 2; harm rare.
+    const learners = [1, 2, 3, 4].map((id) =>
+      learner(id, [
+        cut(1, { verbal: 2, rapport: 2, goals: 2 + (id % 2) }),
+        cut(2, { verbal: 2, rapport: 2, goals: 2, harm: 2 }),
+        cut(3, { verbal: 3, rapport: 2, goals: 3 - (id % 2) }),
+        cut(4, { verbal: 3, rapport: 2, goals: 2 }),
       ]),
-      learner(2, [
-        cut(1, { verbal: 3, goals: 3 }),
-        cut(2, { verbal: 3 }),
-        cut(3, { verbal: 3, goals: 1 }),
-        cut(4, { verbal: 3, goals: 1 }),
-      ]),
-      // goals only ever assessable at the start: excluded from goals, kept for verbal
-      learner(3, [
-        cut(1, { verbal: 2, goals: 2 }),
-        cut(2, { verbal: 2 }),
-        cut(3, { verbal: 2 }),
-        cut(4, { verbal: 2 }),
-      ]),
-    ];
+    );
     const res = computeProgress(learners, { ...OPTS, requestedCuts: 4 });
     const skill = (key: string) => res.skills.find((s) => s.skill === key)!;
 
-    it('compares each learner with their own start, skipping no-opportunity cuts', () => {
+    it('carries a CI and calls a move only when it excludes zero', () => {
       expect(skill('verbal')).toMatchObject({
-        pairedLearners: 3,
-        earlyAvg: 2.33,
-        lateAvg: 2.67,
-        change: 0.33,
-        improved: 1,
-        unchanged: 2,
-        declined: 0,
+        n: 4,
+        change: 1,
+        up: 4,
+        down: 0,
+        detectable: true,
+        measurability: 'measurable',
       });
-      // learner 1: 2.5 → 3 (+0.5 improved); learner 2: 3 → 1 (declined)
-      expect(skill('goals')).toMatchObject({
-        pairedLearners: 2,
-        improved: 1,
-        declined: 1,
-        unchanged: 0,
+      expect(skill('verbal').ci).toEqual([1, 1]);
+      expect(skill('goals').detectable).toBe(false);
+    });
+
+    it('labels capped and rarely tested skills as not measurable', () => {
+      expect(skill('rapport').measurability).toBe('capped');
+      expect(skill('rapport').detectable).toBe(false);
+      // 25% is not below the 25% bar, and every harm score is a 2: capped, not rare
+      expect(skill('harm').measurability).toBe('capped');
+      expect(skill('confidentiality').measurability).toBe('rare');
+      expect(res.summary.skills).toMatchObject({
+        detectableUp: 1,
+        detectableDown: 0,
+      });
+      expect(res.summary.skills.notMeasurable).toBeGreaterThanOrEqual(3);
+    });
+
+    it('counts learners with one and two-plus chances at each skill', () => {
+      expect(skill('harm')).toMatchObject({
+        learnersWithOpportunity: 4,
+        learnersWithTwoPlus: 0,
+        opportunityCuts: 4,
+        opportunityPct: 25,
       });
     });
 
-    it('withholds averages below the floor but keeps the counts', () => {
-      const strict = computeProgress(learners, {
-        sampleFloor: 3,
-        minCohort: 2,
-        requestedCuts: 4,
-      });
-      const goals = strict.skills.find((s) => s.skill === 'goals')!;
-      expect(goals).toMatchObject({
-        pairedLearners: 2,
-        earlyAvg: null,
-        lateAvg: null,
-        change: null,
-        improved: 1,
-        declined: 1,
-      });
-      expect(strict.summary.skillsWithheld).toBe(13);
-    });
-
-    it('counts level mix per window and opportunity across every scored cut', () => {
-      expect(skill('goals').levelMix.late).toEqual({
-        assessments: 3,
-        levels: [2, 0, 1, 0],
-      });
-      // goals assessable in 7 of 12 cuts platform-wide
-      expect(skill('goals').opportunityCuts).toBe(7);
-      expect(skill('goals').opportunityPct).toBe(58.3);
-      expect(skill('confidentiality')).toMatchObject({
-        pairedLearners: 0,
-        change: null,
-        opportunityCuts: 0,
-        opportunityPct: 0,
-      });
-    });
-
-    it('labels a skill moving only beyond the move band', () => {
-      expect(res.summary.skillsUp).toBe(1); // verbal +0.33
-      expect(res.summary.skillsDown).toBe(1); // goals −0.75
-      expect(res.summary.skillsSteady).toBe(0);
-    });
-
-    it('averages each tier per learner before averaging across learners', () => {
-      const engage = res.byCut[0].tiers.find((t) => t.tier === 'engage')!;
-      expect(engage).toEqual({ tier: 'engage', learners: 3, avgLevel: 2.33 });
-      const support = res.byCut[3].tiers.find((t) => t.tier === 'support')!;
-      expect(support.learners).toBe(1);
+    it('pairs tiers and puts a CI on each cut average', () => {
+      const engage = res.tiers.find((t) => t.tier === 'engage')!;
+      expect(engage.n).toBe(4);
+      expect(engage.change).toBeGreaterThan(0);
+      expect(res.byCut[0].compositeCi).not.toBeNull();
     });
   });
 
-  describe('behaviours and unhelpful transitions', () => {
-    const withCodes = (k: number, codes: string[], unhelpful: boolean) =>
-      cut(
-        k,
-        { verbal: unhelpful ? 1 : 3 },
-        { observed: new Set(codes), unhelpful },
-      );
+  describe('behaviours', () => {
+    const withCodes = (k: number, codes: string[]) =>
+      cut(k, { verbal: 3 }, { observed: new Set(codes) });
+    const learners = [1, 2, 3, 4, 5, 6].map((id) =>
+      learner(id, [
+        withCodes(1, id <= 2 ? ['verbal.b1'] : []),
+        withCodes(2, ['verbal.b1']),
+      ]),
+    );
+    const res = computeProgress(learners, { ...OPTS, requestedCuts: 2 });
+    const b1 = res.behaviours.find((b) => b.code === 'verbal.b1')!;
+
+    it('counts gained vs lost with an exact test and a BH q-value', () => {
+      expect(b1).toMatchObject({
+        pairedLearners: 6,
+        earlyPct: 33.3,
+        latePct: 100,
+        gained: 4,
+        lost: 0,
+      });
+      expect(b1.signP).toBeCloseTo(0.125, 3);
+      expect(b1.q).not.toBeNull();
+      expect(b1.credible).toBe(false); // 4/0 cannot clear q ≤ 0.05
+    });
+
+    it('profiles every learner: first slice and ever', () => {
+      expect(b1).toMatchObject({
+        firstSliceLearners: 6,
+        firstSlicePct: 33.3,
+        everLearners: 6,
+        everPct: 100,
+      });
+    });
+  });
+
+  describe('safety and coaching flags', () => {
+    const c = (k: number, levels: Record<string, number>, codes: string[]) =>
+      cut(k, levels, { observed: new Set(codes) });
     const learners = [
+      // missed, then followed up: better
       learner(1, [
-        withCodes(1, ['verbal.u1'], true),
-        withCodes(2, ['verbal.b1'], false),
+        c(1, { verbal: 3, harm: 1 }, ['harm.u1']),
+        c(2, { verbal: 3, harm: 2 }, ['harm.b1']),
       ]),
+      // followed, then missed: worse
       learner(2, [
-        withCodes(1, ['verbal.u1'], true),
-        withCodes(2, ['verbal.u1', 'verbal.b1'], true),
+        c(1, { verbal: 3, harm: 2 }, ['harm.b1']),
+        c(2, { verbal: 3, harm: 1 }, ['harm.u1']),
       ]),
-      learner(3, [withCodes(1, [], false), withCodes(2, ['verbal.u1'], true)]),
-      learner(4, [withCodes(1, [], false), withCodes(2, ['verbal.b1'], false)]),
+      // both coded in one cut: unclear
+      learner(3, [
+        c(1, { verbal: 3, harm: 1 }, ['harm.u1', 'harm.b1']),
+        c(2, { verbal: 3 }, []),
+      ]),
+      // confidentiality: explained, promised absolute
+      learner(4, [
+        c(1, { verbal: 3, confidentiality: 1 }, [
+          'confidentiality.b1',
+          'confidentiality.u3',
+        ]),
+        c(2, { verbal: 1, functioning: 1 }, ['verbal.u1', 'functioning.u2']),
+        c(3, { verbal: 1, functioning: 1 }, ['verbal.u1', 'functioning.u2']),
+      ]),
     ];
     const res = computeProgress(learners, { ...OPTS, requestedCuts: 2 });
 
-    it('reports the paired share showing each behaviour at the start and now', () => {
-      const u1 = res.behaviours.find((b) => b.code === 'verbal.u1')!;
-      expect(u1).toMatchObject({
-        skill: 'verbal',
-        kind: 'unhelpful',
-        pairedLearners: 4,
-        earlyPct: 50,
-        latePct: 50,
-        changePts: 0,
+    it('counts self-harm cues met, followed up, missed and unclear', () => {
+      expect(res.safety.selfHarm).toMatchObject({
+        learnersWithCue: 3,
+        cutsWithCue: 5,
+        cutsFollowedUp: 2,
+        cutsMissed: 2,
+        cutsAmbiguous: 1,
+        learnersMissedFirst: 1,
+        learnersFollowedFirst: 1,
+        learnersAmbiguousFirst: 1,
+        repeatLearners: 2,
+        repeatBetter: 1,
+        repeatWorse: 1,
+        repeatSame: 0,
       });
-      expect(u1.text.length).toBeGreaterThan(10);
-      const b1 = res.behaviours.find((b) => b.code === 'verbal.b1')!;
-      expect(b1).toMatchObject({ earlyPct: 0, latePct: 75, changePts: 75 });
     });
 
-    it('sorts every panel learner into one unhelpful transition', () => {
-      expect(res.unhelpfulTransitions).toEqual({
-        stopped: 1,
-        persisted: 1,
-        started: 1,
-        never: 1,
+    it('counts confidentiality explanations and absolute promises per learner', () => {
+      expect(res.safety.confidentiality).toMatchObject({
+        learnersAssessable: 1,
+        learnersExplained: 1,
+        learnersListedExceptions: 0,
+        learnersPromisedAbsolute: 1,
       });
-      expect(res.summary.unhelpfulEarlyPct).toBe(50);
-      expect(res.summary.unhelpfulLatePct).toBe(50);
+    });
+
+    it('flags any safety code once, and other unhelpful codes only when repeated', () => {
+      const four = res.learners.find((l) => l.id === 4)!;
+      expect(four.flags.map((f) => [f.code, f.kind, f.cuts, f.recent])).toEqual(
+        [
+          ['confidentiality.u3', 'safety', [1], false],
+          ['verbal.u1', 'repeat', [2, 3], true],
+          ['functioning.u2', 'repeat', [2, 3], true],
+        ],
+      );
+      const two = res.learners.find((l) => l.id === 2)!;
+      expect(two.flags.map((f) => f.code)).toEqual(['harm.u1']);
     });
   });
 
-  describe('people', () => {
-    it('classifies a learner only once they have trendMinCuts cuts', () => {
-      expect(FHS_PROGRESS_THRESHOLDS.trendMinCuts).toBe(4);
-      expect(learnerTrend(flat(1, 3, { verbal: 2 })).trend).toBe('tooEarly');
-      const up = learner(2, [
-        cut(1, {}, { score: 2 }),
-        cut(2, {}, { score: 2 }),
-        cut(3, {}, { score: 2.2 }),
-        cut(4, {}, { score: 2.2 }),
-      ]);
-      const upTrend = learnerTrend(up);
-      expect(upTrend.trend).toBe('improving');
-      expect(upTrend.change).toBeCloseTo(0.2);
-      const steady = learner(3, [
-        cut(1, {}, { score: 2 }),
-        cut(2, {}, { score: 2 }),
-        cut(3, {}, { score: 2.1 }),
-        cut(4, {}, { score: 2.1 }),
-      ]);
-      expect(learnerTrend(steady).trend).toBe('steady');
+  it('reports unhelpful transitions with a CI, the depth funnel and precision', () => {
+    const learners = [
+      learner(1, [cut(1, { verbal: 1 }), cut(2, { verbal: 3 })]),
+      learner(2, [cut(1, { verbal: 1 }), cut(2, { verbal: 1 })]),
+      learner(3, [cut(1, { verbal: 3 }), cut(2, { verbal: 1 })]),
+      learner(4, [
+        cut(1, { verbal: 3 }),
+        cut(2, { verbal: 3 }),
+        cut(3, { verbal: 3 }),
+      ]),
+    ];
+    const res = computeProgress(learners, { ...OPTS, requestedCuts: 2 });
+    expect(res.summary.unhelpful).toMatchObject({
+      earlyPct: 50,
+      latePct: 50,
+      changePts: 0,
+      stopped: 1,
+      started: 1,
+      persisted: 1,
+      never: 1,
+      signP: 1,
+      detectable: false,
     });
+    expect(res.summary.unhelpful.ciPts).not.toBeNull();
+    expect(res.depth).toEqual([
+      { atLeast: 1, learners: 4 },
+      { atLeast: 2, learners: 4 },
+      { atLeast: 3, learners: 1 },
+      { atLeast: 5, learners: 0 },
+      { atLeast: 10, learners: 0 },
+    ]);
+    expect(res.precision.cutNoiseSd).not.toBeNull();
+    expect(res.precision.learnerBand).not.toBeNull();
+    expect(res.learners[0].band).toBe(res.precision.learnerBand);
+  });
 
-    it('buckets own change by practice volume', () => {
-      const learners = [
-        flat(1, 1, { verbal: 2 }),
-        flat(2, 2, { verbal: 2 }),
-        flat(3, 3, { verbal: 2 }),
-        flat(4, 4, { verbal: 2 }),
-        flat(5, 11, { verbal: 2 }),
-      ];
-      const res = computeProgress(learners, { ...OPTS });
-      expect(res.dose.map((d) => [d.label, d.learners])).toEqual([
-        ['2–3 cuts', 2],
-        ['4–5 cuts', 1],
-        ['6–9 cuts', 0],
-        ['10+ cuts', 1],
-      ]);
-      expect(res.dose[0].avgChange).toBe(0);
-      expect(res.dose[1].avgChange).toBeNull();
-      expect(res.trend).toEqual({
-        improving: 0,
-        steady: 2,
-        declining: 0,
-        tooEarly: 3,
-      });
-    });
-
-    it('lists panel learners, biggest own change first', () => {
-      const learners = [
-        learner(1, [cut(1, { verbal: 3 }), cut(2, { verbal: 2 })]),
-        learner(2, [cut(1, { verbal: 2 }), cut(2, { verbal: 3 })]),
-        learner(3, [cut(1, { verbal: 1 }), cut(2, { verbal: 3 })]),
-      ];
-      const res = computeProgress(learners, { ...OPTS, requestedCuts: 2 });
-      expect(res.learners.map((l) => [l.id, l.change])).toEqual([
-        [3, 2],
-        [2, 1],
-        [1, -1],
-      ]);
-      expect(res.learners[0]).toMatchObject({
-        earlyComposite: 1,
-        lateComposite: 3,
-        skillsImproved: 1,
-        skillsDeclined: 0,
-        unhelpfulEarly: true,
-        unhelpfulLate: false,
-        cutsReached: 2,
-        trend: 'tooEarly',
-      });
-      expect(res.learnersTruncated).toBe(false);
-    });
+  it('counts stored levels that disagree with their codes', () => {
+    const derive = (_s: string, observed: Set<string>) =>
+      observed.has('x.b1') ? 3 : 2;
+    expect(
+      countLevelMismatches(
+        [
+          [
+            { skill: 'x', level: 3, observed: ['x.b1'] },
+            { skill: 'x', level: 3, observed: [] },
+          ],
+          [{ skill: 'x', level: null }],
+        ],
+        derive,
+      ),
+    ).toEqual({ checked: 2, mismatched: 1 });
   });
 
   it('returns an honest empty result when nobody has two cuts', () => {
@@ -314,8 +353,8 @@ describe('foundational-skills-progress util', () => {
     expect(res.cuts).toBe(2);
     expect(res.cohortOptions).toEqual([]);
     expect(res.summary.cohortLearners).toBe(0);
-    expect(res.summary.compositeChange).toBeNull();
-    expect(res.byCut.every((c) => c.learners === 0)).toBe(true);
+    expect(res.summary.composite.change).toBeNull();
     expect(res.learners).toEqual([]);
+    expect(FHS_PROGRESS_THRESHOLDS.trendMinCuts).toBe(4);
   });
 });

@@ -36,6 +36,7 @@ import {
   FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsProgressQueryDto,
   FoundationalSkillsProgressResponseDto,
+  FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
@@ -1270,8 +1271,10 @@ export class AnalyticsController {
     description: 'Foundational skills growth retrieved successfully',
     type: FoundationalSkillsResponseDto,
   })
-  async getFoundationalSkills(): Promise<FoundationalSkillsResponseDto> {
-    return this.foundationalSkillsAnalyticsService.getFoundationalSkills();
+  async getFoundationalSkills(
+    @Query() query: FoundationalSkillsQueryDto,
+  ): Promise<FoundationalSkillsResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getFoundationalSkills(query);
   }
 
   @Get('foundational-skills/learners')
