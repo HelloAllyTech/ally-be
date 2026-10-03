@@ -38,6 +38,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'historyTrimEnabled',
   'continuousBackchanneling',
   'interimReplyEnabled',
+  'fhsBenchmark',
   'customFields',
   'languageVoices',
   'sttConfigByLanguage',
@@ -69,6 +70,22 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'states',
   'agentTestCaseIds',
 ];
+
+/**
+ * A scenario's metadata without the foundational-skills benchmark flag, for a
+ * duplicate. The benchmark compares each learner's sessions of ONE scenario
+ * with each other, so a copy (made to become a different roleplay) must not
+ * silently join the benchmark set and start being scored. Returns the same
+ * object when the flag is absent, so callers that never set it see no change.
+ */
+export const withoutFhsBenchmarkFlag = <T extends Record<string, any>>(
+  metadata: T | undefined | null,
+): T | undefined | null => {
+  if (!metadata || !('fhsBenchmark' in metadata)) return metadata;
+  const copy: Record<string, any> = { ...metadata };
+  delete copy.fhsBenchmark;
+  return copy as T;
+};
 
 /** Scenario fields persisted as dedicated `scenarios` columns. */
 export const SCENARIO_ROOT_FIELDS: (keyof UpdateScenarioDto)[] = [
@@ -209,6 +226,9 @@ export const mapCreateScenarioRequestToEntity = (
       historyTrimEnabled: scenario.historyTrimEnabled,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,
+      // Opt-in, strictly: only an explicit true makes a roleplay a benchmark
+      // (src/foundational-skills scores every completed session of it).
+      fhsBenchmark: scenario.fhsBenchmark === true,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
