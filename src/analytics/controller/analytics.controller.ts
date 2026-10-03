@@ -34,6 +34,8 @@ import { FoundationalSkillsAnalyticsService } from '../service/foundational-skil
 import {
   FoundationalSkillsLearnersQueryDto,
   FoundationalSkillsLearnersResponseDto,
+  FoundationalSkillsProgressQueryDto,
+  FoundationalSkillsProgressResponseDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
@@ -1294,6 +1296,33 @@ export class AnalyticsController {
     @Query() query: FoundationalSkillsLearnersQueryDto,
   ): Promise<FoundationalSkillsLearnersResponseDto> {
     return this.foundationalSkillsAnalyticsService.getLearners(query);
+  }
+
+  @Get('foundational-skills/progress')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'What is moving in the foundational helping skills (super-admin)',
+    description:
+      'Backs the Highlights → Skills sub-tab. Over one balanced panel — the ' +
+      'learners whose first `cuts` cuts are all scored, so every cut holds the ' +
+      'same people — it returns: a headline; composite, unhelpful rate, tier and ' +
+      'per-skill averages by cut; per-skill start-vs-now change with how many ' +
+      'learners improved, held or declined, level mix and platform-wide ' +
+      'opportunity; per-behaviour start-vs-now share; unhelpful transitions; ' +
+      "every learner's own-baseline trend; change by practice volume; and one " +
+      'row per panel learner. Start/now are windows (first and last ⌊N/2⌋ cuts). ' +
+      'Averages and shares are null below `minSampleSize` while counts travel. ' +
+      'All-time, platform-wide, test organisations excluded, one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Foundational skills progress retrieved successfully',
+    type: FoundationalSkillsProgressResponseDto,
+  })
+  async getFoundationalSkillsProgress(
+    @Query() query: FoundationalSkillsProgressQueryDto,
+  ): Promise<FoundationalSkillsProgressResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getProgress(query);
   }
 
   @Get('skill-growth/learners')

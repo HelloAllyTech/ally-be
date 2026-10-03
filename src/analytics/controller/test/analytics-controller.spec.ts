@@ -224,6 +224,7 @@ describe('AnalyticsController', () => {
           useValue: {
             getFoundationalSkills: jest.fn(),
             getLearners: jest.fn(),
+            getProgress: jest.fn(),
           },
         },
         {

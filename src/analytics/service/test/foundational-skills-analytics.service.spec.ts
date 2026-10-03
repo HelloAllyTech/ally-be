@@ -129,9 +129,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
       const res = await service.getLearners({});
       expect(repository.getLearnerCuts).toHaveBeenCalledWith(
         FHS_RUBRIC_VERSION,
-        1,
-        100,
-        0,
+        { minCut: 1, limit: 100, offset: 0, userId: undefined },
       );
       expect(res).toMatchObject({ minCut: 1, limit: 100, offset: 0 });
     });
@@ -145,9 +143,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
       });
       expect(repository.getLearnerCuts).toHaveBeenCalledWith(
         FHS_RUBRIC_VERSION,
-        5,
-        10,
-        20,
+        { minCut: 5, limit: 10, offset: 20, userId: undefined },
       );
       expect(res.total).toBe(24);
     });
@@ -202,6 +198,75 @@ describe('FoundationalSkillsAnalyticsService', () => {
       const [learner] = (await service.getLearners({ minCut: 2 })).learners;
       expect(learner.changeSinceFirstCut).toBeNull();
       expect(learner.cutsReached).toBe(3);
+    });
+  });
+
+  describe('getProgress', () => {
+    const row = (
+      userId: number,
+      cut: number,
+      levels: Record<string, number>,
+    ) => ({
+      userId,
+      name: `Learner ${userId}`,
+      tenantId: 't-1',
+      cut,
+      closedAt: new Date('2026-09-01T00:00:00Z'),
+      score: 2,
+      unhelpful: false,
+      levels,
+      verdicts: [{ skill: 'verbal', observed: ['verbal.b1'] }],
+    });
+
+    it('reads every scored cut under the current version and serves the thresholds', async () => {
+      const rows = Array.from({ length: 25 }, (_, i) => [
+        row(i + 1, 1, { verbal: 2 }),
+        row(i + 1, 2, { verbal: 3 }),
+      ]).flat();
+      const repository = {
+        getAllLearnerCuts: jest.fn().mockResolvedValue(rows),
+      };
+      const service = new FoundationalSkillsAnalyticsService(repository as any);
+
+      const res = await service.getProgress({});
+
+      expect(repository.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+      );
+      expect(res).toMatchObject({
+        rubricVersion: FHS_RUBRIC_VERSION,
+        minSampleSize: 20,
+        minCohortSize: 5,
+        measuredLearners: 25,
+        cuts: 2,
+        cohortOptions: [{ cuts: 2, learners: 25 }],
+        windows: { early: [1], late: [2] },
+      });
+      expect(res.thresholds.trendMinCuts).toBe(4);
+      expect(res.skills.find((s) => s.skill === 'verbal')).toMatchObject({
+        pairedLearners: 25,
+        change: 1,
+        improved: 25,
+      });
+      expect(res.behaviours.find((b) => b.code === 'verbal.b1')).toMatchObject({
+        earlyPct: 100,
+        latePct: 100,
+      });
+      expect(res.provenance.note).toContain('cuts 1');
+    });
+  });
+
+  it('passes a userId filter through to the learner read', async () => {
+    const repository = {
+      getLearnerCuts: jest.fn().mockResolvedValue({ total: 0, rows: [] }),
+    };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+    await service.getLearners({ userId: 42 });
+    expect(repository.getLearnerCuts).toHaveBeenCalledWith(FHS_RUBRIC_VERSION, {
+      minCut: 1,
+      limit: 100,
+      offset: 0,
+      userId: 42,
     });
   });
 });
