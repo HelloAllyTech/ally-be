@@ -85,6 +85,7 @@ import {
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
   applyScenarioTranslations,
+  withoutFhsBenchmarkFlag,
 } from '../util/scenario.util';
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
@@ -1682,7 +1683,8 @@ export class ScenarioService {
       status: ScenarioStatus.DRAFT,
       isPublic: scenario.isPublic,
       prompt: scenario.prompt,
-      metadata: scenario.metadata,
+      // A copy is a new roleplay, never the benchmark it was copied from.
+      metadata: withoutFhsBenchmarkFlag(scenario.metadata) ?? undefined,
       isGlobal: scenario.isGlobal,
       scenario: scenario.scenario,
       competencyId: scenario.competencyId, // Copy competency from original scenario

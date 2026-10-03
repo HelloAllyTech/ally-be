@@ -12,6 +12,7 @@ import {
   buildJudgeSystemPrompt,
 } from '../service/foundational-skills-judge.service';
 import { FoundationalSkillsService } from '../service/foundational-skills.service';
+import { EMPTY_BENCHMARK_TICK } from '../service/foundational-skills-benchmark.service';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTargetResolverService } from 'src/llm/service/llm-target-resolver.service';
 import { callConfigForAiTask } from 'src/llm/constants/ai-task-registry.constants';
@@ -164,6 +165,11 @@ describe('FoundationalSkillsJudgeService', () => {
 });
 
 describe('FoundationalSkillsService', () => {
+  /** The benchmark half, idle: these tests are about cuts. */
+  const benchmark = () => ({
+    tick: jest.fn().mockResolvedValue({ ...EMPTY_BENCHMARK_TICK }),
+  });
+
   const repository = () => ({
     findLearnersReadyToCut: jest.fn(),
     findLastCut: jest.fn(),
@@ -204,7 +210,11 @@ describe('FoundationalSkillsService', () => {
       ]),
     );
     repo.insertCuts.mockResolvedValue(1);
-    const service = new FoundationalSkillsService(repo as any, {} as any);
+    const service = new FoundationalSkillsService(
+      repo as any,
+      {} as any,
+      benchmark() as any,
+    );
 
     await expect(service.sealForLearner(42)).resolves.toBe(1);
     const [userId, firstIndex, cuts] = repo.insertCuts.mock.calls[0];
@@ -225,7 +235,11 @@ describe('FoundationalSkillsService', () => {
     repo.loadTurns.mockResolvedValue(
       new Map([['s1', [{ messageId: 1, speaker: 'helper', text: 'short' }]]]),
     );
-    const service = new FoundationalSkillsService(repo as any, {} as any);
+    const service = new FoundationalSkillsService(
+      repo as any,
+      {} as any,
+      benchmark() as any,
+    );
     await expect(service.sealForLearner(1)).resolves.toBe(0);
     expect(repo.insertCuts).not.toHaveBeenCalled();
   });
@@ -281,7 +295,11 @@ describe('FoundationalSkillsService', () => {
         completionTokens: 5,
       }),
     };
-    const service = new FoundationalSkillsService(repo as any, judge as any);
+    const service = new FoundationalSkillsService(
+      repo as any,
+      judge as any,
+      benchmark() as any,
+    );
 
     await expect(service.scoreCut(cut)).resolves.toBe(true);
     const write = repo.upsertAssessment.mock.calls[0][0];
@@ -301,7 +319,11 @@ describe('FoundationalSkillsService', () => {
       new Map([['s1', [{ messageId: 2, speaker: 'helper', text: 'Hi' }]]]),
     );
     const judge = { judge: jest.fn().mockRejectedValue(new Error('timeout')) };
-    const service = new FoundationalSkillsService(repo as any, judge as any);
+    const service = new FoundationalSkillsService(
+      repo as any,
+      judge as any,
+      benchmark() as any,
+    );
 
     await expect(service.scoreCut(cut)).resolves.toBe(false);
     const write = repo.upsertAssessment.mock.calls[0][0];
@@ -317,7 +339,11 @@ describe('FoundationalSkillsService', () => {
       { ...cut, cutId: 'cut-2' },
       { ...cut, cutId: 'cut-3' },
     ]);
-    const service = new FoundationalSkillsService(repo as any, {} as any);
+    const service = new FoundationalSkillsService(
+      repo as any,
+      {} as any,
+      benchmark() as any,
+    );
     const scoreCut = jest
       .spyOn(service, 'scoreCut')
       .mockImplementation(async (c) => c.cutId !== 'cut-2');
@@ -329,6 +355,59 @@ describe('FoundationalSkillsService', () => {
       cutsSealed: 0,
       cutsScored: 2,
       cutsFailed: 1,
+      ...EMPTY_BENCHMARK_TICK,
     });
+  });
+
+  it('runs the benchmark half between sealing and cut scoring, and carries its tally', async () => {
+    const repo = repository();
+    const order: string[] = [];
+    repo.findLearnersReadyToCut.mockImplementation(async () => {
+      order.push('seal');
+      return [];
+    });
+    repo.findCutsToScore.mockImplementation(async () => {
+      order.push('score-cuts');
+      return [];
+    });
+    const bench = {
+      tick: jest.fn().mockImplementation(async () => {
+        order.push('benchmark');
+        return {
+          benchmarksScored: 2,
+          benchmarksSkipped: 1,
+          benchmarksFailed: 0,
+          cutsBeforeRefreshed: 3,
+        };
+      }),
+    };
+    const service = new FoundationalSkillsService(
+      repo as any,
+      {} as any,
+      bench as any,
+    );
+
+    const summary = await service.tick();
+    expect(order).toEqual(['seal', 'benchmark', 'score-cuts']);
+    expect(summary.benchmarksScored).toBe(2);
+    expect(summary.benchmarksSkipped).toBe(1);
+    expect(summary.cutsBeforeRefreshed).toBe(3);
+  });
+
+  it('still scores cuts when the benchmark half throws', async () => {
+    const repo = repository();
+    repo.findLearnersReadyToCut.mockResolvedValue([]);
+    repo.findCutsToScore.mockResolvedValue([cut]);
+    const bench = { tick: jest.fn().mockRejectedValue(new Error('db down')) };
+    const service = new FoundationalSkillsService(
+      repo as any,
+      {} as any,
+      bench as any,
+    );
+    jest.spyOn(service, 'scoreCut').mockResolvedValue(true);
+
+    const summary = await service.tick();
+    expect(summary.cutsScored).toBe(1);
+    expect(summary.benchmarksScored).toBe(0);
   });
 });

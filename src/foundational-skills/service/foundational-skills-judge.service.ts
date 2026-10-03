@@ -16,8 +16,15 @@ import {
   validateJudgement,
 } from '../util/skill-scoring.util';
 
-/** AI-task-registry row id for this call. */
+/** AI-task-registry row id for scoring a cut. */
 export const FHS_JUDGE_TASK_ID = 'foundational-skills-judge';
+/**
+ * AI-task-registry row id for scoring a whole benchmark session. The same call
+ * (rubric, prompt, pinned model) under its own row and usage label, so the
+ * benchmark's spend is separable from the cut pipeline's.
+ */
+export const FHS_BENCHMARK_JUDGE_TASK_ID =
+  'foundational-skills-benchmark-judge';
 
 export interface JudgeOutcome {
   verdicts: SkillVerdict[];
@@ -86,7 +93,7 @@ export class FoundationalSkillsJudgeService {
   constructor(private readonly llm: LlmCompletionService) {}
 
   /**
-   * Score one rendered window. Throws on a transport failure or an unparseable
+   * Score one rendered cut. Throws on a transport failure or an unparseable
    * reply; the caller records the attempt. A reply that parses but backs few of
    * its ticks is NOT a failure — the dropped ticks are counted and stored.
    */
@@ -95,9 +102,56 @@ export class FoundationalSkillsJudgeService {
     lines: readonly NumberedLine[],
     meta: { cutId: string; userId: number; cutIndex: number },
   ): Promise<JudgeOutcome> {
-    const result = await this.llm.complete({
+    return this.run(windowText, lines, {
       taskId: FHS_JUDGE_TASK_ID,
       task: LlmTask.FOUNDATIONAL_SKILLS_ASSESSMENT,
+      usageMetadata: {
+        rubricVersion: FHS_RUBRIC_VERSION,
+        cutId: meta.cutId,
+        cutIndex: meta.cutIndex,
+      },
+    });
+  }
+
+  /**
+   * Score one whole benchmark session — the identical judgement as
+   * {@link judge}, tagged with the benchmark's own task id and usage label.
+   * Same failure contract.
+   */
+  async judgeBenchmark(
+    windowText: string,
+    lines: readonly NumberedLine[],
+    meta: { sessionId: string; userId: number; scenarioId: number },
+  ): Promise<JudgeOutcome> {
+    return this.run(windowText, lines, {
+      taskId: FHS_BENCHMARK_JUDGE_TASK_ID,
+      task: LlmTask.FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE,
+      usageMetadata: {
+        rubricVersion: FHS_RUBRIC_VERSION,
+        sessionId: meta.sessionId,
+        scenarioId: meta.scenarioId,
+      },
+    });
+  }
+
+  /**
+   * The one judgement both entry points share. Everything that makes it the
+   * ruler — system prompt, pinned model, JSON mode, validation, level rule —
+   * lives here, so a cut and a benchmark session can never be judged
+   * differently; only the task tagging differs.
+   */
+  private async run(
+    windowText: string,
+    lines: readonly NumberedLine[],
+    call: {
+      taskId: string;
+      task: LlmTask;
+      usageMetadata: Record<string, unknown>;
+    },
+  ): Promise<JudgeOutcome> {
+    const result = await this.llm.complete({
+      taskId: call.taskId,
+      task: call.task,
       model: FHS_JUDGE_MODEL,
       system: buildJudgeSystemPrompt(),
       prompt: windowText,
@@ -106,11 +160,7 @@ export class FoundationalSkillsJudgeService {
       // 14 skills with quotes is ~2–4k tokens of JSON on top of that.
       maxTokens: 16000,
       timeoutMs: 180_000,
-      usageMetadata: {
-        rubricVersion: FHS_RUBRIC_VERSION,
-        cutId: meta.cutId,
-        cutIndex: meta.cutIndex,
-      },
+      usageMetadata: call.usageMetadata,
     });
 
     const parsed = parseJudgeReply(result.text);

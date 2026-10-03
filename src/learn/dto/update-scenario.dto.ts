@@ -388,6 +388,16 @@ export class UpdateScenarioDto {
   interimReplyEnabled?: boolean;
 
   @ApiProperty({
+    description:
+      "Mark this roleplay as a foundational helping skills BENCHMARK: every completed session of it is scored, whole, against the fixed foundational helping skills rubric, and each learner's first and latest benchmark sessions are compared on the Highlights analytics. Keep a benchmark's content fixed — editing it changes what is being compared. Opt-in: off unless explicitly true. Omitting it on update leaves the stored value unchanged.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  fhsBenchmark?: boolean;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })

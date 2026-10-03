@@ -28,6 +28,7 @@ import { CompletionRateAnalyticsService } from '../../service/completion-rate-an
 import { LanguageMixAnalyticsService } from '../../service/language-mix-analytics.service';
 import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytics.service';
 import { FoundationalSkillsAnalyticsService } from '../../service/foundational-skills-analytics.service';
+import { FoundationalSkillsBenchmarkAnalyticsService } from '../../service/foundational-skills-benchmark.service';
 import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
 import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
@@ -226,6 +227,10 @@ describe('AnalyticsController', () => {
             getLearners: jest.fn(),
             getProgress: jest.fn(),
           },
+        },
+        {
+          provide: FoundationalSkillsBenchmarkAnalyticsService,
+          useValue: { getBenchmark: jest.fn() },
         },
         {
           provide: QualityDistributionAnalyticsService,
