@@ -3,6 +3,7 @@ import {
   FHS_RUBRIC,
   FhsSkill,
 } from '../constants/helping-skills-rubric.constants';
+import type { StoredSkillVerdict } from '../entity/foundational-skill-assessment.entity';
 
 /**
  * The level rule, applied in code rather than asked of the model.
@@ -53,6 +54,33 @@ export function compositeOf(verdicts: readonly SkillVerdict[]): number | null {
   if (levels.length === 0) return null;
   const mean = levels.reduce((a, b) => a + b, 0) / levels.length;
   return Math.round(mean * 100) / 100;
+}
+
+/**
+ * The persisted form of a judgement, shared by the cut and benchmark writers so
+ * the two tables can never store the same verdicts differently: every skill's
+ * verdict (behaviour codes and derived level), and `skillLevels` holding ONLY
+ * the skills that had an opportunity — an absent key means "not assessable
+ * here", never a low score.
+ */
+export function storedJudgement(verdicts: readonly SkillVerdict[]): {
+  verdicts: StoredSkillVerdict[];
+  skillLevels: Record<string, number>;
+} {
+  return {
+    verdicts: verdicts.map((v) => ({
+      skill: v.skill,
+      opportunity: v.opportunity,
+      level: v.level,
+      observed: v.observed,
+      notApplicable: v.notApplicable,
+    })),
+    skillLevels: Object.fromEntries(
+      verdicts
+        .filter((v) => v.level !== null)
+        .map((v) => [v.skill, v.level as number]),
+    ),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

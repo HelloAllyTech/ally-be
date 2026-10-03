@@ -121,6 +121,13 @@ export enum LlmTask {
   // label because it is analytics spend (deliberately absent from TASK_AREA, so
   // it never counts towards the learner unit cost) with a transcript-sized input.
   FOUNDATIONAL_SKILLS_ASSESSMENT = 'foundational_skills_assessment',
+  // Foundational skills BENCHMARK (src/foundational-skills): one call per
+  // completed session of a roleplay flagged `metadata.fhsBenchmark`, scoring the
+  // whole session with the same rubric, prompt and pinned model as the cut
+  // judge above. Scheduled, never on a request path. Its own label so the
+  // benchmark's spend separates from the cut pipeline's, and like that one it is
+  // analytics spend, deliberately absent from TASK_AREA.
+  FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE = 'foundational_skills_benchmark_judge',
   // Mobile Releases admin page (src/mobile-releases): one call per
   // ios-whats-new-suggestion request, turning raw ally-mobile commit
   // subjects since the last release into a draft App Store "What's New"

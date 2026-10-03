@@ -61,6 +61,15 @@ export const FHS_CONTEXT_CHARS = 2000;
  */
 export const FHS_SESSION_SETTLE_MINUTES = 60;
 
+/**
+ * A cut or benchmark session whose scoring fails this many times stays FAILED
+ * until someone looks. Failed attempts retry no more than hourly.
+ */
+export const FHS_MAX_ATTEMPTS = 3;
+
+/** Judge calls in flight at once, per pipeline, within one scheduler tick. */
+export const FHS_SCORE_CONCURRENCY = 4;
+
 export type FhsTier = 'engage' | 'understand' | 'support';
 
 export interface FhsBehaviour {

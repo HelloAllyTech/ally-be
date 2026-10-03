@@ -1113,6 +1113,31 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned; changing it is a rubric version bump',
   },
   {
+    id: 'foundational-skills-benchmark-judge',
+    task: LlmTask.FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE,
+    runtime: LlmRuntime.ALLY_BE,
+    // Pinned exactly like foundational-skills-judge: the call names
+    // FHS_JUDGE_MODEL, the tier is only the resolver's floor, and neverFallback
+    // keeps a substitute model from ever scoring one end of a before/after pair.
+    tier: LlmModelTier.REASONING,
+    neverFallback: true,
+    trigger:
+      'Scheduled: a learner completes a session of a roleplay flagged as the foundational skills benchmark',
+    detail:
+      'Scores the WHOLE session (helper and client turns, no transcript stored) with the same ' +
+      "rubric, judge prompt and pinned model as the cut judge, so a learner's first and latest " +
+      'benchmark sessions can be compared on a fixed scenario (Highlights benchmark chart, ' +
+      'AAQ-189). Every 30 min, at most 8 sessions per tick, after cut sealing; sessions with ' +
+      'under 1,500 characters of learner speech are stored SKIPPED with no call. One call per ' +
+      'session per rubric version; failures retry hourly up to 3 attempts. Volume is the number ' +
+      'of benchmark sessions taken, typically two per learner.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy:
+      'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned, shared with foundational-skills-judge; changing it is a rubric version bump',
+  },
+  {
     id: 'mobile-release-whats-new',
     task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
     runtime: LlmRuntime.ALLY_BE,

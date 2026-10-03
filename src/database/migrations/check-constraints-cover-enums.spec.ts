@@ -34,6 +34,10 @@ import {
   AgentMemoryEmbeddingStatus,
   AgentMemoryStatus,
 } from '../../agent-memory/enum/agent-memory.enum';
+import {
+  FhsAssessmentStatus,
+  FhsBenchmarkStatus,
+} from '../../foundational-skills/enum/foundational-skills.enum';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -167,6 +171,14 @@ describe('CHECK constraints cover their enums', () => {
     [
       'CHK_product_update_sources_journal_label',
       ['public', 'internal', 'needs_release_note'],
+    ],
+    [
+      'CHK_foundational_skill_assessments_status',
+      Object.values(FhsAssessmentStatus),
+    ],
+    [
+      'CHK_foundational_skill_benchmark_assessments_status',
+      Object.values(FhsBenchmarkStatus),
     ],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);

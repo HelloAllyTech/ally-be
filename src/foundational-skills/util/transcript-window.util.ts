@@ -259,6 +259,41 @@ export function renderWindow(
   return { text: out.join('\n'), lines, helperLines: helperN };
 }
 
+/**
+ * Lay ONE WHOLE session out as the judge reads it — the benchmark's window.
+ *
+ * The same rendering as a cut ({@link renderWindow}) with bounds spanning the
+ * session's first turn to its last, so the judge sees one session whose
+ * opening and end are both in view and no context block: exactly the shape a
+ * cut takes when it happens to hold one complete session. Null when the
+ * session has no turns.
+ */
+export function renderSession(
+  session: SessionTranscript,
+): RenderedWindow | null {
+  const first = session.turns[0];
+  const last = session.turns[session.turns.length - 1];
+  if (!first || !last) return null;
+  return renderWindow(
+    new Map([[session.sessionId, session]]),
+    {
+      sessionIds: [session.sessionId],
+      startSessionId: session.sessionId,
+      startMessageId: first.messageId,
+      endSessionId: session.sessionId,
+      endMessageId: last.messageId,
+    },
+    0,
+  );
+}
+
+/** The learner's own speech in a session, in code points (helper turns only). */
+export function learnerCharsOf(session: SessionTranscript): number {
+  return session.turns
+    .filter((t) => t.speaker === 'helper')
+    .reduce((sum, t) => sum + charLength(t.text), 0);
+}
+
 function label(speaker: Speaker): string {
   return speaker === 'helper' ? 'HELPER' : 'CLIENT';
 }
