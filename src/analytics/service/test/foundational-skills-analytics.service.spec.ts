@@ -37,7 +37,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
   it('reads the current rubric version only', async () => {
     const { repository, service } = build([]);
     await service.getFoundationalSkills();
-    expect(repository.getCutRows).toHaveBeenCalledWith(FHS_RUBRIC_VERSION);
+    expect(repository.getCutRows).toHaveBeenCalledWith(FHS_RUBRIC_VERSION, 1);
     expect(repository.getSkillRows).toHaveBeenCalledWith(FHS_RUBRIC_VERSION);
     expect(repository.getCoverage).toHaveBeenCalledWith(FHS_RUBRIC_VERSION);
   });
@@ -111,12 +111,14 @@ describe('FoundationalSkillsAnalyticsService', () => {
       unhelpful: false,
       levels: { verbal: 3 },
       verdicts: [],
+      sessionIds: [],
       ...extra,
     });
 
     const buildLearners = (rows: any[], total = 1) => {
       const repository = {
         getLearnerCuts: jest.fn().mockResolvedValue({ total, rows }),
+        getSessionScenarios: jest.fn().mockResolvedValue(new Map()),
       };
       return {
         repository,
@@ -216,6 +218,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
       unhelpful: false,
       levels,
       verdicts: [{ skill: 'verbal', observed: ['verbal.b1'] }],
+      sessionIds: [],
     });
 
     it('reads every scored cut under the current version and serves the thresholds', async () => {
@@ -244,10 +247,12 @@ describe('FoundationalSkillsAnalyticsService', () => {
       });
       expect(res.thresholds.trendMinCuts).toBe(4);
       expect(res.skills.find((s) => s.skill === 'verbal')).toMatchObject({
-        pairedLearners: 25,
+        n: 25,
         change: 1,
-        improved: 25,
+        up: 25,
+        detectable: true,
       });
+      expect(res.precision.levelsChecked).toBe(0); // fixture verdicts carry no level
       expect(res.behaviours.find((b) => b.code === 'verbal.b1')).toMatchObject({
         earlyPct: 100,
         latePct: 100,
@@ -259,6 +264,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
   it('passes a userId filter through to the learner read', async () => {
     const repository = {
       getLearnerCuts: jest.fn().mockResolvedValue({ total: 0, rows: [] }),
+      getSessionScenarios: jest.fn().mockResolvedValue(new Map()),
     };
     const service = new FoundationalSkillsAnalyticsService(repository as any);
     await service.getLearners({ userId: 42 });
@@ -268,5 +274,71 @@ describe('FoundationalSkillsAnalyticsService', () => {
       offset: 0,
       userId: 42,
     });
+  });
+
+  it('compares with cut 2 when asked and puts a CI on the paired change', async () => {
+    const repository = {
+      getCutRows: jest.fn().mockResolvedValue([
+        {
+          cut: 3,
+          learners: 25,
+          avgScore: 2.3,
+          baselineLearners: 25,
+          pairedAvgScore: 2.3,
+          baselineAvgScore: 2.25,
+          pairedChange: 0.05,
+          pairedChangeSd: 0.25,
+          unhelpfulShare: 0.3,
+        },
+      ]),
+      getSkillRows: jest.fn().mockResolvedValue([]),
+      getCoverage: jest.fn().mockResolvedValue({
+        learners: 0,
+        cutsSealed: 0,
+        cutsScored: 0,
+        cutsFailed: 0,
+        cutsPending: 0,
+      }),
+    };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+    const res = await service.getFoundationalSkills({ baselineCut: 2 });
+    expect(repository.getCutRows).toHaveBeenCalledWith(FHS_RUBRIC_VERSION, 2);
+    expect(res.baselineCut).toBe(2);
+    // 0.05 ± 1.96 · 0.25 / √25 = 0.05 ± 0.098
+    expect(res.cuts[0].pairedChangeCi).toEqual([-0.05, 0.15]);
+  });
+
+  it('attaches each cut its sessions and their scenarios', async () => {
+    const repository = {
+      getLearnerCuts: jest.fn().mockResolvedValue({
+        total: 1,
+        rows: [
+          {
+            userId: 7,
+            name: 'L',
+            tenantId: 't',
+            cut: 1,
+            closedAt: new Date('2026-09-01T00:00:00Z'),
+            score: 2,
+            unhelpful: false,
+            levels: {},
+            verdicts: [],
+            sessionIds: ['s-1', 's-2'],
+          },
+        ],
+      }),
+      getSessionScenarios: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([['s-1', { scenarioId: 11, scenarioTitle: 'Exam stress' }]]),
+        ),
+    };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+    const [learner] = (await service.getLearners({})).learners;
+    expect(repository.getSessionScenarios).toHaveBeenCalledWith(['s-1', 's-2']);
+    expect(learner.cuts[0].sessions).toEqual([
+      { sessionId: 's-1', scenarioId: 11, scenarioTitle: 'Exam stress' },
+      { sessionId: 's-2', scenarioId: null, scenarioTitle: null },
+    ]);
   });
 });

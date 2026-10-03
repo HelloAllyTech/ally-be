@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { countableSessionPredicate } from 'src/analytics/util/session-eligibility.util';
-import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
-import { FHS_SESSION_SETTLE_MINUTES } from '../constants/helping-skills-rubric.constants';
-import { FhsAssessmentStatus } from '../enum/foundational-skills.enum';
+import { isBenchmarkScenarioSql } from '../constants/fhs-benchmark.constants';
+import {
+  FhsAssessmentStatus,
+  FhsBenchmarkStatus,
+} from '../enum/foundational-skills.enum';
 import { StoredSkillVerdict } from '../entity/foundational-skill-assessment.entity';
+import { fhsEligibleSession } from '../util/fhs-eligible-session.util';
 import { PlannedCut, TranscriptTurn } from '../util/transcript-window.util';
 
 /** `scenario_session_messages.senderId` of the AI character. */
@@ -18,26 +20,8 @@ const AI_SENDER_ID = -1;
 const TRIM_SQL = (column: string): string =>
   `regexp_replace(COALESCE(${column}, ''), '^[[:space:]\u00a0\ufeff]+|[[:space:]\u00a0\ufeff]+$', '', 'g')`;
 
-/**
- * Which sessions feed the measure: real, completed learner practice.
- *
- * - completed, and settled for `FHS_SESSION_SETTLE_MINUTES` (late turns and
- *   timestamp rewrites land after the end signal, and cuts are append-only);
- * - countable (no preview or seed rooms) and not an AI-vs-AI test run;
- * - not in a test organisation.
- */
-function eligibleSession(alias: string): string {
-  return [
-    `${alias}.status = 'ENDED'`,
-    `${alias}."eventStatus" = 'COMPLETED'`,
-    `${alias}."endedAt" IS NOT NULL`,
-    `${alias}."endedAt" < now() - make_interval(mins => ${FHS_SESSION_SETTLE_MINUTES})`,
-    `${alias}."counselorId" IS NOT NULL`,
-    countableSessionPredicate(alias),
-    `COALESCE((${alias}.metadata->>'v2vTest')::boolean, false) = false`,
-    excludeTestTenants(`${alias}."tenant_id"`),
-  ].join(' AND ');
-}
+/** See {@link fhsEligibleSession}; shared with the benchmark's analytics. */
+const eligibleSession = fhsEligibleSession;
 
 /** A session no cut of its learner has touched yet. */
 function unconsumed(alias: string): string {
@@ -86,6 +70,48 @@ export interface AssessmentWrite {
   completionTokens: number | null;
   error: string | null;
 }
+
+/** A completed session of a benchmark scenario that still needs a result. */
+export interface BenchmarkSessionToScore {
+  sessionId: string;
+  userId: number;
+  scenarioId: number;
+  tenantId: string | null;
+  endedAt: Date;
+  /** Sealed cuts of this learner that closed at or before the session ended. */
+  cutsBefore: number;
+  attempts: number;
+}
+
+export interface BenchmarkAssessmentWrite {
+  sessionId: string;
+  userId: number;
+  scenarioId: number;
+  tenantId: string | null;
+  sessionEndedAt: Date;
+  rubricVersion: string;
+  status: FhsBenchmarkStatus;
+  model: string | null;
+  compositeScore: number | null;
+  hasUnhelpfulBehaviour: boolean | null;
+  skillLevels: Record<string, number>;
+  verdicts: StoredSkillVerdict[];
+  droppedTicks: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  learnerChars: number;
+  cutsBefore: number;
+  /** Why a FAILED attempt failed, or why a session was SKIPPED. Never transcript text. */
+  error: string | null;
+}
+
+/**
+ * The learner's practice dose at a moment: sealed cuts that closed at or
+ * before it. `userCol` / `atCol` are full column expressions.
+ */
+const cutsBeforeSql = (userCol: string, atCol: string): string =>
+  `(SELECT COUNT(*) FROM foundational_skill_cuts fcb ` +
+  `WHERE fcb."userId" = ${userCol} AND fcb."closedSessionEndedAt" <= ${atCol})::int`;
 
 @Injectable()
 export class FoundationalSkillsRepository {
@@ -401,6 +427,135 @@ export class FoundationalSkillsRepository {
         write.completionTokens,
         write.error,
         write.status === FhsAssessmentStatus.SCORED ? new Date() : null,
+      ],
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Benchmark sessions (src/foundational-skills/constants/fhs-benchmark.constants.ts)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Completed sessions of benchmark-flagged scenarios with no result under
+   * `rubricVersion`, plus FAILED ones due a retry (same hourly back-off and
+   * attempt cap as cuts), oldest first. SCORED and SKIPPED rows are final.
+   *
+   * Same eligibility as the cut pipeline ({@link fhsEligibleSession}): settled,
+   * completed, countable, not a test organisation. The benchmark session is
+   * still ordinary practice, so it is cut as well — the two pipelines read the
+   * same session without interfering.
+   */
+  async findBenchmarkSessionsToScore(
+    rubricVersion: string,
+    maxAttempts: number,
+    limit: number,
+  ): Promise<BenchmarkSessionToScore[]> {
+    const rows = await this.dataSource.query(
+      `SELECT s.id AS session_id, s."counselorId" AS user_id,
+              s."scenarioId" AS scenario_id, s.tenant_id, s."endedAt" AS ended_at,
+              ${cutsBeforeSql('s."counselorId"', 's."endedAt"')} AS cuts_before,
+              COALESCE(b.attempts, 0) AS attempts
+         FROM scenario_sessions s
+         JOIN scenarios sc ON sc.id = s."scenarioId"
+         LEFT JOIN foundational_skill_benchmark_assessments b
+           ON b."sessionId" = s.id AND b."rubricVersion" = $1
+        WHERE ${isBenchmarkScenarioSql('sc')}
+          AND ${eligibleSession('s')}
+          AND (b.id IS NULL
+               OR (b.status = '${FhsBenchmarkStatus.FAILED}' AND b.attempts < $2
+                   AND b."updatedAt" < now() - interval '1 hour'))
+        ORDER BY s."endedAt", s.id
+        LIMIT $3`,
+      [rubricVersion, maxAttempts, limit],
+    );
+    return rows.map((r: any) => ({
+      sessionId: r.session_id,
+      userId: Number(r.user_id),
+      scenarioId: Number(r.scenario_id),
+      tenantId: r.tenant_id ?? null,
+      endedAt: new Date(r.ended_at),
+      cutsBefore: Number(r.cuts_before),
+      attempts: Number(r.attempts),
+    }));
+  }
+
+  /**
+   * Re-count `cutsBefore` on every benchmark row whose stored dose is stale.
+   *
+   * The count is taken when the session is scored, but cutting can lag — a
+   * learner with a backlog of uncut practice (first deploy, or more than a
+   * tick's worth of learners ready at once) gets cuts sealed AFTER the session
+   * was scored that closed BEFORE it. Cuts are append-only, so the true count
+   * only ever grows; recounting each tick keeps the stored column the fact the
+   * pairing rule reads. `updatedAt` is deliberately left alone: it drives the
+   * FAILED retry back-off.
+   */
+  async refreshBenchmarkCutsBefore(): Promise<number> {
+    const result = await this.dataSource.query(
+      `UPDATE foundational_skill_benchmark_assessments b
+          SET "cutsBefore" = live.n
+         FROM (
+           SELECT b2.id,
+                  ${cutsBeforeSql('b2."userId"', 'b2."sessionEndedAt"')} AS n
+             FROM foundational_skill_benchmark_assessments b2
+         ) live
+        WHERE live.id = b.id AND live.n <> b."cutsBefore"`,
+    );
+    // pg returns [rows, rowCount] for UPDATE through TypeORM's query().
+    return Array.isArray(result) && typeof result[1] === 'number'
+      ? result[1]
+      : 0;
+  }
+
+  /** Insert or overwrite the (session, version) row; a retry counts attempts. */
+  async upsertBenchmarkAssessment(
+    write: BenchmarkAssessmentWrite,
+  ): Promise<void> {
+    await this.dataSource.query(
+      `INSERT INTO foundational_skill_benchmark_assessments
+         ("sessionId", "userId", "scenarioId", tenant_id, "sessionEndedAt",
+          "rubricVersion", status, attempts, model, "compositeScore",
+          "hasUnhelpfulBehaviour", "skillLevels", verdicts, "droppedTicks",
+          "promptTokens", "completionTokens", "learnerChars", "cutsBefore",
+          error, "scoredAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, $10, $11::jsonb, $12::jsonb,
+               $13, $14, $15, $16, $17, $18, $19)
+       ON CONFLICT ("sessionId", "rubricVersion") DO UPDATE SET
+         status = EXCLUDED.status,
+         attempts = foundational_skill_benchmark_assessments.attempts + 1,
+         model = EXCLUDED.model,
+         "compositeScore" = EXCLUDED."compositeScore",
+         "hasUnhelpfulBehaviour" = EXCLUDED."hasUnhelpfulBehaviour",
+         "skillLevels" = EXCLUDED."skillLevels",
+         verdicts = EXCLUDED.verdicts,
+         "droppedTicks" = EXCLUDED."droppedTicks",
+         "promptTokens" = EXCLUDED."promptTokens",
+         "completionTokens" = EXCLUDED."completionTokens",
+         "learnerChars" = EXCLUDED."learnerChars",
+         "cutsBefore" = EXCLUDED."cutsBefore",
+         error = EXCLUDED.error,
+         "scoredAt" = EXCLUDED."scoredAt",
+         "updatedAt" = now()`,
+      [
+        write.sessionId,
+        write.userId,
+        write.scenarioId,
+        write.tenantId,
+        write.sessionEndedAt,
+        write.rubricVersion,
+        write.status,
+        write.model,
+        write.compositeScore,
+        write.hasUnhelpfulBehaviour,
+        JSON.stringify(write.skillLevels),
+        JSON.stringify(write.verdicts),
+        write.droppedTicks,
+        write.promptTokens,
+        write.completionTokens,
+        write.learnerChars,
+        write.cutsBefore,
+        write.error,
+        write.status === FhsBenchmarkStatus.SCORED ? new Date() : null,
       ],
     );
   }

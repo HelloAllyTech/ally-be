@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
  * Foundational helping skills by practice volume — the Priority tab chart.
@@ -10,6 +10,23 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
  * date window would only measure who binged inside it. And Priority has no page
  * filters, so the response is platform-wide (test organisations excluded).
  */
+
+export class FoundationalSkillsQueryDto {
+  @ApiProperty({
+    description:
+      'The cut every learner is compared with. 1 (default) is their first cut; 2 ' +
+      'treats cut 1 as a warm-up — on production data feedback-seeking and ' +
+      'unhelpful behaviour both step once between cut 1 and cut 2, so a cut-1 ' +
+      'baseline mostly measures that step.',
+    required: false,
+    enum: [1, 2],
+    default: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([1, 2])
+  baselineCut?: 1 | 2;
+}
 
 export class FoundationalSkillsSkillDto {
   @ApiProperty({
@@ -92,6 +109,14 @@ export class FoundationalSkillsCutDto {
 
   @ApiProperty({
     description:
+      '95% interval of `pairedChange` (normal approximation over the paired learners); null below `minSampleSize`',
+    nullable: true,
+    type: [Number],
+  })
+  pairedChangeCi!: [number, number] | null;
+
+  @ApiProperty({
+    description:
       'Percent of learners whose cut showed at least one unhelpful behaviour (any skill scored 1); null below `minSampleSize`',
     nullable: true,
     type: Number,
@@ -135,6 +160,11 @@ export class FoundationalSkillsResponseDto {
 
   @ApiProperty({ description: 'Learner speech per cut, in characters' })
   cutSizeLearnerChars!: number;
+
+  @ApiProperty({
+    description: 'The cut each learner is compared with (1 or 2)',
+  })
+  baselineCut!: number;
 
   @ApiProperty({
     description: 'Averages below this many learners are withheld',
@@ -218,6 +248,12 @@ export class FoundationalSkillsLearnersQueryDto {
   userId?: number;
 }
 
+export class FoundationalSkillsCutSessionDto {
+  @ApiProperty() sessionId!: string;
+  @ApiProperty({ nullable: true, type: Number }) scenarioId!: number | null;
+  @ApiProperty({ nullable: true, type: String }) scenarioTitle!: string | null;
+}
+
 export class FoundationalSkillsLearnerCutDto {
   @ApiProperty({ description: '1-based cut index' })
   cut!: number;
@@ -254,6 +290,13 @@ export class FoundationalSkillsLearnerCutDto {
     type: [String],
   })
   observed!: string[];
+
+  @ApiProperty({
+    description:
+      'Sessions the cut touches, in order, with their scenario — the content that filled it',
+    type: [FoundationalSkillsCutSessionDto],
+  })
+  sessions!: FoundationalSkillsCutSessionDto[];
 }
 
 export class FoundationalSkillsLearnerDto {
@@ -313,7 +356,7 @@ export class FoundationalSkillsLearnersResponseDto {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Skills sub-tab: GET /v1/analytics/foundational-skills/progress
+// Helping skills sub-tab: GET /v1/analytics/foundational-skills/progress
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class FoundationalSkillsProgressQueryDto {
@@ -333,13 +376,28 @@ export class FoundationalSkillsProgressQueryDto {
   @Min(2)
   @Max(1000)
   cuts?: number;
+
+  @ApiProperty({
+    description:
+      'First cut of the "start" window. 2 leaves cut 1 out as a warm-up (needs a ' +
+      'panel of 3+ cuts; otherwise falls back to 1). The served `windows.from` ' +
+      'says which was used.',
+    required: false,
+    enum: [1, 2],
+    default: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([1, 2])
+  baselineFrom?: 1 | 2;
 }
 
 export class FhsProgressThresholdsDto {
   @ApiProperty() trendMinCuts!: number;
-  @ApiProperty() compositeFlatBand!: number;
-  @ApiProperty() skillFlatBand!: number;
-  @ApiProperty() skillMoveBand!: number;
+  @ApiProperty() learnerBandZ!: number;
+  @ApiProperty() rareOpportunityPct!: number;
+  @ApiProperty() cappedLevelShare!: number;
+  @ApiProperty() behaviourQ!: number;
   @ApiProperty() maxLearnerRows!: number;
 }
 
@@ -351,35 +409,117 @@ export class FhsCohortOptionDto {
 export class FhsWindowsDto {
   @ApiProperty({ type: [Number], description: 'Cuts averaged as "start"' })
   early!: number[];
-
   @ApiProperty({ type: [Number], description: 'Cuts averaged as "now"' })
   late!: number[];
+  @ApiProperty({ enum: [1, 2], description: 'First cut of the start window' })
+  from!: number;
+}
+
+export class FhsChangeDto {
+  @ApiProperty({ description: 'Learners in the paired comparison' }) n!: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Mean own change; null below the floor',
+  })
+  change!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: [Number],
+    description: 'Paired bootstrap 95% CI',
+  })
+  ci!: [number, number] | null;
+  @ApiProperty() up!: number;
+  @ApiProperty() down!: number;
+  @ApiProperty() tied!: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Exact two-sided sign test',
+  })
+  signP!: number | null;
+  @ApiProperty({ description: 'True only when the CI excludes zero' })
+  detectable!: boolean;
+}
+
+export class FhsPrecisionDto {
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'SD of one cut composite around a learner (pooled)',
+  })
+  cutNoiseSd!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Share of composite variance that belongs to the learner (ICC(1))',
+  })
+  icc!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'SD of the panel learners own changes',
+  })
+  panelChangeSd!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Smallest mean change detectable at 80% power for this panel',
+  })
+  minimumDetectableChange!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: '± band a single learner must clear for this panel',
+  })
+  learnerBand!: number | null;
+  @ApiProperty({
+    description: 'Stored skill levels re-derived from their codes',
+  })
+  levelsChecked!: number;
+  @ApiProperty({
+    description: 'Of those, levels that disagree with their codes',
+  })
+  levelCodeMismatches!: number;
+}
+
+export class FhsDepthStepDto {
+  @ApiProperty() atLeast!: number;
+  @ApiProperty() learners!: number;
+}
+
+export class FhsUnhelpfulSummaryDto {
+  @ApiProperty({ nullable: true, type: Number }) earlyPct!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) latePct!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) changePts!: number | null;
+  @ApiProperty({ nullable: true, type: [Number] }) ciPts!:
+    | [number, number]
+    | null;
+  @ApiProperty() stopped!: number;
+  @ApiProperty() started!: number;
+  @ApiProperty() persisted!: number;
+  @ApiProperty() never!: number;
+  @ApiProperty({ nullable: true, type: Number }) signP!: number | null;
+  @ApiProperty() detectable!: boolean;
+}
+
+export class FhsSkillCountsDto {
+  @ApiProperty() detectableUp!: number;
+  @ApiProperty() detectableDown!: number;
+  @ApiProperty() noDetectableChange!: number;
+  @ApiProperty() tooFewLearners!: number;
+  @ApiProperty() notMeasurable!: number;
 }
 
 export class FhsProgressSummaryDto {
   @ApiProperty() cohortLearners!: number;
   @ApiProperty({ nullable: true, type: Number }) earlyComposite!: number | null;
   @ApiProperty({ nullable: true, type: Number }) lateComposite!: number | null;
-  @ApiProperty({
-    nullable: true,
-    type: Number,
-    description: 'Mean of each learner’s own change, start → now',
-  })
-  compositeChange!: number | null;
-  @ApiProperty({
-    nullable: true,
-    type: Number,
-    description: 'Share of the panel with any unhelpful behaviour at the start',
-  })
-  unhelpfulEarlyPct!: number | null;
-  @ApiProperty({ nullable: true, type: Number }) unhelpfulLatePct!:
-    | number
-    | null;
-  @ApiProperty() skillsUp!: number;
-  @ApiProperty() skillsDown!: number;
-  @ApiProperty() skillsSteady!: number;
-  @ApiProperty({ description: 'Skills with too few paired learners to say' })
-  skillsWithheld!: number;
+  @ApiProperty({ type: FhsChangeDto }) composite!: FhsChangeDto;
+  @ApiProperty({ type: FhsUnhelpfulSummaryDto })
+  unhelpful!: FhsUnhelpfulSummaryDto;
+  @ApiProperty({ type: FhsSkillCountsDto }) skills!: FhsSkillCountsDto;
 }
 
 export class FhsTierAtCutDto {
@@ -398,15 +538,26 @@ export class FhsProgressCutDto {
   @ApiProperty() cut!: number;
   @ApiProperty() learners!: number;
   @ApiProperty({ nullable: true, type: Number }) composite!: number | null;
+  @ApiProperty({ nullable: true, type: [Number] }) compositeCi!:
+    | [number, number]
+    | null;
   @ApiProperty({ nullable: true, type: Number }) unhelpfulPct!: number | null;
+  @ApiProperty({ nullable: true, type: [Number] }) unhelpfulCi!:
+    | [number, number]
+    | null;
   @ApiProperty({ type: [FhsTierAtCutDto] }) tiers!: FhsTierAtCutDto[];
   @ApiProperty({ type: [FhsSkillAtCutDto] }) skills!: FhsSkillAtCutDto[];
+}
+
+export class FhsTierChangeDto extends FhsChangeDto {
+  @ApiProperty({ enum: ['engage', 'understand', 'support'] }) tier!: string;
+  @ApiProperty({ nullable: true, type: Number }) earlyAvg!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) lateAvg!: number | null;
 }
 
 export class FhsLevelMixWindowDto {
   @ApiProperty({ description: 'Skill assessments in the window' })
   assessments!: number;
-
   @ApiProperty({
     description:
       'Counts at levels 1, 2, 3, 4; null below `minSampleSize` assessments',
@@ -421,26 +572,29 @@ export class FhsLevelMixDto {
   @ApiProperty({ type: FhsLevelMixWindowDto }) late!: FhsLevelMixWindowDto;
 }
 
-export class FhsProgressSkillDto {
+export class FhsProgressSkillDto extends FhsChangeDto {
   @ApiProperty() skill!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ enum: ['engage', 'understand', 'support'] }) tier!: string;
   @ApiProperty({
-    description: 'Panel learners the skill was assessable for in both windows',
+    enum: ['measurable', 'capped', 'rare'],
+    description:
+      '"rare": assessable in under `rareOpportunityPct`% of cuts; "capped": `cappedLevelShare` of assessments at one level. Neither can show a move',
   })
-  pairedLearners!: number;
+  measurability!: string;
   @ApiProperty({ nullable: true, type: Number }) earlyAvg!: number | null;
   @ApiProperty({ nullable: true, type: Number }) lateAvg!: number | null;
-  @ApiProperty({ nullable: true, type: Number }) change!: number | null;
-  @ApiProperty() improved!: number;
-  @ApiProperty() unchanged!: number;
-  @ApiProperty() declined!: number;
   @ApiProperty({ type: FhsLevelMixDto }) levelMix!: FhsLevelMixDto;
-  @ApiProperty({
-    description: 'Scored cuts, platform-wide, that gave an opportunity for it',
-  })
-  opportunityCuts!: number;
+  @ApiProperty() opportunityCuts!: number;
   @ApiProperty({ nullable: true, type: Number }) opportunityPct!: number | null;
+  @ApiProperty({
+    description: 'Learners with at least one chance at the skill',
+  })
+  learnersWithOpportunity!: number;
+  @ApiProperty({
+    description: 'Learners with two or more chances — enough to see any change',
+  })
+  learnersWithTwoPlus!: number;
 }
 
 export class FhsProgressBehaviourDto {
@@ -452,17 +606,66 @@ export class FhsProgressBehaviourDto {
   @ApiProperty({ nullable: true, type: Number }) earlyPct!: number | null;
   @ApiProperty({ nullable: true, type: Number }) latePct!: number | null;
   @ApiProperty({ nullable: true, type: Number }) changePts!: number | null;
+  @ApiProperty() gained!: number;
+  @ApiProperty() lost!: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Exact sign test, gained vs lost',
+  })
+  signP!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Benjamini–Hochberg q across all behaviours',
+  })
+  q!: number | null;
+  @ApiProperty({ description: 'q at or below `thresholds.behaviourQ`' })
+  credible!: boolean;
+  @ApiProperty({
+    description: 'All learners whose cut 1 gave the skill a chance',
+  })
+  firstSliceLearners!: number;
+  @ApiProperty({ nullable: true, type: Number }) firstSlicePct!: number | null;
+  @ApiProperty({ description: 'All learners with any chance at the skill' })
+  everLearners!: number;
+  @ApiProperty({ nullable: true, type: Number }) everPct!: number | null;
 }
 
-export class FhsUnhelpfulTransitionsDto {
-  @ApiProperty({ description: 'Unhelpful at the start, none now' })
-  stopped!: number;
-  @ApiProperty({ description: 'Unhelpful at the start and now' })
-  persisted!: number;
-  @ApiProperty({ description: 'None at the start, unhelpful now' })
-  started!: number;
-  @ApiProperty({ description: 'Neither window' })
-  never!: number;
+export class FhsSelfHarmDto {
+  @ApiProperty() learnersWithCue!: number;
+  @ApiProperty() cutsWithCue!: number;
+  @ApiProperty() cutsFollowedUp!: number;
+  @ApiProperty() cutsMissed!: number;
+  @ApiProperty({ description: 'Both a miss and a follow-up coded, or neither' })
+  cutsAmbiguous!: number;
+  @ApiProperty() cutsWithAdvanced!: number;
+  @ApiProperty() cutsWithOtherUnhelpful!: number;
+  @ApiProperty() learnersFollowedFirst!: number;
+  @ApiProperty() learnersMissedFirst!: number;
+  @ApiProperty() learnersAmbiguousFirst!: number;
+  @ApiProperty({ description: 'Learners with 2+ clearly coded cue cuts' })
+  repeatLearners!: number;
+  @ApiProperty() repeatBetter!: number;
+  @ApiProperty() repeatWorse!: number;
+  @ApiProperty() repeatSame!: number;
+}
+
+export class FhsConfidentialityDto {
+  @ApiProperty() learnersAssessable!: number;
+  @ApiProperty() cutsAssessable!: number;
+  @ApiProperty() learnersWithTwoPlus!: number;
+  @ApiProperty() learnersExplained!: number;
+  @ApiProperty() learnersListedExceptions!: number;
+  @ApiProperty() learnersExplainedWhy!: number;
+  @ApiProperty() learnersPromisedAbsolute!: number;
+  @ApiProperty() learnersInaccurate!: number;
+}
+
+export class FhsSafetyDto {
+  @ApiProperty({ type: FhsSelfHarmDto }) selfHarm!: FhsSelfHarmDto;
+  @ApiProperty({ type: FhsConfidentialityDto })
+  confidentiality!: FhsConfidentialityDto;
 }
 
 export class FhsTrendMixDto {
@@ -473,10 +676,16 @@ export class FhsTrendMixDto {
   tooEarly!: number;
 }
 
-export class FhsDoseBucketDto {
-  @ApiProperty() label!: string;
-  @ApiProperty() learners!: number;
-  @ApiProperty({ nullable: true, type: Number }) avgChange!: number | null;
+export class FhsCoachingFlagDto {
+  @ApiProperty() code!: string;
+  @ApiProperty() skill!: string;
+  @ApiProperty() text!: string;
+  @ApiProperty({ enum: ['safety', 'repeat'] }) kind!: string;
+  @ApiProperty({ type: [Number] }) cuts!: number[];
+  @ApiProperty({
+    description: 'Seen in either of the learner’s latest two cuts',
+  })
+  recent!: boolean;
 }
 
 export class FhsProgressLearnerDto {
@@ -487,12 +696,13 @@ export class FhsProgressLearnerDto {
   @ApiProperty() earlyComposite!: number;
   @ApiProperty() lateComposite!: number;
   @ApiProperty() change!: number;
-  @ApiProperty({ enum: ['improving', 'steady', 'declining', 'tooEarly'] })
-  trend!: string;
-  @ApiProperty() skillsImproved!: number;
-  @ApiProperty() skillsDeclined!: number;
+  @ApiProperty({ nullable: true, type: Number }) band!: number | null;
+  @ApiProperty({ nullable: true, enum: ['up', 'down'] }) beyondNoise!:
+    | string
+    | null;
   @ApiProperty() unhelpfulEarly!: boolean;
   @ApiProperty() unhelpfulLate!: boolean;
+  @ApiProperty({ type: [FhsCoachingFlagDto] }) flags!: FhsCoachingFlagDto[];
 }
 
 export class FoundationalSkillsProgressResponseDto {
@@ -513,15 +723,16 @@ export class FoundationalSkillsProgressResponseDto {
   @ApiProperty({ type: FhsWindowsDto }) windows!: FhsWindowsDto;
   @ApiProperty({ description: 'Learners with at least one scored cut' })
   measuredLearners!: number;
+  @ApiProperty({ type: FhsPrecisionDto }) precision!: FhsPrecisionDto;
+  @ApiProperty({ type: [FhsDepthStepDto] }) depth!: FhsDepthStepDto[];
   @ApiProperty({ type: FhsProgressSummaryDto }) summary!: FhsProgressSummaryDto;
   @ApiProperty({ type: [FhsProgressCutDto] }) byCut!: FhsProgressCutDto[];
+  @ApiProperty({ type: [FhsTierChangeDto] }) tiers!: FhsTierChangeDto[];
   @ApiProperty({ type: [FhsProgressSkillDto] }) skills!: FhsProgressSkillDto[];
   @ApiProperty({ type: [FhsProgressBehaviourDto] })
   behaviours!: FhsProgressBehaviourDto[];
-  @ApiProperty({ type: FhsUnhelpfulTransitionsDto })
-  unhelpfulTransitions!: FhsUnhelpfulTransitionsDto;
+  @ApiProperty({ type: FhsSafetyDto }) safety!: FhsSafetyDto;
   @ApiProperty({ type: FhsTrendMixDto }) trend!: FhsTrendMixDto;
-  @ApiProperty({ type: [FhsDoseBucketDto] }) dose!: FhsDoseBucketDto[];
   @ApiProperty({ type: [FhsProgressLearnerDto] })
   learners!: FhsProgressLearnerDto[];
   @ApiProperty() learnersTruncated!: boolean;

@@ -3,14 +3,16 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   FHS_CONTEXT_CHARS,
   FHS_CUT_LEARNER_CHARS,
+  FHS_MAX_ATTEMPTS,
   FHS_RUBRIC_VERSION,
+  FHS_SCORE_CONCURRENCY,
 } from '../constants/helping-skills-rubric.constants';
-import { StoredSkillVerdict } from '../entity/foundational-skill-assessment.entity';
 import { FhsAssessmentStatus } from '../enum/foundational-skills.enum';
 import {
   CutToScore,
   FoundationalSkillsRepository,
 } from '../repository/foundational-skills.repository';
+import { storedJudgement } from '../util/skill-scoring.util';
 import {
   SessionTranscript,
   planCuts,
@@ -18,6 +20,11 @@ import {
   turnsAfter,
 } from '../util/transcript-window.util';
 import { FoundationalSkillsJudgeService } from './foundational-skills-judge.service';
+import {
+  BenchmarkTickSummary,
+  EMPTY_BENCHMARK_TICK,
+  FoundationalSkillsBenchmarkService,
+} from './foundational-skills-benchmark.service';
 
 /** Learners cut per tick. Cutting is SQL + arithmetic; this bounds the read. */
 export const FHS_LEARNERS_PER_TICK = 200;
@@ -27,11 +34,8 @@ export const FHS_LEARNERS_PER_TICK = 200;
  * still clears a backlog of ~1,000 cuts inside a day.
  */
 export const FHS_CUTS_PER_TICK = 24;
-export const FHS_SCORE_CONCURRENCY = 4;
-/** A cut that fails this many times stays FAILED until someone looks. */
-export const FHS_MAX_ATTEMPTS = 3;
 
-export interface TickSummary {
+export interface TickSummary extends BenchmarkTickSummary {
   learnersCut: number;
   cutsSealed: number;
   cutsScored: number;
@@ -52,20 +56,51 @@ export class FoundationalSkillsService {
   constructor(
     private readonly repository: FoundationalSkillsRepository,
     private readonly judge: FoundationalSkillsJudgeService,
+    private readonly benchmark: FoundationalSkillsBenchmarkService,
   ) {}
 
+  /**
+   * Seal cuts, then score benchmark sessions, then score cuts. Benchmarks run
+   * after sealing so the practice dose they record counts the cuts this tick
+   * just closed, and before the (larger) cut batch so a long cut backlog never
+   * starves the handful of benchmark sessions.
+   */
   async tick(): Promise<TickSummary> {
     const cutting = await this.sealNewCuts();
+    const benchmarks = await this.scoreBenchmarks();
     const scoring = await this.scorePendingCuts();
-    const summary = { ...cutting, ...scoring };
-    if (summary.cutsSealed || summary.cutsScored || summary.cutsFailed) {
+    const summary = { ...cutting, ...benchmarks, ...scoring };
+    if (
+      summary.cutsSealed ||
+      summary.cutsScored ||
+      summary.cutsFailed ||
+      summary.benchmarksScored ||
+      summary.benchmarksSkipped ||
+      summary.benchmarksFailed
+    ) {
       this.logger.info(
         `foundational-skills tick: sealed=${summary.cutsSealed} ` +
           `(learners=${summary.learnersCut}) scored=${summary.cutsScored} ` +
-          `failed=${summary.cutsFailed} version=${FHS_RUBRIC_VERSION}`,
+          `failed=${summary.cutsFailed} benchmarks scored=${summary.benchmarksScored} ` +
+          `skipped=${summary.benchmarksSkipped} failed=${summary.benchmarksFailed} ` +
+          `version=${FHS_RUBRIC_VERSION}`,
       );
     }
     return summary;
+  }
+
+  /** The benchmark half, isolated: its failure must not stop cut scoring. */
+  async scoreBenchmarks(): Promise<BenchmarkTickSummary> {
+    try {
+      return await this.benchmark.tick();
+    } catch (error) {
+      this.logger.error(
+        `foundational-skills: benchmark scoring failed: ${
+          (error as Error)?.message ?? error
+        }`,
+      );
+      return { ...EMPTY_BENCHMARK_TICK };
+    }
   }
 
   /** Close every cut the pending speech now allows, for up to N learners. */
@@ -172,18 +207,7 @@ export class FoundationalSkillsService {
         cutIndex: cut.cutIndex,
       });
 
-      const verdicts: StoredSkillVerdict[] = outcome.verdicts.map((v) => ({
-        skill: v.skill,
-        opportunity: v.opportunity,
-        level: v.level,
-        observed: v.observed,
-        notApplicable: v.notApplicable,
-      }));
-      const skillLevels = Object.fromEntries(
-        outcome.verdicts
-          .filter((v) => v.level !== null)
-          .map((v) => [v.skill, v.level as number]),
-      );
+      const { verdicts, skillLevels } = storedJudgement(outcome.verdicts);
 
       await this.repository.upsertAssessment({
         cutId: cut.cutId,

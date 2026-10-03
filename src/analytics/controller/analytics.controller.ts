@@ -36,8 +36,11 @@ import {
   FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsProgressQueryDto,
   FoundationalSkillsProgressResponseDto,
+  FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
+import { FoundationalSkillsBenchmarkAnalyticsService } from '../service/foundational-skills-benchmark.service';
+import { FoundationalSkillsBenchmarkResponseDto } from '../dto/foundational-skills-benchmark.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -329,6 +332,7 @@ export class AnalyticsController {
     private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
     private readonly skillGrowthAnalyticsService: SkillGrowthAnalyticsService,
     private readonly foundationalSkillsAnalyticsService: FoundationalSkillsAnalyticsService,
+    private readonly foundationalSkillsBenchmarkAnalyticsService: FoundationalSkillsBenchmarkAnalyticsService,
     private readonly qualityDistributionAnalyticsService: QualityDistributionAnalyticsService,
     private readonly competencyMapAnalyticsService: CompetencyMapAnalyticsService,
     private readonly trackDropoffAnalyticsService: TrackDropoffAnalyticsService,
@@ -1270,8 +1274,10 @@ export class AnalyticsController {
     description: 'Foundational skills growth retrieved successfully',
     type: FoundationalSkillsResponseDto,
   })
-  async getFoundationalSkills(): Promise<FoundationalSkillsResponseDto> {
-    return this.foundationalSkillsAnalyticsService.getFoundationalSkills();
+  async getFoundationalSkills(
+    @Query() query: FoundationalSkillsQueryDto,
+  ): Promise<FoundationalSkillsResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getFoundationalSkills(query);
   }
 
   @Get('foundational-skills/learners')
@@ -1323,6 +1329,34 @@ export class AnalyticsController {
     @Query() query: FoundationalSkillsProgressQueryDto,
   ): Promise<FoundationalSkillsProgressResponseDto> {
     return this.foundationalSkillsAnalyticsService.getProgress(query);
+  }
+
+  @Get('foundational-skills/benchmark')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Benchmark roleplay, before and after (super-admin)',
+    description:
+      'Backs the Highlights benchmark chart (AAQ-189). A roleplay flagged ' +
+      '`metadata.fhsBenchmark` is taken at onboarding and again later; every completed ' +
+      'session of it is scored WHOLE on the foundational helping skills rubric (1-4). ' +
+      "Pairing: each learner's FIRST scored session of a benchmark scenario against their " +
+      'LATEST scored session of the SAME scenario, only when the latest came at least ' +
+      '`minCutsBetween` more 5,000-character cuts of practice after the first; a learner ' +
+      'with pairs on several benchmark scenarios is counted once, on the one with the most ' +
+      'practice in between. `summary` and `skills` are paired over learners (a skill only ' +
+      'where it was assessable in both sessions), with a deterministic bootstrap interval ' +
+      'and an exact sign test; averages, intervals and tests are null below ' +
+      '`minSampleSize` while counts still travel. With no roleplay flagged: empty ' +
+      '`scenarios` and zero counts, never 404. All-time, platform-wide, test ' +
+      'organisations excluded, one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Benchmark before/after retrieved successfully',
+    type: FoundationalSkillsBenchmarkResponseDto,
+  })
+  async getFoundationalSkillsBenchmark(): Promise<FoundationalSkillsBenchmarkResponseDto> {
+    return this.foundationalSkillsBenchmarkAnalyticsService.getBenchmark();
   }
 
   @Get('skill-growth/learners')

@@ -8,6 +8,8 @@ import {
   resolveSessionSttConfig,
   resolveSessionLlmConfig,
   resolveCompetencySelection,
+  withoutFhsBenchmarkFlag,
+  SCENARIO_METADATA_FIELDS,
 } from '../scenario.util';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
@@ -97,6 +99,8 @@ describe('Scenario Util', () => {
           // audio-only, written as an explicit false so the stored metadata
           // records how the toggle resolved rather than leaving it ambiguous.
           videoActorEnabled: false,
+          // Same again: only an explicit true makes a roleplay a benchmark.
+          fhsBenchmark: false,
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
@@ -498,6 +502,92 @@ describe('Scenario Util', () => {
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
       expect(result.metadata.temperature).toBe(0.3);
+    });
+  });
+
+  describe('fhsBenchmark (foundational skills benchmark flag)', () => {
+    const base = {
+      title: 'Benchmark roleplay',
+      description: 'Description',
+      status: ScenarioStatus.DRAFT,
+      prompt: 'Prompt',
+      isGlobal: false,
+    };
+
+    it('is a metadata field, so version publish and hydration carry it', () => {
+      expect(SCENARIO_METADATA_FIELDS).toContain('fhsBenchmark');
+    });
+
+    it('resolves to false on create unless the DTO sends an explicit true', () => {
+      expect(
+        mapCreateScenarioRequestToEntity({ ...base } as any, 1).metadata
+          .fhsBenchmark,
+      ).toBe(false);
+      expect(
+        mapCreateScenarioRequestToEntity(
+          { ...base, fhsBenchmark: 'yes' } as any,
+          1,
+        ).metadata.fhsBenchmark,
+      ).toBe(false);
+      expect(
+        mapCreateScenarioRequestToEntity(
+          { ...base, fhsBenchmark: true } as any,
+          1,
+        ).metadata.fhsBenchmark,
+      ).toBe(true);
+    });
+
+    it('is merged into existing metadata on update without touching other keys', () => {
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Asha', fillerEnabled: false, temperature: 0.4 },
+      } as unknown as Scenarios;
+
+      const on = mapUpdateScenarioRequestToEntity(
+        { fhsBenchmark: true } as UpdateScenarioDto,
+        existingScenario,
+        9,
+      );
+      expect(on.metadata).toEqual({
+        name: 'Asha',
+        fillerEnabled: false,
+        temperature: 0.4,
+        fhsBenchmark: true,
+      });
+
+      const off = mapUpdateScenarioRequestToEntity(
+        { fhsBenchmark: false } as UpdateScenarioDto,
+        {
+          id: 1,
+          metadata: { name: 'Asha', fhsBenchmark: true },
+        } as unknown as Scenarios,
+        9,
+      );
+      expect(off.metadata).toEqual({ name: 'Asha', fhsBenchmark: false });
+    });
+
+    it('leaves a stored flag alone when an update omits it', () => {
+      const result = mapUpdateScenarioRequestToEntity(
+        { name: 'Renamed' } as UpdateScenarioDto,
+        {
+          id: 1,
+          metadata: { name: 'Asha', fhsBenchmark: true },
+        } as unknown as Scenarios,
+        9,
+      );
+      expect(result.metadata).toEqual({ name: 'Renamed', fhsBenchmark: true });
+    });
+
+    it('is dropped from a duplicate, and nothing else is', () => {
+      const metadata = { name: 'Asha', fhsBenchmark: true, temperature: 0.4 };
+      expect(withoutFhsBenchmarkFlag(metadata)).toEqual({
+        name: 'Asha',
+        temperature: 0.4,
+      });
+      expect(metadata.fhsBenchmark).toBe(true); // source not mutated
+      const plain = { name: 'Asha' };
+      expect(withoutFhsBenchmarkFlag(plain)).toBe(plain);
+      expect(withoutFhsBenchmarkFlag(undefined)).toBeUndefined();
     });
   });
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { StoredVerdictLite } from '../util/foundational-skills-progress.util';
 import { excludeTestTenants } from '../util/test-tenant.util';
 
 export interface FoundationalSkillsCutRow {
@@ -11,6 +12,8 @@ export interface FoundationalSkillsCutRow {
   pairedAvgScore: number | null;
   baselineAvgScore: number | null;
   pairedChange: number | null;
+  /** Sample SD of the paired learners' own changes (for the change's CI). */
+  pairedChangeSd: number | null;
   unhelpfulShare: number | null;
 }
 
@@ -31,7 +34,9 @@ export interface FoundationalSkillsLearnerCutRow {
   score: number;
   unhelpful: boolean | null;
   levels: Record<string, number>;
-  verdicts: { skill: string; observed?: string[] }[];
+  verdicts: StoredVerdictLite[];
+  /** Every session the cut touches, in consumption order. */
+  sessionIds: string[];
 }
 
 export interface FoundationalSkillsCoverageRow {
@@ -55,6 +60,7 @@ const toLearnerCutRow = (r: any): FoundationalSkillsLearnerCutRow => ({
   unhelpful: r.unhelpful ?? null,
   levels: r.levels ?? {},
   verdicts: Array.isArray(r.verdicts) ? r.verdicts : [],
+  sessionIds: Array.isArray(r.session_ids) ? r.session_ids.map(String) : [],
 });
 
 /**
@@ -83,11 +89,14 @@ export class FoundationalSkillsAnalyticsRepository {
    * what separates "people improved" from "the people who kept practising were
    * better to begin with", which the raw per-cut average cannot.
    */
-  async getCutRows(rubricVersion: string): Promise<FoundationalSkillsCutRow[]> {
+  async getCutRows(
+    rubricVersion: string,
+    baselineCut = 1,
+  ): Promise<FoundationalSkillsCutRow[]> {
     const rows = await this.dataSource.query(
       `
       WITH scored AS (${this.scoredCte()}),
-      base AS (SELECT user_id, score FROM scored WHERE cut = 1)
+      base AS (SELECT user_id, score FROM scored WHERE cut = $2)
       SELECT s.cut,
              COUNT(*)::int AS learners,
              AVG(s.score) AS avg_score,
@@ -95,13 +104,14 @@ export class FoundationalSkillsAnalyticsRepository {
              AVG(s.score) FILTER (WHERE b.score IS NOT NULL) AS paired_avg,
              AVG(b.score) AS baseline_avg,
              AVG(s.score - b.score) AS paired_change,
+             STDDEV_SAMP(s.score - b.score) AS paired_change_sd,
              AVG(CASE WHEN s.unhelpful THEN 1.0 ELSE 0.0 END) AS unhelpful_share
         FROM scored s
         LEFT JOIN base b ON b.user_id = s.user_id
        GROUP BY s.cut
        ORDER BY s.cut
       `,
-      [rubricVersion],
+      [rubricVersion, baselineCut],
     );
     return rows.map((r: any) => ({
       cut: Number(r.cut),
@@ -111,6 +121,7 @@ export class FoundationalSkillsAnalyticsRepository {
       pairedAvgScore: num(r.paired_avg),
       baselineAvgScore: num(r.baseline_avg),
       pairedChange: num(r.paired_change),
+      pairedChangeSd: num(r.paired_change_sd),
       unhelpfulShare: num(r.unhelpful_share),
     }));
   }
@@ -201,11 +212,42 @@ export class FoundationalSkillsAnalyticsRepository {
   private learnerCutSelect(join: string): string {
     return `
       SELECT s.user_id, u.name, s.tenant_id, s.cut, s.closed_at,
-             s.score, s.unhelpful, s.levels, s.verdicts
+             s.score, s.unhelpful, s.levels, s.verdicts, s.session_ids
         FROM scored s
         ${join}
         LEFT JOIN users u ON u.id = s.user_id
        ORDER BY s.user_id, s.cut`;
+  }
+
+  /**
+   * Scenario behind each session, for the learner drill-down: which scenarios
+   * filled a cut is the context every per-cut score needs (a cut of one
+   * scenario's content is not comparable with a cut of another's).
+   */
+  async getSessionScenarios(
+    sessionIds: string[],
+  ): Promise<
+    Map<string, { scenarioId: number | null; scenarioTitle: string | null }>
+  > {
+    if (sessionIds.length === 0) return new Map();
+    const rows = await this.dataSource.query(
+      `
+      SELECT ss.id::text AS session_id, ss."scenarioId" AS scenario_id, sc.title AS title
+        FROM scenario_sessions ss
+        LEFT JOIN scenarios sc ON sc.id = ss."scenarioId"
+       WHERE ss.id = ANY($1::uuid[])
+      `,
+      [sessionIds],
+    );
+    return new Map(
+      rows.map((r: any) => [
+        String(r.session_id),
+        {
+          scenarioId: r.scenario_id === null ? null : Number(r.scenario_id),
+          scenarioTitle: (r.title as string | null) ?? null,
+        },
+      ]),
+    );
   }
 
   /** How far scoring has got under this version, so a thin chart can say why. */
@@ -244,7 +286,8 @@ export class FoundationalSkillsAnalyticsRepository {
              a."skillLevels" AS levels,
              a.verdicts AS verdicts,
              c."tenant_id" AS tenant_id,
-             c."closedSessionEndedAt" AS closed_at
+             c."closedSessionEndedAt" AS closed_at,
+             c."sessionIds" AS session_ids
         FROM foundational_skill_cuts c
         JOIN foundational_skill_assessments a ON a."cutId" = c.id
        WHERE a."rubricVersion" = $1
