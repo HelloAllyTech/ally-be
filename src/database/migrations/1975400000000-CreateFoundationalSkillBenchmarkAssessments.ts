@@ -52,9 +52,11 @@ export class CreateFoundationalSkillBenchmarkAssessments1975400000000 implements
     await queryRunner.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_foundational_skill_benchmark_assessments_session_version" ON "foundational_skill_benchmark_assessments" ("sessionId", "rubricVersion")`,
     );
-    // The analytics read: one version, grouped by learner and scenario.
+    // The analytics read: one version, grouped by scenario and learner. Named
+    // short of Postgres's 63-character identifier limit, which would otherwise
+    // silently truncate it.
     await queryRunner.query(
-      `CREATE INDEX IF NOT EXISTS "IDX_foundational_skill_benchmark_assessments_version_scenario_user" ON "foundational_skill_benchmark_assessments" ("rubricVersion", "scenarioId", "userId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_foundational_skill_benchmark_assessments_version" ON "foundational_skill_benchmark_assessments" ("rubricVersion", "scenarioId", "userId")`,
     );
   }
 
