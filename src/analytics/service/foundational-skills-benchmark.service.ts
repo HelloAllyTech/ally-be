@@ -22,12 +22,9 @@ import {
 } from '../repository/foundational-skills-benchmark.repository';
 // One floor for every judged score on the platform — see SkillGrowthAnalyticsService.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
-import { pairedChange } from '../util/paired-stats.util';
+import { flooredPairedComparison } from '../util/paired-stats.util';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
-const round4 = (v: number): number => Math.round(v * 10000) / 10000;
-const mean = (xs: readonly number[]): number =>
-  xs.reduce((a, b) => a + b, 0) / xs.length;
 
 /** One learner's comparison: first vs latest session of ONE benchmark scenario. */
 export interface BenchmarkPair {
@@ -110,34 +107,6 @@ function isBetterPair(a: BenchmarkPair, b: BenchmarkPair): boolean {
   return a.scenarioId < b.scenarioId;
 }
 
-/**
- * A paired comparison with the platform's sample floor applied: below
- * {@link MIN_SCORE_SAMPLE_SIZE} learners every average, interval and test is
- * withheld (null; `detectable` false) while the counts still travel, so the
- * card can say "n = 12 · need 20" instead of a number one learner can swing.
- */
-function flooredComparison(firsts: number[], latests: number[]) {
-  const n = firsts.length;
-  const stats = pairedChange(latests.map((v, i) => v - firsts[i]));
-  const enough = n >= MIN_SCORE_SAMPLE_SIZE;
-  return {
-    n,
-    firstAvg: enough ? round2(mean(firsts)) : null,
-    latestAvg: enough ? round2(mean(latests)) : null,
-    change:
-      enough && stats.meanChange !== null ? round2(stats.meanChange) : null,
-    changeCi:
-      enough && stats.ci
-        ? ([round2(stats.ci[0]), round2(stats.ci[1])] as [number, number])
-        : null,
-    up: stats.up,
-    down: stats.down,
-    tied: stats.tied,
-    signP: enough && stats.signP !== null ? round4(stats.signP) : null,
-    detectable: enough && stats.detectable,
-  };
-}
-
 const sessionRef = (
   row: BenchmarkSessionRow,
 ): FoundationalSkillsBenchmarkSessionRefDto => ({
@@ -177,14 +146,15 @@ export class FoundationalSkillsBenchmarkAnalyticsService {
 
     const pairs = pairBenchmarkSessions(rows, FHS_BENCHMARK_MIN_CUTS_BETWEEN);
 
-    const overall = flooredComparison(
+    const overall = flooredPairedComparison(
       pairs.map((p) => p.first.composite),
       pairs.map((p) => p.latest.composite),
+      MIN_SCORE_SAMPLE_SIZE,
     );
     const summary: FoundationalSkillsBenchmarkSummaryDto = {
       learners: overall.n,
-      firstAvg: overall.firstAvg,
-      latestAvg: overall.latestAvg,
+      firstAvg: overall.beforeAvg,
+      latestAvg: overall.afterAvg,
       change: overall.change,
       changeCi: overall.changeCi,
       up: overall.up,
@@ -204,16 +174,17 @@ export class FoundationalSkillsBenchmarkAnalyticsService {
             hasLevel(p.first.levels, skill.key) &&
             hasLevel(p.latest.levels, skill.key),
         );
-        const c = flooredComparison(
+        const c = flooredPairedComparison(
           both.map((p) => Number(p.first.levels[skill.key])),
           both.map((p) => Number(p.latest.levels[skill.key])),
+          MIN_SCORE_SAMPLE_SIZE,
         );
         return {
           skill: skill.key,
           name: skill.name,
           pairedLearners: c.n,
-          firstAvg: c.firstAvg,
-          latestAvg: c.latestAvg,
+          firstAvg: c.beforeAvg,
+          latestAvg: c.afterAvg,
           change: c.change,
           changeCi: c.changeCi,
           detectable: c.detectable,

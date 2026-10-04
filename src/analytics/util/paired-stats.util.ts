@@ -112,6 +112,57 @@ export function pairedChange(diffs: readonly number[]): PairedChange {
   };
 }
 
+/** A {@link PairedChange} with the averages either side, ready for a chart. */
+export interface FlooredPairedComparison {
+  n: number;
+  beforeAvg: number | null;
+  afterAvg: number | null;
+  change: number | null;
+  changeCi: [number, number] | null;
+  up: number;
+  down: number;
+  tied: number;
+  signP: number | null;
+  detectable: boolean;
+}
+
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+/**
+ * A paired before/after comparison with a sample floor applied: below `floor`
+ * learners every average, interval and test is withheld (null; `detectable`
+ * false) while the counts still travel, so a card can say "n = 12 · need 20"
+ * instead of a number one learner can swing. `before[i]` and `after[i]` are
+ * the same learner. Averages and changes are rounded to 2 dp, the sign-test p
+ * to 4.
+ */
+export function flooredPairedComparison(
+  before: readonly number[],
+  after: readonly number[],
+  floor: number,
+): FlooredPairedComparison {
+  const n = before.length;
+  const stats = pairedChange(after.map((v, i) => v - before[i]));
+  const enough = n >= floor;
+  return {
+    n,
+    beforeAvg: enough ? round2(mean(before)) : null,
+    afterAvg: enough ? round2(mean(after)) : null,
+    change:
+      enough && stats.meanChange !== null ? round2(stats.meanChange) : null,
+    changeCi:
+      enough && stats.ci
+        ? ([round2(stats.ci[0]), round2(stats.ci[1])] as [number, number])
+        : null,
+    up: stats.up,
+    down: stats.down,
+    tied: stats.tied,
+    signP: enough && stats.signP !== null ? round4(stats.signP) : null,
+    detectable: enough && stats.detectable,
+  };
+}
+
 /**
  * Benjamini–Hochberg adjusted q-values, in the input order. Nulls pass
  * through (an untestable item is not counted in the family).

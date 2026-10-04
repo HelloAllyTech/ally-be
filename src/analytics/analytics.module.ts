@@ -43,6 +43,8 @@ import { FoundationalSkillsAnalyticsService } from './service/foundational-skill
 import { FoundationalSkillsAnalyticsRepository } from './repository/foundational-skills-analytics.repository';
 import { FoundationalSkillsBenchmarkAnalyticsService } from './service/foundational-skills-benchmark.service';
 import { FoundationalSkillsBenchmarkAnalyticsRepository } from './repository/foundational-skills-benchmark.repository';
+import { CourseImpactAnalyticsService } from './service/course-impact-analytics.service';
+import { CourseImpactAnalyticsRepository } from './repository/course-impact-analytics.repository';
 import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
 import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
 import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
@@ -208,6 +210,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     FoundationalSkillsAnalyticsRepository,
     FoundationalSkillsBenchmarkAnalyticsService,
     FoundationalSkillsBenchmarkAnalyticsRepository,
+    CourseImpactAnalyticsService,
+    CourseImpactAnalyticsRepository,
     QualityDistributionAnalyticsService,
     QualityDistributionAnalyticsRepository,
     CompetencyMapAnalyticsService,

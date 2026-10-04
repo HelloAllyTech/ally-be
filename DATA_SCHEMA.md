@@ -804,6 +804,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | Whether an AI-sender message was a real reply or a filler | `scenario_session_messages.metadata->>'utteranceKind'` — exclude `filler`/`interim` before counting turns |
 | Whether learners get better at foundational helping skills, independent of scenario | `foundational_skill_cuts` + `foundational_skill_assessments` (one rubric version at a time) |
 | Whether a learner did better on the fixed benchmark roleplay after practising | `foundational_skill_benchmark_assessments` (first vs latest scored session per learner and scenario; benchmark scenarios are `scenarios.metadata.fhsBenchmark = true`) |
+| Whether a course's learners did better on helping skills after it than before | `track_enrollments` (`startedAt`/`completedAt`) against `foundational_skill_cuts` + `foundational_skill_assessments` either side — computed per read by `GET /v1/analytics/course-impact`, nothing stored |
 | Compliance / who-changed-what | `audit_logs`, plus `created_by`/`updated_by` on entities |
 
 ---

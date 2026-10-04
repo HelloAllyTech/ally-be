@@ -46,6 +46,11 @@ import {
   FoundationalSkillsBenchmarkQueryDto,
   FoundationalSkillsBenchmarkResponseDto,
 } from '../dto/foundational-skills-benchmark.dto';
+import { CourseImpactAnalyticsService } from '../service/course-impact-analytics.service';
+import {
+  CourseImpactQueryDto,
+  CourseImpactResponseDto,
+} from '../dto/course-impact.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -338,6 +343,7 @@ export class AnalyticsController {
     private readonly skillGrowthAnalyticsService: SkillGrowthAnalyticsService,
     private readonly foundationalSkillsAnalyticsService: FoundationalSkillsAnalyticsService,
     private readonly foundationalSkillsBenchmarkAnalyticsService: FoundationalSkillsBenchmarkAnalyticsService,
+    private readonly courseImpactAnalyticsService: CourseImpactAnalyticsService,
     private readonly qualityDistributionAnalyticsService: QualityDistributionAnalyticsService,
     private readonly competencyMapAnalyticsService: CompetencyMapAnalyticsService,
     private readonly trackDropoffAnalyticsService: TrackDropoffAnalyticsService,
@@ -1389,6 +1395,35 @@ export class AnalyticsController {
     @Query() query: FoundationalSkillsBenchmarkQueryDto,
   ): Promise<FoundationalSkillsBenchmarkResponseDto> {
     return this.foundationalSkillsBenchmarkAnalyticsService.getBenchmark(query);
+  }
+
+  @Get('course-impact')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Course impact: helping skills before vs after each course (super-admin)',
+    description:
+      'Backs Highlights → Course impact. For every course with an enrollment: each learner who ' +
+      'finished it is compared with themselves on the foundational helping skills (1-4, one fixed ' +
+      'rubric whatever the scenario) — the mean of their last `windowCuts` scored 5,000-character ' +
+      'slices that closed BEFORE they started, against their first `windowCuts` slices made wholly ' +
+      'AFTER they finished. `coverage` is the funnel from enrolled to paired; `composite` the paired ' +
+      'change with a deterministic bootstrap interval and an exact sign test; averages, intervals and ' +
+      'tests are null below `minSampleSize` while counts still travel. `trackId` adds `course`: the ' +
+      'same comparison skill by skill (flagging the skills its roleplays assess) and for the share of ' +
+      'slices with an unhelpful behaviour. All-time and platform-wide unless `tenantId` narrows it to ' +
+      "one org (by the learner's own org); test organisations excluded, one rubric version. With no " +
+      'enrollments: empty `courses`, never 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Course impact retrieved successfully',
+    type: CourseImpactResponseDto,
+  })
+  async getCourseImpact(
+    @Query() query: CourseImpactQueryDto,
+  ): Promise<CourseImpactResponseDto> {
+    return this.courseImpactAnalyticsService.getCourseImpact(query);
   }
 
   @Get('skill-growth/learners')

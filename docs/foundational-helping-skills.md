@@ -704,6 +704,14 @@ can. Per-scenario scores (`scenario_sessions.score`) and the judge composite are
 numbers again. The Skill growth sub-tab (AAQ-042…) charts the per-roleplay judge composite by
 session number; this measure is the scenario-independent counterpart.
 
+**Course impact** (Highlights → Course impact, AAQ-193…197, `GET /v1/analytics/course-impact`)
+reads this measure per course: each learner's last 3 scored cuts before starting a course
+against their first 3 made wholly after finishing it. To mark which skills a course teaches it
+maps its roleplays' competencies onto rubric keys by the exact names in the table above
+(`src/analytics/constants/course-impact.constants.ts`), leaving out Non-Verbal Communication
+(not scored from text) and Linking Emotions, Thoughts & Behaviours (a different skill from
+`functioning`). Renaming a seeded competency silently drops it from that map.
+
 ---
 
 ## 10. Design principles for features built on this
