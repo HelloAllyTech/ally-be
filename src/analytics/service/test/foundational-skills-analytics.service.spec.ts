@@ -235,6 +235,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
 
       expect(repository.getAllLearnerCuts).toHaveBeenCalledWith(
         FHS_RUBRIC_VERSION,
+        undefined,
       );
       expect(res).toMatchObject({
         rubricVersion: FHS_RUBRIC_VERSION,
@@ -363,6 +364,7 @@ describe('FoundationalSkillsAnalyticsService', () => {
     const all = await service.getBehaviours({});
     expect(repository.getAllLearnerCuts).toHaveBeenCalledWith(
       FHS_RUBRIC_VERSION,
+      undefined,
     );
     expect(all).toMatchObject({
       measuredLearners: 22,
@@ -373,5 +375,24 @@ describe('FoundationalSkillsAnalyticsService', () => {
     expect(all.gridCodes).toContain('rapport.b1');
     const one = await service.getBehaviours({ userId: 2 });
     expect(one.learners.map((l) => l.id)).toEqual([2]);
+  });
+
+  it('passes the org filter through to the cut read for progress and habits', async () => {
+    const repository = { getAllLearnerCuts: jest.fn().mockResolvedValue([]) };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+
+    await service.getProgress({ tenantId: 'tenant-a' });
+    await service.getBehaviours({ tenantId: 'tenant-a' });
+
+    expect(repository.getAllLearnerCuts).toHaveBeenNthCalledWith(
+      1,
+      FHS_RUBRIC_VERSION,
+      'tenant-a',
+    );
+    expect(repository.getAllLearnerCuts).toHaveBeenNthCalledWith(
+      2,
+      FHS_RUBRIC_VERSION,
+      'tenant-a',
+    );
   });
 });

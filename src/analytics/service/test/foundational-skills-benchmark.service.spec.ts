@@ -194,11 +194,30 @@ describe('FoundationalSkillsBenchmarkAnalyticsService', () => {
   it('reads the current rubric version only', async () => {
     const { repository, service } = build([]);
     await service.getBenchmark();
-    expect(repository.getScenarios).toHaveBeenCalledWith(FHS_RUBRIC_VERSION);
-    expect(repository.getCoverage).toHaveBeenCalledWith(FHS_RUBRIC_VERSION);
+    expect(repository.getScenarios).toHaveBeenCalledWith(
+      FHS_RUBRIC_VERSION,
+      undefined,
+    );
+    expect(repository.getCoverage).toHaveBeenCalledWith(
+      FHS_RUBRIC_VERSION,
+      undefined,
+    );
     expect(repository.getScoredSessions).toHaveBeenCalledWith(
       FHS_RUBRIC_VERSION,
+      undefined,
     );
+  });
+
+  it('narrows every read to the org filter when one is given', async () => {
+    const { repository, service } = build([]);
+    await service.getBenchmark({ tenantId: 'tenant-a' });
+    for (const read of [
+      repository.getScenarios,
+      repository.getCoverage,
+      repository.getScoredSessions,
+    ]) {
+      expect(read).toHaveBeenCalledWith(FHS_RUBRIC_VERSION, 'tenant-a');
+    }
   });
 
   it('returns the explanatory empty shape, not an error, when nothing is flagged', async () => {

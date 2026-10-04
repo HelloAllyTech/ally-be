@@ -229,7 +229,10 @@ export class FoundationalSkillsAnalyticsService {
   async getProgress(
     query: FoundationalSkillsProgressQueryDto,
   ): Promise<FoundationalSkillsProgressResponseDto> {
-    const rows = await this.repository.getAllLearnerCuts(FHS_RUBRIC_VERSION);
+    const rows = await this.repository.getAllLearnerCuts(
+      FHS_RUBRIC_VERSION,
+      query.tenantId,
+    );
     const learners = groupByLearner(rows);
     const rubricByKey = new Map(FHS_RUBRIC.map((sk) => [sk.key, sk]));
     const levelChecks = countLevelMismatches(
@@ -285,7 +288,10 @@ export class FoundationalSkillsAnalyticsService {
   async getBehaviours(
     query: FoundationalSkillsBehavioursQueryDto,
   ): Promise<FoundationalSkillsBehavioursResponseDto> {
-    const rows = await this.repository.getAllLearnerCuts(FHS_RUBRIC_VERSION);
+    const rows = await this.repository.getAllLearnerCuts(
+      FHS_RUBRIC_VERSION,
+      query.tenantId,
+    );
     const result = computeBehaviourRates(groupByLearner(rows), {
       sampleFloor: MIN_SCORE_SAMPLE_SIZE,
       userId: query.userId,
