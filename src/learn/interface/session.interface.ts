@@ -9,4 +9,12 @@ export interface GetScenarioResponse extends Scenarios {
    * includeCompletion); absent on the @Public() endpoint.
    */
   completion?: ScenarioCompletionSummary | null;
+  /**
+   * Whether the requesting learner may start this roleplay as a text chat:
+   * their org has TEXT_CHAT_ROLEPLAY_ENABLED on AND the scenario offers it.
+   * Set only on authenticated detail requests
+   * (GetScenarioByIdOptions.includeTextChatAvailability). A hint for the UI —
+   * session start re-checks both.
+   */
+  textChatAvailable?: boolean;
 }

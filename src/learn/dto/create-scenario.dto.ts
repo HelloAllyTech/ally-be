@@ -708,6 +708,20 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      'Also offer this roleplay as a text chat: the learner types and the ' +
+      'client types back, with the same persona, events and scoring as the ' +
+      'voice call. Opt-in: off unless explicitly true. Learners only see it ' +
+      'when their organisation has text-chat roleplays switched on ' +
+      '(TEXT_CHAT_ROLEPLAY_ENABLED); voice stays available either way.',
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  textChatEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       "Show the learner's Live transcript tab during the roleplay. " +
       'Opt-out: on unless explicitly set to false.',
     example: true,

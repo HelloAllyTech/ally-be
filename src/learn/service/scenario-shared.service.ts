@@ -77,6 +77,7 @@ import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
 import { SettingsService } from 'src/settings/service/settings.service';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 
 /**
  * scenario_translations.metadata.openingStatements may be string[] (current) or a legacy /
@@ -412,8 +413,13 @@ export class ScenarioSharedService {
   }
 
   async createRoomMetadata(options: CreateRoomMetadataOptions) {
-    const { scenario, sessionEvents, languageDetails, previousMemory } =
-      options;
+    const {
+      scenario,
+      sessionEvents,
+      languageDetails,
+      previousMemory,
+      interactionMode,
+    } = options;
     const {
       metadata,
       terminationEvents,
@@ -910,6 +916,11 @@ export class ScenarioSharedService {
         guardrailsPrompt: guardrails.prompt,
         guardrails: guardrails.items,
         behaviorInstructions: formattedBehaviorInstructionForMetadata,
+        // Only a text session carries the key; ally-ai-learn treats its absence
+        // as VOICE, so nothing about a voice envelope changes.
+        ...(interactionMode === ScenarioInteractionMode.TEXT && {
+          interactionMode,
+        }),
       },
     };
 

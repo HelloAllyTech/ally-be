@@ -140,6 +140,14 @@ export enum PreferenceName {
    * feature is rolled out org by org rather than all at once.
    */
   PROGRESS_DASHBOARD_ENABLED = 'PROGRESS_DASHBOARD_ENABLED',
+  /**
+   * Org-level switch for text-chat roleplays: learners in the org may run a
+   * roleplay by typing instead of speaking, for scenarios that also offer it
+   * (`scenarios.metadata.textChatEnabled`). Built for text-based helplines.
+   * OFF when the row is absent — every org keeps voice-only roleplays until a
+   * platform admin turns this on for it.
+   */
+  TEXT_CHAT_ROLEPLAY_ENABLED = 'TEXT_CHAT_ROLEPLAY_ENABLED',
 }
 
 export enum PreferenceRelatedEntity {

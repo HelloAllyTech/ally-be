@@ -498,6 +498,8 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         tenantId: mockTenantId,
+        // No mode on the start request means a voice session.
+        interactionMode: 'VOICE',
         metadata: {
           sessionName: 'SS-1-2024-01-01',
           voiceId: mockVoiceId,
@@ -516,6 +518,8 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockStartDto.scenarioId,
         scenarioVersionId: null,
         tenantId: mockTenantId,
+        // No mode on the start request means a voice session.
+        interactionMode: 'VOICE',
         metadata: {
           sessionName: 'SS-1-2024-01-01',
           voiceId: mockVoiceId,
@@ -553,6 +557,8 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         tenantId: mockTenantId,
+        // No mode on the start request means a voice session.
+        interactionMode: 'VOICE',
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',
           voiceId: mockVoiceId,
@@ -575,6 +581,8 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockStartDto.scenarioId,
         scenarioVersionId: null,
         tenantId: mockTenantId,
+        // No mode on the start request means a voice session.
+        interactionMode: 'VOICE',
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',
           voiceId: mockVoiceId,

@@ -1371,6 +1371,100 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('getTextChatRoleplayEnabled', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+    });
+
+    it('is off when no preference row exists (fails closed)', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      await expect(service.getTextChatRoleplayEnabled()).resolves.toBe(false);
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+    });
+
+    it('is on only when the row says enabled=true', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        id: mockPreferenceId,
+        name: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: true },
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await expect(service.getTextChatRoleplayEnabled()).resolves.toBe(true);
+    });
+
+    it('pins a caller without system access to their own org', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      await service.getTextChatRoleplayEnabled('some-other-tenant-id');
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+    });
+  });
+
+  describe('updateTextChatRoleplayEnabled', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+    });
+
+    it('creates the org row when none exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.updateTextChatRoleplayEnabled(
+        mockTenantId,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('updates the existing row in place', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        id: mockPreferenceId,
+        name: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: true },
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await service.updateTextChatRoleplayEnabled(mockTenantId, false);
+
+      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
+        mockPreferenceId,
+        { enabled: false },
+      );
+      expect(preferenceService.createPreference).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getProgressDashboardEnabled', () => {
     const mockEnabledPreference = {
       id: mockPreferenceId,

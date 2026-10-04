@@ -62,6 +62,18 @@ export const FAILURE_MESSAGES = {
   VOICE_NOTE_NOT_ENABLED:
     'Voice notes are not switched on for your organisation. Ask an administrator to enable them.',
 
+  // ── Text-chat roleplays ───────────────────────────────────────────────────
+  /**
+   * Paired with FEATURE_NOT_ENABLED on a TEXT session start. Two sentences
+   * because the remedies differ: the org switch is a platform admin's, the
+   * scenario's is its author's. Both say voice still works, since that is what
+   * the learner can do right now.
+   */
+  TEXT_CHAT_ROLEPLAY_ORG_DISABLED:
+    'Text chat roleplays are not switched on for your organisation. You can still start this roleplay as a voice call.',
+  TEXT_CHAT_ROLEPLAY_SCENARIO_DISABLED:
+    'This roleplay is not available as a text chat. You can still start it as a voice call.',
+
   AI_REJECTED:
     'The AI service could not process this request. Please contact support if it keeps happening.',
 } as const;

@@ -116,12 +116,20 @@ export interface StateNames {
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { Languages } from 'src/language/entity/languages.entity';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 
 export interface CreateRoomMetadataOptions {
   scenario: GetAdminScenarioDto;
   sessionEvents: SessionEvents[];
   languageDetails?: Languages | null;
   previousMemory?: string | null;
+  /**
+   * TEXT puts `interactionMode: 'TEXT'` on the envelope so ally-ai-learn runs
+   * the room with audio off. VOICE (or absent) leaves the envelope exactly as
+   * it has always been — no key at all — so voice sessions, previews and
+   * reports are byte-for-byte unchanged.
+   */
+  interactionMode?: ScenarioInteractionMode;
 }
 
 export interface ScenarioAppLangugeTranslations {

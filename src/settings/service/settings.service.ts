@@ -870,6 +870,66 @@ export class SettingsService {
     return { success: true };
   }
 
+  /**
+   * Org-level switch for text-chat roleplays — see
+   * PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED. OFF until a platform admin turns
+   * it on for that org. Reads the same `preference` row as
+   * TenantFeatureService.isEnabledForTenant, which is what the session-start
+   * check uses, so a flip here governs the very next start.
+   */
+  async getTextChatRoleplayEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) return false;
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateTextChatRoleplayEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    // Only a platform admin may grant this (EDIT_GLOBAL_SETTINGS on the route);
+    // a tenant admin must not be able to switch it on for themselves.
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
   async getScribeNoteCreationEnabled(tenantId?: string): Promise<boolean> {
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
