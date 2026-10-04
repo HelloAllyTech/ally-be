@@ -1705,6 +1705,36 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
       note: 'One slope per learner from their FIRST to their LATEST scored session of the SAME benchmark roleplay (scenarios.metadata.fhsBenchmark), counted only when the latest came at least 3 more 5,000-character cuts of practice after the first; a learner with several benchmark scenarios counts once, on the one with the most practice between. Paired mean change with a bootstrap CI and sign test, per-skill where assessable in both; averages null below minSampleSize. /v1/analytics/foundational-skills/benchmark',
     },
+    {
+      id: 'AAQ-190',
+      tab: 'Highlights',
+      subTab: 'Helping skills',
+      title: 'Habits adopted and dropped',
+      kind: 'chart',
+      chartType: 'custom (change rows)',
+      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      note: "Per rubric behaviour: learners' own first half vs last half of slices (rate where the skill could be shown), group change ± bootstrap 95% CI, credible only after Benjamini–Hochberg across all behaviours; ICC shown so untrackable behaviours read as such. /v1/analytics/foundational-skills/behaviours behaviours",
+    },
+    {
+      id: 'AAQ-191',
+      tab: 'Highlights',
+      subTab: 'Helping skills',
+      title: 'Habit grid',
+      kind: 'chart',
+      chartType: 'custom-table',
+      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      note: "Learners × the most person-specific helpful habits (ICC ≥ 0.1): each learner's rate, with ▲/▼ only where their own start vs now clears Fisher p ≤ 0.05. Self vs self; no ranking. /v1/analytics/foundational-skills/behaviours learners + gridCodes",
+    },
+    {
+      id: 'AAQ-192',
+      tab: 'Highlights',
+      subTab: 'Helping skills',
+      title: "A learner's habits, start vs now",
+      kind: 'chart',
+      chartType: 'custom (rows)',
+      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      note: 'Learner panel section: every behaviour the learner had a chance at, start vs now counts with a clear adopted/dropped call (Fisher). /v1/analytics/foundational-skills/behaviours?userId=',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
