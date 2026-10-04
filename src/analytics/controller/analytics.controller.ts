@@ -42,7 +42,10 @@ import {
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
 import { FoundationalSkillsBenchmarkAnalyticsService } from '../service/foundational-skills-benchmark.service';
-import { FoundationalSkillsBenchmarkResponseDto } from '../dto/foundational-skills-benchmark.dto';
+import {
+  FoundationalSkillsBenchmarkQueryDto,
+  FoundationalSkillsBenchmarkResponseDto,
+} from '../dto/foundational-skills-benchmark.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -1320,7 +1323,8 @@ export class AnalyticsController {
       "every learner's own-baseline trend; change by practice volume; and one " +
       'row per panel learner. Start/now are windows (first and last ⌊N/2⌋ cuts). ' +
       'Averages and shares are null below `minSampleSize` while counts travel. ' +
-      'All-time, platform-wide, test organisations excluded, one rubric version.',
+      'All-time and platform-wide unless `tenantId` narrows it to one org; test ' +
+      'organisations excluded, one rubric version.',
   })
   @ApiResponse({
     status: 200,
@@ -1343,7 +1347,8 @@ export class AnalyticsController {
       'could be shown), how person-specific it is (ICC), and own start vs now — the group change with ' +
       'a bootstrap CI and Benjamini–Hochberg correction, and each learner’s change by Fisher exact test. ' +
       'The list carries each learner’s habit-grid behaviours; `userId` returns one learner with all ' +
-      'of theirs. Built from stored behaviour codes; test organisations excluded; one rubric version.',
+      'of theirs. `tenantId` narrows to one org. Built from stored behaviour codes; test organisations ' +
+      'excluded; one rubric version.',
   })
   @ApiResponse({
     status: 200,
@@ -1372,16 +1377,18 @@ export class AnalyticsController {
       'where it was assessable in both sessions), with a deterministic bootstrap interval ' +
       'and an exact sign test; averages, intervals and tests are null below ' +
       '`minSampleSize` while counts still travel. With no roleplay flagged: empty ' +
-      '`scenarios` and zero counts, never 404. All-time, platform-wide, test ' +
-      'organisations excluded, one rubric version.',
+      '`scenarios` and zero counts, never 404. All-time and platform-wide unless ' +
+      '`tenantId` narrows it to one org; test organisations excluded, one rubric version.',
   })
   @ApiResponse({
     status: 200,
     description: 'Benchmark before/after retrieved successfully',
     type: FoundationalSkillsBenchmarkResponseDto,
   })
-  async getFoundationalSkillsBenchmark(): Promise<FoundationalSkillsBenchmarkResponseDto> {
-    return this.foundationalSkillsBenchmarkAnalyticsService.getBenchmark();
+  async getFoundationalSkillsBenchmark(
+    @Query() query: FoundationalSkillsBenchmarkQueryDto,
+  ): Promise<FoundationalSkillsBenchmarkResponseDto> {
+    return this.foundationalSkillsBenchmarkAnalyticsService.getBenchmark(query);
   }
 
   @Get('skill-growth/learners')

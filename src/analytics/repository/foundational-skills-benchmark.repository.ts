@@ -4,7 +4,17 @@ import { DataSource } from 'typeorm';
 import { isBenchmarkScenarioSql } from 'src/foundational-skills/constants/fhs-benchmark.constants';
 import { FhsBenchmarkStatus } from 'src/foundational-skills/enum/foundational-skills.enum';
 import { fhsEligibleSession } from 'src/foundational-skills/util/fhs-eligible-session.util';
-import { excludeTestTenants } from '../util/test-tenant.util';
+import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
+
+/**
+ * The org filter as a WHERE fragment over `column`, bound to `$2` (every query
+ * here takes the rubric version as `$1`), or nothing when it is not set.
+ */
+const tenantScope = (column: string, tenantId?: string): string =>
+  tenantId ? `AND ${scopeToTenant(column, '$2')}` : '';
+
+const params = (rubricVersion: string, tenantId?: string): string[] =>
+  tenantId ? [rubricVersion, tenantId] : [rubricVersion];
 
 export interface BenchmarkScenarioRow {
   id: number;
@@ -42,13 +52,23 @@ export interface BenchmarkSessionRow {
  * off the chart (re-flagging brings it back, nothing is deleted). Test
  * organisations are dropped by the session's tenant, here as well as at
  * scoring time, so a tenant flagged as a test org later disappears too.
+ *
+ * `tenantId` (the Helping skills tab's org filter) narrows by the same
+ * column, the session's own tenant.
  */
 @Injectable()
 export class FoundationalSkillsBenchmarkAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Flagged scenarios, each with its scored-session count. */
-  async getScenarios(rubricVersion: string): Promise<BenchmarkScenarioRow[]> {
+  /**
+   * Flagged scenarios, each with its scored-session count. Under an org filter
+   * every flagged scenario is still listed — only the counts are narrowed — so
+   * an org that has not taken the benchmark yet reads as 0, not as unflagged.
+   */
+  async getScenarios(
+    rubricVersion: string,
+    tenantId?: string,
+  ): Promise<BenchmarkScenarioRow[]> {
     const rows = await this.dataSource.query(
       `
       SELECT sc.id, sc.title, COUNT(b.id)::int AS sessions_scored
@@ -58,11 +78,12 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
          AND b."rubricVersion" = $1
          AND b.status = '${FhsBenchmarkStatus.SCORED}'
          AND ${excludeTestTenants('b."tenant_id"')}
+         ${tenantScope('b."tenant_id"', tenantId)}
        WHERE ${isBenchmarkScenarioSql('sc')}
        GROUP BY sc.id, sc.title
        ORDER BY sc.title, sc.id
       `,
-      [rubricVersion],
+      params(rubricVersion, tenantId),
     );
     return rows.map((r: any) => ({
       id: Number(r.id),
@@ -75,7 +96,10 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
    * How far scoring has got, so a thin chart can say why. "Pending" uses the
    * scheduler's own eligibility rule, so it counts exactly what it will pick up.
    */
-  async getCoverage(rubricVersion: string): Promise<BenchmarkCoverageRow> {
+  async getCoverage(
+    rubricVersion: string,
+    tenantId?: string,
+  ): Promise<BenchmarkCoverageRow> {
     const [row] = await this.dataSource.query(
       `
       WITH bench AS (
@@ -87,12 +111,14 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
          WHERE b."rubricVersion" = $1
            AND b."scenarioId" IN (SELECT id FROM bench)
            AND ${excludeTestTenants('b."tenant_id"')}
+           ${tenantScope('b."tenant_id"', tenantId)}
       ),
       pending AS (
         SELECT COUNT(*)::int AS n
           FROM scenario_sessions s
          WHERE s."scenarioId" IN (SELECT id FROM bench)
            AND ${fhsEligibleSession('s')}
+           ${tenantScope('s."tenant_id"', tenantId)}
            AND NOT EXISTS (
              SELECT 1 FROM foundational_skill_benchmark_assessments bp
               WHERE bp."sessionId" = s.id AND bp."rubricVersion" = $1
@@ -104,7 +130,7 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
              (SELECT n FROM pending) AS pending
         FROM assessed
       `,
-      [rubricVersion],
+      params(rubricVersion, tenantId),
     );
     return {
       sessionsScored: Number(row?.scored ?? 0),
@@ -122,6 +148,7 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
    */
   async getScoredSessions(
     rubricVersion: string,
+    tenantId?: string,
   ): Promise<BenchmarkSessionRow[]> {
     const rows = await this.dataSource.query(
       `
@@ -137,9 +164,10 @@ export class FoundationalSkillsBenchmarkAnalyticsRepository {
          AND b."compositeScore" IS NOT NULL
          AND ${isBenchmarkScenarioSql('sc')}
          AND ${excludeTestTenants('b."tenant_id"')}
+         ${tenantScope('b."tenant_id"', tenantId)}
        ORDER BY b."userId", b."scenarioId", b."sessionEndedAt", b."sessionId"
       `,
-      [rubricVersion],
+      params(rubricVersion, tenantId),
     );
     return rows.map((r: any) => ({
       sessionId: String(r.session_id),

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, Matches } from 'class-validator';
 
 /**
  * Foundational helping skills BENCHMARK — GET /v1/analytics/foundational-skills/benchmark.
@@ -6,9 +7,27 @@ import { ApiProperty } from '@nestjs/swagger';
  * The same roleplay taken at onboarding and again after practice, scored whole
  * against the fixed rubric, compared within each learner. Holding the scenario
  * fixed is the point: cut-to-cut scores mix scenarios and cannot show
- * learning. Takes no query params; platform-wide, test organisations excluded,
- * one rubric version per response. This shape is a frontend contract.
+ * learning. Platform-wide unless `tenantId` narrows it to one org; test
+ * organisations excluded, one rubric version per response. This shape is a
+ * frontend contract.
  */
+
+export class FoundationalSkillsBenchmarkQueryDto {
+  @ApiProperty({
+    description:
+      'Narrow to a single tenant (uuid or code). Benchmark sessions are scoped ' +
+      "by their own session's tenant, so both ends of a pair and the pending " +
+      'count describe that org only; the flagged scenarios are listed whatever ' +
+      'the org. Omitted: every non-test org.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
+}
 
 export class FoundationalSkillsBenchmarkScenarioDto {
   @ApiProperty({ description: 'scenarios.id, as a string' })

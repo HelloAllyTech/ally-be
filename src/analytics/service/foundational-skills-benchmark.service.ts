@@ -10,6 +10,7 @@ import {
 } from 'src/foundational-skills/constants/fhs-benchmark.constants';
 import {
   FoundationalSkillsBenchmarkLearnerDto,
+  FoundationalSkillsBenchmarkQueryDto,
   FoundationalSkillsBenchmarkResponseDto,
   FoundationalSkillsBenchmarkSessionRefDto,
   FoundationalSkillsBenchmarkSkillDto,
@@ -164,11 +165,14 @@ export class FoundationalSkillsBenchmarkAnalyticsService {
     private readonly repository: FoundationalSkillsBenchmarkAnalyticsRepository,
   ) {}
 
-  async getBenchmark(): Promise<FoundationalSkillsBenchmarkResponseDto> {
+  async getBenchmark(
+    query: FoundationalSkillsBenchmarkQueryDto = {},
+  ): Promise<FoundationalSkillsBenchmarkResponseDto> {
+    const { tenantId } = query;
     const [scenarios, coverage, rows] = await Promise.all([
-      this.repository.getScenarios(FHS_RUBRIC_VERSION),
-      this.repository.getCoverage(FHS_RUBRIC_VERSION),
-      this.repository.getScoredSessions(FHS_RUBRIC_VERSION),
+      this.repository.getScenarios(FHS_RUBRIC_VERSION, tenantId),
+      this.repository.getCoverage(FHS_RUBRIC_VERSION, tenantId),
+      this.repository.getScoredSessions(FHS_RUBRIC_VERSION, tenantId),
     ]);
 
     const pairs = pairBenchmarkSessions(rows, FHS_BENCHMARK_MIN_CUTS_BETWEEN);

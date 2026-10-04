@@ -1,6 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 /**
  * Foundational helping skills by practice volume — the Priority tab chart.
@@ -390,6 +398,21 @@ export class FoundationalSkillsProgressQueryDto {
   @Type(() => Number)
   @IsIn([1, 2])
   baselineFrom?: 1 | 2;
+
+  @ApiProperty({
+    description:
+      'Narrow to a single tenant (uuid or code). The cuts are scoped — each ' +
+      'carries the tenant of the session it was cut from — so the panel, every ' +
+      'average and every learner row describe practice in that org only. ' +
+      'Omitted: every non-test org.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
 }
 
 export class FhsProgressThresholdsDto {
@@ -756,6 +779,20 @@ export class FoundationalSkillsBehavioursQueryDto {
   @IsInt()
   @Min(1)
   userId?: number;
+
+  @ApiProperty({
+    description:
+      'Narrow to a single tenant (uuid or code). The cuts are scoped, so the ' +
+      'rates, the group changes and the learner list describe practice in that ' +
+      'org only. Omitted: every non-test org.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
 }
 
 export class FhsBehaviourThresholdsDto {

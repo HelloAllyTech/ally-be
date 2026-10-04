@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { StoredVerdictLite } from '../util/foundational-skills-progress.util';
-import { excludeTestTenants } from '../util/test-tenant.util';
+import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
 
 export interface FoundationalSkillsCutRow {
   cut: number;
@@ -195,16 +195,23 @@ export class FoundationalSkillsAnalyticsRepository {
    * Every scored cut of every learner, for the Skills sub-tab's in-memory
    * analysis. Fine at today's volume (hundreds of cuts); revisit — a summary
    * table or SQL-side aggregation — before it reaches the tens of thousands.
+   *
+   * `tenantId` narrows to the cuts practised in one org (the Helping skills
+   * tab's org filter). A learner who moved orgs keeps their absolute cut
+   * numbers, so their cuts from the new org start past cut 1 and they drop out
+   * of any panel that needs cuts 1..N — practice done elsewhere is not
+   * credited to this org.
    */
   async getAllLearnerCuts(
     rubricVersion: string,
+    tenantId?: string,
   ): Promise<FoundationalSkillsLearnerCutRow[]> {
     const rows = await this.dataSource.query(
       `
-      WITH scored AS (${this.scoredCte()})
+      WITH scored AS (${this.scoredCte(tenantId ? '$2' : undefined)})
       ${this.learnerCutSelect('')}
       `,
-      [rubricVersion],
+      tenantId ? [rubricVersion, tenantId] : [rubricVersion],
     );
     return rows.map(toLearnerCutRow);
   }
@@ -277,8 +284,15 @@ export class FoundationalSkillsAnalyticsRepository {
     };
   }
 
-  /** Scored cuts under `$1` with at least one assessable skill. */
-  private scoredCte(): string {
+  /**
+   * Scored cuts under `$1` with at least one assessable skill. `tenantParam` is
+   * the placeholder the caller bound a tenant id to, when it narrows to one org;
+   * the id itself always travels as a bound parameter.
+   */
+  private scoredCte(tenantParam?: string): string {
+    const tenantPredicate = tenantParam
+      ? `\n         AND ${scopeToTenant('c."tenant_id"', tenantParam)}`
+      : '';
     return `
       SELECT c."userId" AS user_id, c."cutIndex" AS cut,
              a."compositeScore"::float AS score,
@@ -293,6 +307,6 @@ export class FoundationalSkillsAnalyticsRepository {
        WHERE a."rubricVersion" = $1
          AND a.status = 'SCORED'
          AND a."compositeScore" IS NOT NULL
-         AND ${excludeTestTenants('c."tenant_id"')}`;
+         AND ${excludeTestTenants('c."tenant_id"')}${tenantPredicate}`;
   }
 }
