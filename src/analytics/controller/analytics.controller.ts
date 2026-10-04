@@ -36,6 +36,8 @@ import {
   FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsProgressQueryDto,
   FoundationalSkillsProgressResponseDto,
+  FoundationalSkillsBehavioursQueryDto,
+  FoundationalSkillsBehavioursResponseDto,
   FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
@@ -1329,6 +1331,29 @@ export class AnalyticsController {
     @Query() query: FoundationalSkillsProgressQueryDto,
   ): Promise<FoundationalSkillsProgressResponseDto> {
     return this.foundationalSkillsAnalyticsService.getProgress(query);
+  }
+
+  @Get('foundational-skills/behaviours')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Behaviour rates ("habits") behind the helping-skills measure (super-admin)',
+    description:
+      'For every rubric behaviour: the share of practice where learners show it (where its skill ' +
+      'could be shown), how person-specific it is (ICC), and own start vs now — the group change with ' +
+      'a bootstrap CI and Benjamini–Hochberg correction, and each learner’s change by Fisher exact test. ' +
+      'The list carries each learner’s habit-grid behaviours; `userId` returns one learner with all ' +
+      'of theirs. Built from stored behaviour codes; test organisations excluded; one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Behaviour rates retrieved successfully',
+    type: FoundationalSkillsBehavioursResponseDto,
+  })
+  async getFoundationalSkillsBehaviours(
+    @Query() query: FoundationalSkillsBehavioursQueryDto,
+  ): Promise<FoundationalSkillsBehavioursResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getBehaviours(query);
   }
 
   @Get('foundational-skills/benchmark')

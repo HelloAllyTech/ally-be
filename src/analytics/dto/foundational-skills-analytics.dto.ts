@@ -740,3 +740,143 @@ export class FoundationalSkillsProgressResponseDto {
   provenance!: FoundationalSkillsProvenanceDto;
   @ApiProperty() computedAt!: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Behaviour rates ("habits"): GET /v1/analytics/foundational-skills/behaviours
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class FoundationalSkillsBehavioursQueryDto {
+  @ApiProperty({
+    description:
+      'Return this one learner with every behaviour they have had a chance at (group figures are still over everyone)',
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  userId?: number;
+}
+
+export class FhsBehaviourThresholdsDto {
+  @ApiProperty() minCuts!: number;
+  @ApiProperty() trackableIcc!: number;
+  @ApiProperty() groupQ!: number;
+  @ApiProperty() learnerP!: number;
+  @ApiProperty() gridBehaviours!: number;
+}
+
+export class FhsBehaviourCountDto {
+  @ApiProperty({ description: 'Slices where the behaviour was shown' })
+  hits!: number;
+  @ApiProperty({ description: 'Slices where its skill could be shown at all' })
+  chances!: number;
+}
+
+export class FhsBehaviourGroupChangeDto {
+  @ApiProperty({
+    description: 'Learners with a chance in both their start and now halves',
+  })
+  n!: number;
+  @ApiProperty({ nullable: true, type: Number }) startPct!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) nowPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Mean own change, points',
+  })
+  changePts!: number | null;
+  @ApiProperty({ nullable: true, type: [Number] }) ciPts!:
+    | [number, number]
+    | null;
+  @ApiProperty() up!: number;
+  @ApiProperty() down!: number;
+  @ApiProperty({ nullable: true, type: Number }) signP!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Benjamini–Hochberg across all behaviours',
+  })
+  q!: number | null;
+  @ApiProperty() credible!: boolean;
+  @ApiProperty({
+    description: 'Learners whose own change is clear (Fisher p ≤ learnerP), up',
+  })
+  learnersAdopted!: number;
+  @ApiProperty() learnersDropped!: number;
+}
+
+export class FhsBehaviourRateDto {
+  @ApiProperty() code!: string;
+  @ApiProperty() skill!: string;
+  @ApiProperty({ enum: ['unhelpful', 'basic', 'advanced'] }) kind!: string;
+  @ApiProperty() text!: string;
+  @ApiProperty() learnersWithChance!: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Mean of learners’ own rates, %',
+  })
+  ratePct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'How person-specific the behaviour is (ICC); null until enough learners had repeat chances',
+  })
+  icc!: number | null;
+  @ApiProperty() trackable!: boolean;
+  @ApiProperty({ type: FhsBehaviourGroupChangeDto })
+  change!: FhsBehaviourGroupChangeDto;
+}
+
+export class FhsLearnerBehaviourDto {
+  @ApiProperty() code!: string;
+  @ApiProperty({ type: FhsBehaviourCountDto }) all!: FhsBehaviourCountDto;
+  @ApiProperty({ nullable: true, type: FhsBehaviourCountDto })
+  start!: FhsBehaviourCountDto | null;
+  @ApiProperty({ nullable: true, type: FhsBehaviourCountDto })
+  now!: FhsBehaviourCountDto | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Fisher exact, start vs now',
+  })
+  p!: number | null;
+  @ApiProperty({ nullable: true, enum: ['adopted', 'dropped'] }) clear!:
+    | string
+    | null;
+}
+
+export class FhsBehaviourLearnerDto {
+  @ApiProperty() id!: number;
+  @ApiProperty({ nullable: true, type: String }) name!: string | null;
+  @ApiProperty({ nullable: true, type: String }) tenantId!: string | null;
+  @ApiProperty() cuts!: number;
+  @ApiProperty({ description: 'Has enough slices for start vs now' })
+  comparable!: boolean;
+  @ApiProperty({ type: [FhsLearnerBehaviourDto] })
+  behaviours!: FhsLearnerBehaviourDto[];
+}
+
+export class FoundationalSkillsBehavioursResponseDto {
+  @ApiProperty() rubricVersion!: string;
+  @ApiProperty() minSampleSize!: number;
+  @ApiProperty({ type: FhsBehaviourThresholdsDto })
+  thresholds!: FhsBehaviourThresholdsDto;
+  @ApiProperty() measuredLearners!: number;
+  @ApiProperty({ description: 'Learners with enough slices for start vs now' })
+  comparableLearners!: number;
+  @ApiProperty({ type: [FhsBehaviourRateDto] })
+  behaviours!: FhsBehaviourRateDto[];
+  @ApiProperty({
+    type: [String],
+    description: 'Habit-grid behaviours, most person-specific first',
+  })
+  gridCodes!: string[];
+  @ApiProperty({ type: [FhsBehaviourLearnerDto] })
+  learners!: FhsBehaviourLearnerDto[];
+  @ApiProperty({ type: FoundationalSkillsProvenanceDto })
+  provenance!: FoundationalSkillsProvenanceDto;
+  @ApiProperty() computedAt!: string;
+}

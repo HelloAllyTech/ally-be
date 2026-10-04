@@ -13,6 +13,8 @@ import {
   FoundationalSkillsLearnersResponseDto,
   FoundationalSkillsProgressQueryDto,
   FoundationalSkillsProgressResponseDto,
+  FoundationalSkillsBehavioursQueryDto,
+  FoundationalSkillsBehavioursResponseDto,
   FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
@@ -28,6 +30,10 @@ import {
   countLevelMismatches,
 } from '../util/foundational-skills-progress.util';
 import { deriveLevel } from 'src/foundational-skills/util/skill-scoring.util';
+import {
+  FHS_BEHAVIOUR_THRESHOLDS,
+  computeBehaviourRates,
+} from '../util/foundational-skills-behaviour.util';
 // One floor for every judged score on the platform — see SkillGrowthAnalyticsService.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
 
@@ -263,6 +269,44 @@ export class FoundationalSkillsAnalyticsService {
           `than ${MIN_SCORE_SAMPLE_SIZE} learners are withheld. Scores come from an AI judge not yet checked ` +
           `against trained human raters: practice feedback, not a clinical assessment. Rubric ` +
           `${FHS_RUBRIC_VERSION}; test organisations excluded.`,
+      },
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Behaviour rates ("habits"): how often each learner shows each rubric
+   * behaviour where they had the chance, how person-specific each behaviour is,
+   * and own start vs now — per group (BH-corrected) and per learner (Fisher).
+   * The production quick test found behaviours carry 4–15× the person signal
+   * of the 1–4 levels, so this is the measure the Helping skills tab leads with.
+   * Built from stored behaviour codes: no re-scoring, no model calls.
+   */
+  async getBehaviours(
+    query: FoundationalSkillsBehavioursQueryDto,
+  ): Promise<FoundationalSkillsBehavioursResponseDto> {
+    const rows = await this.repository.getAllLearnerCuts(FHS_RUBRIC_VERSION);
+    const result = computeBehaviourRates(groupByLearner(rows), {
+      sampleFloor: MIN_SCORE_SAMPLE_SIZE,
+      userId: query.userId,
+    });
+    return {
+      rubricVersion: FHS_RUBRIC_VERSION,
+      minSampleSize: MIN_SCORE_SAMPLE_SIZE,
+      thresholds: { ...FHS_BEHAVIOUR_THRESHOLDS },
+      ...result,
+      provenance: {
+        derivation:
+          `A behaviour's rate is the share of a learner's ${FHS_CUT_LEARNER_CHARS.toLocaleString('en')}-character ` +
+          `slices in which the judge saw it, among the slices where its skill could be shown at all. ` +
+          `Every credited behaviour is backed by a quote found in the transcript.`,
+        note:
+          `Own start vs now compares a learner's first half of slices with their last half ` +
+          `(${FHS_BEHAVIOUR_THRESHOLDS.minCuts}+ slices). Group changes carry a bootstrap 95% CI and are ` +
+          `credible only after a Benjamini–Hochberg correction across every behaviour; one learner's change ` +
+          `is clear only at Fisher p ≤ ${FHS_BEHAVIOUR_THRESHOLDS.learnerP}. "Trackable" = ICC ≥ ` +
+          `${FHS_BEHAVIOUR_THRESHOLDS.trackableIcc}: the behaviour says something about the person rather than ` +
+          `the slice. AI-judged; not yet checked against trained human raters.`,
       },
       computedAt: new Date().toISOString(),
     };

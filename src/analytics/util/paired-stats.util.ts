@@ -151,3 +151,76 @@ export function sd(xs: readonly number[]): number | null {
   const m = mean(xs);
   return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
 }
+
+/**
+ * ICC(1), one-way random effects: the share of variance in `groups` (one
+ * array of observations per person) that belongs to the person rather than to
+ * the occasion. Groups with fewer than 2 observations are ignored; null when
+ * fewer than 3 groups remain. Clamped at 0 (a negative estimate means "no
+ * person signal", not a meaningful negative share).
+ */
+export function icc1(groups: readonly (readonly number[])[]): number | null {
+  const gs = groups.filter((g) => g.length >= 2);
+  const g = gs.length;
+  const N = gs.reduce((a, x) => a + x.length, 0);
+  if (g < 3 || N <= g) return null;
+  const grand = gs.reduce((a, x) => a + x.reduce((s, v) => s + v, 0), 0) / N;
+  const means = gs.map((x) => x.reduce((s, v) => s + v, 0) / x.length);
+  const ssb = gs.reduce((a, x, i) => a + x.length * (means[i] - grand) ** 2, 0);
+  const ssw = gs.reduce(
+    (a, x, i) => a + x.reduce((s, v) => s + (v - means[i]) ** 2, 0),
+    0,
+  );
+  const msb = ssb / (g - 1);
+  const msw = ssw / (N - g);
+  const k0 = (N - gs.reduce((a, x) => a + x.length ** 2, 0) / N) / (g - 1);
+  const den = msb + (k0 - 1) * msw;
+  if (den <= 0) return null;
+  return Math.max(0, (msb - msw) / den);
+}
+
+const logFactorial = (n: number): number => {
+  let s = 0;
+  for (let i = 2; i <= n; i += 1) s += Math.log(i);
+  return s;
+};
+
+/**
+ * Fisher's exact test, two-sided, for a 2×2 table [[a, b], [c, d]] — here
+ * "shown / not shown" at the start vs now for one learner and one behaviour,
+ * where counts are a handful of slices and a chi-square would be wrong.
+ * Null when either row is empty.
+ */
+export function fisherExactP(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+): number | null {
+  const r1 = a + b;
+  const r2 = c + d;
+  const c1 = a + c;
+  const n = r1 + r2;
+  if (r1 === 0 || r2 === 0) return null;
+  const base =
+    logFactorial(r1) +
+    logFactorial(r2) +
+    logFactorial(c1) +
+    logFactorial(n - c1) -
+    logFactorial(n);
+  const prob = (x: number) =>
+    Math.exp(
+      base -
+        logFactorial(x) -
+        logFactorial(r1 - x) -
+        logFactorial(c1 - x) -
+        logFactorial(r2 - c1 + x),
+    );
+  const observed = prob(a);
+  let p = 0;
+  for (let x = Math.max(0, c1 - r2); x <= Math.min(r1, c1); x += 1) {
+    const px = prob(x);
+    if (px <= observed * (1 + 1e-9)) p += px;
+  }
+  return Math.min(1, p);
+}

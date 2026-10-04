@@ -341,4 +341,37 @@ describe('FoundationalSkillsAnalyticsService', () => {
       { sessionId: 's-2', scenarioId: null, scenarioTitle: null },
     ]);
   });
+
+  it('serves behaviour rates over every learner and passes the userId through', async () => {
+    const mk = (userId: number, cut: number, codes: string[]) => ({
+      userId,
+      name: `L${userId}`,
+      tenantId: 't',
+      cut,
+      closedAt: new Date('2026-09-01T00:00:00Z'),
+      score: 2,
+      unhelpful: false,
+      levels: { rapport: 2 },
+      verdicts: [{ skill: 'rapport', observed: codes }],
+      sessionIds: [],
+    });
+    const rows = Array.from({ length: 22 }, (_, i) =>
+      [1, 2, 3, 4].map((k) => mk(i + 1, k, i % 2 ? ['rapport.b1'] : [])),
+    ).flat();
+    const repository = { getAllLearnerCuts: jest.fn().mockResolvedValue(rows) };
+    const service = new FoundationalSkillsAnalyticsService(repository as any);
+    const all = await service.getBehaviours({});
+    expect(repository.getAllLearnerCuts).toHaveBeenCalledWith(
+      FHS_RUBRIC_VERSION,
+    );
+    expect(all).toMatchObject({
+      measuredLearners: 22,
+      comparableLearners: 22,
+      minSampleSize: 20,
+    });
+    expect(all.thresholds.minCuts).toBe(4);
+    expect(all.gridCodes).toContain('rapport.b1');
+    const one = await service.getBehaviours({ userId: 2 });
+    expect(one.learners.map((l) => l.id)).toEqual([2]);
+  });
 });

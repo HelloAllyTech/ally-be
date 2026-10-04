@@ -1,6 +1,8 @@
 import {
   benjaminiHochberg,
   bootstrapMeanCi,
+  fisherExactP,
+  icc1,
   minimumDetectableChange,
   pairedChange,
   sd,
@@ -49,5 +51,34 @@ describe('paired-stats util', () => {
     expect(minimumDetectableChange(0.18, 24)).toBeCloseTo(0.103, 2);
     expect(minimumDetectableChange(0.18, 1)).toBeNull();
     expect(sd([1, 2, 3])).toBeCloseTo(1, 6);
+  });
+});
+
+describe('icc1 and fisherExactP', () => {
+  it('finds high person signal when people differ consistently, ~0 for pure noise', () => {
+    expect(
+      icc1([
+        [1, 1, 1],
+        [0, 0, 0],
+        [1, 1, 1],
+        [0, 0, 0],
+      ]),
+    ).toBeCloseTo(1, 6);
+    expect(
+      icc1([
+        [1, 0],
+        [0, 1],
+        [1, 0],
+        [0, 1],
+      ]),
+    ).toBe(0);
+    expect(icc1([[1, 0]])).toBeNull();
+  });
+
+  it('computes exact two-sided Fisher p-values', () => {
+    // 0/4 at the start vs 4/4 now
+    expect(fisherExactP(0, 4, 4, 0)).toBeCloseTo(0.0286, 3);
+    expect(fisherExactP(2, 2, 2, 2)).toBeCloseTo(1, 6);
+    expect(fisherExactP(0, 0, 3, 1)).toBeNull();
   });
 });
