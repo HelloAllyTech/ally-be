@@ -6,6 +6,7 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 
 @Index('scenario_sessions_counselor_id_idx', ['counselorId'])
 @Entity('scenario_sessions')
@@ -54,6 +55,19 @@ export class ScenarioSessions extends BaseEntity {
    */
   @Column({ type: 'varchar', length: 64, nullable: true })
   endReason?: ScenarioSessionEndReason | null;
+
+  /**
+   * VOICE (a LiveKit call) or TEXT (the same room, typed both ways). Set once
+   * at start and never changed. Defaults to VOICE, so every session that
+   * predates text chat — and every client that never sends a mode — reads as
+   * the voice session it was.
+   */
+  @Column({
+    type: 'varchar',
+    length: 16,
+    default: ScenarioInteractionMode.VOICE,
+  })
+  interactionMode?: ScenarioInteractionMode;
 
   @Column({ type: 'timestamp', nullable: true })
   startedAt?: Date;

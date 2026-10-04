@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ScenarioInteractionMode } from '../../enum/scenario-interaction-mode.enum';
 import { In } from 'typeorm';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { ScenariosRepository } from '../../repository/scenario.repository';
@@ -1188,6 +1189,48 @@ describe('ScenarioSharedService', () => {
         },
         { id: 'k3', title: 'Rent', content: 'Behind' },
       ]);
+    });
+
+    describe('interactionMode', () => {
+      const buildEnvelope = (interactionMode?: ScenarioInteractionMode) => {
+        scenarioVoiceRepository.findOne.mockResolvedValue({
+          id: 'voice-1',
+          name: 'Test Voice',
+          provider: 'deepgram',
+          config: {},
+        } as any);
+        return service.createRoomMetadata({
+          scenario: {
+            id: 1,
+            title: 'Test Scenario',
+            description: 'Test Description',
+            prompt: 'Act only as the client.',
+            metadata: { voiceId: 'voice-1', name: 'Alex' },
+            terminationEvents: [],
+            behaviorInstructions: [],
+            difficultyLevel: 'EASY',
+          } as any,
+          sessionEvents: [],
+          languageDetails: null as any,
+          previousMemory: null,
+          interactionMode,
+        });
+      };
+
+      it('tags a TEXT envelope so the agent runs the room audio-off', async () => {
+        const result = await buildEnvelope(ScenarioInteractionMode.TEXT);
+
+        expect((result.scenario as any).interactionMode).toBe('TEXT');
+      });
+
+      it.each([undefined, ScenarioInteractionMode.VOICE])(
+        'adds no key at all for a voice envelope (%s), keeping it unchanged',
+        async (mode) => {
+          const result = await buildEnvelope(mode);
+
+          expect(result.scenario).not.toHaveProperty('interactionMode');
+        },
+      );
     });
 
     it('should forward scenario.prompt as promptData.roleInstructions', async () => {

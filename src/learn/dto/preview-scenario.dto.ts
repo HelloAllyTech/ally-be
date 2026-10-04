@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsUUID } from 'class-validator';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 
 export class PreviewScenarioDto {
   @ApiProperty({
@@ -24,4 +25,16 @@ export class PreviewScenarioDto {
   @IsOptional()
   @IsUUID()
   scenarioVersionId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Preview as a VOICE call (default) or a TEXT chat. Unlike a learner ' +
+      'start, a TEXT preview needs neither the org preference nor the ' +
+      'scenario’s textChatEnabled: authors preview the text persona before ' +
+      'deciding whether to offer it.',
+    enum: ScenarioInteractionMode,
+  })
+  @IsOptional()
+  @IsEnum(ScenarioInteractionMode)
+  interactionMode?: ScenarioInteractionMode;
 }

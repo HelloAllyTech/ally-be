@@ -715,6 +715,38 @@ describe('ParticipantJoinedHandler', () => {
       });
     });
 
+    it('never records a text-chat session, but still stamps startedAt and dispatches', async () => {
+      const humanEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          kind: ParticipantInfo_Kind.STANDARD,
+        },
+      };
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-text',
+        tenantId: 'tenant-1',
+        startedAt: null,
+        interactionMode: 'TEXT',
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      mockAppConfigService.featureFlag.scenarioSessionAudioRecording = true;
+
+      await handler.handle(humanEvent);
+
+      expect(liveKitService.startRoomCompositeEgress).not.toHaveBeenCalled();
+      expect(
+        scenarioSharedService.saveScenarioSessionRecording,
+      ).not.toHaveBeenCalled();
+      expect(scenarioSessionService.updateScenarioSession).toHaveBeenCalledWith(
+        'session-text',
+        expect.objectContaining({ startedAt: expect.any(Date) }),
+      );
+    });
+
     it('should skip agent dispatch if an agent is already present in the room', async () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
         id: 'session-123',

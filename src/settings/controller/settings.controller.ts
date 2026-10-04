@@ -263,6 +263,47 @@ export class SettingsController {
     );
   }
 
+  @Get('text-chat-roleplay-enabled')
+  @ApiOperation({
+    summary:
+      'Whether text-chat roleplays are enabled for the org (own org unless the caller has SYSTEM_ACCESS)',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  // Authenticated-only, same reasoning as progress-dashboard-enabled: a single
+  // boolean about the caller's own org, which the learner app needs before it
+  // knows whether to offer a "Text chat" option at all. Session start enforces
+  // it server-side regardless of what the client shows.
+  @AuthPermissions([])
+  getTextChatRoleplayEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getTextChatRoleplayEnabled(tenantId);
+  }
+
+  @Put('text-chat-roleplay-enabled')
+  @ApiOperation({
+    summary:
+      'Enable or disable text-chat roleplays for an org (platform admin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateTextChatRoleplayEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateTextChatRoleplayEnabled(
+      body.tenantId,
+      body.enabled,
+    );
+  }
+
   @Put('custom-fields-enabled')
   @ApiOperation({
     summary: 'Enable or disable the custom fields feature (superadmin only)',

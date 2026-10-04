@@ -38,4 +38,10 @@ export type GetScenarioByIdOptions = {
    * this false keeps that path working exactly as before.
    */
   includeCompletion?: boolean;
+  /**
+   * Attach `textChatAvailable` for the requesting learner. Authenticated
+   * handlers only, for the same reason as includeCompletion: it reads the
+   * caller's tenant.
+   */
+  includeTextChatAvailability?: boolean;
 };

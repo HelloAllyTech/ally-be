@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, Max, IsString, IsOptional, IsEnum } from 'class-validator';
 import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
 import { SessionPlatform } from '../enum/session-platform.enum';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 
 export class StartScenarioSessionRequestDto {
   @ApiProperty({
@@ -73,4 +74,19 @@ export class StartScenarioSessionRequestDto {
   @IsOptional()
   @IsEnum(SessionPlatform)
   platform?: SessionPlatform;
+
+  @ApiProperty({
+    description:
+      'VOICE (default) or TEXT. TEXT is accepted only when the learner’s ' +
+      'organisation has text-chat roleplays switched on AND the scenario ' +
+      'offers text chat; otherwise the start is refused with ' +
+      'FEATURE_NOT_ENABLED. Omitted means VOICE, so clients that predate ' +
+      'text chat are unaffected.',
+    enum: ScenarioInteractionMode,
+    example: ScenarioInteractionMode.VOICE,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(ScenarioInteractionMode)
+  interactionMode?: ScenarioInteractionMode;
 }

@@ -100,6 +100,8 @@ import {
   ScenarioFilters,
 } from '../type/scenario-filter.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { PreferenceName } from 'src/common/constants/user.constants';
 import { GetScenarioResponse } from '../interface/session.interface';
 import { ScenarioCompletionSummary } from '../interface/scenario-completion.interface';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
@@ -239,6 +241,7 @@ export class ScenarioService {
     private readonly promptSharedService: PromptSharedService,
     private readonly scenarioSessionRepository: ScenarioSessionRepository,
     private readonly cohortVisibilityService: CohortVisibilityService,
+    private readonly tenantFeatureService: TenantFeatureService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -517,7 +520,34 @@ export class ScenarioService {
       scenario.completion = completions.get(scenario.id) ?? null;
     }
 
+    if (options?.includeTextChatAvailability) {
+      scenario.textChatAvailable = await this.isTextChatAvailable(scenario.id);
+    }
+
     return scenario;
+  }
+
+  /**
+   * Text chat is offered to a learner only when their org has it switched on
+   * AND the scenario's author offered it. Read separately from the learner
+   * detail query on purpose: that query never selects `metadata` (it holds the
+   * persona's prompt material), and this needs exactly one key of it.
+   * The org check runs first because it is off for almost every tenant, which
+   * saves the scenario read.
+   */
+  private async isTextChatAvailable(scenarioId: number): Promise<boolean> {
+    const orgEnabled = await this.tenantFeatureService.isEnabledForTenant(
+      PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      ExecutionManager.getTenantId(),
+    );
+    if (!orgEnabled) return false;
+    const rows: { textChatEnabled: boolean | null }[] =
+      await this.scenariosRepository.query(
+        `SELECT ("metadata"->>'textChatEnabled')::boolean AS "textChatEnabled"
+         FROM "scenarios" WHERE "id" = $1 LIMIT 1`,
+        [scenarioId],
+      );
+    return rows?.[0]?.textChatEnabled === true;
   }
 
   async getAdminScenario(

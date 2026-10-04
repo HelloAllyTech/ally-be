@@ -326,6 +326,7 @@ export class LearnController {
         // Authenticated learner detail — safe to attach their own completion
         // record. The @Public() sibling below deliberately does not.
         includeCompletion: true,
+        includeTextChatAvailability: true,
       },
       languageCode,
     );

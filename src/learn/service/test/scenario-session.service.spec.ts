@@ -1,7 +1,9 @@
 import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { ScenarioInteractionMode } from '../../enum/scenario-interaction-mode.enum';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { PostHog } from 'posthog-node';
 import { DataSource, Repository } from 'typeorm';
@@ -117,6 +119,7 @@ describe('ScenarioSessionService', () => {
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let transcriptTranslationService: jest.Mocked<TranscriptTranslationService>;
+  let tenantFeatureService: { isEnabledForTenant: jest.Mock };
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -403,6 +406,10 @@ describe('ScenarioSessionService', () => {
           useValue: { capture: jest.fn() },
         },
         {
+          provide: TenantFeatureService,
+          useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
+        },
+        {
           provide: PreviewMonologueService,
           useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
         },
@@ -637,6 +644,7 @@ describe('ScenarioSessionService', () => {
     scenariosRepository = module.get(ScenariosRepository) as any;
     sharedLanguageService = module.get(SharedLanguageService);
     transcriptTranslationService = module.get(TranscriptTranslationService);
+    tenantFeatureService = module.get(TenantFeatureService);
   });
 
   afterEach(() => {
@@ -3110,6 +3118,155 @@ describe('ScenarioSessionService', () => {
           scenarioPathSessionItemId,
         ),
       ).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('startScenarioSession — text chat', () => {
+    const arrangeStart = (metadata: Record<string, any> = {}) => {
+      const scenarioWithMetadata = {
+        ...mockScenario,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        metadata: {
+          title: 'Test Scenario',
+          languageVoices: { 1: 'voice-123' },
+          ...metadata,
+        },
+        isGlobal: false,
+      };
+      const createdSession = {
+        ...mockScenarioSession,
+        id: 'text-session-id',
+        roomId: 'text-room-id',
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(
+        scenarioWithMetadata as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-123',
+      } as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        createdSession,
+      );
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: scenarioWithMetadata,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue({
+        token: 't',
+        roomName: createdSession.roomId,
+        serverUrl: 'wss://lk',
+      });
+      return { createdSession };
+    };
+
+    const textStart = {
+      scenarioId: mockScenarioId,
+      languageId: 1,
+      interactionMode: ScenarioInteractionMode.TEXT,
+    };
+
+    it('refuses a TEXT start when the org has text chat switched off', async () => {
+      arrangeStart({ textChatEnabled: true });
+      tenantFeatureService.isEnabledForTenant.mockResolvedValue(false);
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, textStart as any),
+      ).rejects.toThrow(ForbiddenException);
+      expect(tenantFeatureService.isEnabledForTenant).toHaveBeenCalledWith(
+        'TEXT_CHAT_ROLEPLAY_ENABLED',
+        mockTenantId,
+      );
+      // Refused before anything was created — no session row, no room.
+      expect(
+        scenarioSessionRepository.createScenarioSession,
+      ).not.toHaveBeenCalled();
+      expect(livekitService.createRoom).not.toHaveBeenCalled();
+    });
+
+    it('refuses a TEXT start when the scenario does not offer text chat', async () => {
+      arrangeStart({});
+      tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+
+      const error = await service
+        .startScenarioSession(mockCounselorId, textStart as any)
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          errorCode: 'FEATURE_NOT_ENABLED',
+          featureKey: 'TEXT_CHAT_ROLEPLAY_ENABLED',
+        }),
+      );
+      expect(
+        scenarioSessionRepository.createScenarioSession,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('starts a TEXT session when both the org and the scenario allow it', async () => {
+      const { createdSession } = arrangeStart({ textChatEnabled: true });
+      tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        textStart as any,
+      );
+
+      expect(
+        scenarioSessionRepository.createScenarioSession,
+      ).toHaveBeenCalledWith(
+        mockCounselorId,
+        expect.objectContaining({
+          interactionMode: ScenarioInteractionMode.TEXT,
+        }),
+      );
+      expect(scenarioSharedService.createRoomMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          interactionMode: ScenarioInteractionMode.TEXT,
+        }),
+      );
+      expect(result.scenario.interactionMode).toBe(
+        ScenarioInteractionMode.TEXT,
+      );
+      // Same room + dispatch path as voice: the agent runs it audio-off.
+      expect(livekitService.agentDispatch).toHaveBeenCalledWith(
+        createdSession.roomId,
+        'Agent',
+        expect.any(String),
+      );
+    });
+
+    it('keeps a start with no mode a VOICE start, without consulting the org switch', async () => {
+      arrangeStart({ textChatEnabled: true });
+
+      const result = await service.startScenarioSession(mockCounselorId, {
+        scenarioId: mockScenarioId,
+        languageId: 1,
+      } as any);
+
+      expect(tenantFeatureService.isEnabledForTenant).not.toHaveBeenCalled();
+      expect(scenarioSharedService.createRoomMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          interactionMode: ScenarioInteractionMode.VOICE,
+        }),
+      );
+      expect(result.scenario.interactionMode).toBe(
+        ScenarioInteractionMode.VOICE,
+      );
     });
   });
 

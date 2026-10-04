@@ -179,9 +179,11 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     id: 'agent-turn',
     task: LlmTask.AGENT_TURN,
     runtime: LlmRuntime.AI_LEARN,
-    trigger: 'Learner speaks and the character replies',
+    trigger:
+      'Learner speaks (or types, in a text-chat roleplay) and the character replies',
     detail:
-      "One call per conversational turn. The platform's highest-volume call.",
+      "One call per conversational turn. The platform's highest-volume call. " +
+      'Text-chat roleplays make this same call with no STT/TTS around it.',
     hotPath: true,
     kind: AiTaskKind.COMPLETION,
     provider: 'resolved',

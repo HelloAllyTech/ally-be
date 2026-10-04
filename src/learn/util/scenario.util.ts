@@ -58,6 +58,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'showScoreMeter',
   'feedbackTabs',
   'supervisorNotesEnabled',
+  'textChatEnabled',
   'liveTabEnabled',
   'pauseEnabled',
   'currentState',
@@ -263,6 +264,8 @@ export const mapCreateScenarioRequestToEntity = (
       // Opt-in per roleplay: the supervisor stays silent during a session
       // until an author turns the live notes on.
       supervisorNotesEnabled: scenario.supervisorNotesEnabled === true,
+      // Opt-in per roleplay: voice-only until an author offers text chat.
+      textChatEnabled: scenario.textChatEnabled === true,
       // Opt-out per roleplay: the learner's Live tab stays on unless an
       // author explicitly disables it.
       liveTabEnabled: scenario.liveTabEnabled,

@@ -8,6 +8,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { generateAudioStorageKey } from 'src/common/util/audio.util';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { convertTimestampNsToDate } from 'src/common/util/date.util';
+import { ScenarioInteractionMode } from 'src/learn/enum/scenario-interaction-mode.enum';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -158,10 +159,15 @@ export class ParticipantJoinedHandler {
         }
 
         // V2V test sessions are always recorded (the audio is the point of the
-        // test); real sessions stay behind the feature flag.
+        // test); real sessions stay behind the feature flag. A text-chat
+        // session never is: its room carries no audio, so an egress would bill
+        // for an empty file, and the typed transcript is already the record.
         const isV2VTest = scenarioSession?.metadata?.v2vTest === true;
+        const isTextChat =
+          scenarioSession?.interactionMode === ScenarioInteractionMode.TEXT;
         if (
           scenarioSession &&
+          !isTextChat &&
           (this.configService.featureFlag.scenarioSessionAudioRecording ||
             isV2VTest)
         ) {

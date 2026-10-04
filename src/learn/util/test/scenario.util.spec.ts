@@ -99,6 +99,9 @@ describe('Scenario Util', () => {
           // audio-only, written as an explicit false so the stored metadata
           // records how the toggle resolved rather than leaving it ambiguous.
           videoActorEnabled: false,
+          // Same again: unset means the roleplay is voice-only — text chat is
+          // offered only when an author explicitly turns it on.
+          textChatEnabled: false,
           // Same again: only an explicit true makes a roleplay a benchmark.
           fhsBenchmark: false,
           timerMode: true,
@@ -116,6 +119,20 @@ describe('Scenario Util', () => {
     // deleted in favour of a single global admin setting (see
     // SettingsService.getTurnEndpointingSettings); scenario metadata no
     // longer carries turnMin/MaxEndpointingDelay at all.
+    it('stores textChatEnabled only as an explicit true', () => {
+      const offered = mapCreateScenarioRequestToEntity(
+        {
+          title: 'Text Scenario',
+          description: 'd',
+          status: ScenarioStatus.DRAFT,
+          textChatEnabled: true,
+        } as CreateScenarioDto,
+        1,
+      );
+      expect(offered.metadata?.textChatEnabled).toBe(true);
+      expect(SCENARIO_METADATA_FIELDS).toContain('textChatEnabled');
+    });
+
     it('should not carry turnMin/MaxEndpointingDelay even if present on the DTO', () => {
       const userId = 111;
       const scenario: CreateScenarioDto = {

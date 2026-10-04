@@ -12,6 +12,7 @@ import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity'
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
@@ -243,6 +244,9 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         createScenarioSessionDto.scenarioPathSessionItemId,
       caseSessionItemId: createScenarioSessionDto.caseSessionItemId,
       trackItemProgressId: createScenarioSessionDto.trackItemProgressId,
+      interactionMode:
+        createScenarioSessionDto.interactionMode ??
+        ScenarioInteractionMode.VOICE,
       metadata: {
         sessionName: `SS-${sessionId}-${date}`,
         languageId: createScenarioSessionDto?.languageId,

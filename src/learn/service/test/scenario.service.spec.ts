@@ -1,4 +1,5 @@
 import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
@@ -75,6 +76,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
 
 describe('ScenarioService', () => {
   let service: ScenarioService;
+  let tenantFeatureService: { isEnabledForTenant: jest.Mock };
   let mockLlmModelService: { getModels: jest.Mock };
   let repository: jest.Mocked<Repository<Scenarios>>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
@@ -488,10 +490,15 @@ describe('ScenarioService', () => {
             canAccess: jest.fn().mockResolvedValue(true),
           },
         },
+        {
+          provide: TenantFeatureService,
+          useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
+        },
       ],
     }).compile();
 
     service = module.get<ScenarioService>(ScenarioService);
+    tenantFeatureService = module.get(TenantFeatureService);
     repository = module.get(getRepositoryToken(Scenarios));
     scenariosRepository = module.get(ScenariosRepository);
     scenarioSessionRepository = module.get(ScenarioSessionRepository);
@@ -1819,6 +1826,63 @@ describe('ScenarioService', () => {
       scenariosRepository.getScenarioById.mockResolvedValue(null);
 
       await expect(service.getScenario(999)).rejects.toThrow(NotFoundException);
+    });
+
+    describe('textChatAvailable', () => {
+      beforeEach(() => {
+        scenariosRepository.getScenarioById.mockResolvedValue({
+          ...mockScenario,
+        } as any);
+        (scenariosRepository as any).query = jest.fn();
+      });
+
+      it('is not attached unless the caller asks for it', async () => {
+        const result = await service.getScenario(1);
+
+        expect(result.textChatAvailable).toBeUndefined();
+        expect(tenantFeatureService.isEnabledForTenant).not.toHaveBeenCalled();
+      });
+
+      it('is false when the org has text chat off, without reading the scenario', async () => {
+        tenantFeatureService.isEnabledForTenant.mockResolvedValue(false);
+
+        const result = await service.getScenario(1, {
+          includeTextChatAvailability: true,
+        });
+
+        expect(result.textChatAvailable).toBe(false);
+        expect((scenariosRepository as any).query).not.toHaveBeenCalled();
+      });
+
+      it('is false when the org allows it but the scenario does not offer it', async () => {
+        tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+        (scenariosRepository as any).query.mockResolvedValue([
+          { textChatEnabled: null },
+        ]);
+
+        const result = await service.getScenario(1, {
+          includeTextChatAvailability: true,
+        });
+
+        expect(result.textChatAvailable).toBe(false);
+      });
+
+      it('is true only when both the org and the scenario allow it', async () => {
+        tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+        (scenariosRepository as any).query.mockResolvedValue([
+          { textChatEnabled: true },
+        ]);
+
+        const result = await service.getScenario(1, {
+          includeTextChatAvailability: true,
+        });
+
+        expect(result.textChatAvailable).toBe(true);
+        expect((scenariosRepository as any).query).toHaveBeenCalledWith(
+          expect.stringContaining("'textChatEnabled'"),
+          [1],
+        );
+      });
     });
   });
 

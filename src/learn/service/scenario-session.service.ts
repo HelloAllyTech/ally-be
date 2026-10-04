@@ -2,6 +2,8 @@ import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.se
 import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import {
   BadRequestException,
+  ForbiddenException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -20,6 +22,11 @@ import {
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { PreferenceName } from 'src/common/constants/user.constants';
+import { ErrorCode } from 'src/exception/error-code.enum';
+import { FAILURE_MESSAGES } from 'src/exception/failure-messages';
+import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
 import { DataSource, IsNull, Not, Repository } from 'typeorm';
@@ -189,6 +196,7 @@ export class ScenarioSessionService {
     private transcriptTranslationService: TranscriptTranslationService,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
     private readonly posthog: PostHog,
+    private readonly tenantFeatureService: TenantFeatureService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -566,6 +574,12 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario not found');
     }
 
+    const interactionMode =
+      startScenarioSessionDto.interactionMode ?? ScenarioInteractionMode.VOICE;
+    if (interactionMode === ScenarioInteractionMode.TEXT) {
+      await this.assertTextChatAllowed(scenario);
+    }
+
     await this.validateStartScenarioSession(
       counselorId,
       scenario.id,
@@ -749,6 +763,7 @@ export class ScenarioSessionService {
         sessionEvents,
         languageDetails,
         previousMemory,
+        interactionMode,
       });
 
       // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
@@ -883,6 +898,8 @@ export class ScenarioSessionService {
         videoActorAvatarId: scenario?.metadata?.videoActorAvatarId,
         // Opt-out: only an explicit false hides the learner's Live tab.
         liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
+        // Which surface the client should open: the call screen or the chat.
+        interactionMode,
         stateNames,
         metadata: {
           name: scenario?.metadata?.name,
@@ -904,6 +921,44 @@ export class ScenarioSessionService {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
       throw error;
+    }
+  }
+
+  /**
+   * A text-chat start needs BOTH switches on: the learner's organisation has
+   * text-chat roleplays enabled (org preference, set by a platform admin) and
+   * the scenario offers text chat (`metadata.textChatEnabled`, set by its
+   * author). Either one off refuses the start with FEATURE_NOT_ENABLED rather
+   * than quietly falling back to voice — a learner who asked to type must not
+   * find themselves on a call.
+   *
+   * Strict on purpose: TEXT widens what a session can be, so it is validated
+   * here, server-side, whatever the client chose to show.
+   */
+  private async assertTextChatAllowed(scenario: {
+    metadata?: Record<string, any> | null;
+  }): Promise<void> {
+    const orgEnabled = await this.tenantFeatureService.isEnabledForTenant(
+      PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      ExecutionManager.getTenantId(),
+    );
+    if (!orgEnabled) {
+      throw new ForbiddenException({
+        message: FAILURE_MESSAGES.TEXT_CHAT_ROLEPLAY_ORG_DISABLED,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+        featureKey: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      });
+    }
+    if (scenario?.metadata?.textChatEnabled !== true) {
+      throw new ForbiddenException({
+        message: FAILURE_MESSAGES.TEXT_CHAT_ROLEPLAY_SCENARIO_DISABLED,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+        featureKey: PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
+      });
     }
   }
 
@@ -2841,6 +2896,8 @@ export class ScenarioSessionService {
     userId: number,
   ) {
     const { scenarioId, languageId, scenarioVersionId } = previewScenarioDto;
+    const interactionMode =
+      previewScenarioDto.interactionMode ?? ScenarioInteractionMode.VOICE;
 
     const scenario = scenarioVersionId
       ? await this.scenarioSharedService.buildScenarioOverrideFromVersion(
@@ -2927,6 +2984,7 @@ export class ScenarioSessionService {
       scenario,
       sessionEvents,
       languageDetails,
+      interactionMode,
     });
     const roomName = `preview-${scenarioId}-${v4()}`;
 
@@ -3018,6 +3076,7 @@ export class ScenarioSessionService {
       scenario,
       checklistEvents,
       stateNames,
+      interactionMode,
       useDirectAgentDispatch: this.configService.allowDirectAgentDispatch,
     };
   }
