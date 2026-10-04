@@ -29,6 +29,7 @@ import { LanguageMixAnalyticsService } from '../../service/language-mix-analytic
 import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytics.service';
 import { FoundationalSkillsAnalyticsService } from '../../service/foundational-skills-analytics.service';
 import { FoundationalSkillsBenchmarkAnalyticsService } from '../../service/foundational-skills-benchmark.service';
+import { CourseImpactAnalyticsService } from '../../service/course-impact-analytics.service';
 import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
 import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
@@ -232,6 +233,10 @@ describe('AnalyticsController', () => {
         {
           provide: FoundationalSkillsBenchmarkAnalyticsService,
           useValue: { getBenchmark: jest.fn() },
+        },
+        {
+          provide: CourseImpactAnalyticsService,
+          useValue: { getCourseImpact: jest.fn() },
         },
         {
           provide: QualityDistributionAnalyticsService,
