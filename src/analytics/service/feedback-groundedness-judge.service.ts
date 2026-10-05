@@ -176,6 +176,7 @@ export class FeedbackGroundednessJudgeService {
             claims,
             s.language,
             rubric,
+            s.id,
           );
 
           // ally-ai answers 200 with no claims when the model returned nothing
@@ -254,6 +255,7 @@ export class FeedbackGroundednessJudgeService {
     claims: FeedbackClaim[],
     language: string,
     rubric: string | null,
+    scenarioSessionId: string,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
     // Held inside the GLOBAL judge slot: the ceiling has to span every
@@ -261,7 +263,16 @@ export class FeedbackGroundednessJudgeService {
     const res = await withJudgeSlot(() =>
       axios.post(
         `${apiUrl}/api/v1/feedback-groundedness/judge`,
-        { transcript, claims, language, rubric },
+        {
+          transcript,
+          claims,
+          language,
+          rubric,
+          // Attribution only: ally-ai stamps it on the llm_usage row so the
+          // judge's spend lands on the session it judged (as analysis spend,
+          // never delivery cost). An older ally-ai ignores the field.
+          scenario_session_id: scenarioSessionId,
+        },
         {
           headers: { 'x-api-key': outboundApiKey },
           // One Gemini call over a whole transcript plus every claim.

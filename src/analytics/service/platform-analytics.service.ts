@@ -154,9 +154,12 @@ export class PlatformAnalyticsService {
         {
           promptTokens: r.promptTokens,
           completionTokens: r.completionTokens,
+          totalTokens: r.totalTokens,
+          cachedTokens: r.cachedTokens,
           audioMs: r.audioMs,
           characters: r.characters,
         },
+        r.task,
       );
       return {
         service,

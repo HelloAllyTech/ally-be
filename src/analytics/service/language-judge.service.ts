@@ -292,6 +292,10 @@ export class LanguageJudgeService {
             engine: s.engine ?? undefined,
           },
           rubric,
+          // Attribution only: ally-ai stamps it on the llm_usage row so the
+          // judge's spend lands on the session it judged (as analysis spend,
+          // never delivery cost). An older ally-ai ignores the field.
+          scenario_session_id: s.id,
         },
         {
           headers: { 'x-api-key': outboundApiKey },

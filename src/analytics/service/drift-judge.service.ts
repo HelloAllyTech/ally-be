@@ -213,6 +213,7 @@ export class DriftJudgeService {
               s.persona ?? '',
               s.language,
               rubric,
+              s.id,
             );
             const merged = await this.repo.mergeLeanLabels(
               s.id,
@@ -251,6 +252,7 @@ export class DriftJudgeService {
             s.persona ?? '',
             s.language,
             rubric,
+            s.id,
           );
           await this.repo.upsertJudgments(
             s,
@@ -311,6 +313,7 @@ export class DriftJudgeService {
     persona: string,
     language: string,
     rubric: string | null,
+    scenarioSessionId: string,
   ): Promise<{
     judgeModel: string;
     judgePromptVersion: string;
@@ -320,7 +323,16 @@ export class DriftJudgeService {
     const res = await withJudgeSlot(() =>
       axios.post(
         `${apiUrl}/api/v1/drift/judge-labels`,
-        { transcript, persona, language, rubric },
+        {
+          transcript,
+          persona,
+          language,
+          rubric,
+          // Attribution only: ally-ai stamps it on the llm_usage row so the
+          // judge's spend lands on the session it judged (as analysis spend,
+          // never delivery cost). An older ally-ai ignores the field.
+          scenario_session_id: scenarioSessionId,
+        },
         {
           headers: { 'x-api-key': outboundApiKey },
           timeout: JUDGE_HTTP_TIMEOUT_MS,
@@ -345,6 +357,7 @@ export class DriftJudgeService {
     persona: string,
     language: string,
     rubric: string | null,
+    scenarioSessionId: string,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
     // Held inside the GLOBAL judge slot: the ceiling has to span every
@@ -352,7 +365,14 @@ export class DriftJudgeService {
     const res = await withJudgeSlot(() =>
       axios.post(
         `${apiUrl}/api/v1/drift/judge`,
-        { transcript, persona, language, rubric },
+        // scenario_session_id is attribution only — see leanLabelsViaAi.
+        {
+          transcript,
+          persona,
+          language,
+          rubric,
+          scenario_session_id: scenarioSessionId,
+        },
         {
           headers: { 'x-api-key': outboundApiKey },
           // The judge is a single Gemini call over a whole transcript — allow time.

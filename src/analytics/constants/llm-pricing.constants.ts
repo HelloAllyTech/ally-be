@@ -1,3 +1,5 @@
+import { LlmTask } from '../../learn/enum/llm-task.enum';
+
 /**
  * Per-model pricing used to convert token counts into an ESTIMATED USD cost for
  * the super-admin token-consumption chart. Tokens are the source of truth; cost
@@ -15,10 +17,22 @@
  * OPENAI / GEMINI rates verified against the providers' public pricing pages
  * (2026-06). Unknown models fall through gracefully: cost 0 + priced=false,
  * with token totals still shown.
+ *
+ * The prompt-cache multipliers below are ANTHROPIC accounting, where cache
+ * reads and writes are reported IN ADDITION to `input_tokens`. OpenAI and
+ * Gemini report the other way round — see computeServiceCostUsd.
  */
 export interface ModelPricing {
   inputPer1MUsd: number;
   outputPer1MUsd: number;
+  /**
+   * What a prompt token served from the provider's cache costs, for the
+   * providers whose `promptTokens` INCLUDES the cached ones (OpenAI, Gemini).
+   * Absent means the cached share is priced at the full input rate — the
+   * pre-existing behaviour, so a model without one is never under-priced.
+   * Not used for Anthropic, whose cache tokens go through the multipliers.
+   */
+  cachedInputPer1MUsd?: number;
 }
 
 // Anthropic prompt-cache multipliers, applied to a model's base input rate.
@@ -49,10 +63,29 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5': { inputPer1MUsd: 1, outputPer1MUsd: 5 },
 
   // --- OpenAI (verified 2026-06) ---
-  'gpt-5': { inputPer1MUsd: 1.25, outputPer1MUsd: 10 },
-  'gpt-5-mini': { inputPer1MUsd: 0.25, outputPer1MUsd: 2 },
-  'gpt-4o': { inputPer1MUsd: 2.5, outputPer1MUsd: 10 },
-  'gpt-4o-mini': { inputPer1MUsd: 0.15, outputPer1MUsd: 0.6 },
+  // cachedInputPer1MUsd: UNVERIFIED — the vendor page could not be reached
+  // when these were added (2026-10); confirm against openai.com/api/pricing.
+  // Half the input rate on the 4o family, a tenth on the 5 family.
+  'gpt-5': {
+    inputPer1MUsd: 1.25,
+    outputPer1MUsd: 10,
+    cachedInputPer1MUsd: 0.125,
+  },
+  'gpt-5-mini': {
+    inputPer1MUsd: 0.25,
+    outputPer1MUsd: 2,
+    cachedInputPer1MUsd: 0.025,
+  },
+  'gpt-4o': {
+    inputPer1MUsd: 2.5,
+    outputPer1MUsd: 10,
+    cachedInputPer1MUsd: 1.25,
+  },
+  'gpt-4o-mini': {
+    inputPer1MUsd: 0.15,
+    outputPer1MUsd: 0.6,
+    cachedInputPer1MUsd: 0.075,
+  },
   'gpt-4': { inputPer1MUsd: 30, outputPer1MUsd: 60 },
   'gpt-3.5-turbo': { inputPer1MUsd: 0.5, outputPer1MUsd: 1.5 },
   o1: { inputPer1MUsd: 15, outputPer1MUsd: 60 },
@@ -60,19 +93,36 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'text-embedding-3-small': { inputPer1MUsd: 0.02, outputPer1MUsd: 0 },
 
   // --- Gemini (verified 2026-06) ---
+  // cachedInputPer1MUsd: UNVERIFIED — the vendor page could not be reached
+  // when these were added (2026-10); confirm against
+  // ai.google.dev/gemini-api/docs/pricing. They are a quarter of the input
+  // rate; if Google has since moved the 2.5 models to a deeper cache discount
+  // these OVERSTATE cached spend slightly, which is the safe direction.
   // 2.5-pro is tiered: 1.25/10 for prompts <=200k tokens, 2.50/15 above; we
   // price at the <=200k tier (consistent with the v1 approximation note above).
-  'gemini-2.5-pro': { inputPer1MUsd: 1.25, outputPer1MUsd: 10 },
+  'gemini-2.5-pro': {
+    inputPer1MUsd: 1.25,
+    outputPer1MUsd: 10,
+    cachedInputPer1MUsd: 0.31,
+  },
   // Required, not optional: every Indic language except Malayalam moved onto
   // 2.5-flash in 1881000000000-MoveLanguagesOffExperimentalGemini. Their
   // previous model, gemini-2.0-flash-exp, was priced by the longest-prefix
   // match on 'gemini-2.0-flash' below — so those sessions HAD a cost. Without
   // this entry the migration would have silently dropped them to $0, reading as
   // "free" rather than "unknown".
-  'gemini-2.5-flash': { inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
+  'gemini-2.5-flash': {
+    inputPer1MUsd: 0.3,
+    outputPer1MUsd: 2.5,
+    cachedInputPer1MUsd: 0.075,
+  },
   // 2.0-flash retired 2026-06-01; kept to price historical token records —
   // including the -exp variant, which resolves here by prefix.
-  'gemini-2.0-flash': { inputPer1MUsd: 0.1, outputPer1MUsd: 0.4 },
+  'gemini-2.0-flash': {
+    inputPer1MUsd: 0.1,
+    outputPer1MUsd: 0.4,
+    cachedInputPer1MUsd: 0.025,
+  },
 
   // Deliberately absent: gpt-image-1 / gemini-2.5-flash-image. Image
   // generation bills per IMAGE (by size/quality), not per text token, so a
@@ -155,9 +205,43 @@ export type AiServiceName = 'llm' | 'stt' | 'tts';
 export interface ServiceUsageQuantities {
   promptTokens?: number;
   completionTokens?: number;
+  /**
+   * `llm_usage.totalTokens`. Read for Gemini only, where it is the one place
+   * thinking tokens show up — see computeServiceCostUsd.
+   */
+  totalTokens?: number;
+  /**
+   * `llm_usage.cachedTokens` (prompt-cache READS). For OpenAI and Gemini rows
+   * a SUBSET of promptTokens — see computeServiceCostUsd.
+   */
+  cachedTokens?: number;
   audioMs?: number;
   characters?: number;
 }
+
+/** Providers whose `promptTokens` already INCLUDES the cache-read tokens. */
+const CACHE_INCLUSIVE_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'gemini',
+]);
+
+/**
+ * Tasks whose rows record `promptTokens` NET of cache reads whatever the
+ * provider, so the cached share must not be carved out of them a second time.
+ *
+ * Both are written from a CI runner's own usage report rather than from the
+ * vendor response: Bug Hunter's `recordActualCost` and Builder's per-phase
+ * cost, fed Claude-Code-shaped `modelUsage` (inputTokens + separate
+ * cacheReadInputTokens). The workflows map Gemini CLI's and opencode's
+ * net-of-cache `tokens.input` onto that shape on purpose — see the "Report
+ * actual token cost" step in .github/workflows/bug-hunt-sweep.yml. Their cached
+ * tokens are therefore left out of this pricing exactly as before; Bug Hunter's
+ * own run cost prices them through computeCostUsd.
+ */
+export const NET_OF_CACHE_PROMPT_TASKS: ReadonlySet<string> = new Set<string>([
+  LlmTask.BUG_HUNTER,
+  LlmTask.BUILDER_BUILD,
+]);
 
 /**
  * Estimated USD cost for any AI-service usage row, dispatched by `service`:
@@ -166,12 +250,43 @@ export interface ServiceUsageQuantities {
  *  - tts → characters × per-1M-char provider pricing
  * `priced` is false when there's no matching pricing entry (cost 0; quantities
  * still surfaced).
+ *
+ * Two LLM rules apply to OpenAI and Gemini rows only. Anthropic (and anything
+ * else) is priced on prompt + completion exactly as before.
+ *
+ *  1. CACHED PROMPT TOKENS ARE A SUBSET. OpenAI's `prompt_tokens` includes
+ *     `prompt_tokens_details.cached_tokens`, and Gemini's `prompt_token_count`
+ *     includes `cached_content_token_count`, so `cachedTokens` is part of
+ *     `promptTokens`, not extra to it (the opposite of Anthropic). The cached
+ *     share is priced at the model's `cachedInputPer1MUsd` and only the rest at
+ *     the input rate. Clamped to promptTokens, so a malformed row can never
+ *     price below zero; a model with no cached rate keeps the full input rate.
+ *     Skipped for {@link NET_OF_CACHE_PROMPT_TASKS}.
+ *
+ *  2. GEMINI THINKING TOKENS. Gemini bills thought tokens at the output rate
+ *     but reports them only in `total_token_count` (as `thoughts_token_count`),
+ *     not in `candidates_token_count`. ally-ai recorded candidates alone as
+ *     completion, so every 2.5 judge's thinking was unpriced. For provider
+ *     'gemini', max(0, total − prompt − completion) is priced at the output
+ *     rate. Once ally-ai folds thoughts into completion that difference is ~0
+ *     for new rows, so nothing is counted twice, while historical rows are
+ *     corrected. Writers that synthesise total as prompt + completion also
+ *     give 0. Callers pass SUMS, so this is applied per aggregate rather than
+ *     per row — sound because every writer records total >= prompt +
+ *     completion; the floor at 0 means a bad row can only understate. Gemini's
+ *     total also counts tool-use prompt tokens, which bill as input; no
+ *     judge uses tools, so that is ignored rather than modelled.
+ *
+ * `task` is the row's `llm_usage.task`, read only to recognise
+ * {@link NET_OF_CACHE_PROMPT_TASKS}. Session-scoped callers can omit it: those
+ * runner tasks never carry a session.
  */
 export function computeServiceCostUsd(
   service: AiServiceName,
   provider: string,
   model: string,
   q: ServiceUsageQuantities,
+  task?: string,
 ): { costUsd: number; priced: boolean } {
   if (service === 'stt') {
     const rate = STT_PRICING_PER_MINUTE_USD[provider];
@@ -183,5 +298,28 @@ export function computeServiceCostUsd(
     if (rate == null) return { costUsd: 0, priced: false };
     return { costUsd: ((q.characters ?? 0) / 1_000_000) * rate, priced: true };
   }
-  return computeCostUsd(model, q.promptTokens ?? 0, q.completionTokens ?? 0);
+  const promptTokens = q.promptTokens ?? 0;
+  const completionTokens = q.completionTokens ?? 0;
+  if (!CACHE_INCLUSIVE_PROVIDERS.has(provider)) {
+    return computeCostUsd(model, promptTokens, completionTokens);
+  }
+
+  const pricing = resolvePricing(model);
+  if (!pricing) return { costUsd: 0, priced: false };
+
+  const cachedTokens =
+    task !== undefined && NET_OF_CACHE_PROMPT_TASKS.has(task)
+      ? 0
+      : Math.min(Math.max(q.cachedTokens ?? 0, 0), Math.max(promptTokens, 0));
+  const thinkingTokens =
+    provider === 'gemini'
+      ? Math.max(0, (q.totalTokens ?? 0) - promptTokens - completionTokens)
+      : 0;
+
+  const costUsd =
+    ((promptTokens - cachedTokens) / 1_000_000) * pricing.inputPer1MUsd +
+    (cachedTokens / 1_000_000) *
+      (pricing.cachedInputPer1MUsd ?? pricing.inputPer1MUsd) +
+    ((completionTokens + thinkingTokens) / 1_000_000) * pricing.outputPer1MUsd;
+  return { costUsd, priced: true };
 }

@@ -419,7 +419,16 @@ export class RoleplaySessionLogsService {
         service,
         r.provider,
         r.model,
-        { promptTokens, completionTokens, audioMs, characters },
+        // No task in this grouping, and none needed: these rows are all
+        // session-tagged, and the net-of-cache runner tasks never are.
+        {
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          cachedTokens,
+          audioMs,
+          characters,
+        },
       );
       if (!rowPriced) priced = false;
       estimatedCostUsd += costUsd;

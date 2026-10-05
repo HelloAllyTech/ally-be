@@ -43,22 +43,28 @@ const WEEKLY_AXIS = [
 const usageRow = (
   overrides: Partial<{
     bucket: string;
+    task: string;
     service: string;
     provider: string;
     model: string;
     promptTokens: number;
     completionTokens: number;
+    totalTokens: number;
+    cachedTokens: number;
     audioMs: number;
     characters: number;
     calls: number;
   }> = {},
 ) => ({
   bucket: '2024-06-10',
+  task: 'agent_turn',
   service: 'llm',
   provider: 'anthropic',
   model: 'priced-model',
   promptTokens: 1000,
   completionTokens: 100,
+  totalTokens: 1100,
+  cachedTokens: 0,
   audioMs: 0,
   characters: 0,
   calls: 5,

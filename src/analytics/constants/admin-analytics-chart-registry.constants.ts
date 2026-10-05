@@ -1786,6 +1786,45 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/tabs/CourseImpactSubTab.tsx'),
       note: "Selected course: share of each learner's slices showing any unhelpful or potentially harmful behaviour, before vs after; down is better. /v1/analytics/course-impact?trackId= course.unhelpful",
     },
+
+    // ---- Bug Agent: the panels that moved off the Bug Hunter page's
+    // Performance tab (OPP-0749, 2026-10-05); AAQ-167..169 were already taken ----
+    {
+      id: 'AAQ-198',
+      tab: 'Bug Agent',
+      title: "How I'm doing (scorecard)",
+      kind: 'group',
+      chartType: 'kpi',
+      componentFile: f('BugHunter/AgentScorecard.tsx'),
+      note: 'Four tiles plus fourteen-day sparkbars, derived from GET /v1/bug-hunter/runs; mounted on Analytics → Bug Agent since OPP-0749',
+    },
+    {
+      id: 'AAQ-199',
+      tab: 'Bug Agent',
+      title: "How often I'm right (accuracy panel)",
+      kind: 'funnel',
+      chartType: 'FunnelBars',
+      componentFile: f('BugHunter/AccuracyPanel.tsx'),
+      note: 'GET /v1/bug-hunter/metrics: finding funnel, accuracy by source and decision reason, stage latency, cost per landed fix',
+    },
+    {
+      id: 'AAQ-200',
+      tab: 'Bug Agent',
+      title: 'My shift log (run history)',
+      kind: 'group',
+      chartType: 'table',
+      componentFile: f('BugHunter/RunHistoryTable.tsx'),
+      note: 'Per-run ledger: status, trigger, counts, cost and GitHub run, with the event timeline per row; the only view of a run, so it stays reachable here',
+    },
+    {
+      id: 'AAQ-201',
+      tab: 'Bug Agent',
+      title: 'Bugs found per day',
+      kind: 'chart',
+      chartType: 'LineChart',
+      componentFile: f('Analytics/BugAgentPerformance.tsx'),
+      note: 'Distinct top-level findings filed per UTC day across every repo and source, excluding any since dismissed or rejected, with a trailing 7-day mean; the one daily series on the tab, there to show the count falling. /v1/analytics/bug-agent-performance found[]',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
