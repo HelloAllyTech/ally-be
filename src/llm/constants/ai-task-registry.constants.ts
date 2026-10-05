@@ -1491,6 +1491,22 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
   },
+  {
+    id: 'builder-repo-map',
+    // Records no usage: the runner posts the finished map to
+    // pipeline/repo-maps, and that endpoint takes no cost.
+    task: null,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: "A weekly job rewrites each repo's map for Builder",
+    detail:
+      'Sundays 03:00 UTC, one agentic opencode run per repo (five) in ' +
+      '.github/workflows/builder-context-refresh.yml via scripts/builder/refresh-repo-map.sh. ' +
+      'The map is what the interview and every build phase read before opening files.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
+    configuredBy: 'BUILDER_MAP_MODEL (scripts/builder/refresh-repo-map.sh)',
+  },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────────

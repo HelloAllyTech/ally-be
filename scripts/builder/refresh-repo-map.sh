@@ -54,58 +54,85 @@ PROMPT
 # and run-engine.sh. It cannot just call run-engine.sh: that drives the whole
 # build protocol — branches, phases, gates, cost callbacks — and this is one
 # prompt whose answer is a document.
-ENGINE="${BUILDER_ENGINE:-gemini}"
+#
+# The default has to agree with install-engine.sh's. It used to say `gemini`
+# after that engine was removed everywhere else, so every repo landed on the
+# `*)` branch below — and because the workflow tolerates a per-repo failure,
+# the run that refreshed nothing still concluded green.
+ENGINE="${BUILDER_ENGINE:-opencode}"
 
 case "$ENGINE" in
-  claude-code)
-    claude -p "$PROMPT" \
-      --permission-mode acceptEdits \
-      --model "${BUILDER_MAP_MODEL:-claude-sonnet-5}" \
-      --allowedTools "Read,Glob,Grep,Bash" \
-      --max-turns 40 \
-      --output-format json \
-      > /tmp/map-result.json
 
-    MAP_MD="$(node -e "
-      const fs = require('fs');
-      const result = JSON.parse(fs.readFileSync('/tmp/map-result.json', 'utf8'));
-      process.stdout.write(result.result ?? '');
-    ")"
-    ;;
-
-  # Gemini's terminal `result` frame carries usage and nothing else — the text
-  # only ever exists as the assistant messages that streamed before it (see
-  # normaliseGemini() in forward-events.mjs, which is built against the real
-  # 0.22.5 event schema). So the document is reassembled from the stream rather
-  # than read out of a result object, which is why this is `stream-json` and
-  # not `json`.
+  # The only engine, as in install-engine.sh and run-engine.sh. Its model ids
+  # are `provider/model`; everything upstream names one the way its vendor
+  # does, so the id gets its provider from its shape — the same rule
+  # run-engine.sh applies, where the comment explains why it is derived rather
+  # than defaulted to google. The google provider reads
+  # GOOGLE_GENERATIVE_AI_API_KEY, not GEMINI_API_KEY; a claude-* or gpt-*
+  # BUILDER_MAP_MODEL needs its own key added to builder-context-refresh.yml.
   #
-  # `--yolo` is the acceptEdits equivalent; neither --max-turns nor a tool
-  # allowlist has a counterpart on this CLI, and the job's timeout-minutes is
-  # the backstop for both.
-  gemini)
-    gemini "$PROMPT" \
-      --model "${BUILDER_MAP_MODEL:-gemini-2.5-pro}" \
-      --yolo \
-      --output-format stream-json \
+  # The agent is offered no write or edit tool. Not to protect the clone — it
+  # is deleted on exit — but because of where the document goes: an agent
+  # asked to "write a Repo Knowledge Pack" that CAN write may save it to a file
+  # and answer "Done.", and "Done." is a non-empty map that would replace a
+  # good one. With the tools never offered, the reply is the only place left
+  # for it. Bash stays, for section 5's `git log`.
+  #
+  # No turn cap and no tool allowlist exist on this CLI; the job's
+  # timeout-minutes is the backstop for both.
+  opencode)
+    cat > opencode.json <<'OCEOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "mapper": {
+      "permission": { "edit": "deny", "write": "deny" }
+    }
+  }
+}
+OCEOF
+
+    MAP_MODEL="${BUILDER_MAP_MODEL:-gemini-2.5-pro}"
+    case "$MAP_MODEL" in
+      */*) ;;
+      claude-*) MAP_MODEL="anthropic/${MAP_MODEL}" ;;
+      gemini-*) MAP_MODEL="google/${MAP_MODEL}" ;;
+      gpt-* | o[0-9]-* | o[0-9]) MAP_MODEL="openai/${MAP_MODEL}" ;;
+    esac
+
+    opencode run \
+      --model "$MAP_MODEL" \
+      --agent mapper \
+      --format json \
+      --auto \
+      "$PROMPT" \
       > /tmp/map-result.jsonl
 
+    # opencode has no terminal frame carrying the answer, so the document is
+    # reassembled from its `text` records, as normaliseOpencode() in
+    # forward-events.mjs does. Unlike there, only the LAST step that wrote any
+    # text counts: the steps before it are the agent narrating its own
+    # exploration between tool calls ("Let me read CLAUDE.md"), and that is
+    # not part of the map. Errors are echoed because an auth or model failure
+    # otherwise surfaces only as the empty-map refusal below, with no reason.
     MAP_MD="$(node -e "
       const fs = require('fs');
-      let buffered = '';
-      const parts = [];
-      const flush = () => { if (buffered) { parts.push(buffered); buffered = ''; } };
+      let step = [];
+      let lastWithText = [];
       for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
         if (!line.trim()) continue;
         let record;
         try { record = JSON.parse(line); } catch { continue; }
-        const isAssistant = record?.type === 'message' && record.role === 'assistant';
-        if (isAssistant && record.delta === true) { buffered += record.content ?? ''; continue; }
-        flush();
-        if (isAssistant && record.content) parts.push(record.content);
+        if (record?.type === 'step_start') {
+          step = [];
+        } else if (record?.type === 'text' && record.part?.text?.trim()) {
+          step.push(record.part.text);
+          lastWithText = step;
+        } else if (record?.type === 'error') {
+          console.error('[opencode] ' + (record.error?.data?.message ?? record.error?.name ?? 'unknown error'));
+        }
       }
-      flush();
-      process.stdout.write(parts.join(''));
+      process.stdout.write(lastWithText.join('\n').trim());
     ")"
     ;;
 
