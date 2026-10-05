@@ -99,8 +99,8 @@ describe('CodingAgentCostAnalyticsService', () => {
     ]);
     const result = await monthly();
 
-    // $1.25 for the runner row at the full input rate + $0.31 all-cached.
-    expect(result.totalCostUsd.builder).toBeCloseTo(1.25 + 0.31, 4);
+    // $1.25 for the runner row at the full input rate + $0.125 all-cached.
+    expect(result.totalCostUsd.builder).toBeCloseTo(1.25 + 0.125, 4);
   });
 
   it('gap-fills a bucket with no usage to real zeros rather than omitting it', async () => {
