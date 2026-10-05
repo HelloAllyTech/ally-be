@@ -37,6 +37,11 @@ import { RoadmapBoardService } from 'src/product-roadmap/service/roadmap-board.s
 import { RoadmapBuilderService } from 'src/product-roadmap/service/roadmap-builder.service';
 import { RoadmapOpportunityService } from 'src/product-roadmap/service/roadmap-opportunity.service';
 import { RoadmapSplitMergeService } from 'src/product-roadmap/service/roadmap-split-merge.service';
+import {
+  HELPLINE_SESSION_RATE_LIMIT,
+  HelplinePublicController,
+} from 'src/helpline/controller/helpline-public.controller';
+import { HelplineSessionService } from 'src/helpline/service/helpline-session.service';
 import { registeredThrottlers } from '../rate-limit.throttlers';
 
 /**
@@ -270,6 +275,69 @@ describe('Rate-limited routes', () => {
 
       await verifyFrom('198.51.100.66, 203.0.113.7').expect(429);
       await verifyFrom('203.0.113.8').expect(200);
+    });
+  });
+
+  describe('POST /api/v1/helpline/public/:tenantCode/session: 5 an hour per address', () => {
+    let createSession: jest.Mock;
+
+    beforeEach(async () => {
+      createSession = jest
+        .fn()
+        .mockResolvedValue({ guestToken: 'guest-token' });
+      app = await boot(
+        HelplinePublicController,
+        [{ provide: HelplineSessionService, useValue: { createSession } }],
+        [],
+      );
+    });
+
+    const startFrom = (xForwardedFor: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/helpline/public/acme/session')
+        .set('X-Forwarded-For', xForwardedFor)
+        .send({ consentVersion: '2026-10-05', language: 'en' });
+
+    it('is configured at 5 an hour', () => {
+      expect(HELPLINE_SESSION_RATE_LIMIT).toMatchObject({
+        LIMIT: 5,
+        TTL_MS: TIME.HOUR_IN_MS,
+      });
+    });
+
+    it('accepts 5 sessions from one address and refuses the 6th, for an hour', async () => {
+      for (let n = 1; n <= 5; n++) {
+        await startFrom('203.0.113.7').expect(201);
+      }
+
+      const refused = await startFrom('203.0.113.7').expect(429);
+
+      expect(refused.headers['retry-after']).toBe('3600');
+      expect(refused.body).toMatchObject({
+        message: HELPLINE_SESSION_RATE_LIMIT.MESSAGE,
+        errorCode: ErrorCode.RATE_LIMITED,
+      });
+      expect(createSession).toHaveBeenCalledTimes(5);
+    });
+
+    it('counts each address separately, and hands the service the real client address', async () => {
+      for (let n = 1; n <= 5; n++) {
+        await startFrom('203.0.113.7').expect(201);
+      }
+      await startFrom('203.0.113.7').expect(429);
+      await startFrom('203.0.113.8').expect(201);
+      expect(createSession).toHaveBeenLastCalledWith(
+        'acme',
+        expect.objectContaining({ ip: '203.0.113.8' }),
+      );
+    });
+
+    it('runs only its own numbers on the default throttler — not otp, not 100 a second', async () => {
+      const accepted = await startFrom('203.0.113.7').expect(201);
+
+      expect(accepted.headers['x-ratelimit-limit']).toBe('5');
+      expect(accepted.headers['x-ratelimit-reset']).toBe('3600');
+      expect(accepted.headers).not.toHaveProperty('x-ratelimit-limit-otp');
     });
   });
 
