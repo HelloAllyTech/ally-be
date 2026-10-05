@@ -30,6 +30,11 @@ import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytic
 import { FoundationalSkillsAnalyticsService } from '../../service/foundational-skills-analytics.service';
 import { FoundationalSkillsBenchmarkAnalyticsService } from '../../service/foundational-skills-benchmark.service';
 import { CourseImpactAnalyticsService } from '../../service/course-impact-analytics.service';
+import { FoundationalSkillsEffectivenessService } from '../../service/foundational-skills-effectiveness.service';
+import { CurriculumAnalyticsService } from '../../service/curriculum-analytics.service';
+import { ScenarioEffectivenessAnalyticsService } from '../../service/scenario-effectiveness-analytics.service';
+import { PracticeQualityAnalyticsService } from '../../service/practice-quality-analytics.service';
+import { EffectivenessAnalyticsService } from '../../service/effectiveness-analytics.service';
 import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
 import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
@@ -233,6 +238,37 @@ describe('AnalyticsController', () => {
         {
           provide: FoundationalSkillsBenchmarkAnalyticsService,
           useValue: { getBenchmark: jest.fn() },
+        },
+        {
+          provide: EffectivenessAnalyticsService,
+          useValue: { getFunnel: jest.fn(), getProgressSegments: jest.fn() },
+        },
+        {
+          provide: ScenarioEffectivenessAnalyticsService,
+          useValue: {
+            getOpportunityCoverage: jest.fn(),
+            getRepeatImprovement: jest.fn(),
+          },
+        },
+        {
+          provide: PracticeQualityAnalyticsService,
+          useValue: { getPracticeQuality: jest.fn() },
+        },
+        {
+          provide: CurriculumAnalyticsService,
+          useValue: {
+            getCourseFunnel: jest.fn(),
+            getQuizOutcomes: jest.fn(),
+            getRoleplayGates: jest.fn(),
+          },
+        },
+        {
+          provide: FoundationalSkillsEffectivenessService,
+          useValue: {
+            getTimeToCompetence: jest.fn(),
+            getRetention: jest.fn(),
+            getPracticeProgression: jest.fn(),
+          },
         },
         {
           provide: CourseImpactAnalyticsService,

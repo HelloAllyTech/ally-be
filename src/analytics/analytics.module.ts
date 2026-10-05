@@ -45,6 +45,16 @@ import { FoundationalSkillsBenchmarkAnalyticsService } from './service/foundatio
 import { FoundationalSkillsBenchmarkAnalyticsRepository } from './repository/foundational-skills-benchmark.repository';
 import { CourseImpactAnalyticsService } from './service/course-impact-analytics.service';
 import { CourseImpactAnalyticsRepository } from './repository/course-impact-analytics.repository';
+import { FoundationalSkillsEffectivenessService } from './service/foundational-skills-effectiveness.service';
+import { FoundationalSkillsEffectivenessRepository } from './repository/foundational-skills-effectiveness.repository';
+import { CurriculumAnalyticsService } from './service/curriculum-analytics.service';
+import { CurriculumAnalyticsRepository } from './repository/curriculum-analytics.repository';
+import { ScenarioEffectivenessAnalyticsService } from './service/scenario-effectiveness-analytics.service';
+import { ScenarioEffectivenessAnalyticsRepository } from './repository/scenario-effectiveness-analytics.repository';
+import { PracticeQualityAnalyticsService } from './service/practice-quality-analytics.service';
+import { PracticeQualityAnalyticsRepository } from './repository/practice-quality-analytics.repository';
+import { EffectivenessAnalyticsService } from './service/effectiveness-analytics.service';
+import { EffectivenessAnalyticsRepository } from './repository/effectiveness-analytics.repository';
 import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
 import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
 import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
@@ -213,6 +223,16 @@ import { TenantModule } from 'src/tenant/tenant.module';
     FoundationalSkillsBenchmarkAnalyticsRepository,
     CourseImpactAnalyticsService,
     CourseImpactAnalyticsRepository,
+    FoundationalSkillsEffectivenessService,
+    FoundationalSkillsEffectivenessRepository,
+    CurriculumAnalyticsService,
+    CurriculumAnalyticsRepository,
+    ScenarioEffectivenessAnalyticsService,
+    ScenarioEffectivenessAnalyticsRepository,
+    PracticeQualityAnalyticsService,
+    PracticeQualityAnalyticsRepository,
+    EffectivenessAnalyticsService,
+    EffectivenessAnalyticsRepository,
     QualityDistributionAnalyticsService,
     QualityDistributionAnalyticsRepository,
     CompetencyMapAnalyticsService,

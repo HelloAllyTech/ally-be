@@ -51,7 +51,8 @@ export interface CourseImpactCompetencyRow {
  * when its own session's tenant is a test org.
  *
  * Every slice query is pinned to one rubric version, so scores from two
- * rulers are never averaged together.
+ * rulers are never averaged together. The free-practice reference reads the
+ * same slices for learners in scope with no enrollment at all.
  */
 @Injectable()
 export class CourseImpactAnalyticsRepository {
@@ -96,12 +97,14 @@ export class CourseImpactAnalyticsRepository {
   }
 
   /**
-   * Every scored slice with a composite, for learners who have an enrollment
-   * in scope, ordered by learner then when the slice closed. Slices are a
-   * handful per learner, so the set is read once and windowed in memory.
+   * The scored-slice read both cohorts share: the columns, the rubric pin and
+   * the slice's own test-org exclusion. `learnerPredicate` decides WHOSE
+   * slices — written against `c."userId"`, binding the tenant (when set) to
+   * `$2`.
    */
-  async getScoredCuts(
+  private async scoredCuts(
     rubricVersion: string,
+    learnerPredicate: string,
     tenantId?: string,
   ): Promise<CourseImpactCutRow[]> {
     const rows = await this.dataSource.query(
@@ -119,12 +122,7 @@ export class CourseImpactAnalyticsRepository {
          AND a.status = 'SCORED'
          AND a."compositeScore" IS NOT NULL
          AND ${excludeTestTenants('c."tenant_id"')}
-         AND c."userId" IN (
-           SELECT e."userId"
-             FROM track_enrollments e
-            WHERE e."deletedAt" IS NULL
-              AND ${this.enrollmentScope('e."userId"', '$2', tenantId)}
-         )
+         AND ${learnerPredicate}
        ORDER BY c."userId", c."closedSessionEndedAt", c."cutIndex"
       `,
       tenantId ? [rubricVersion, tenantId] : [rubricVersion],
@@ -137,6 +135,52 @@ export class CourseImpactAnalyticsRepository {
       unhelpful: r.unhelpful ?? null,
       levels: r.levels && typeof r.levels === 'object' ? r.levels : {},
     }));
+  }
+
+  /**
+   * Every scored slice with a composite, for learners who have an enrollment
+   * in scope, ordered by learner then when the slice closed. Slices are a
+   * handful per learner, so the set is read once and windowed in memory.
+   */
+  async getScoredCuts(
+    rubricVersion: string,
+    tenantId?: string,
+  ): Promise<CourseImpactCutRow[]> {
+    return this.scoredCuts(
+      rubricVersion,
+      `c."userId" IN (
+           SELECT e."userId"
+             FROM track_enrollments e
+            WHERE e."deletedAt" IS NULL
+              AND ${this.enrollmentScope('e."userId"', '$2', tenantId)}
+         )`,
+      tenantId,
+    );
+  }
+
+  /**
+   * The free-practice reference's slices: every scored slice of learners in
+   * scope who have NO live enrollment in any course (a soft-deleted
+   * enrollment does not count as one). Scoped exactly like
+   * {@link getScoredCuts} — test orgs and the org filter by the learner's own
+   * org, the slice's own test-org exclusion and the rubric pin — so the two
+   * cohorts differ only in having taken a course.
+   */
+  async getFreePracticeCuts(
+    rubricVersion: string,
+    tenantId?: string,
+  ): Promise<CourseImpactCutRow[]> {
+    return this.scoredCuts(
+      rubricVersion,
+      `${this.enrollmentScope('c."userId"', '$2', tenantId)}
+         AND NOT EXISTS (
+           SELECT 1
+             FROM track_enrollments fe
+            WHERE fe."userId" = c."userId"
+              AND fe."deletedAt" IS NULL
+         )`,
+      tenantId,
+    );
   }
 
   /**
