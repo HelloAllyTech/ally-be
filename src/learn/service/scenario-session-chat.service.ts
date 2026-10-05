@@ -21,6 +21,7 @@ import { LlmTask } from '../enum/llm-task.enum';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   CHAT_HISTORY_WINDOW_SIZE,
+  CHAT_MAX_HISTORY_MESSAGES,
   CHAT_SUMMARIZATION_BATCH_THRESHOLD,
 } from '../constants/scenario-session-chat.constants';
 import { extractTimestampsFromText } from 'src/common/util/time.util';
@@ -113,7 +114,7 @@ export class ScenarioSessionChatService {
       tenantId,
     );
 
-    await this.chatMessageRepo.save({
+    const savedUserMessage = await this.chatMessageRepo.save({
       chatId: chat.id,
       senderId: userId,
       content: userMessage,
@@ -135,9 +136,15 @@ export class ScenarioSessionChatService {
       scenarioSessionId,
     );
 
+    // The turn being answered reaches the model once, as `userMessage`; the
+    // history is everything before it. (It used to ride in both, so every
+    // learner message was sent twice.)
+    const priorMessages = allMessages.filter(
+      (message) => message.id !== savedUserMessage.id,
+    );
     const chatHistory = await this.buildChatHistoryWithSummarization(
       chat,
-      allMessages,
+      priorMessages,
     );
 
     const context = await this.contextProvider.buildContext(scenarioSessionId);
@@ -194,6 +201,9 @@ export class ScenarioSessionChatService {
         temperature,
         maxTokens: this.configService.aiChat.maxTokens,
       },
+      // The history is already bounded (summary + overflow + window); let all
+      // of it through rather than AiChatService's generic 10-message default.
+      maxHistoryMessages: CHAT_MAX_HISTORY_MESSAGES,
       // The debrief chat is part of delivering the roleplay, so its spend is
       // recorded against the session it is about.
       usage: {

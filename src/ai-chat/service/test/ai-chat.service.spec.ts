@@ -2,6 +2,7 @@ import { lastValueFrom, toArray } from 'rxjs';
 
 import { AiChatService } from '../ai-chat.service';
 import {
+  LlmMessage,
   LlmProvider,
   LlmStreamChunk,
 } from '../../interface/llm-provider.interface';
@@ -122,5 +123,108 @@ describe('AiChatService usage recording', () => {
         scenarioSessionId: 'sess-1',
       }),
     );
+  });
+});
+
+/**
+ * The debrief chat sends [summary (system), unsummarised overflow, last 10],
+ * but pruning used to keep only the last 10 history items and, over the token
+ * budget, dropped index 1 first — so the summary it paid to generate never
+ * reached the model. These pin what pruning keeps.
+ */
+describe('AiChatService history pruning', () => {
+  const run = async (params: {
+    chatHistory: LlmMessage[];
+    maxHistoryMessages?: number;
+    maxContextTokens?: number;
+  }): Promise<LlmMessage[]> => {
+    let sent: LlmMessage[] = [];
+    const provider: Partial<LlmProvider> = {
+      streamCompletion: (messages: LlmMessage[]) => {
+        sent = messages;
+        return (async function* () {
+          yield { content: 'ok' } as LlmStreamChunk;
+        })();
+      },
+    };
+    const service = new AiChatService(
+      { getProvider: () => provider } as any,
+      {
+        aiChat: {
+          maxContextTokens: params.maxContextTokens ?? 100_000,
+          defaultProvider: 'openai',
+        },
+      } as any,
+      { record: jest.fn() } as any,
+    );
+    await lastValueFrom(
+      service
+        .streamResponse({
+          systemPrompt: 'sys',
+          chatHistory: params.chatHistory,
+          userMessage: 'now',
+          llmConfig: { model: 'gpt-4o-mini' },
+          maxHistoryMessages: params.maxHistoryMessages,
+        })
+        .pipe(toArray()),
+    );
+    return sent;
+  };
+
+  const turns = (n: number, size = 1): LlmMessage[] =>
+    Array.from({ length: n }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `t${i}`.padEnd(size, '.'),
+    }));
+  const summary: LlmMessage = {
+    role: 'system',
+    content: 'Summary of earlier conversation:\nThey discussed rapport.',
+  };
+
+  it('keeps a leading summary when the history exceeds the default cap', async () => {
+    const sent = await run({ chatHistory: [summary, ...turns(15)] });
+
+    expect(sent[0].content).toBe('sys');
+    expect(sent[1]).toEqual(summary);
+    // Default cap of 10 verbatim turns still applies to everything else.
+    expect(sent.slice(2, -1)).toEqual(turns(15).slice(-10));
+    expect(sent[sent.length - 1]).toEqual({ role: 'user', content: 'now' });
+  });
+
+  it("lets a caller's already-bounded history through whole", async () => {
+    const history = [summary, ...turns(19)];
+
+    const sent = await run({ chatHistory: history, maxHistoryMessages: 19 });
+
+    expect(sent).toEqual([
+      { role: 'system', content: 'sys' },
+      ...history,
+      { role: 'user', content: 'now' },
+    ]);
+  });
+
+  it('drops the oldest verbatim turns before the summary when over the token budget', async () => {
+    // 4 turns of 400 chars (~100 tokens each) + a short summary, prompt and
+    // user message: a 250-token budget leaves room for two turns.
+    const history = [summary, ...turns(4, 400)];
+
+    const sent = await run({ chatHistory: history, maxContextTokens: 250 });
+
+    expect(sent[1]).toEqual(summary);
+    expect(sent.slice(2, -1)).toEqual(turns(4, 400).slice(-2));
+  });
+
+  it('drops the summary only once no verbatim turn is left', async () => {
+    const bigSummary: LlmMessage = { role: 'system', content: 'x'.repeat(800) };
+
+    const sent = await run({
+      chatHistory: [bigSummary, ...turns(2, 400)],
+      maxContextTokens: 50,
+    });
+
+    expect(sent).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'now' },
+    ]);
   });
 });

@@ -50,6 +50,13 @@ export class AiChatService {
     providerType?: string;
     onComplete?: (fullResponse: string) => Promise<void>;
     usage?: ChatUsageAttribution;
+    /**
+     * Cap on verbatim history turns sent to the model (default 10). A caller
+     * that already bounds its own history passes its bound so none of it is
+     * cut. Leading system-role history is pinned and not counted — see
+     * pruneMessages.
+     */
+    maxHistoryMessages?: number;
   }): Observable<SseMessageEvent> {
     const subject = new Subject<SseMessageEvent>();
 
@@ -73,6 +80,7 @@ export class AiChatService {
       providerType?: string;
       onComplete?: (fullResponse: string) => Promise<void>;
       usage?: ChatUsageAttribution;
+      maxHistoryMessages?: number;
     },
   ): Promise<void> {
     const { systemPrompt, chatHistory, userMessage, llmConfig } = params;
@@ -84,7 +92,11 @@ export class AiChatService {
     ];
 
     const maxContextTokens = this.configService.aiChat.maxContextTokens;
-    const prunedMessages = this.pruneMessages(messages, maxContextTokens);
+    const prunedMessages = this.pruneMessages(
+      messages,
+      maxContextTokens,
+      params.maxHistoryMessages,
+    );
 
     const provider = this.llmProviderFactory.getProvider(params.providerType);
     let fullResponse = '';
@@ -198,6 +210,18 @@ export class AiChatService {
     });
   }
 
+  /**
+   * Bounds what goes to the model: `[systemPrompt, ...history, userMessage]`.
+   * The system prompt and the turn being answered are always kept.
+   *
+   * Leading system-role history — a caller's running summary of turns it no
+   * longer sends verbatim — is pinned. It does not count toward
+   * `maxHistoryMessages`, and under the token budget it is the last history to
+   * go: dropping it loses every turn it covers, where dropping the oldest
+   * verbatim message loses one. (Before, the summary sat at index 1, so both
+   * the count cap and the budget loop discarded it first, and the debrief chat
+   * paid to generate a summary the model never saw.)
+   */
   private pruneMessages(
     messages: LlmMessage[],
     maxTokens: number,
@@ -205,22 +229,31 @@ export class AiChatService {
   ): LlmMessage[] {
     const systemPrompt = messages[0];
     const userMessage = messages[messages.length - 1];
-    let history = messages.slice(1, -1);
+    const history = messages.slice(1, -1);
 
-    if (history.length > maxHistoryMessages) {
-      history = history.slice(-maxHistoryMessages);
+    const firstTurn = history.findIndex((m) => m.role !== 'system');
+    const pinnedEnd = firstTurn === -1 ? history.length : firstTurn;
+    const pinned = history.slice(0, pinnedEnd);
+    let turns = history.slice(pinnedEnd);
+
+    if (turns.length > maxHistoryMessages) {
+      turns = turns.slice(-maxHistoryMessages);
     }
-
-    const pruned = [systemPrompt, ...history, userMessage];
 
     const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-    let total = pruned.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+    let total = [systemPrompt, ...pinned, ...turns, userMessage].reduce(
+      (sum, m) => sum + estimateTokens(m.content),
+      0,
+    );
 
-    while (total > maxTokens && pruned.length > 2) {
-      const removed = pruned.splice(1, 1)[0];
-      total -= estimateTokens(removed.content);
+    // Oldest verbatim turn first; the pinned summary only once none are left.
+    while (total > maxTokens && turns.length > 0) {
+      total -= estimateTokens(turns.shift()!.content);
+    }
+    while (total > maxTokens && pinned.length > 0) {
+      total -= estimateTokens(pinned.shift()!.content);
     }
 
-    return pruned;
+    return [systemPrompt, ...pinned, ...turns, userMessage];
   }
 }
