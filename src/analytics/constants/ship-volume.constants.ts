@@ -16,7 +16,6 @@ export const SHIP_VOLUME_REPOS = [
   'ally-ai',
   'ally-ai-learn',
   'ally-mobile',
-  'infra',
   'helloallytech.github.io',
 ] as const;
 
