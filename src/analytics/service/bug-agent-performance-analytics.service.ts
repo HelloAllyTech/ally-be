@@ -12,6 +12,7 @@ import {
   BugAgentPerformanceQueryDto,
   BugAgentPerformanceResponseDto,
   CostWeekDto,
+  FoundDayDto,
   PrecisionWeekDto,
   ReliabilityWeekDto,
   SpeedWeekDto,
@@ -31,6 +32,34 @@ const rate = (numerator: number, denominator: number): number | null =>
   denominator === 0 ? null : numerator / denominator;
 
 const round = (value: number): number => Math.round(value * 10_000) / 10_000;
+
+/** Days the "bugs found per day" trailing mean looks back over, itself included. */
+export const FOUND_ROLLING_DAYS = 7;
+
+/**
+ * One point per UTC day in the window, zero-filled, with a trailing
+ * seven-day mean. Exported so the spec can pin the arithmetic without a
+ * module to compile; the window's own daily series is what the Bug Agent
+ * tab plots to show the count going down.
+ */
+export const buildFoundSeries = (
+  days: string[],
+  filedByDay: Map<string, number>,
+): FoundDayDto[] => {
+  const filed = days.map((day) => filedByDay.get(day) ?? 0);
+  return days.map((day, index) => {
+    const windowStart = index - (FOUND_ROLLING_DAYS - 1);
+    const rollingAvg7 =
+      windowStart < 0
+        ? null
+        : round(
+            filed
+              .slice(windowStart, index + 1)
+              .reduce((sum, value) => sum + value, 0) / FOUND_ROLLING_DAYS,
+          );
+    return { day, filed: filed[index], rollingAvg7 };
+  });
+};
 
 /**
  * Bug Agent Performance: the five headline trends (precision, fix throughput,
@@ -79,6 +108,9 @@ export class BugAgentPerformanceAnalyticsService {
     // window resolver picked for `window.bucket` (echoed to the client as-is)
     // — every query below truncs to week itself.
     const weeks = generateBucketLabels(start, endExclusive, 'week');
+    // The one exception to "inherently weekly": the found-per-day series,
+    // whose whole point is a daily grain — see `dailyFiledTotals`.
+    const days = generateBucketLabels(start, endExclusive, 'day');
 
     const [
       outcomeRows,
@@ -88,6 +120,7 @@ export class BugAgentPerformanceAnalyticsService {
       runRows,
       escalationRows,
       fallbackRows,
+      filedRows,
     ] = await Promise.all([
       this.findingRepository.weeklyOutcomeCounts(start, endExclusive),
       this.findingRepository.weeklyRegressionCounts(start, endExclusive),
@@ -96,6 +129,7 @@ export class BugAgentPerformanceAnalyticsService {
       this.runRepository.weeklyRunStats(start, endExclusive),
       this.eventRepository.weeklyEscalationCounts(start, endExclusive),
       this.eventRepository.weeklyFallbackCounts(start, endExclusive),
+      this.findingRepository.dailyFiledTotals(start, endExclusive),
     ]);
 
     const byWeek = <T extends { week: Date }>(rows: T[]): Map<string, T[]> => {
@@ -232,12 +266,18 @@ export class BugAgentPerformanceAnalyticsService {
       };
     });
 
+    const found = buildFoundSeries(
+      days,
+      new Map(filedRows.map((row) => [isoDate(row.day), row.filed])),
+    );
+
     return {
       precision: { weekly: precisionWeekly, bySource },
       throughput: throughputWeekly,
       speed: speedWeekly,
       cost: costWeekly,
       reliability: reliabilityWeekly,
+      found,
       window: describeWindow(window),
       computedAt: new Date().toISOString(),
     };

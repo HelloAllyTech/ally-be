@@ -1816,6 +1816,15 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('BugHunter/RunHistoryTable.tsx'),
       note: 'Per-run ledger: status, trigger, counts, cost and GitHub run, with the event timeline per row; the only view of a run, so it stays reachable here',
     },
+    {
+      id: 'AAQ-201',
+      tab: 'Bug Agent',
+      title: 'Bugs found per day',
+      kind: 'chart',
+      chartType: 'LineChart',
+      componentFile: f('Analytics/BugAgentPerformance.tsx'),
+      note: 'Distinct top-level findings filed per UTC day across every repo and source, with a trailing 7-day mean; the one daily series on the tab, there to show the count falling. /v1/analytics/bug-agent-performance found[]',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
