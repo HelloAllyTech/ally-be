@@ -92,6 +92,32 @@ export enum ErrorCode {
   // ── Notifications ─────────────────────────────────────────────────────────
   /** An outbound email could not be handed to SES. */
   EMAIL_SEND_FAILED = 'EMAIL_SEND_FAILED',
+
+  // ── Text helpline (docs/text-helpline.md §5) ──────────────────────────────
+  /** 403. TEXT_HELPLINE_ENABLED is off for the tenant (or the public code is unknown). */
+  HELPLINE_DISABLED = 'HELPLINE_DISABLED',
+  /** 409. Outside hours, or no listener is available and queueing is not allowed. */
+  HELPLINE_CLOSED = 'HELPLINE_CLOSED',
+  /** 503. The waiting queue is at the org's cap. Transient — retry later. */
+  HELPLINE_QUEUE_FULL = 'HELPLINE_QUEUE_FULL',
+  /** 400. The talker accepted a consent text that is no longer current. */
+  HELPLINE_CONSENT_OUTDATED = 'HELPLINE_CONSENT_OUTDATED',
+  /** 403. A supervisor blocked this talker; new sessions are refused for 24 h. */
+  HELPLINE_TALKER_BLOCKED = 'HELPLINE_TALKER_BLOCKED',
+  /** 404. No such chat, or the caller has no access to it (existence is not confirmed). */
+  HELPLINE_CHAT_NOT_FOUND = 'HELPLINE_CHAT_NOT_FOUND',
+  /** 409. Another listener claimed the chat first (or it is aimed at someone else). */
+  HELPLINE_ALREADY_CLAIMED = 'HELPLINE_ALREADY_CLAIMED',
+  /** 409. The listener is at their concurrent-chat limit. */
+  HELPLINE_AT_CAPACITY = 'HELPLINE_AT_CAPACITY',
+  /** 409. The listener is not Available (presence Away, or no live socket). */
+  HELPLINE_NOT_AVAILABLE = 'HELPLINE_NOT_AVAILABLE',
+  /** 409. The chat has ended (or its content was erased); it accepts no more writes. */
+  HELPLINE_CHAT_ENDED = 'HELPLINE_CHAT_ENDED',
+  /** 403. The caller can read this chat but is not its listener of record. */
+  HELPLINE_NOT_LISTENER = 'HELPLINE_NOT_LISTENER',
+  /** 401. The guest token is missing, expired, revoked or not a guest token. */
+  HELPLINE_GUEST_TOKEN_INVALID = 'HELPLINE_GUEST_TOKEN_INVALID',
 }
 
 /**

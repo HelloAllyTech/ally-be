@@ -731,6 +731,44 @@ Read by `GET /v1/analytics/foundational-skills/benchmark` (Highlights chart AAQ-
 
 > ⚠️ All three tables are hand-written SQL (migrations `1974600000000` and `1975400000000`); never `migration:generate` them.
 
+### 3.17 Text helpline (`helpline`)
+
+Anonymous web **talkers** chat in text with trained human **listeners**, with an AI copilot that
+only ever speaks to the listener. Contract: [`docs/text-helpline.md`](docs/text-helpline.md) — its
+invariants (humans only write to talkers; staff-only rows never reach a talker; no bodies in logs,
+audit payloads or events) are enforced partly by the schema below. All ten tables are hand-written
+SQL (migration `1975700000000`); never `migration:generate` them. Every column is `snake_case`,
+timestamps are `timestamptz` (`created_at`/`updated_at` are the module's own, not `BaseEntity`'s),
+and `tenant_id` holds the tenant **uuid** (`tenants.id`, as text), not the code.
+
+Separate from `chats`/`messages` on purpose: those are read raw by Scribe analytics and the
+call-log services, and helpline chats would inflate Scribe adoption metrics.
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `helpline_talkers` | `id` (uuid), `channel` (CHECK `TEXT_WEB`/`TEXT_WHATSAPP`), `display_name` (varchar(40), default `Anonymous`), `language`, `consent_version`, `consent_accepted_at`, `ip_hash` (varchar(64) — HMAC-SHA256 of ip + server salt, abuse windows only), `user_agent`, `last_seen_at`, `revoked_at`, `blocked_at`/`blocked_by`, `erased_at`, `wa_contact_id` (Phase 5) | One per session; no row exists before consent. Authenticated only by the guest JWT, which every guest request re-checks against `revoked_at IS NULL`. A block refuses new sessions from the same `ip_hash` for 24 h |
+| `helpline_chats` | `id` (uuid), `talker_id` (FK), `status` (CHECK `WAITING`/`ACTIVE`/`ENDED`), `language`, `priority` (100 once WAITING + HIGH risk), `wait_started_at`, `abandoned_at`, `claimed_at`, `listener_id` (int → `users.id`, no FK), `previous_listener_ids` (int[] — read-only access after transfer/take-over), `transfer_requested_at`/`_by`, `transfer_target_listener_id`, `taken_over_at`, `ended_at`/`ended_reason` (CHECK, 9 values)/`ended_by`, `risk_level` (CHECK `NONE`/`ELEVATED`/`HIGH`, denormalised max, only rises), `resources_sent_at`, `last_talker_message_at`/`last_listener_message_at`, `talker_message_count`/`listener_message_count`, `talker_turns_since_nudge`/`nudge_count`, `qa_status` (CHECK, nullable), `erased_at`, `metadata` | **Also the queue**: a WAITING row is a queue entry, so a claim is one conditional `UPDATE … RETURNING` (contract §6.6) and two listeners can never both win. Lobby order is `priority DESC, wait_started_at ASC`; `abandoned_at` hides a row from the lobby without losing its place |
+| `helpline_messages` | `id` (**serial int** — monotonic, drives `afterId` resync), `chat_id` (FK), `sender_role` (CHECK `TALKER`/`LISTENER`/`SUPERVISOR`/`SYSTEM`/`COPILOT`), `sender_user_id`, `type` (CHECK `TEXT`/`SYSTEM`/`SUGGESTION`/`NUDGE`/`STAGE`/`RISK`/`WHISPER`/`TRANSFER`), `system_kind`, `content` (text), `parent_message_id`, `client_message_id` (uuid), `visible_to_talker` (bool, default false), `metadata`, `erased_at` | `CHK_helpline_messages_talker_visibility`: only TEXT and SYSTEM rows can ever be talker-visible. Partial unique `(chat_id, client_message_id)` makes a resend return the existing row. Bodies are stored in plain text (not the `messages` table's encryption) and blanked to `[erased]` by retention/erasure |
+| `helpline_listener_profiles` | `user_id` (int, unique), `display_name` (varchar(40) — the alias talkers see), `max_concurrent_chats` (default 2, capped by the org setting on read), `languages` (text[]), `notifications_enabled` | Absent until a listener first saves one; reads fall back to their first name and 2 chats |
+| `helpline_risk_flags` | `chat_id`, `message_id` (FK), `level` (CHECK `ELEVATED`/`HIGH`), `source` (CHECK `KEYWORD`/`CLASSIFIER`), `confidence`, `subject` (CHECK `SELF`/`OTHER`/`UNCLEAR`, nullable), `rule_id`, `signal_start`/`signal_end` (**offsets into the message body, never the text**), `resources_sent`, `acknowledged_by`/`_at`, `outcome` (CHECK `UNREVIEWED`/`CONFIRMED`/`FALSE_POSITIVE`), `outcome_note` | The live `signal` shown to the listener is re-derived from the body by offset, so it disappears with the body. Acknowledgements feed the calibration view |
+| `helpline_risk_keyword_rules` | `tenant_id` (**nullable** — NULL = platform default), `phrase`, `language`, `match_type` (CHECK `CONTAINS`/`WORD`), `level`, `enabled` | Seeded by `1975720000000` (en, hi Devanagari + romanised, mr, ta, kn). Unique `(COALESCE(tenant_id,''), language, phrase)`. Matching normalises NFKC + case + whitespace and **keeps `\p{M}`** (Indic vowel signs are Marks) |
+| `helpline_chat_events` | `chat_id`, `type` (CHECK, 17 values — `ENQUEUED`, `CLAIMED`, `ENDED` …), `actor_user_id`, `payload` (jsonb) | The timeline. `payload` carries ids, levels and reasons — **never a message body** |
+| `helpline_chat_summaries` | `chat_id`, `kind` (CHECK `ROLLING`/`HANDOFF`/`FINAL`), `fields` (jsonb `{key: string}` — the org's `summaryFields`), `through_message_id`, `edited_by`, `version` | One row per (chat, kind), unique, updated in place with `version++`. FINAL is generated after the chat ends (ally-ai `/summary/note`) and never overwrites a listener's edit |
+| `helpline_qa_scores` | `chat_id` (unique), `listener_id`, `rubric_version`, `levels` (jsonb `{skillKey: 1–4}`), `verdicts` (jsonb), `composite_score` (real), `has_unhelpful_behaviour`, `judge_model` | Helping-skills judgement of an ended chat. Visible to that listener and supervisors; never ranked |
+| `helpline_talker_feedback` | `chat_id` (unique), `rating` (smallint, CHECK 1–5), `comment` (varchar(1000)) | Once per chat |
+
+**Not tables:** the org switch and settings are `preference` rows `TEXT_HELPLINE_ENABLED`
+(`{enabled}`) and `TEXT_HELPLINE_SETTINGS` (a partial settings object merged over code defaults),
+keyed by tenant **code**. Presence, connection liveness and typing are Redis keys under `hl:*`
+(contract §6.4); the public status is cached 10 s at `hl:status:<tenant uuid>`.
+
+**Retention:** hourly, per tenant `retentionDays` (0 = keep). For chats ended before the cutoff it
+blanks `helpline_messages.content` (all types) to `[erased]` and drops suggestion text from
+`metadata`, nulls `helpline_talker_feedback.comment` and `helpline_risk_flags.outcome_note`, empties
+`helpline_chat_summaries.fields`, resets `helpline_talkers.display_name` to `Anonymous`, and sets
+`erased_at`. Rows, counts, levels, scores and timings stay, so history does not shrink. A talker's
+own **erasure** does the same to one chat immediately and revokes their token.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -823,6 +861,15 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | Whether learners get better at foundational helping skills, independent of scenario | `foundational_skill_cuts` + `foundational_skill_assessments` (one rubric version at a time) |
 | Whether a learner did better on the fixed benchmark roleplay after practising | `foundational_skill_benchmark_assessments` (first vs latest scored session per learner and scenario; benchmark scenarios are `scenarios.metadata.fhsBenchmark = true`) |
 | Whether a course's learners did better on helping skills after it than before | `track_enrollments` (`startedAt`/`completedAt`) against `foundational_skill_cuts` + `foundational_skill_assessments` either side — computed per read by `GET /v1/analytics/course-impact`, nothing stored |
+| A text-helpline conversation and its transcript | `helpline_chats` + `helpline_messages` (talker-visible = `visible_to_talker`; staff-only types are SUGGESTION/NUDGE/STAGE/RISK/WHISPER/TRANSFER) |
+| Who is waiting for a helpline listener, in what order | `helpline_chats` where `status = 'WAITING' AND abandoned_at IS NULL`, ordered `priority DESC, wait_started_at` |
+| The anonymous person behind a helpline chat | `helpline_talkers` (no PII beyond an alias, language, consent version and an ip HMAC) |
+| A helpline listener's alias and chat limit | `helpline_listener_profiles` (absent = defaults) |
+| Why a helpline chat was flagged for risk, and whether it was right | `helpline_risk_flags` (offsets only) + `helpline_risk_keyword_rules` (`tenant_id` NULL = platform default) |
+| A helpline chat's timeline (claimed, transferred, ended …) | `helpline_chat_events` |
+| The listener's notes on a helpline chat | `helpline_chat_summaries` (`kind = 'FINAL'`) |
+| How a helpline chat went, from either side | `helpline_qa_scores` (listener skills, 1–4), `helpline_talker_feedback` (talker rating) |
+| Whether an org has the text helpline on, and its settings | `preference` rows `TEXT_HELPLINE_ENABLED` / `TEXT_HELPLINE_SETTINGS`, keyed by tenant code — not a table |
 | Compliance / who-changed-what | `audit_logs`, plus `created_by`/`updated_by` on entities |
 
 ---

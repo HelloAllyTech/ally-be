@@ -268,6 +268,18 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Optional dedicated secret for text-helpline guest tokens (anonymous
+   * talkers). Empty when unset, and that is a supported configuration:
+   * `HelplineGuestTokenService` then derives one as
+   * HMAC-SHA256(JWT_ACCESS_SECRET, 'helpline-guest-v1'). Either way it is
+   * never the access secret itself, so `JwtStrategy` cannot accept a guest
+   * token. Deliberately not `.required()` in env.validation.ts.
+   */
+  get helplineGuestJwtSecret(): string {
+    return this.configService.get<string>('HELPLINE_GUEST_JWT_SECRET', '');
+  }
+
   get slack() {
     return {
       botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),

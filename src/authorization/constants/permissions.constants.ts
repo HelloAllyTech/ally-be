@@ -369,7 +369,51 @@ const PERMISSIONS = {
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
   VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
   EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',
+
+  // === TEXT HELPLINE ===
+  // Anonymous web "talkers" chat with trained human listeners. Contract:
+  // docs/text-helpline.md §2. Every listener route ALSO requires the tenant's
+  // TEXT_HELPLINE_ENABLED preference (@RequireHelplineEnabled) — a permission
+  // alone never opens the surface.
+  VIEW_HELPLINE_LOBBY: 'view:helpline:lobby',
+  EDIT_HELPLINE_PRESENCE: 'edit:helpline:presence',
+  EDIT_HELPLINE_CLAIM: 'edit:helpline:claim',
+  VIEW_HELPLINE_CHAT: 'view:helpline:chat',
+  EDIT_HELPLINE_MESSAGE: 'edit:helpline:message',
+  EDIT_HELPLINE_END: 'edit:helpline:end',
+  VIEW_HELPLINE_COPILOT: 'view:helpline:copilot',
+  EDIT_HELPLINE_SUMMARY: 'edit:helpline:summary',
+  VIEW_HELPLINE_MONITOR: 'view:helpline:monitor',
+  EDIT_HELPLINE_WHISPER: 'edit:helpline:whisper',
+  EDIT_HELPLINE_TRANSFER: 'edit:helpline:transfer',
+  VIEW_HELPLINE_QA: 'view:helpline:qa',
+  EDIT_HELPLINE_TEAM: 'edit:helpline:team',
 };
+
+/**
+ * The LISTENER group: a trained volunteer or staff member who answers text
+ * helpline chats. Additive — it is granted alongside the account's normal app
+ * role, so it carries only the helpline surface.
+ */
+const LISTENER_PERMISSIONS = [
+  PERMISSIONS.VIEW_HELPLINE_LOBBY,
+  PERMISSIONS.EDIT_HELPLINE_PRESENCE,
+  PERMISSIONS.EDIT_HELPLINE_CLAIM,
+  PERMISSIONS.VIEW_HELPLINE_CHAT,
+  PERMISSIONS.EDIT_HELPLINE_MESSAGE,
+  PERMISSIONS.EDIT_HELPLINE_END,
+  PERMISSIONS.VIEW_HELPLINE_COPILOT,
+  PERMISSIONS.EDIT_HELPLINE_SUMMARY,
+];
+
+/** HELPLINE_SUPERVISOR: everything a listener can do, plus oversight. */
+const HELPLINE_SUPERVISOR_PERMISSIONS = [
+  ...LISTENER_PERMISSIONS,
+  PERMISSIONS.VIEW_HELPLINE_MONITOR,
+  PERMISSIONS.EDIT_HELPLINE_WHISPER,
+  PERMISSIONS.EDIT_HELPLINE_TRANSFER,
+  PERMISSIONS.VIEW_HELPLINE_QA,
+];
 
 const SUPER_ADMIN_PERMISSIONS = [
   // Full administrative access
@@ -622,6 +666,12 @@ const ADMIN_PERMISSIONS = [
   // were revoked by 1974700000000-RevokeTenantAdminOrgSettingsGrants. Tenant
   // content access is managed from the admin console.
 
+  // Text helpline: a tenant ADMIN supervises their own org's helpline and is
+  // the one who grants LISTENER / HELPLINE_SUPERVISOR from Helpline → Team.
+  // Written to `group_permissions` by 1975710000000-AddHelplinePermissions.
+  ...HELPLINE_SUPERVISOR_PERMISSIONS,
+  PERMISSIONS.EDIT_HELPLINE_TEAM,
+
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. An ADMIN who is also a counsellor inherits it via
@@ -758,4 +808,6 @@ export {
   SIMULATION_REVIEWER_PERMISSIONS,
   SCRIBE_REVIEWER_PERMISSIONS,
   EVALUATOR_PERMISSIONS,
+  LISTENER_PERMISSIONS,
+  HELPLINE_SUPERVISOR_PERMISSIONS,
 };
