@@ -27,6 +27,7 @@ import { PreferenceName } from 'src/common/constants/user.constants';
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { FAILURE_MESSAGES } from 'src/exception/failure-messages';
 import { ScenarioInteractionMode } from '../enum/scenario-interaction-mode.enum';
+import { LlmTask } from '../enum/llm-task.enum';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
 import { DataSource, IsNull, Not, Repository } from 'typeorm';
@@ -2419,7 +2420,10 @@ export class ScenarioSessionService {
         }));
 
       // need_memory=false: memory is language-independent and already computed
-      // at end-session; this call only regenerates the feedback text.
+      // at end-session; this call only regenerates the feedback text. Labelled
+      // apart from the first evaluation so the cost of multilingual debriefs
+      // shows as its own line; still tagged to the session, so it is counted
+      // as that session's debrief spend.
       const aiResult = await this.aiService.getScenarioSessionEvaluation(
         messages,
         false,
@@ -2429,6 +2433,7 @@ export class ScenarioSessionService {
         languageCode,
         undefined,
         scenarioSessionId,
+        LlmTask.SCENARIO_EVALUATION_LANGUAGE,
       );
 
       if (aiResult && 'emotional_movement' in aiResult) {
@@ -2525,6 +2530,22 @@ export class ScenarioSessionService {
     return this.scenarioSessionRepository.findOne({
       where: { roomId },
     });
+  }
+
+  /**
+   * The tenant a scenario session belongs to, or null when there is no such
+   * session. For attributing internal usage rows that name a session but
+   * arrive with no tenant context (the llm_usage SQS processor); it returns
+   * the tenant id alone, so it cannot hand session data to a caller.
+   */
+  async getScenarioSessionTenantIdOrNull(
+    scenarioSessionId: string,
+  ): Promise<string | null> {
+    const session = await this.scenarioSessionRepository.findOne({
+      where: { id: scenarioSessionId },
+      select: { id: true, tenantId: true },
+    });
+    return session?.tenantId ?? null;
   }
 
   async getScenarioSessionByRoomId(roomId: string) {

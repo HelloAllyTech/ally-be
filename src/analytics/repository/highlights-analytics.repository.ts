@@ -73,11 +73,17 @@ export interface CompletedSimsBucketRow {
 
 export interface AiUsageBucketRow {
   bucket: string;
+  /** Raw `llm_usage.task` — pricing reads it to spot net-of-cache rows. */
+  task: string;
   service: string;
   provider: string;
   model: string;
   promptTokens: number;
   completionTokens: number;
+  /** Read by pricing for Gemini thinking tokens. */
+  totalTokens: number;
+  /** Prompt-cache reads; a subset of promptTokens for OpenAI/Gemini. */
+  cachedTokens: number;
   audioMs: number;
   characters: number;
   calls: number;
@@ -698,11 +704,14 @@ export class HighlightsAnalyticsRepository {
   }
 
   /**
-   * AI usage per bucket x (service, provider, model) — the cost-per-sim
-   * numerator's raw quantities. Mirrors LlmUsageRepository's grouping minus
-   * `task` (pricing is keyed on service/provider/model only; task would just
-   * multiply row count). USD cost is computed in the service from the pricing
-   * tables — never in SQL. bigint sums come back as strings, hence Number().
+   * AI usage per bucket x (task, service, provider, model) — the cost-per-sim
+   * numerator's raw quantities. Mirrors LlmUsageRepository's grouping. `task`
+   * used to be left out because pricing was keyed on service/provider/model
+   * alone; it no longer is — the CI-runner tasks record prompt tokens net of
+   * cache and are priced differently (NET_OF_CACHE_PROMPT_TASKS), so a group
+   * mixing them with in-process rows could not be priced correctly. USD cost
+   * is computed in the service from the pricing tables — never in SQL. bigint
+   * sums come back as strings, hence Number().
    */
   async getAiUsageByBucket(
     start: Date,
@@ -716,6 +725,7 @@ export class HighlightsAnalyticsRepository {
         `to_char(date_trunc('${trunc}', lu."occurredAt"), 'YYYY-MM-DD')`,
         'bucket',
       )
+      .addSelect('lu.task', 'task')
       .addSelect('lu.service', 'service')
       .addSelect('lu.provider', 'provider')
       .addSelect('lu.model', 'model')
@@ -724,6 +734,8 @@ export class HighlightsAnalyticsRepository {
         'COALESCE(SUM(lu."completionTokens"), 0)::bigint',
         'completionTokens',
       )
+      .addSelect('COALESCE(SUM(lu."totalTokens"), 0)::bigint', 'totalTokens')
+      .addSelect('COALESCE(SUM(lu."cachedTokens"), 0)::bigint', 'cachedTokens')
       .addSelect('COALESCE(SUM(lu."audioMs"), 0)::bigint', 'audioMs')
       .addSelect('COALESCE(SUM(lu."characters"), 0)::bigint', 'characters')
       .addSelect('COUNT(*)::int', 'calls')
@@ -734,17 +746,21 @@ export class HighlightsAnalyticsRepository {
       // (judges, autofill, translation) and must survive the filter.
       .andWhere(excludeTestTenants('lu."tenant_id"'))
       .groupBy('bucket')
+      .addGroupBy('lu.task')
       .addGroupBy('lu.service')
       .addGroupBy('lu.provider')
       .addGroupBy('lu.model')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
         bucket: string;
+        task: string;
         service: string;
         provider: string;
         model: string;
         promptTokens: string;
         completionTokens: string;
+        totalTokens: string;
+        cachedTokens: string;
         audioMs: string;
         characters: string;
         calls: number;
@@ -752,11 +768,14 @@ export class HighlightsAnalyticsRepository {
 
     return rows.map((r) => ({
       bucket: r.bucket,
+      task: r.task ?? 'unknown',
       service: r.service,
       provider: r.provider,
       model: r.model,
       promptTokens: Number(r.promptTokens) || 0,
       completionTokens: Number(r.completionTokens) || 0,
+      totalTokens: Number(r.totalTokens) || 0,
+      cachedTokens: Number(r.cachedTokens) || 0,
       audioMs: Number(r.audioMs) || 0,
       characters: Number(r.characters) || 0,
       calls: Number(r.calls) || 0,

@@ -202,6 +202,9 @@ describe('FoundationalSkillsBenchmarkService', () => {
       sessionId: 'sess-1',
       scenarioId: 7,
     });
+    // One call judges one session, so its spend is attributed to it (as
+    // analysis spend beside the session's cost, not inside it).
+    expect(request.scenarioSessionId).toBe('sess-1');
 
     const write = repo.upsertBenchmarkAssessment.mock.calls[0][0];
     // The fabricated advanced quote is dropped, so verbal is a 3, not a 4.

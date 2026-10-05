@@ -7,7 +7,9 @@ import {
   COST_PER_MINUTES,
   CostUsageRow,
   RoleplayCostAnalyticsRepository,
+  TASK_AREA,
 } from '../../repository/roleplay-cost-analytics.repository';
+import { SESSION_COST_COMPONENT_BY_TASK } from '../../constants/session-cost.constants';
 
 const FIXED_NOW = new Date('2024-06-12T12:00:00.000Z');
 
@@ -23,6 +25,8 @@ const llmRow = (overrides: Partial<CostUsageRow> = {}): CostUsageRow => ({
   model: 'gpt-4o-mini',
   promptTokens: 1_000_000,
   completionTokens: 0,
+  totalTokens: 1_000_000,
+  cachedTokens: 0,
   audioMs: 0,
   characters: 0,
   calls: 10,
@@ -148,6 +152,50 @@ describe('RoleplayCostAnalyticsService', () => {
     const byService =
       (breakdown?.llm ?? 0) + (breakdown?.stt ?? 0) + (breakdown?.tts ?? 0);
     expect(byArea).toBeCloseTo(byService, 4);
+  });
+
+  it('counts the debrief chat and the per-language debrief as feedback', async () => {
+    // Each happens only because a learner practised and then read or discussed
+    // their debrief — the same test the end-of-session evaluation passes.
+    await setup(
+      [
+        llmRow({ task: LlmTask.DEBRIEF_CHAT }),
+        llmRow({ task: LlmTask.DEBRIEF_CHAT_SUMMARY }),
+        llmRow({ task: LlmTask.SCENARIO_EVALUATION_LANGUAGE }),
+      ],
+      [{ bucket: '2024-05-01', minutes: 100, activeLearners: 3 }],
+    );
+    const result = await monthly();
+    const may = result.points.find((p) => p.bucket === '2024-05-01');
+
+    expect(may?.breakdown.feedback).toBeCloseTo(0.45, 4);
+    expect(may?.excludedCostUsd).toBe(0);
+  });
+
+  it('files every debrief-component task under feedback, so the two cost charts agree', () => {
+    // The session-cost chart and this one classify the same calls; a task the
+    // session chart calls debrief but this one excludes makes them disagree
+    // about what practice costs.
+    const debriefTasks = Object.entries(SESSION_COST_COMPONENT_BY_TASK)
+      .filter(([, component]) => component === 'debrief')
+      .map(([task]) => task as LlmTask);
+
+    expect(debriefTasks.length).toBeGreaterThan(0);
+    expect(
+      debriefTasks.filter((task) => TASK_AREA[task] !== 'feedback'),
+    ).toEqual([]);
+  });
+
+  it('prices cached prompt tokens from the usage row at the cached rate', async () => {
+    // 1M gpt-4o-mini prompt tokens, all served from cache: $0.075, not $0.15.
+    await setup(
+      [llmRow({ cachedTokens: 1_000_000 })],
+      [{ bucket: '2024-05-01', minutes: 100, activeLearners: 3 }],
+    );
+    const result = await monthly();
+    const may = result.points.find((p) => p.bucket === '2024-05-01');
+
+    expect(may?.attributableCostUsd).toBeCloseTo(0.075, 4);
   });
 
   it('nulls the ratio in a bucket with no practice but keeps cost at zero', async () => {

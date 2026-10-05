@@ -220,6 +220,10 @@ export class RecallQualityJudgeService {
           stance: turn.stance,
           cue_tier: turn.cue_tier,
           rubric,
+          // Attribution only: ally-ai stamps it on the llm_usage row so the
+          // judge's spend lands on the session the turn belongs to (as
+          // analysis spend, never delivery cost). An older ally-ai ignores it.
+          scenario_session_id: turn.scenario_session_id,
         },
         {
           headers: { 'x-api-key': outboundApiKey },

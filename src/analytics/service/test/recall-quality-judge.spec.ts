@@ -170,6 +170,8 @@ describe('RecallQualityJudgeService', () => {
     expect(body.passed_over[0].text).toBe('her son stopped visiting');
     expect(body.stance).toBe('guarded');
     expect(body.cue_tier).toBe('nominated');
+    // Attribution: lets ally-ai tag the usage row to the turn's session.
+    expect(body.scenario_session_id).toBe('sess-1');
     expect(config.headers['x-api-key']).toBe('k');
   });
 

@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -1641,6 +1642,82 @@ export class BugHunterMetricsDto {
 export class BugHuntRunDetailDto extends BugHuntRunDto {
   @ApiProperty({ type: [BugHuntEventDto] })
   events!: BugHuntEventDto[];
+}
+
+// ── run summary (GET /v1/bug-hunter/runs/summary) ─────────────────────────
+
+export class BugHuntRunsSummaryQueryDto {
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: BUG_HUNTER_METRICS_MAX_DAYS,
+    description: 'Days of history to total. Omit for all time.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(BUG_HUNTER_METRICS_MAX_DAYS)
+  days?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "The reader's IANA time zone (e.g. Asia/Kolkata), used only to bucket the " +
+      'per-day series onto the calendar days they saw. Unknown zones fall back to UTC.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_+\-/]+$/)
+  timeZone?: string;
+}
+
+export class BugHuntRunWindowSummaryDto {
+  @ApiProperty() runs!: number;
+  @ApiProperty() costUsd!: number;
+  @ApiProperty() completed!: number;
+  @ApiProperty() failed!: number;
+  @ApiProperty() running!: number;
+  @ApiProperty() skipped!: number;
+  @ApiProperty() found!: number;
+  @ApiProperty() autoMerged!: number;
+  @ApiProperty() prOpened!: number;
+  @ApiProperty() dismissed!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty({
+    description:
+      'Runs that reported both token counts; the token sums are over these only.',
+  })
+  tokensReported!: number;
+}
+
+export class BugHuntRunDayPointDto {
+  @ApiProperty({ description: 'YYYY-MM-DD in the requested time zone.' })
+  date!: string;
+  @ApiProperty() runs!: number;
+  @ApiProperty() costUsd!: number;
+  @ApiProperty() found!: number;
+}
+
+export class BugHuntRunsSummaryDto {
+  @ApiProperty({
+    nullable: true,
+    description: 'The window totalled; null is all time.',
+  })
+  days!: number | null;
+
+  @ApiProperty({ description: 'The zone the series was bucketed in.' })
+  timeZone!: string;
+
+  @ApiProperty({ type: BugHuntRunWindowSummaryDto })
+  window!: BugHuntRunWindowSummaryDto;
+
+  @ApiProperty({
+    type: [BugHuntRunDayPointDto],
+    description:
+      'One point per calendar day for the last fourteen days, oldest first; quiet days are zeros.',
+  })
+  series!: BugHuntRunDayPointDto[];
 }
 
 export class ListBugHuntRunsResponseDto {

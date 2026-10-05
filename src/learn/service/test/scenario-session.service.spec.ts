@@ -32,6 +32,7 @@ import {
 } from 'src/learn/enum/scenario-session-status.enum';
 import { ScenarioSessionLeaderboardEvent } from 'src/learn/type/scenario-session-leaderboard-event.type';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import {
   ScenarioStatus,
   ScenarioDifficultyLevel,
@@ -690,6 +691,31 @@ describe('ScenarioSessionService', () => {
       expect(scenarioPathSharedService).toBeDefined();
       expect(sessionEventTranslationService).toBeDefined();
       expect(reviewSharedService).toBeDefined();
+    });
+  });
+
+  describe('getScenarioSessionTenantIdOrNull', () => {
+    it("returns only the session's tenant, for attributing a usage row", async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue({
+        id: 'sess-9',
+        tenantId: 't9',
+      } as any);
+
+      await expect(
+        service.getScenarioSessionTenantIdOrNull('sess-9'),
+      ).resolves.toBe('t9');
+      expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'sess-9' },
+        select: { id: true, tenantId: true },
+      });
+    });
+
+    it('returns null for an unknown session', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getScenarioSessionTenantIdOrNull('missing'),
+      ).resolves.toBeNull();
     });
   });
 
@@ -1475,6 +1501,9 @@ describe('ScenarioSessionService', () => {
       const evalCall = aiService.getScenarioSessionEvaluation.mock.calls[0];
       expect(evalCall[1]).toBe(false); // need_memory
       expect(evalCall[5]).toBe('ta'); // languageCode
+      // Attributed to the session, under its own usage label.
+      expect(evalCall[7]).toBe(mockScenarioSessionId);
+      expect(evalCall[8]).toBe(LlmTask.SCENARIO_EVALUATION_LANGUAGE);
     });
   });
 
@@ -1641,6 +1670,10 @@ describe('ScenarioSessionService', () => {
       await new Promise((r) => setImmediate(r));
 
       expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalled();
+      // The end-of-session debrief keeps the default scenario_evaluation label.
+      expect(
+        aiService.getScenarioSessionEvaluation.mock.calls[0][8],
+      ).toBeUndefined();
       expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
       expect(mockDetailsSave).toHaveBeenCalledWith(
         expect.objectContaining({

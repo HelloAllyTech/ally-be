@@ -425,9 +425,12 @@ export class HighlightsAnalyticsService {
         {
           promptTokens: r.promptTokens,
           completionTokens: r.completionTokens,
+          totalTokens: r.totalTokens,
+          cachedTokens: r.cachedTokens,
           audioMs: r.audioMs,
           characters: r.characters,
         },
+        r.task,
       );
       const acc = costByBucket.get(r.bucket) ?? {
         costUsd: 0,
