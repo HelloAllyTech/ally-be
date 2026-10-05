@@ -64,13 +64,19 @@ describe('RecallQualityJudgeService', () => {
         judgment: { verdict: 'well_chosen', unused_selected: [] },
       },
     });
+    const attempts = {
+      recordFailure: jest.fn().mockResolvedValue(undefined),
+      clear: jest.fn().mockResolvedValue(undefined),
+    };
     return {
       service: new RecallQualityJudgeService(
         repo as never,
         { ai: { apiUrl: 'http://ai.test', outboundApiKey: 'k' } } as never,
         redis as never,
+        attempts as never,
       ),
       repo,
+      attempts,
     };
   };
 
@@ -221,6 +227,71 @@ describe('RecallQualityJudgeService', () => {
     expect(opts.unjudgedForVersion).toEqual({
       judgeModel: 'gemini-2.5-pro',
       judgePromptVersion: 'v1',
+    });
+  });
+
+  /**
+   * A turn that produced no verdict reads as unjudged, so without a ledger entry the drainer
+   * re-buys it at the head of its newest-first queue on every tick for seven days.
+   */
+  describe('attempt ledger', () => {
+    it('records a verdictless response as an EMPTY attempt against the turn', async () => {
+      const { service, attempts } = build({
+        response: {
+          judge_model: 'gemini-2.5-pro',
+          judge_prompt_version: 'v1',
+          judgment: null,
+        },
+      });
+      await run(service);
+
+      expect(attempts.recordFailure).toHaveBeenCalledWith(
+        'recall-quality',
+        'sel-1',
+        'tenant-1',
+        'empty',
+        'judge returned no verdict',
+      );
+      expect(attempts.clear).not.toHaveBeenCalled();
+    });
+
+    it('records a thrown call as a FAILED attempt', async () => {
+      const { service, attempts } = build();
+      const timeout = Object.assign(new Error('timeout of 600000ms exceeded'), {
+        isAxiosError: true,
+        code: 'ECONNABORTED',
+      });
+      post.mockReset();
+      post.mockRejectedValue(timeout);
+      await run(service);
+
+      expect(attempts.recordFailure).toHaveBeenCalledWith(
+        'recall-quality',
+        'sel-1',
+        'tenant-1',
+        'failed',
+        timeout,
+      );
+    });
+
+    it('clears the ledger once the turn is judged', async () => {
+      const { service, attempts } = build();
+      await run(service);
+
+      expect(attempts.clear).toHaveBeenCalledWith('recall-quality', 'sel-1');
+      expect(attempts.recordFailure).not.toHaveBeenCalled();
+    });
+
+    it('honours the ledger only when a scheduled caller asks', async () => {
+      const { service, repo } = build();
+      await service.startBackfill(7, null, 1, 60, {
+        honourAttemptLedger: true,
+      });
+      await service.startBackfill(7, null, 1, 60);
+      await new Promise((r) => setImmediate(r));
+
+      expect(repo.selectTurns.mock.calls[0][0].honourAttemptLedger).toBe(true);
+      expect(repo.selectTurns.mock.calls[1][0].honourAttemptLedger).toBe(false);
     });
   });
 });

@@ -12,6 +12,12 @@ import {
 } from '../util/judge-concurrency.util';
 import { GroundednessBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
+  JudgeAttemptFamily,
+  JudgeAttemptOutcome,
+} from '../constants/judge-scheduling.constants';
+import { JudgeAttemptRepository } from '../repository/judge-attempt.repository';
+import { ScheduledSelection } from '../util/judge-attempts.util';
+import {
   ClaimJudgment,
   FeedbackClaim,
   FeedbackGroundednessRepository,
@@ -51,6 +57,7 @@ export class FeedbackGroundednessJudgeService {
     private readonly repo: FeedbackGroundednessRepository,
     private readonly config: AppConfigService,
     private readonly redis: RedisService,
+    private readonly attempts: JudgeAttemptRepository,
   ) {}
 
   private jobKey(jobId: string): string {
@@ -87,6 +94,11 @@ export class FeedbackGroundednessJudgeService {
      * flight, and the next tick simply picks up the next batch.
      */
     limit?: number | null,
+    /**
+     * Set by the drainer only. The admin endpoint passes nothing, which keeps
+     * a manual run uncapped by the attempt ledger.
+     */
+    scheduled?: Pick<ScheduledSelection, 'honourAttemptLedger'> | null,
   ): Promise<GroundednessBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -109,6 +121,7 @@ export class FeedbackGroundednessJudgeService {
       unjudgedForVersion ?? null,
       concurrency,
       limit ?? null,
+      scheduled?.honourAttemptLedger ?? false,
     );
     this.logger.debug(
       `groundedness backfill queued job=${jobId} sinceDays=${sinceDays} ` +
@@ -126,6 +139,7 @@ export class FeedbackGroundednessJudgeService {
     } | null,
     concurrency: number,
     limit: number | null,
+    honourAttemptLedger: boolean,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -133,6 +147,7 @@ export class FeedbackGroundednessJudgeService {
         sinceDays,
         unjudgedForVersion,
         limit,
+        honourAttemptLedger,
       });
       job.status = 'running';
       job.total = sessions.length;
@@ -162,6 +177,27 @@ export class FeedbackGroundednessJudgeService {
             s.language,
             rubric,
           );
+
+          // ally-ai answers 200 with no claims when the model returned nothing
+          // usable (ally-be never sends an empty claim list — that case is
+          // skipped above, so an empty answer always means the judge failed).
+          // It used to be counted as judged: no rows were written, the
+          // drainer's breaker never saw a failure, and NOT EXISTS put the
+          // session back at the head of the newest-first queue every tick.
+          if (judged.claims.length === 0) {
+            await this.attempts.recordFailure(
+              JudgeAttemptFamily.GROUNDEDNESS,
+              s.id,
+              s.tenant_id,
+              JudgeAttemptOutcome.EMPTY,
+              'judge returned no claims',
+            );
+            job.failed += 1;
+            job.processed += 1;
+            await this.saveJob(job);
+            return;
+          }
+
           await this.repo.upsertJudgments(
             s,
             claims,
@@ -169,6 +205,7 @@ export class FeedbackGroundednessJudgeService {
             judged.judgeModel,
             judged.judgePromptVersion,
           );
+          await this.attempts.clear(JudgeAttemptFamily.GROUNDEDNESS, s.id);
 
           job.judged += 1;
           job.claimsJudged += judged.claims.length;
@@ -183,6 +220,13 @@ export class FeedbackGroundednessJudgeService {
             `groundedness backfill: session ${s.id} failed: ${
               (e as Error).message
             }`,
+          );
+          await this.attempts.recordFailure(
+            JudgeAttemptFamily.GROUNDEDNESS,
+            s.id,
+            s.tenant_id,
+            JudgeAttemptOutcome.FAILED,
+            e,
           );
           job.failed += 1;
           job.processed += 1;

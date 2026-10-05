@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { JudgeAttemptFamily } from '../constants/judge-scheduling.constants';
+import { judgeAttemptGate } from '../util/judge-attempts.util';
+import { settledEndedSessionPredicate } from '../util/session-eligibility.util';
 
 /** A turn's recall decision, awaiting a verdict. */
 export interface RecallTurnRow {
@@ -64,6 +67,12 @@ export class RecallQualityRepository {
    *
    * Requires a pool: a turn where recall had nothing to choose from was never a ranking
    * decision, and judging it would manufacture a verdict about an empty choice.
+   *
+   * Requires the session to be over, too. The selection row is written BEFORE the client's
+   * reply is generated, and the reply is persisted as its own message a few seconds later —
+   * so the newest turns, which newest-first reaches first, are exactly the live ones whose
+   * reply may not exist yet. `buildTurnText` keeps a turn with no reply (a session can end
+   * mid-turn), so the judge would rule on an empty reply and the verdict would stand.
    */
   async selectTurns(opts: {
     sinceDays?: number | null;
@@ -72,6 +81,8 @@ export class RecallQualityRepository {
       judgeModel: string;
       judgePromptVersion: string;
     } | null;
+    /** Scheduled runs only — see ScheduledSelection.honourAttemptLedger. */
+    honourAttemptLedger?: boolean;
   }): Promise<RecallTurnRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -91,8 +102,10 @@ export class RecallQualityRepository {
              r.passed_over,
              r."createdAt" AS occurred_at
         FROM wm_recall_selections r
+        JOIN scenario_sessions s ON s.id = r."scenarioSessionId"
        WHERE jsonb_array_length(COALESCE(r.selected, '[]'::jsonb))
-             + jsonb_array_length(COALESCE(r.passed_over, '[]'::jsonb)) > 0`;
+             + jsonb_array_length(COALESCE(r.passed_over, '[]'::jsonb)) > 0
+         AND ${settledEndedSessionPredicate('s')}`;
 
     if (opts.sinceDays != null) {
       sql += ` AND r."createdAt" >= now() - make_interval(days => ${p(
@@ -107,6 +120,13 @@ export class RecallQualityRepository {
                     AND j.judge_prompt_version = ${p(
                       opts.unjudgedForVersion.judgePromptVersion,
                     )})`;
+    }
+    if (opts.honourAttemptLedger) {
+      sql += ` AND ${judgeAttemptGate(
+        JudgeAttemptFamily.RECALL_QUALITY,
+        'r.id',
+        p,
+      )}`;
     }
     sql += ` ORDER BY r."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;

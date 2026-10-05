@@ -11,6 +11,12 @@ import {
   withJudgeSlot,
 } from '../util/judge-concurrency.util';
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
+import {
+  JudgeAttemptFamily,
+  JudgeAttemptOutcome,
+} from '../constants/judge-scheduling.constants';
+import { JudgeAttemptRepository } from '../repository/judge-attempt.repository';
+import { ScheduledSelection } from '../util/judge-attempts.util';
 import { VarietyProfileService } from 'src/language/service/variety-profile.service';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import { resolveTargetVariety } from '../../language/util/register-policy.util';
@@ -64,6 +70,7 @@ export class LanguageJudgeService {
     private readonly config: AppConfigService,
     private readonly redis: RedisService,
     private readonly varietyProfileService: VarietyProfileService,
+    private readonly attempts: JudgeAttemptRepository,
   ) {}
 
   private jobKey(jobId: string): string {
@@ -96,6 +103,12 @@ export class LanguageJudgeService {
      * flight, and the next tick simply picks up the next batch.
      */
     limit?: number | null,
+    /**
+     * Set by the catch-up and the drainer only (attempt ledger, and the
+     * drainer's distance from the catch-up's window). The admin endpoint
+     * passes nothing, which keeps a manual run uncapped.
+     */
+    scheduled?: ScheduledSelection | null,
   ): Promise<LanguageBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -119,6 +132,7 @@ export class LanguageJudgeService {
       unjudgedForVersion ?? null,
       concurrency,
       limit ?? null,
+      scheduled ?? {},
     );
     this.logger.debug(
       `language backfill queued job=${jobId} sinceDays=${sinceDays} onlyUnjudged=${onlyUnjudged}`,
@@ -141,6 +155,7 @@ export class LanguageJudgeService {
     } | null,
     concurrency: number,
     limit: number | null,
+    scheduled: ScheduledSelection,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -149,6 +164,7 @@ export class LanguageJudgeService {
         onlyUnjudged,
         unjudgedForVersion,
         limit,
+        ...scheduled,
       });
       job.status = 'running';
       job.total = sessions.length;
@@ -189,6 +205,7 @@ export class LanguageJudgeService {
             userText,
             { scriptFidelityPct, roundTripWerPct: null },
           );
+          await this.attempts.clear(JudgeAttemptFamily.LANGUAGE, s.id);
           job.judged += 1;
           job.errorAnnotations += judged.result.per_turn.reduce(
             (n, t) => n + t.errors.length,
@@ -200,6 +217,15 @@ export class LanguageJudgeService {
           // One bad session must not abort the whole job.
           this.logger.error(
             `language backfill: session ${s.id} failed: ${(e as Error).message}`,
+          );
+          // A failure writes no judgment row, so without this it reads as
+          // unjudged and is re-bought on every tick inside the window.
+          await this.attempts.recordFailure(
+            JudgeAttemptFamily.LANGUAGE,
+            s.id,
+            s.tenant_id,
+            JudgeAttemptOutcome.FAILED,
+            e,
           );
           job.failed += 1;
           job.processed += 1;

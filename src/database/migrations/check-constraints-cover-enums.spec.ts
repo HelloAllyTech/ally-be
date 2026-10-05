@@ -38,6 +38,10 @@ import {
   FhsAssessmentStatus,
   FhsBenchmarkStatus,
 } from '../../foundational-skills/enum/foundational-skills.enum';
+import {
+  JudgeAttemptFamily,
+  JudgeAttemptOutcome,
+} from '../../analytics/constants/judge-scheduling.constants';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -180,6 +184,8 @@ describe('CHECK constraints cover their enums', () => {
       'CHK_foundational_skill_benchmark_assessments_status',
       Object.values(FhsBenchmarkStatus),
     ],
+    ['CHK_judge_attempts_family', Object.values(JudgeAttemptFamily)],
+    ['CHK_judge_attempts_last_outcome', Object.values(JudgeAttemptOutcome)],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

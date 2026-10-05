@@ -107,6 +107,7 @@ import { ScribeAnalyticsRepository } from './repository/scribe-analytics.reposit
 import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
+import { JudgeAttemptRepository } from './repository/judge-attempt.repository';
 import { FillerAnalyticsService } from './service/filler-analytics.service';
 import { FillerAnalyticsRepository } from './repository/filler-analytics.repository';
 import { FillerJudgeRepository } from './repository/filler-judge.repository';
@@ -266,6 +267,9 @@ import { TenantModule } from 'src/tenant/tenant.module';
     DriftJudgeRepository,
     DriftBackfillSchedulerRegistrationService,
     JudgeBacklogDrainService,
+    // The judges' attempt ledger: written by all four session/turn judges,
+    // read inside their selectors (judge-attempts.util).
+    JudgeAttemptRepository,
     LanguageJudgeService,
     LanguageJudgeRepository,
     FillerJudgeService,

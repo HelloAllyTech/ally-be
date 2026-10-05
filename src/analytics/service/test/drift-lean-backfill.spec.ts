@@ -20,14 +20,20 @@ describe('drift lean backfill', () => {
       mergeLeanLabels: jest.fn(),
     };
     const redis = { get: jest.fn(), set: jest.fn().mockResolvedValue('OK') };
-    // Constructor order is (repo, config, redis) — a mis-ordered stub fails
-    // deep inside saveJob rather than at construction, so it is worth pinning.
+    const attempts = {
+      recordFailure: jest.fn().mockResolvedValue(undefined),
+      clear: jest.fn().mockResolvedValue(undefined),
+    };
+    // Constructor order is (repo, config, redis, attempts) — a mis-ordered
+    // stub fails deep inside saveJob rather than at construction, so it is
+    // worth pinning.
     const service = new DriftJudgeService(
       repo as never,
       { ai: { apiUrl: 'http://ai', outboundApiKey: 'k' } } as never,
       redis as never,
+      attempts as never,
     );
-    return { service, repo };
+    return { service, repo, attempts };
   };
 
   const flush = () => new Promise((r) => setTimeout(r, 10));

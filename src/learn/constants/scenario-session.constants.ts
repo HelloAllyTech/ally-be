@@ -399,6 +399,22 @@ export const ROOM_METADATA_STALE_HOURS = 24;
 export const UNFINALISED_SESSION_GRACE_MS = 15 * 60 * 1000;
 
 /**
+ * How long after a roleplay ends before its transcript is treated as final.
+ *
+ * FIFTEEN MINUTES. Ending is several writers racing, not one event: `status =
+ * ENDED` lands first, the agent's `end-of-session` SQS message a beat later,
+ * and trailing transcript turns travel over SQS on their own and arrive after
+ * both (+6s and +16s on a measured prod run — see V2V_EVALUATION_SETTLE_MS).
+ * Anything that reads a WHOLE transcript after the fact waits this long, so it
+ * never reads one that is still growing.
+ *
+ * Shared by the actor-evaluation catch-up and the scheduled quality judges
+ * (drift, language, groundedness, recall), so they cannot disagree about when
+ * a session is finished.
+ */
+export const SESSION_SETTLE_GRACE_MINUTES = 15;
+
+/**
  * How far back the unfinalised-session sweep will reach.
  *
  * TWO WEEKS, and deliberately bounded rather than open-ended. Completing a

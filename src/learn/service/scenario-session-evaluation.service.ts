@@ -8,6 +8,7 @@ import { ScenarioSessionMessagesRepository } from '../repository/scenario-sessio
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { AgentTestCaseService } from './agent-test-case.service';
 import { UpdateActorEvaluationDto } from '../dto/scenario-session-evaluation.dto';
+import { SESSION_SETTLE_GRACE_MINUTES } from '../constants/scenario-session.constants';
 
 /** Lifecycle states stored in scenario_session_details.evaluationStatus. */
 export enum ActorEvaluationStatus {
@@ -28,7 +29,7 @@ const CATCHUP_WINDOW_HOURS = 24;
  * travels over SQS and the normal trigger may still be in flight. Only
  * genuinely missed sessions should reach the catch-up.
  */
-const CATCHUP_GRACE_MINUTES = 15;
+const CATCHUP_GRACE_MINUTES = SESSION_SETTLE_GRACE_MINUTES;
 
 /**
  * Ceiling per tick, so a long outage drains gradually instead of firing a
