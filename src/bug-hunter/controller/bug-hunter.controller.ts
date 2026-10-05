@@ -385,7 +385,7 @@ export class BugHunterController {
   async listFindings(
     @Query() query: ListBugFindingsQueryDto,
   ): Promise<ListBugFindingsResponseDto> {
-    const { items, count } = await this.bugFindingService.list({
+    const { items, count, countsByStatus } = await this.bugFindingService.list({
       status: query.status && query.status !== 'all' ? query.status : undefined,
       source: query.source,
       repo: query.repo,
@@ -394,7 +394,7 @@ export class BugHunterController {
       offset: query.offset ?? 0,
     });
     const enriched = await this.bugFindingService.enrich(items);
-    return { items: enriched.map(toFindingDto), count };
+    return { items: enriched.map(toFindingDto), count, countsByStatus };
   }
 
   /**
