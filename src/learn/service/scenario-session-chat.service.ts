@@ -113,7 +113,7 @@ export class ScenarioSessionChatService {
       tenantId,
     );
 
-    await this.chatMessageRepo.save({
+    const savedUserMessage = await this.chatMessageRepo.save({
       chatId: chat.id,
       senderId: userId,
       content: userMessage,
@@ -135,9 +135,15 @@ export class ScenarioSessionChatService {
       scenarioSessionId,
     );
 
+    // The turn being answered reaches the model once, as `userMessage`; the
+    // history is everything before it. (It used to ride in both, so every
+    // learner message was sent twice.)
+    const priorMessages = allMessages.filter(
+      (message) => message.id !== savedUserMessage.id,
+    );
     const chatHistory = await this.buildChatHistoryWithSummarization(
       chat,
-      allMessages,
+      priorMessages,
     );
 
     const context = await this.contextProvider.buildContext(scenarioSessionId);
@@ -194,6 +200,11 @@ export class ScenarioSessionChatService {
         temperature,
         maxTokens: this.configService.aiChat.maxTokens,
       },
+      // AiChatService keeps its default of the last 10 verbatim turns, with the
+      // running summary pinned ahead of them. The not-yet-summarised overflow
+      // is cut, as it always was: sending it whole would add up to nine more
+      // turns to every reply in a long chat, and the summary is what carries
+      // the older conversation.
       // The debrief chat is part of delivering the roleplay, so its spend is
       // recorded against the session it is about.
       usage: {
