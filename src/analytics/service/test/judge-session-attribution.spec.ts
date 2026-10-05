@@ -30,6 +30,12 @@ describe('judge requests carry the session they judge', () => {
     };
   };
 
+  // The judge_attempts ledger; attribution doesn't depend on it.
+  const attempts = () => ({
+    recordFailure: jest.fn().mockResolvedValue(undefined),
+    clear: jest.fn().mockResolvedValue(undefined),
+  });
+
   const settle = async (
     getJob: (id: string) => Promise<{ status: string } | undefined>,
     jobId: string,
@@ -72,6 +78,7 @@ describe('judge requests carry the session they judge', () => {
         repo as never,
         config as never,
         redis() as never,
+        attempts() as never,
       );
       return { service, repo };
     };
@@ -158,6 +165,7 @@ describe('judge requests carry the session they judge', () => {
       config as never,
       redis() as never,
       varietyProfileService as never,
+      attempts() as never,
     );
 
     const job = await service.startBackfill(1, true);
@@ -176,7 +184,7 @@ describe('judge requests carry the session they judge', () => {
       data: {
         judge_model: 'gemini-2.5-pro',
         judge_prompt_version: 'v1',
-        claims: [],
+        claims: [{ claim_index: 0, kind: 'positive', verdict: 'supported' }],
       },
     });
     const repo = {
@@ -184,7 +192,9 @@ describe('judge requests carry the session they judge', () => {
       selectSessions: jest.fn().mockResolvedValue([session]),
       buildClaims: jest
         .fn()
-        .mockResolvedValue([{ id: 'c1', text: 'You reflected feelings.' }]),
+        .mockResolvedValue([
+          { claim_index: 0, kind: 'positive', text: 'You reflected feelings.' },
+        ]),
       buildTranscript: jest
         .fn()
         .mockResolvedValue([{ role: 'counselor', text: 'That sounds hard.' }]),
@@ -194,6 +204,7 @@ describe('judge requests carry the session they judge', () => {
       repo as never,
       config as never,
       redis() as never,
+      attempts() as never,
     );
 
     const job = await service.startBackfill(1);

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { DriftJudgeService } from './drift-judge.service';
+import { ScheduledSelection } from '../util/judge-attempts.util';
 import {
   ActiveUsersPointDto,
   AgentJoinReliabilityResponseDto,
@@ -215,6 +216,8 @@ export class PlatformAnalyticsService {
     } | null,
     /** Chunk size — see DriftJudgeService.startBackfill. */
     limit?: number | null,
+    /** Scheduled callers only — see DriftJudgeService.startBackfill. */
+    scheduled?: Pick<ScheduledSelection, 'honourAttemptLedger'> | null,
   ): Promise<DriftBackfillJobDto> {
     return this.driftJudge.startBackfill(
       sinceDays,
@@ -223,6 +226,7 @@ export class PlatformAnalyticsService {
       concurrency,
       leanFromVersion,
       limit,
+      scheduled,
     );
   }
 

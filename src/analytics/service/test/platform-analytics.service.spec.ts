@@ -1020,7 +1020,7 @@ describe('PlatformAnalyticsService', () => {
       llmUsageRepo.getTokenUsageByModelAndTask.mockResolvedValue([
         {
           service: 'llm',
-          model: 'gemini-2.5-pro', // 1.25 in / 10 out / 0.31 cached per 1M
+          model: 'gemini-2.5-pro', // 1.25 in / 10 out / 0.125 cached per 1M
           provider: 'gemini',
           task: 'drift_judge',
           promptTokens: 1_000_000,
@@ -1037,10 +1037,10 @@ describe('PlatformAnalyticsService', () => {
 
       const result = await service.getTokenConsumption({ range: '30d' });
 
-      // 500k fresh × 1.25 + 500k cached × 0.31 + (100k + 400k) out × 10
-      // = 0.625 + 0.155 + 5 = 5.78
+      // 500k fresh × 1.25 + 500k cached × 0.125 + (100k + 400k) out × 10
+      // = 0.625 + 0.0625 + 5 = 5.6875, rounded to 5.69
       expect(result.points[0]).toMatchObject({
-        estimatedCostUsd: 5.78,
+        estimatedCostUsd: 5.69,
         priced: true,
       });
     });

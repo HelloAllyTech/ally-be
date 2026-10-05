@@ -93,17 +93,17 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'text-embedding-3-small': { inputPer1MUsd: 0.02, outputPer1MUsd: 0 },
 
   // --- Gemini (verified 2026-06) ---
-  // cachedInputPer1MUsd: UNVERIFIED — the vendor page could not be reached
-  // when these were added (2026-10); confirm against
-  // ai.google.dev/gemini-api/docs/pricing. They are a quarter of the input
-  // rate; if Google has since moved the 2.5 models to a deeper cache discount
-  // these OVERSTATE cached spend slightly, which is the safe direction.
-  // 2.5-pro is tiered: 1.25/10 for prompts <=200k tokens, 2.50/15 above; we
-  // price at the <=200k tier (consistent with the v1 approximation note above).
+  // cachedInputPer1MUsd for the 2.5 models: Google's "Context caching price"
+  // at ai.google.dev/gemini-api/docs/pricing, checked 2026-10-05 — a tenth of
+  // the input rate (2.5-pro 0.125, 2.5-flash 0.03, text/image/video). Explicit
+  // caches also bill storage per token-hour; that isn't modelled here.
+  // 2.5-pro is tiered: 1.25/10 (cached 0.125) for prompts <=200k tokens,
+  // 2.50/15 (cached 0.25) above; we price at the <=200k tier (consistent with
+  // the v1 approximation note above).
   'gemini-2.5-pro': {
     inputPer1MUsd: 1.25,
     outputPer1MUsd: 10,
-    cachedInputPer1MUsd: 0.31,
+    cachedInputPer1MUsd: 0.125,
   },
   // Required, not optional: every Indic language except Malayalam moved onto
   // 2.5-flash in 1881000000000-MoveLanguagesOffExperimentalGemini. Their
@@ -114,10 +114,12 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gemini-2.5-flash': {
     inputPer1MUsd: 0.3,
     outputPer1MUsd: 2.5,
-    cachedInputPer1MUsd: 0.075,
+    cachedInputPer1MUsd: 0.03,
   },
   // 2.0-flash retired 2026-06-01; kept to price historical token records —
-  // including the -exp variant, which resolves here by prefix.
+  // including the -exp variant, which resolves here by prefix. Its cached rate
+  // (a quarter of input) is UNVERIFIED: the model is no longer on Google's
+  // pricing page (checked 2026-10-05).
   'gemini-2.0-flash': {
     inputPer1MUsd: 0.1,
     outputPer1MUsd: 0.4,

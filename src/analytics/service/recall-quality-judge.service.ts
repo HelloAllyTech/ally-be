@@ -7,6 +7,12 @@ import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { RecallQualityBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
+  JudgeAttemptFamily,
+  JudgeAttemptOutcome,
+} from '../constants/judge-scheduling.constants';
+import { JudgeAttemptRepository } from '../repository/judge-attempt.repository';
+import { ScheduledSelection } from '../util/judge-attempts.util';
+import {
   RecallJudgmentInput,
   RecallQualityRepository,
   RecallTurnRow,
@@ -49,6 +55,7 @@ export class RecallQualityJudgeService {
     private readonly repo: RecallQualityRepository,
     private readonly config: AppConfigService,
     private readonly redis: RedisService,
+    private readonly attempts: JudgeAttemptRepository,
   ) {}
 
   private jobKey(jobId: string): string {
@@ -78,6 +85,8 @@ export class RecallQualityJudgeService {
     } | null,
     requestedConcurrency?: number | null,
     limit?: number | null,
+    /** Set by the drainer, the only caller today — keeps the ledger honoured. */
+    scheduled?: Pick<ScheduledSelection, 'honourAttemptLedger'> | null,
   ): Promise<RecallQualityBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -101,6 +110,7 @@ export class RecallQualityJudgeService {
       unjudgedForVersion ?? null,
       concurrency,
       limit ?? null,
+      scheduled?.honourAttemptLedger ?? false,
     );
     this.logger.debug(
       `recall-quality backfill queued job=${jobId} sinceDays=${sinceDays} ` +
@@ -118,6 +128,7 @@ export class RecallQualityJudgeService {
     } | null,
     concurrency: number,
     limit: number | null,
+    honourAttemptLedger: boolean,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -125,6 +136,7 @@ export class RecallQualityJudgeService {
         sinceDays,
         unjudgedForVersion,
         limit,
+        honourAttemptLedger,
       });
       job.status = 'running';
       job.total = turns.length;
@@ -153,6 +165,15 @@ export class RecallQualityJudgeService {
           // `no_demand` and a real label. Counting them together would quietly inflate the
           // healthy bucket with our own outages.
           if (!judged.judgment) {
+            // Paid for, stored nothing — and an unjudged turn is re-selected
+            // on the next tick, so it goes in the ledger to back off.
+            await this.attempts.recordFailure(
+              JudgeAttemptFamily.RECALL_QUALITY,
+              turn.id,
+              turn.tenant_id,
+              JudgeAttemptOutcome.EMPTY,
+              'judge returned no verdict',
+            );
             job.failed += 1;
             job.processed += 1;
             await this.saveJob(job);
@@ -165,6 +186,7 @@ export class RecallQualityJudgeService {
             judged.judgeModel,
             judged.judgePromptVersion,
           );
+          await this.attempts.clear(JudgeAttemptFamily.RECALL_QUALITY, turn.id);
 
           job.judged += 1;
           if (judged.judgment.verdict === 'missed_better')
@@ -179,6 +201,13 @@ export class RecallQualityJudgeService {
             `recall-quality backfill: turn ${turn.id} failed: ${
               (e as Error).message
             }`,
+          );
+          await this.attempts.recordFailure(
+            JudgeAttemptFamily.RECALL_QUALITY,
+            turn.id,
+            turn.tenant_id,
+            JudgeAttemptOutcome.FAILED,
+            e,
           );
           job.failed += 1;
           job.processed += 1;

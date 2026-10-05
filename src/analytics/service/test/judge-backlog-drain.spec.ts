@@ -104,6 +104,8 @@ describe('JudgeBacklogDrainService', () => {
       ragQuality,
       recallQuality,
       driftRepo,
+      groundednessRepo,
+      languageRepo,
       ragQualityRepo,
       recallQualityRepo,
       store,
@@ -132,6 +134,8 @@ describe('JudgeBacklogDrainService', () => {
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' },
       // Chunk: one tick's worth, not the whole backlog.
       80,
+      // Scheduled: skip sessions the attempt ledger has given up on.
+      { honourAttemptLedger: true },
     );
   });
 
@@ -189,6 +193,8 @@ describe('JudgeBacklogDrainService', () => {
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v2' },
       undefined,
       80,
+      // The last day (+2h margin) belongs to the live catch-up.
+      { honourAttemptLedger: true, excludeCreatedWithinHours: 26 },
     );
   });
 
@@ -272,10 +278,11 @@ describe('JudgeBacklogDrainService', () => {
     // selectors already skip everything judged.
     const { service, analytics, groundedness, language } = build();
     return tick(service).then(() => {
-      // The chunk is the LAST argument in all three signatures. Reaching for
-      // "the first number" would pick up the 150-day window instead, which is
-      // how this test failed the first time it was written.
-      const chunkOf = (call: unknown[]) => call[call.length - 1];
+      // The chunk is the argument just before the scheduled-selection options
+      // in all three signatures. Reaching for "the first number" would pick
+      // up the 150-day window instead, which is how this test failed the
+      // first time it was written.
+      const chunkOf = (call: unknown[]) => call[call.length - 2];
       expect(chunkOf(analytics.startDriftBackfill.mock.calls[0])).toBe(80);
       expect(chunkOf(groundedness.startBackfill.mock.calls[0])).toBe(80);
       expect(chunkOf(language.startBackfill.mock.calls[0])).toBe(80);
@@ -304,5 +311,79 @@ describe('JudgeBacklogDrainService', () => {
     language.topUpRoundTripWer.mockRejectedValue(new Error('sarvam is down'));
 
     await expect(tick(service)).resolves.not.toThrow();
+  });
+
+  /**
+   * Every new session used to be language-judged twice: this drainer and the
+   * live catch-up both took the newest unjudged sessions on the same tick,
+   * with nothing in flight to tell them apart. The catch-up now owns the last
+   * day and the drainer stays out of it — in the probe that decides whether to
+   * start AND in the run itself, or the probe would see work the run skips.
+   */
+  it('keeps language out of the live catch-up window', async () => {
+    const { service, languageRepo, language } = build();
+    await tick(service);
+
+    expect(languageRepo.selectSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeCreatedWithinHours: 26 }),
+    );
+    expect(language.startBackfill.mock.calls[0][5]).toEqual(
+      expect.objectContaining({ excludeCreatedWithinHours: 26 }),
+    );
+  });
+
+  it('leaves the other families free to reach new sessions', async () => {
+    // Drift's top-up needs v1 rows a new session never has, and groundedness
+    // and recall have no catch-up to collide with — fencing them off would
+    // only delay their work by a day.
+    const { service, driftRepo, groundednessRepo, recallQualityRepo } = build();
+    await tick(service);
+
+    for (const repo of [driftRepo, groundednessRepo]) {
+      expect(repo.selectSessions.mock.calls[0][0]).not.toHaveProperty(
+        'excludeCreatedWithinHours',
+      );
+    }
+    expect(recallQualityRepo.selectTurns.mock.calls[0][0]).not.toHaveProperty(
+      'excludeCreatedWithinHours',
+    );
+  });
+
+  it('honours the attempt ledger in every judging family', async () => {
+    // A failure writes no judgment row, so without the ledger the newest-first
+    // selector put a failing session back at the head of the queue on every
+    // tick for 150 days.
+    const {
+      service,
+      analytics,
+      groundedness,
+      language,
+      recallQuality,
+      driftRepo,
+      groundednessRepo,
+      languageRepo,
+      recallQualityRepo,
+    } = build();
+    await tick(service);
+
+    for (const probe of [
+      driftRepo.selectSessions,
+      groundednessRepo.selectSessions,
+      languageRepo.selectSessions,
+      recallQualityRepo.selectTurns,
+    ]) {
+      expect(probe.mock.calls[0][0].honourAttemptLedger).toBe(true);
+    }
+    for (const start of [
+      analytics.startDriftBackfill,
+      groundedness.startBackfill,
+      language.startBackfill,
+      recallQuality.startBackfill,
+    ]) {
+      const call = start.mock.calls[0];
+      expect(call[call.length - 1]).toEqual(
+        expect.objectContaining({ honourAttemptLedger: true }),
+      );
+    }
   });
 });

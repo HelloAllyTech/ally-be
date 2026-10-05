@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { countableSessionPredicate } from '../util/session-eligibility.util';
+import {
+  countableSessionPredicate,
+  settledEndedSessionPredicate,
+} from '../util/session-eligibility.util';
+import { JudgeAttemptFamily } from '../constants/judge-scheduling.constants';
+import { judgeAttemptGate } from '../util/judge-attempts.util';
 
 /** Prompt-management code for the language judge rubric (seeded by migration). */
 export const LANGUAGE_JUDGE_PROMPT_CODE = 'language_quality_judge_rubric';
@@ -147,7 +152,9 @@ export class LanguageJudgeRepository {
 
   /**
    * Sessions to judge. Uses the shared countable-session predicate (preview +
-   * seed rooms excluded — see session-eligibility.util). Besides the drift
+   * seed rooms excluded — see session-eligibility.util), and only sessions
+   * that are over (`settledEndedSessionPredicate`: a live session's transcript
+   * judged now would be stored as its final judgment). Besides the drift
    * judge's fields this also selects, per session:
    * - engine (SIMULATION | ROLEPLAY_V2) — both are judged; slice dimension
    * - per-language style-config presence flags + allowed fillers from
@@ -169,6 +176,9 @@ export class LanguageJudgeRepository {
       judgeModel: string;
       judgePromptVersion: string;
     } | null;
+    /** Scheduled runs only — see ScheduledSelection. */
+    honourAttemptLedger?: boolean;
+    excludeCreatedWithinHours?: number | null;
   }): Promise<LanguageSessionRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -184,6 +194,7 @@ export class LanguageJudgeRepository {
     // head of the queue and stalled the language family completely.
     let sql = `${sessionProjection()}
       WHERE ${countableSessionPredicate('s')}
+        AND ${settledEndedSessionPredicate('s')}
         AND EXISTS (SELECT 1 FROM scenario_session_messages m
                      WHERE m."scenarioSessionId" = s.id
                        AND m."senderId" = -1)`;
@@ -191,6 +202,10 @@ export class LanguageJudgeRepository {
       sql += ` AND COALESCE(l.value, ${DEFAULT_JUDGE_LANGUAGE_SQL}) = ${p(opts.language)}`;
     if (opts.sinceDays != null)
       sql += ` AND s."createdAt" >= now() - make_interval(days => ${p(opts.sinceDays)})`;
+    // The drainer's half of the partition with the live catch-up: sessions
+    // this new belong to the catch-up, which judges them on the same tick.
+    if (opts.excludeCreatedWithinHours != null)
+      sql += ` AND s."createdAt" < now() - make_interval(hours => ${p(opts.excludeCreatedWithinHours)})`;
     if (opts.onlyUnjudged) {
       if (opts.unjudgedForVersion) {
         sql += ` AND NOT EXISTS (
@@ -206,6 +221,8 @@ export class LanguageJudgeRepository {
                    WHERE j."scenarioSessionId" = s.id)`;
       }
     }
+    if (opts.honourAttemptLedger)
+      sql += ` AND ${judgeAttemptGate(JudgeAttemptFamily.LANGUAGE, 's.id', p)}`;
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);

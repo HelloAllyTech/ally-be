@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { excludeTestTenants } from '../util/test-tenant.util';
+import { JudgeAttemptFamily } from '../constants/judge-scheduling.constants';
+import { judgeAttemptGate } from '../util/judge-attempts.util';
+import { settledEndedSessionPredicate } from '../util/session-eligibility.util';
 
 /** A session with feedback worth judging. */
 export interface GroundednessSessionRow {
@@ -67,6 +70,11 @@ export class FeedbackGroundednessRepository {
    * judging claims against an empty transcript would mark every one
    * unsupported and manufacture a groundedness crisis out of sessions where
    * the agent never joined.
+   *
+   * Feedback only exists once `endScenarioSession` has run, so a session with
+   * claims is already ENDED; the settle predicate still applies, because the
+   * transcript the claims are checked against keeps gaining trailing turns
+   * for a few seconds after the end.
    */
   async selectSessions(opts: {
     sinceDays?: number | null;
@@ -80,6 +88,8 @@ export class FeedbackGroundednessRepository {
       judgeModel: string;
       judgePromptVersion: string;
     } | null;
+    /** Scheduled runs only — see ScheduledSelection.honourAttemptLedger. */
+    honourAttemptLedger?: boolean;
   }): Promise<GroundednessSessionRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -105,6 +115,7 @@ export class FeedbackGroundednessRepository {
        WHERE s."roomId" NOT LIKE 'preview-%'
          AND s."roomId" NOT LIKE 'seed-room-%'
          AND d.summary->'feedback' ? 'positives'
+         AND ${settledEndedSessionPredicate('s')}
          AND ${excludeTestTenants('s."tenant_id"')}
          AND EXISTS (
            SELECT 1 FROM scenario_session_messages m
@@ -125,6 +136,13 @@ export class FeedbackGroundednessRepository {
                     AND j."judgePromptVersion" = ${p(
                       opts.unjudgedForVersion.judgePromptVersion,
                     )})`;
+    }
+    if (opts.honourAttemptLedger) {
+      sql += ` AND ${judgeAttemptGate(
+        JudgeAttemptFamily.GROUNDEDNESS,
+        's.id',
+        p,
+      )}`;
     }
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;

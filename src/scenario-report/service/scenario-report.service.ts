@@ -195,6 +195,11 @@ export class ScenarioReportService {
     languageCode: string,
     scenarioOverride?: GetAdminScenarioDto,
   ): Promise<void> {
+    // Whether ai-learn may have been asked to start this run. The generate
+    // call retries, so it can fail here after an earlier attempt already
+    // reached ai-learn — and once we mark the report FAILED, that run must
+    // be told to stop.
+    let generateRequested = false;
     try {
       const metadata =
         await this.scenarioSharedService.createMetadataForScenario(
@@ -209,6 +214,7 @@ export class ScenarioReportService {
           languageCode,
         );
 
+      generateRequested = true;
       await this.aiService.triggerScenarioReportGenerate({
         prompt: translatedPrompt,
         turns: report.config.turns,
@@ -255,6 +261,30 @@ export class ScenarioReportService {
       this.scenarioReportNotificationService.notifyUpdate(
         report.createdBy,
         report.id,
+      );
+
+      if (generateRequested) {
+        await this.cancelInAiLearn(report.id);
+      }
+    }
+  }
+
+  /**
+   * Tell ai-learn to stop a run ally-be has stopped waiting for, so it stops
+   * paying for turns and an evaluation nobody will see — the same request a
+   * user's Cancel sends. Best-effort and never throws: the report's status in
+   * our DB is the source of truth, ai-learn answers 202 whether or not the run
+   * is still live, and any late webhook hits the end-status guard in
+   * updateScenarioReport.
+   */
+  private async cancelInAiLearn(reportId: string): Promise<void> {
+    try {
+      await this.aiService.triggerScenarioReportCancel(reportId);
+    } catch (error) {
+      this.logger.warn(
+        `Cancel propagation to ai-learn failed for report ${reportId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }
@@ -592,6 +622,9 @@ export class ScenarioReportService {
         report.createdBy,
         reportId,
       );
+      // Only the caller that won the conditional update sends it: every
+      // replica hears the key expire.
+      await this.cancelInAiLearn(reportId);
     }
   }
 
@@ -632,6 +665,11 @@ export class ScenarioReportService {
             report.id,
           );
         }
+        // A report that finished between the read and the update gets a
+        // cancel for a run that has already ended, which ai-learn ignores.
+        await Promise.all(
+          staleReports.map((report) => this.cancelInAiLearn(report.id)),
+        );
       }
     } catch (error) {
       this.logger.error(

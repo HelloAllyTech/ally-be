@@ -26,6 +26,7 @@ describe('ScenarioReportTranscriptService', () => {
     const mockRepo = {
       create: jest.fn((entity: any) => entity),
       save: jest.fn().mockResolvedValue([]),
+      find: jest.fn().mockResolvedValue([]),
       findAndCount: jest.fn().mockResolvedValue([[], 0]),
     };
 
@@ -74,6 +75,43 @@ describe('ScenarioReportTranscriptService', () => {
         role: 'ai-client',
       });
       expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips turns the report already has, so a retried webhook adds no duplicates', async () => {
+      repository.find.mockResolvedValueOnce([
+        { startSeconds: 0, role: 'user', content: 'Hello' },
+      ] as ScenarioReportTranscript[]);
+
+      await service.addTranscripts(reportId, mockTranscripts);
+
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith({
+        scenarioReportId: reportId,
+        content: 'Hi there',
+        startSeconds: 1.5,
+        role: 'ai-client',
+      });
+      expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('saves nothing when every turn is already stored', async () => {
+      repository.find.mockResolvedValueOnce([
+        { startSeconds: 0, role: 'user', content: 'Hello' },
+        { startSeconds: 1.5, role: 'ai-client', content: 'Hi there' },
+      ] as ScenarioReportTranscript[]);
+
+      await service.addTranscripts(reportId, mockTranscripts);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('keeps one copy of a turn repeated inside a single batch', async () => {
+      await service.addTranscripts(reportId, [
+        mockTranscripts[0],
+        mockTranscripts[0],
+      ]);
+
+      expect(repository.create).toHaveBeenCalledTimes(1);
     });
   });
 

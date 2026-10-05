@@ -783,4 +783,206 @@ describe('ScenarioReportService', () => {
       );
     });
   });
+
+  // ally-be marks a report FAILED after 30 minutes, or when the trigger
+  // fails, but used to leave ai-learn running the simulated turns and the
+  // evaluator for a report nobody would see. Each give-up now sends the same
+  // cancel a user's click does — best-effort, after the report is FAILED.
+  describe('giving up on a report stops its run in ai-learn', () => {
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+    const oldPending = (id: string) =>
+      ({
+        ...mockReport,
+        id,
+        status: ScenarioReportStatus.IN_PROGRESS,
+        createdAt: new Date(Date.now() - 31 * TIME.MINUTE_IN_MS),
+      }) as ScenarioReport;
+
+    describe('on TTL expiry', () => {
+      it('cancels the run once the report is marked FAILED', async () => {
+        scenarioReportRepository.findOne.mockResolvedValue(
+          oldPending(reportId),
+        );
+
+        await service.handleExpiredReportGeneration(reportId);
+
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledWith(
+          reportId,
+        );
+        expect(
+          scenarioReportRepository.update.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          aiService.triggerScenarioReportCancel.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('leaves the cancel to the replica that won the update', async () => {
+        scenarioReportRepository.findOne.mockResolvedValue(
+          oldPending(reportId),
+        );
+        scenarioReportRepository.update.mockResolvedValue({
+          affected: 0,
+        } as any);
+
+        await service.handleExpiredReportGeneration(reportId);
+
+        expect(aiService.triggerScenarioReportCancel).not.toHaveBeenCalled();
+      });
+
+      it('sends nothing for a report that already ended', async () => {
+        scenarioReportRepository.findOne.mockResolvedValue({
+          ...mockReport,
+          status: ScenarioReportStatus.COMPLETED,
+        } as ScenarioReport);
+
+        await service.handleExpiredReportGeneration(reportId);
+
+        expect(aiService.triggerScenarioReportCancel).not.toHaveBeenCalled();
+      });
+
+      it('a failing cancel does not undo or fail the expiry', async () => {
+        scenarioReportRepository.findOne.mockResolvedValue(
+          oldPending(reportId),
+        );
+        aiService.triggerScenarioReportCancel.mockRejectedValue(
+          new Error('ai-learn down'),
+        );
+
+        await expect(
+          service.handleExpiredReportGeneration(reportId),
+        ).resolves.toBeUndefined();
+        expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+          expect.objectContaining({ id: reportId }),
+          expect.objectContaining({ status: ScenarioReportStatus.FAILED }),
+        );
+        expect(
+          scenarioReportNotificationService.notifyUpdate,
+        ).toHaveBeenCalledWith(userId, reportId);
+      });
+    });
+
+    describe('in the stale-report cron', () => {
+      it('cancels every report it marked FAILED', async () => {
+        scenarioReportRepository.find.mockResolvedValue([
+          oldPending('r-1'),
+          oldPending('r-2'),
+        ]);
+        scenarioReportRepository.update.mockResolvedValue({
+          affected: 2,
+        } as any);
+
+        await service.markStaleReportsAsFailed();
+
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledTimes(2);
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledWith(
+          'r-1',
+        );
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledWith(
+          'r-2',
+        );
+      });
+
+      it('sends nothing when the update did not mark anything', async () => {
+        scenarioReportRepository.find.mockResolvedValue([oldPending('r-1')]);
+        scenarioReportRepository.update.mockResolvedValue({
+          affected: 0,
+        } as any);
+
+        await service.markStaleReportsAsFailed();
+
+        expect(aiService.triggerScenarioReportCancel).not.toHaveBeenCalled();
+      });
+
+      it('sends nothing when the update failed, leaving the next tick to retry', async () => {
+        scenarioReportRepository.find.mockResolvedValue([oldPending('r-1')]);
+        scenarioReportRepository.update.mockRejectedValue(new Error('db'));
+
+        await service.markStaleReportsAsFailed();
+
+        expect(aiService.triggerScenarioReportCancel).not.toHaveBeenCalled();
+      });
+
+      it('one failing cancel neither throws nor stops the others', async () => {
+        scenarioReportRepository.find.mockResolvedValue([
+          oldPending('r-1'),
+          oldPending('r-2'),
+        ]);
+        scenarioReportRepository.update.mockResolvedValue({
+          affected: 2,
+        } as any);
+        aiService.triggerScenarioReportCancel.mockImplementation(
+          async (id: string) => {
+            if (id === 'r-1') throw new Error('ai-learn down');
+          },
+        );
+
+        await expect(
+          service.markStaleReportsAsFailed(),
+        ).resolves.toBeUndefined();
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledWith(
+          'r-2',
+        );
+        expect(
+          scenarioReportNotificationService.notifyUpdate,
+        ).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('when the trigger fails', () => {
+      const create = () =>
+        service.createScenarioReport(
+          scenarioId,
+          { languageId: 1, turns: 5, helperAgentPrompt: 'helper prompt' },
+          userId,
+        );
+
+      beforeEach(() => {
+        scenarioReportRepository.find.mockResolvedValue([]);
+        scenarioReportRepository.create.mockReturnValue(
+          mockReport as ScenarioReport,
+        );
+        scenarioReportRepository.save.mockResolvedValue({
+          ...mockReport,
+          id: reportId,
+        } as ScenarioReport);
+      });
+
+      // The generate call retries, so it can fail after an earlier attempt
+      // reached ai-learn and started the run.
+      it('cancels a run the generate request may have started', async () => {
+        aiService.triggerScenarioReportGenerate.mockRejectedValue(
+          new Error('socket hang up'),
+        );
+
+        await create();
+        await flush();
+        await flush();
+
+        expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+          reportId,
+          expect.objectContaining({ status: ScenarioReportStatus.FAILED }),
+        );
+        expect(aiService.triggerScenarioReportCancel).toHaveBeenCalledWith(
+          reportId,
+        );
+      });
+
+      it('sends nothing when it failed before asking ai-learn for anything', async () => {
+        scenarioSharedService.createMetadataForScenario.mockRejectedValue(
+          new Error('scenario missing'),
+        );
+
+        await create();
+        await flush();
+        await flush();
+
+        expect(aiService.triggerScenarioReportGenerate).not.toHaveBeenCalled();
+        expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+          reportId,
+          expect.objectContaining({ status: ScenarioReportStatus.FAILED }),
+        );
+        expect(aiService.triggerScenarioReportCancel).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
