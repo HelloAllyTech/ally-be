@@ -21,7 +21,6 @@ import { LlmTask } from '../enum/llm-task.enum';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   CHAT_HISTORY_WINDOW_SIZE,
-  CHAT_MAX_HISTORY_MESSAGES,
   CHAT_SUMMARIZATION_BATCH_THRESHOLD,
 } from '../constants/scenario-session-chat.constants';
 import { extractTimestampsFromText } from 'src/common/util/time.util';
@@ -201,9 +200,11 @@ export class ScenarioSessionChatService {
         temperature,
         maxTokens: this.configService.aiChat.maxTokens,
       },
-      // The history is already bounded (summary + overflow + window); let all
-      // of it through rather than AiChatService's generic 10-message default.
-      maxHistoryMessages: CHAT_MAX_HISTORY_MESSAGES,
+      // AiChatService keeps its default of the last 10 verbatim turns, with the
+      // running summary pinned ahead of them. The not-yet-summarised overflow
+      // is cut, as it always was: sending it whole would add up to nine more
+      // turns to every reply in a long chat, and the summary is what carries
+      // the older conversation.
       // The debrief chat is part of delivering the roleplay, so its spend is
       // recorded against the session it is about.
       usage: {

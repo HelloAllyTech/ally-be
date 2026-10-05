@@ -50,13 +50,6 @@ export class AiChatService {
     providerType?: string;
     onComplete?: (fullResponse: string) => Promise<void>;
     usage?: ChatUsageAttribution;
-    /**
-     * Cap on verbatim history turns sent to the model (default 10). A caller
-     * that already bounds its own history passes its bound so none of it is
-     * cut. Leading system-role history is pinned and not counted — see
-     * pruneMessages.
-     */
-    maxHistoryMessages?: number;
   }): Observable<SseMessageEvent> {
     const subject = new Subject<SseMessageEvent>();
 
@@ -80,7 +73,6 @@ export class AiChatService {
       providerType?: string;
       onComplete?: (fullResponse: string) => Promise<void>;
       usage?: ChatUsageAttribution;
-      maxHistoryMessages?: number;
     },
   ): Promise<void> {
     const { systemPrompt, chatHistory, userMessage, llmConfig } = params;
@@ -92,11 +84,7 @@ export class AiChatService {
     ];
 
     const maxContextTokens = this.configService.aiChat.maxContextTokens;
-    const prunedMessages = this.pruneMessages(
-      messages,
-      maxContextTokens,
-      params.maxHistoryMessages,
-    );
+    const prunedMessages = this.pruneMessages(messages, maxContextTokens);
 
     const provider = this.llmProviderFactory.getProvider(params.providerType);
     let fullResponse = '';

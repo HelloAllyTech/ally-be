@@ -130,12 +130,12 @@ describe('AiChatService usage recording', () => {
  * The debrief chat sends [summary (system), unsummarised overflow, last 10],
  * but pruning used to keep only the last 10 history items and, over the token
  * budget, dropped index 1 first — so the summary it paid to generate never
- * reached the model. These pin what pruning keeps.
+ * reached the model. These pin what pruning keeps: the summary, then the last
+ * 10 verbatim turns.
  */
 describe('AiChatService history pruning', () => {
   const run = async (params: {
     chatHistory: LlmMessage[];
-    maxHistoryMessages?: number;
     maxContextTokens?: number;
   }): Promise<LlmMessage[]> => {
     let sent: LlmMessage[] = [];
@@ -164,7 +164,6 @@ describe('AiChatService history pruning', () => {
           chatHistory: params.chatHistory,
           userMessage: 'now',
           llmConfig: { model: 'gpt-4o-mini' },
-          maxHistoryMessages: params.maxHistoryMessages,
         })
         .pipe(toArray()),
     );
@@ -189,18 +188,6 @@ describe('AiChatService history pruning', () => {
     // Default cap of 10 verbatim turns still applies to everything else.
     expect(sent.slice(2, -1)).toEqual(turns(15).slice(-10));
     expect(sent[sent.length - 1]).toEqual({ role: 'user', content: 'now' });
-  });
-
-  it("lets a caller's already-bounded history through whole", async () => {
-    const history = [summary, ...turns(19)];
-
-    const sent = await run({ chatHistory: history, maxHistoryMessages: 19 });
-
-    expect(sent).toEqual([
-      { role: 'system', content: 'sys' },
-      ...history,
-      { role: 'user', content: 'now' },
-    ]);
   });
 
   it('drops the oldest verbatim turns before the summary when over the token budget', async () => {

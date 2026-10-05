@@ -6,7 +6,6 @@ import {
 } from 'src/ai-chat/interface/llm-provider.interface';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
-import { CHAT_MAX_HISTORY_MESSAGES } from '../../constants/scenario-session-chat.constants';
 
 /**
  * What one debrief-chat turn actually sends the model. Runs the real
@@ -143,11 +142,12 @@ describe('ScenarioSessionChatService.streamChat — what reaches the model', () 
     );
   });
 
-  it('delivers the running summary and the unsummarised overflow, not just the last 10', async () => {
+  it('delivers the running summary ahead of the last 10 messages', async () => {
     // 25 earlier messages, the first 10 already folded into the summary:
-    // 5 overflow (10..14) + a 10-message window (15..24).
+    // 5 overflow (10..14) + a 10-message window (15..24). The overflow is cut
+    // by the 10-turn cap, as before; the summary now survives it.
     const prior = priorMessages(25);
-    const { service, saved, sent, streamSpy, provider } = setup({
+    const { service, saved, sent, provider } = setup({
       prior,
       summary: 'They practised reflective listening.',
       summarizedMessageCount: 10,
@@ -158,9 +158,6 @@ describe('ScenarioSessionChatService.streamChat — what reaches the model', () 
 
     // Below the batch threshold: no new summarisation call.
     expect(provider.getCompletion).not.toHaveBeenCalled();
-    expect(streamSpy.mock.calls[0][0].maxHistoryMessages).toBe(
-      CHAT_MAX_HISTORY_MESSAGES,
-    );
     expect(sent[0]).toEqual([
       { role: 'system', content: 'You are a clinical supervisor.' },
       {
@@ -168,7 +165,7 @@ describe('ScenarioSessionChatService.streamChat — what reaches the model', () 
         content:
           'Summary of earlier conversation:\nThey practised reflective listening.',
       },
-      ...prior.slice(10).map((m) => ({
+      ...prior.slice(15).map((m) => ({
         role: m.senderId === -1 ? 'assistant' : 'user',
         content: m.content,
       })),
