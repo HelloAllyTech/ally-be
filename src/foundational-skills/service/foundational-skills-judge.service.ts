@@ -126,6 +126,12 @@ export class FoundationalSkillsJudgeService {
     return this.run(windowText, lines, {
       taskId: FHS_BENCHMARK_JUDGE_TASK_ID,
       task: LlmTask.FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE,
+      // One call judges exactly one session, so its spend can be attributed
+      // to it — where it reads as analysis spend beside the session's
+      // delivery cost, never inside it (the task is absent from
+      // SESSION_COST_COMPONENT_BY_TASK). The cut judge above passes none: a
+      // cut spans several sessions, so no one session owns the call.
+      scenarioSessionId: meta.sessionId,
       usageMetadata: {
         rubricVersion: FHS_RUBRIC_VERSION,
         sessionId: meta.sessionId,
@@ -146,6 +152,8 @@ export class FoundationalSkillsJudgeService {
     call: {
       taskId: string;
       task: LlmTask;
+      /** The scenario session the usage row is attributed to, if one owns the call. */
+      scenarioSessionId?: string;
       usageMetadata: Record<string, unknown>;
     },
   ): Promise<JudgeOutcome> {
@@ -160,6 +168,7 @@ export class FoundationalSkillsJudgeService {
       // 14 skills with quotes is ~2–4k tokens of JSON on top of that.
       maxTokens: 16000,
       timeoutMs: 180_000,
+      scenarioSessionId: call.scenarioSessionId,
       usageMetadata: call.usageMetadata,
     });
 

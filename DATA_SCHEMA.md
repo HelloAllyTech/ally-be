@@ -526,6 +526,11 @@ in a window to its usage rows, and `.../sessions/:sessionId` itemises one. Which
 tasks count as DELIVERY cost, and which as analysis spend reported beside it, is decided by
 `SESSION_COST_COMPONENT_BY_TASK` in `analytics/constants/session-cost.constants.ts` — add a task
 there in the same change that tags it to a session, or it silently lands in the excluded bucket.
+The session-scoped judges (drift and its labels-only top-up, language, groundedness, recall,
+filler) send `scenario_session_id` for ally-ai to stamp on their usage rows, and the foundational
+skills benchmark judge passes its session in-process, so their rows are session-tagged as analysis
+spend — deliberately absent from that map. The per-cut foundational skills judge carries none: a
+cut spans sessions.
 
 ---
 
