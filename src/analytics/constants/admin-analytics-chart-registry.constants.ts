@@ -1788,9 +1788,9 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     },
 
     // ---- Bug Agent: the panels that moved off the Bug Hunter page's
-    // Performance tab (OPP-0749, 2026-10-05) ----
+    // Performance tab (OPP-0749, 2026-10-05); AAQ-167..169 were already taken ----
     {
-      id: 'AAQ-167',
+      id: 'AAQ-198',
       tab: 'Bug Agent',
       title: "How I'm doing (scorecard)",
       kind: 'group',
@@ -1799,7 +1799,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       note: 'Four tiles plus fourteen-day sparkbars, derived from GET /v1/bug-hunter/runs; mounted on Analytics → Bug Agent since OPP-0749',
     },
     {
-      id: 'AAQ-168',
+      id: 'AAQ-199',
       tab: 'Bug Agent',
       title: "How often I'm right (accuracy panel)",
       kind: 'funnel',
@@ -1808,7 +1808,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       note: 'GET /v1/bug-hunter/metrics: finding funnel, accuracy by source and decision reason, stage latency, cost per landed fix',
     },
     {
-      id: 'AAQ-169',
+      id: 'AAQ-200',
       tab: 'Bug Agent',
       title: 'My shift log (run history)',
       kind: 'group',
