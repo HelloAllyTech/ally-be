@@ -140,9 +140,47 @@ export class BugHunterMemoryEntryDto {
   @ApiProperty({ nullable: true }) createdBy!: number | null;
   @ApiProperty() embeddingStatus!: string;
   @ApiProperty() createdAt!: Date;
+  @ApiProperty({ nullable: true }) lastAppliedAt!: Date | null;
+  /** When it left the active set; null while active. */
+  @ApiProperty({ nullable: true }) retiredAt!: Date | null;
+  /** The admin who retired it, or null when the agent's own pass did. */
+  @ApiProperty({ nullable: true }) retiredBy!: number | null;
+  /** The agent's reason, in its own words, when it retired the entry itself. */
+  @ApiProperty({ nullable: true }) retiredReason!: string | null;
 }
 
 export class ListBugHunterMemoryResponseDto {
   @ApiProperty({ type: [BugHunterMemoryEntryDto] })
   items!: BugHunterMemoryEntryDto[];
+}
+
+/**
+ * A run's verdict on the notebook entries it read (OPP-0752). `applied` are the
+ * ids that changed what the run did; `contradicted` the ones that turned out
+ * wrong tonight. Both may be empty — an empty report is still a report, and is
+ * what lets the nightly retirement pass trust a zero.
+ */
+export class BugHunterMemoryFeedbackDto {
+  @ApiProperty({ description: 'The run reporting.' })
+  @IsUUID()
+  runId!: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Entry ids that changed what this run did.',
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('4', { each: true })
+  applied!: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Entry ids that proved wrong during this run.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('4', { each: true })
+  contradicted?: string[];
 }

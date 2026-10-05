@@ -218,6 +218,21 @@ describe('buildSweepPrompt', () => {
       expect(p.slice(write, write + 400)).toContain('"runId":"run-1"');
     });
 
+    it('reports which entries it applied BEFORE writing new ones, and says an empty report still counts (OPP-0752)', () => {
+      const p = build();
+      const feedback = p.indexOf('pipeline/memory/feedback');
+      const notebook = p.indexOf('## Phase 4 — Write to your notebook');
+      const write = p.indexOf(
+        'POST "https://api.example.com/api/v1/bug-hunter/pipeline/memory"',
+      );
+      expect(feedback).toBeGreaterThan(notebook);
+      expect(feedback).toBeLessThan(write);
+      expect(p.slice(feedback - 400, feedback)).toMatch(
+        /even when both lists are empty/,
+      );
+      expect(p.slice(feedback, feedback + 200)).toContain('"runId":"run-1"');
+    });
+
     it('caps what it writes, and treats entries as notes rather than orders', () => {
       const p = build();
       expect(p).toMatch(/at most three entries, each under 600 characters/);

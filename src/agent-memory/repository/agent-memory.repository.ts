@@ -59,6 +59,71 @@ export class AgentMemoryRepository extends Repository<AgentMemory> {
     });
   }
 
+  /** Every active, unpinned entry of one agent — the nightly retirement pass's worklist. */
+  listActiveUnpinned(agent: AgentMemoryAgent): Promise<AgentMemory[]> {
+    return this.find({
+      where: { agent, status: AgentMemoryStatus.ACTIVE, pinned: false },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Entries the agent itself retired recently (a reason and no retiring user),
+   * newest first — what the Notebook tab shows under "retired by me", with an
+   * Undo. Same repo scoping as the active list.
+   */
+  listRetiredByAgent(
+    agent: AgentMemoryAgent,
+    repo: string | undefined,
+    since: Date,
+    limit: number,
+  ): Promise<AgentMemory[]> {
+    const query = this.createQueryBuilder('m')
+      .where('m.agent = :agent', { agent })
+      .andWhere('m.status = :status', { status: AgentMemoryStatus.RETIRED })
+      .andWhere('m.retired_by IS NULL')
+      .andWhere('m.retired_reason IS NOT NULL')
+      .andWhere('m.retired_at >= :since', { since })
+      .orderBy('m.retired_at', 'DESC')
+      .take(limit);
+    if (repo) {
+      query.andWhere(
+        `(m.repos IS NULL OR jsonb_array_length(m.repos) = 0 OR m.repos ? :repo)`,
+        { repo },
+      );
+    } else {
+      query.andWhere('(m.repos IS NULL OR jsonb_array_length(m.repos) = 0)');
+    }
+    return query.getMany();
+  }
+
+  /** A run said these entries changed what it did: count it, and remember when. */
+  async recordApplied(ids: string[], at: Date): Promise<number> {
+    if (!ids.length) return 0;
+    const result = await this.createQueryBuilder()
+      .update(AgentMemory)
+      .set({
+        timesApplied: () => 'times_applied + 1',
+        lastAppliedAt: at,
+      })
+      .where('id IN (:...ids)', { ids })
+      .andWhere('status = :status', { status: AgentMemoryStatus.ACTIVE })
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /** A run said these entries turned out wrong tonight. */
+  async recordContradicted(ids: string[]): Promise<number> {
+    if (!ids.length) return 0;
+    const result = await this.createQueryBuilder()
+      .update(AgentMemory)
+      .set({ timesContradicted: () => 'times_contradicted + 1' })
+      .where('id IN (:...ids)', { ids })
+      .andWhere('status = :status', { status: AgentMemoryStatus.ACTIVE })
+      .execute();
+    return result.affected ?? 0;
+  }
+
   /** Entries whose vector is missing or stale — the reindex sweep's worklist. */
   listNeedingEmbedding(limit: number): Promise<AgentMemory[]> {
     return this.createQueryBuilder('m')

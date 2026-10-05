@@ -213,6 +213,17 @@ describe('buildFixSessionPrompt', () => {
     expect(p).toContain('/runs/run-1/phases');
   });
 
+  it('reports which notebook entries it used before writing a lesson, even when none did (OPP-0752)', () => {
+    const p = build({ repo: 'ally-be' }, 'ally-be');
+    const feedback = p.indexOf('pipeline/memory/feedback');
+    const write = p.indexOf('9b. If this fix taught you something');
+    expect(feedback).toBeGreaterThan(-1);
+    expect(feedback).toBeLessThan(write);
+    expect(p.slice(feedback - 300, feedback)).toMatch(
+      /even when both lists are empty/,
+    );
+  });
+
   it('asks the notebook before reproducing and offers to write one lesson before closing', () => {
     const p = build();
     const read = p.indexOf('pipeline/memory/search');

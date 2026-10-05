@@ -174,12 +174,25 @@ export class AgentMemoryService {
     return this.repository.listActiveForRepo(agent, repo, limit);
   }
 
-  async retire(id: string, userId: number | null): Promise<AgentMemory> {
+  /**
+   * Take an entry out of the active set. `userId` is the admin doing it by
+   * hand; null with a `reason` is the agent's own nightly pass (OPP-0752),
+   * which is what the Notebook tab renders as "retired by me because…".
+   * Authorship (`createdBy`) is left alone — it used to be overwritten with
+   * the retiring user, which made every retired entry look admin-written.
+   */
+  async retire(
+    id: string,
+    userId: number | null,
+    reason: string | null = null,
+  ): Promise<AgentMemory> {
     const row = await this.repository.findOne({ where: { id } });
     if (!row) throw new NotFoundException(`Memory entry ${id} not found`);
     await this.repository.update(id, {
       status: AgentMemoryStatus.RETIRED,
-      createdBy: userId ?? row.createdBy ?? null,
+      retiredAt: new Date(),
+      retiredBy: userId,
+      retiredReason: reason,
     });
     try {
       await this.aiService.deleteAgentMemory(id);
@@ -194,6 +207,72 @@ export class AgentMemoryService {
       );
     }
     return this.repository.findOneOrFail({ where: { id } });
+  }
+
+  /**
+   * Undo a retirement — the agent's or a person's. The entry returns to the
+   * active set with its evidence counters intact and is re-embedded so search
+   * finds it again. Refused for an entry that was merged into another: that
+   * one lives on inside its target.
+   */
+  async restore(id: string, userId: number): Promise<AgentMemory> {
+    const row = await this.repository.findOne({ where: { id } });
+    if (!row) throw new NotFoundException(`Memory entry ${id} not found`);
+    if (row.status !== AgentMemoryStatus.RETIRED) {
+      throw new BadRequestException(
+        `Memory entry ${id} is ${row.status}, not retired — nothing to restore.`,
+      );
+    }
+    await this.repository.update(id, {
+      status: AgentMemoryStatus.ACTIVE,
+      retiredAt: null,
+      retiredBy: null,
+      retiredReason: null,
+      embeddingStatus: AgentMemoryEmbeddingStatus.PENDING,
+    });
+    this.logger.info(
+      `Agent memory ${id} restored by user ${userId}${row.retiredReason ? ` (had been retired by the agent: ${row.retiredReason})` : ''}`,
+    );
+    const restored = await this.repository.findOneOrFail({ where: { id } });
+    await this.indexQuietly(restored);
+    return this.repository.findOneOrFail({ where: { id } });
+  }
+
+  /** Every active, unpinned entry — the retirement pass's worklist (OPP-0752). */
+  listActiveUnpinned(agent: AgentMemoryAgent): Promise<AgentMemory[]> {
+    return this.repository.listActiveUnpinned(agent);
+  }
+
+  /** What the agent itself retired recently, for the Notebook tab's undo list. */
+  listRetiredByAgent(
+    agent: AgentMemoryAgent,
+    repo: string | undefined,
+    days: number,
+    limit: number,
+  ): Promise<AgentMemory[]> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    return this.repository.listRetiredByAgent(agent, repo, since, limit);
+  }
+
+  /**
+   * A run's verdict on the entries it read: which ones changed what it did,
+   * which ones turned out wrong. These feed the evidence score the prompt
+   * ranks by and the nightly retirement pass prunes by — until a run reports
+   * this, "times applied" stays at zero and means nothing (OPP-0752).
+   */
+  async recordFeedback(params: {
+    applied: string[];
+    contradicted: string[];
+  }): Promise<{ applied: number; contradicted: number }> {
+    const applied = [...new Set(params.applied)];
+    const contradicted = [...new Set(params.contradicted)].filter(
+      (id) => !applied.includes(id),
+    );
+    const now = new Date();
+    return {
+      applied: await this.repository.recordApplied(applied, now),
+      contradicted: await this.repository.recordContradicted(contradicted),
+    };
   }
 
   /**

@@ -181,6 +181,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
   const forRun = `&runId=${runId}`;
   const memorySearchUrl = `${base}/pipeline/memory/search`;
   const memoryWriteUrl = `${base}/pipeline/memory`;
+  const memoryFeedbackUrl = `${base}/pipeline/memory/feedback`;
 
   // No per-stage report helper here, unlike buildFixPrompt: a sweep reports
   // many times across four phases, so the prompt gives the agent the one
@@ -369,7 +370,9 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `If a fix made a README, TESTING.md, DATA_SCHEMA.md or a CLAUDE.md "gotchas" section stale, update it in the same PR and report doc_updated naming the file.`,
     ``,
     `## Phase 4 — Write to your notebook`,
-    `Before you close, write down what tonight taught you that the next sweep of "${repo}" should know — at most three entries, each under 600 characters, each written for a stranger who did not see tonight: name the repo, the file or command, and the symptom. Good entries: a test that is flaky and why; a lint rule that is suppressed on purpose; a pattern that looked like a bug and was not, and what settled it; where a class of bug tends to hide here; how a hard fix was eventually made to work. Do not write down tonight's findings themselves (they are already filed) or anything you only suspect. If a notebook entry you read in Phase 0 was wrong, write the correction.`,
+    `First, tell the notebook which of the entries you read tonight actually changed what you did, and which turned out to be wrong — the ids are in the entries above and in the search results. Send this even when both lists are empty; an empty report is how an entry that never helps gets retired:`,
+    `  curl -sS -X POST "${memoryFeedbackUrl}" -H "Content-Type: application/json" ${auth} -d '{"runId":"${runId}","applied":["<entry id>"],"contradicted":[]}'`,
+    `Then write down what tonight taught you that the next sweep of "${repo}" should know — at most three entries, each under 600 characters, each written for a stranger who did not see tonight: name the repo, the file or command, and the symptom. Good entries: a test that is flaky and why; a lint rule that is suppressed on purpose; a pattern that looked like a bug and was not, and what settled it; where a class of bug tends to hide here; how a hard fix was eventually made to work. Do not write down tonight's findings themselves (they are already filed) or anything you only suspect. If a notebook entry you read in Phase 0 was wrong, write the correction.`,
     `  curl -sS -X POST "${memoryWriteUrl}" -H "Content-Type: application/json" ${auth} -d '{"body":"<the lesson>","repos":["${repo}"],"tags":["<one or two labels>"],"runId":"${runId}"}'`,
     `Leave "repos" out for a lesson that applies to every Ally repo. Nothing learned tonight is a valid outcome — write nothing rather than something vague.`,
     ``,
