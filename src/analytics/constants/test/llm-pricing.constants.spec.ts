@@ -143,8 +143,8 @@ describe('computeServiceCostUsd — cached prompt tokens (OpenAI, Gemini)', () =
         cachedTokens: 1_000_000,
       },
     );
-    // all 1M prompt cached at $0.075/1M + 1M output at $2.50/1M
-    expect(costUsd).toBeCloseTo(0.075 + 2.5, 6);
+    // all 1M prompt cached at $0.03/1M + 1M output at $2.50/1M
+    expect(costUsd).toBeCloseTo(0.03 + 2.5, 6);
   });
 
   it('is unchanged when nothing was cached', () => {
