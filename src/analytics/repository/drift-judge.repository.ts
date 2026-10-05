@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { JudgeAttemptFamily } from '../constants/judge-scheduling.constants';
+import { judgeAttemptGate } from '../util/judge-attempts.util';
+import { settledEndedSessionPredicate } from '../util/session-eligibility.util';
 
 /** Prompt-management code for the drift judge rubric (seeded by migration). */
 export const DRIFT_JUDGE_PROMPT_CODE = 'drift_judge_conversation_rubric';
@@ -96,7 +99,9 @@ export class DriftJudgeRepository {
   }
 
   /**
-   * Sessions to judge. Excludes admin-dashboard previews (roomId 'preview-%').
+   * Sessions to judge. Excludes admin-dashboard previews (roomId 'preview-%')
+   * and any session that is not over yet (`settledEndedSessionPredicate` —
+   * judging a live one stores its partial transcript as the final answer).
    * `sinceDays` limits to recently-created sessions; `onlyUnjudged` skips any
    * session that already has a judgment row (idempotent catch-up). Experiment
    * fields (provider/model) come from the session's turn metrics.
@@ -132,6 +137,8 @@ export class DriftJudgeRepository {
       judgeModel: string;
       judgePromptVersion: string;
     } | null;
+    /** Scheduled runs only — see ScheduledSelection.honourAttemptLedger. */
+    honourAttemptLedger?: boolean;
   }): Promise<DriftSessionRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -159,7 +166,8 @@ export class DriftJudgeRepository {
       LEFT JOIN languages l
         ON l.id = NULLIF(s.metadata->>'languageId', '')::int
       LEFT JOIN scenarios sc ON sc.id = s."scenarioId"
-      WHERE s."roomId" NOT LIKE 'preview-%'`;
+      WHERE s."roomId" NOT LIKE 'preview-%'
+        AND ${settledEndedSessionPredicate('s')}`;
     if (opts.language)
       sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
     if (opts.sinceDays != null)
@@ -188,6 +196,8 @@ export class DriftJudgeRepository {
                      opts.judgedForVersion.judgePromptVersion,
                    )})`;
     }
+    if (opts.honourAttemptLedger)
+      sql += ` AND ${judgeAttemptGate(JudgeAttemptFamily.DRIFT, 's.id', p)}`;
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);

@@ -12,6 +12,11 @@ import { FeedbackGroundednessRepository } from '../repository/feedback-groundedn
 import { LanguageJudgeRepository } from '../repository/language-judge.repository';
 import { RagQualityRepository } from '../repository/rag-quality.repository';
 import { RecallQualityRepository } from '../repository/recall-quality.repository';
+import {
+  CATCHUP_HANDOFF_MARGIN_HOURS,
+  LANGUAGE_CATCHUP_WINDOW_DAYS,
+} from '../constants/judge-scheduling.constants';
+import { ScheduledSelection } from '../util/judge-attempts.util';
 
 /**
  * Drains the judge backlog on its own, so backfilling stops being something a
@@ -179,6 +184,31 @@ const RECALL_QUALITY_TARGET = {
  */
 const MAX_UNPRODUCTIVE_RUNS = 3;
 
+/**
+ * What every family's selection adds as a scheduled caller: skip subjects the
+ * attempt ledger has given up on or is still backing off. Without it a
+ * failing session reads as unjudged forever, and newest-first puts it back at
+ * the head of the queue on every tick for as long as it stays in the window.
+ */
+const SCHEDULED: ScheduledSelection = { honourAttemptLedger: true };
+
+/**
+ * Language additionally stays out of the live catch-up's window.
+ *
+ * Both used to select the newest unjudged sessions on the same tick, with
+ * nothing in flight to mark them, so every new session was language-judged
+ * twice — the second persist silently replacing the first, both billed. The
+ * catch-up owns the last day (plus a margin, see CATCHUP_HANDOFF_MARGIN_HOURS);
+ * the drainer owns everything older. The other families need no such line:
+ * drift's top-up only reaches sessions that already carry v1 rows, which a
+ * new session never has, and groundedness and recall have no catch-up.
+ */
+const LANGUAGE_SCHEDULED: ScheduledSelection = {
+  ...SCHEDULED,
+  excludeCreatedWithinHours:
+    LANGUAGE_CATCHUP_WINDOW_DAYS * 24 + CATCHUP_HANDOFF_MARGIN_HOURS,
+};
+
 @Injectable()
 export class JudgeBacklogDrainService implements OnModuleInit {
   private readonly logger = LoggerService.getInstance(
@@ -328,6 +358,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       unjudgedForVersion: DRIFT_TARGET,
       judgedForVersion: DRIFT_SOURCE,
       limit: 1,
+      ...SCHEDULED,
     });
     if (eligible.length === 0) {
       await this.writeState('drift', { unproductive: 0 });
@@ -341,6 +372,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       undefined,
       DRIFT_SOURCE,
       BACKLOG_CHUNK,
+      SCHEDULED,
     );
     await this.writeState('drift', {
       jobId: job.jobId,
@@ -370,6 +402,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       onlyUnjudged: true,
       unjudgedForVersion: LANGUAGE_TARGET,
       limit: 1,
+      ...LANGUAGE_SCHEDULED,
     });
     if (eligible.length === 0) {
       await this.writeState('language', { unproductive: 0 });
@@ -382,6 +415,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       LANGUAGE_TARGET,
       undefined,
       BACKLOG_CHUNK,
+      LANGUAGE_SCHEDULED,
     );
     await this.writeState('language', {
       jobId: job.jobId,
@@ -413,6 +447,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       sinceDays: BACKLOG_WINDOW_DAYS,
       unjudgedForVersion: GROUNDEDNESS_TARGET,
       limit: 1,
+      ...SCHEDULED,
     });
     if (eligible.length === 0) {
       await this.writeState('groundedness', { unproductive: 0 });
@@ -424,6 +459,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       GROUNDEDNESS_TARGET,
       undefined,
       BACKLOG_CHUNK,
+      SCHEDULED,
     );
     await this.writeState('groundedness', {
       jobId: job.jobId,
@@ -526,6 +562,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       sinceDays: RECALL_QUALITY_WINDOW_DAYS,
       unjudgedForVersion: RECALL_QUALITY_TARGET,
       limit: 1,
+      ...SCHEDULED,
     });
     if (eligible.length === 0) {
       await this.writeState('recall-quality', { unproductive: 0 });
@@ -537,6 +574,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       RECALL_QUALITY_TARGET,
       undefined,
       RECALL_QUALITY_CHUNK,
+      SCHEDULED,
     );
     await this.writeState('recall-quality', {
       jobId: job.jobId,

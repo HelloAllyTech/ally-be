@@ -12,6 +12,12 @@ import {
 } from '../util/judge-concurrency.util';
 import { DriftBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
+  JudgeAttemptFamily,
+  JudgeAttemptOutcome,
+} from '../constants/judge-scheduling.constants';
+import { JudgeAttemptRepository } from '../repository/judge-attempt.repository';
+import { ScheduledSelection } from '../util/judge-attempts.util';
+import {
   DriftJudgeRepository,
   PerTurnJudgment,
   SessionRollup,
@@ -67,6 +73,7 @@ export class DriftJudgeService {
     private readonly repo: DriftJudgeRepository,
     private readonly config: AppConfigService,
     private readonly redis: RedisService,
+    private readonly attempts: JudgeAttemptRepository,
   ) {}
 
   private jobKey(jobId: string): string {
@@ -110,6 +117,11 @@ export class DriftJudgeService {
      * flight, and the next tick simply picks up the next batch.
      */
     limit?: number | null,
+    /**
+     * Set by the catch-up and the drainer only. The admin endpoint passes
+     * nothing, which keeps a manual run uncapped by the attempt ledger.
+     */
+    scheduled?: Pick<ScheduledSelection, 'honourAttemptLedger'> | null,
   ): Promise<DriftBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -134,6 +146,7 @@ export class DriftJudgeService {
       concurrency,
       leanFromVersion ?? null,
       limit ?? null,
+      scheduled?.honourAttemptLedger ?? false,
     );
     this.logger.debug(
       `drift backfill queued job=${jobId} sinceDays=${sinceDays} ` +
@@ -162,6 +175,7 @@ export class DriftJudgeService {
       judgePromptVersion: string;
     } | null,
     limit: number | null,
+    honourAttemptLedger: boolean,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -173,6 +187,7 @@ export class DriftJudgeService {
         // judged, so those are excluded from the run rather than attempted.
         judgedForVersion: leanFromVersion,
         limit,
+        honourAttemptLedger,
       });
       job.status = 'running';
       job.total = sessions.length;
@@ -200,7 +215,7 @@ export class DriftJudgeService {
               rubric,
               s.id,
             );
-            await this.repo.mergeLeanLabels(
+            const merged = await this.repo.mergeLeanLabels(
               s.id,
               lean.perTurn,
               leanFromVersion,
@@ -209,6 +224,23 @@ export class DriftJudgeService {
                 judgePromptVersion: lean.judgePromptVersion,
               },
             );
+            // Nothing landed under the target version, so the session still
+            // reads as unjudged and the drainer would buy the same answer on
+            // the next tick. Paid for, stored nothing: an empty attempt.
+            if (merged === 0) {
+              await this.attempts.recordFailure(
+                JudgeAttemptFamily.DRIFT,
+                s.id,
+                s.tenant_id,
+                JudgeAttemptOutcome.EMPTY,
+                'lean judge labelled no stored turn',
+              );
+              job.failed += 1;
+              job.processed += 1;
+              await this.saveJob(job);
+              return;
+            }
+            await this.attempts.clear(JudgeAttemptFamily.DRIFT, s.id);
             job.judged += 1;
             job.processed += 1;
             await this.saveJob(job);
@@ -231,6 +263,7 @@ export class DriftJudgeService {
             aiText,
             userText,
           );
+          await this.attempts.clear(JudgeAttemptFamily.DRIFT, s.id);
           job.judged += 1;
           job.drifted += judged.rollup.drifted ? 1 : 0;
           job.processed += 1;
@@ -239,6 +272,16 @@ export class DriftJudgeService {
           // One bad session must not abort the whole job.
           this.logger.error(
             `drift backfill: session ${s.id} failed: ${(e as Error).message}`,
+          );
+          // Recorded so the scheduled runs back off and, after
+          // JUDGE_MAX_ATTEMPTS, stop: a failure writes no judgment row, so
+          // without this it reads as unjudged and is re-bought every tick.
+          await this.attempts.recordFailure(
+            JudgeAttemptFamily.DRIFT,
+            s.id,
+            s.tenant_id,
+            JudgeAttemptOutcome.FAILED,
+            e,
           );
           job.failed += 1;
           job.processed += 1;
