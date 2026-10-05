@@ -48,6 +48,15 @@ export class Track extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
 
+  // The competencies the author says this course teaches: a jsonb array of
+  // `competencies.id` uuid strings, stored the same way as
+  // `scenarios.competencyIds`. NULL = not tagged — Analytics → Course impact
+  // then falls back to the competencies of the course's roleplay scenarios. An
+  // empty selection is stored as NULL, never `[]` (a CHECK enforces it), so
+  // "tagged" always means at least one id. See normaliseTrackCompetencyIds.
+  @Column({ type: 'jsonb', nullable: true })
+  competencyIds?: string[] | null;
+
   @DeleteDateColumn()
   deletedAt?: Date;
 }

@@ -202,9 +202,17 @@ export class CourseImpactCourseDto {
   @ApiProperty({
     type: [String],
     description:
-      'Rubric skill keys the course’s roleplays assess (mapped from their competencies); empty when none map',
+      'Rubric skill keys the course teaches (mapped from its competencies — see `competencySource`); empty when none map',
   })
   targetedSkills!: string[];
+
+  @ApiProperty({
+    enum: ['explicit', 'derived'],
+    nullable: true,
+    description:
+      '`explicit`: the author tagged the course with the competencies it teaches (`tracks.competencyIds`); `derived`: read off its roleplay items’ scenarios because it is untagged (or its tags no longer resolve); null when neither names a shared competency',
+  })
+  competencySource!: 'explicit' | 'derived' | null;
 
   @ApiProperty({
     type: CourseImpactReferenceDto,
@@ -260,7 +268,7 @@ export class CourseImpactDetailDto {
   @ApiProperty({
     type: [String],
     description:
-      'Every competency the course’s roleplays assess, by name, whether or not it maps to a rubric skill',
+      'Every competency the course teaches, by name — its own tag when set, else its roleplays’ — whether or not it maps to a rubric skill',
   })
   competencies!: string[];
 

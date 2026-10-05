@@ -392,6 +392,20 @@ export class ScenarioRepeatRowDto {
       'True only when `changeCi` excludes zero. Always false below the floor',
   })
   detectable!: boolean;
+
+  @ApiProperty({
+    description:
+      "When this scenario's scoring config (event mappings, behaviour instructions, or any PASSIVE event) was last edited. A scenario VERSION does not pin its scoring — edits change the live rows in place — so pairs on one version can still compare two scoring configs. Null when unknown",
+    nullable: true,
+    type: String,
+  })
+  scoringChangedAt!: string | null;
+
+  @ApiProperty({
+    description:
+      'Of `pairs`, those whose first play came before `scoringChangedAt` and latest after it: they may compare two scoring configs. Only the last edit is knowable, so this is a floor. Read the change with this beside it',
+  })
+  pairsSpanningScoringChange!: number;
 }
 
 export class ScenarioRepeatPooledDto {

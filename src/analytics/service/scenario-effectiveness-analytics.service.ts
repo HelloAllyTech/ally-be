@@ -16,10 +16,12 @@ import { FoundationalSkillsAnalyticsRepository } from '../repository/foundationa
 // One floor for every judged score on the platform — see SkillGrowthAnalyticsService.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
 import { ScenarioEffectivenessAnalyticsRepository } from '../repository/scenario-effectiveness-analytics.repository';
+import { ScenarioCalibrationAnalyticsRepository } from '../repository/scenario-calibration-analytics.repository';
 import {
   REPEAT_MIN_SPAN_MS,
   REPEAT_PICKER_SIZE,
   SCENARIO_TAG_GAP_THRESHOLDS,
+  annotateScoringChanges,
   buildOpportunityCoverage,
   buildRepeatImprovement,
   singleScenarioOf,
@@ -41,6 +43,7 @@ export class ScenarioEffectivenessAnalyticsService {
   constructor(
     private readonly repository: ScenarioEffectivenessAnalyticsRepository,
     private readonly cutsRepository: FoundationalSkillsAnalyticsRepository,
+    private readonly calibrationRepository: ScenarioCalibrationAnalyticsRepository,
   ) {}
 
   async getOpportunityCoverage(
@@ -134,6 +137,16 @@ export class ScenarioEffectivenessAnalyticsService {
       minSpanMs: REPEAT_MIN_SPAN_MS,
       pickerSize: REPEAT_PICKER_SIZE,
     });
+    const scenarioIds = [...new Set(built.scenarios.map((r) => r.scenarioId))];
+    const changes = await withReportingQuerySlot(() =>
+      this.calibrationRepository.getScoringConfigChangedAt(scenarioIds),
+    );
+    built.scenarios = annotateScoringChanges(
+      built.scenarios,
+      groups,
+      new Map(changes.map((c) => [c.scenarioId, c.changedAt])),
+      REPEAT_MIN_SPAN_MS,
+    );
 
     return {
       minSampleSize: MIN_SCORE_SAMPLE_SIZE,
@@ -144,8 +157,8 @@ export class ScenarioEffectivenessAnalyticsService {
       ...built,
       provenance: {
         derivation:
-          `R2 — scenario_sessions.score, the learner's session score (sum of the scenario's ` +
-          `detected event scores). Per learner and scenario VERSION: first vs latest countable ` +
+          `R2 — scenario_sessions.score, the learner's session score (detected event scores plus ` +
+          `behaviour-instruction points). Per learner and scenario VERSION: first vs latest countable ` +
           `play, counted when there are 2+ plays and the two are at least ` +
           `${REPEAT_MIN_SPAN_MS / 3_600_000} hours apart. A score of 0 with no detected event is ` +
           `the unresolved case and is dropped. Per version: mean own change with a 95% bootstrap ` +
@@ -154,7 +167,10 @@ export class ScenarioEffectivenessAnalyticsService {
           `time; test organisations excluded.`,
         note:
           `Scores are comparable only within one scenario version; a version change starts a new ` +
-          `pairing. A 0 can mean "unresolved" rather than a poor session. Learners practise other ` +
+          `pairing — but a version does not pin the scoring config (event mappings and behaviour ` +
+          `instructions are edited in place), so each row carries how many of its pairs straddle the ` +
+          `last scoring edit. The score also counts behaviour-instruction points, not only events. ` +
+          `A 0 can mean "unresolved" rather than a poor session. Learners practise other ` +
           `scenarios between plays, so a rise is associated with replaying, not caused by it.`,
       },
       scoping: { tenantId: tenantId ?? null, unscopedSections: [] },

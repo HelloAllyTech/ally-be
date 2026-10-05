@@ -354,6 +354,14 @@ export interface RepeatScenarioOut {
   tied: number;
   signP: number | null;
   detectable: boolean;
+  /**
+   * When the scenario's scoring config (its event mappings, behaviour
+   * instructions, or any PASSIVE event) was last edited; null when unknown.
+   * Versions do not pin scoring — studio edits change the live rows in place.
+   */
+  scoringChangedAt: string | null;
+  /** Of `pairs`, those whose first play predates that edit and latest play follows it. */
+  pairsSpanningScoringChange: number;
 }
 
 export interface RepeatPooledOut {
@@ -476,6 +484,8 @@ export function buildRepeatImprovement(
       tied: c.tied,
       signP: c.signP,
       detectable: c.detectable,
+      scoringChangedAt: null,
+      pairsSpanningScoringChange: 0,
     });
   }
   scenarios.sort(
@@ -594,4 +604,39 @@ export function buildRepeatImprovement(
     selected,
     picker,
   };
+}
+
+/**
+ * Says, per scenario version, how many of its pairs straddle the scenario's
+ * last scoring-config edit. A scenario version does NOT pin its scoring (the
+ * event mappings and behaviour instructions are edited in place), so a pair
+ * whose first play came before an edit and whose latest came after it may be
+ * comparing two scoring configs. Only the LATEST edit is knowable, so a pair
+ * wholly before it may still span an earlier one — the count is a floor.
+ */
+export function annotateScoringChanges(
+  scenarios: readonly RepeatScenarioOut[],
+  groups: readonly RepeatGroupRow[],
+  changedAt: ReadonlyMap<number, Date | null>,
+  minSpanMs = REPEAT_MIN_SPAN_MS,
+): RepeatScenarioOut[] {
+  const spanning = new Map<string, number>();
+  for (const g of groups) {
+    if (!isRepeatPair(g, minSpanMs)) continue;
+    const at = changedAt.get(g.scenarioId);
+    if (!at) continue;
+    const t = at.getTime();
+    if (g.firstAt.getTime() < t && g.latestAt.getTime() >= t) {
+      const key = versionKey(g);
+      spanning.set(key, (spanning.get(key) ?? 0) + 1);
+    }
+  }
+  return scenarios.map((row) => {
+    const at = changedAt.get(row.scenarioId) ?? null;
+    return {
+      ...row,
+      scoringChangedAt: at ? at.toISOString() : null,
+      pairsSpanningScoringChange: spanning.get(versionKey(row)) ?? 0,
+    };
+  });
 }

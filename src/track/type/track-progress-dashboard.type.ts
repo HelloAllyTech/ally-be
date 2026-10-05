@@ -21,9 +21,8 @@ export interface TrackProgressSectionSummary {
  * One skillCoverage category, averaged across every evaluated ROLEPLAY
  * session in this course. `category` is a raw pass-through string: both
  * label generations (`Listening Engagement…` from ally-ai, the legacy
- * `Learning`/`Support`/`Standards` set) can appear in real data, exactly as
- * SkillGrowthAnalyticsRepository.parseSkillCoverage already treats them —
- * unnormalised.
+ * `Learning`/`Support`/`Standards` set) can appear in real data, so they are
+ * passed through unnormalised.
  */
 export interface TrackSkillCategoryFeedback {
   category: string;

@@ -31,6 +31,11 @@ import {
 } from '../util/foundational-skills-progress.util';
 import { deriveLevel } from 'src/foundational-skills/util/skill-scoring.util';
 import {
+  DOSE_RESPONSE_MIN_LEARNERS,
+  buildDoseResponse,
+  classifyDoseResponse,
+} from '../util/dose-response.util';
+import {
   FHS_BEHAVIOUR_THRESHOLDS,
   computeBehaviourRates,
 } from '../util/foundational-skills-behaviour.util';
@@ -225,6 +230,11 @@ export class FoundationalSkillsAnalyticsService {
    * labels. Same floors as the AAQ-166 chart: averages and shares are withheld
    * below {@link MIN_SCORE_SAMPLE_SIZE} learners while counts travel, and a
    * panel is only offered with at least {@link MIN_COHORT_SIZE}.
+   *
+   * Also carries the dose–response scatter (`learnersScatter` + `doseResponse`,
+   * AAQ-217) for the Effectiveness sub-tab: every classifiable learner, not
+   * just the panel, behind its own population gate
+   * ({@link DOSE_RESPONSE_MIN_LEARNERS}); see `util/dose-response.util.ts`.
    */
   async getProgress(
     query: FoundationalSkillsProgressQueryDto,
@@ -249,6 +259,25 @@ export class FoundationalSkillsAnalyticsService {
       minCohort: MIN_COHORT_SIZE,
       levelChecks,
     });
+
+    // Dose–response (AAQ-217). Minutes are read only once the population gate
+    // is met: below it nothing but the count is served, so there is nothing to
+    // read them for.
+    const classified = classifyDoseResponse(learners);
+    const minutes =
+      classified.length >= DOSE_RESPONSE_MIN_LEARNERS
+        ? await this.repository.getPracticeMinutesByLearner(
+            FHS_RUBRIC_VERSION,
+            classified.map((l) => l.learnerId),
+            query.tenantId,
+          )
+        : null;
+    const { learnersScatter, ...dose } = buildDoseResponse(
+      classified,
+      minutes,
+      DOSE_RESPONSE_MIN_LEARNERS,
+    );
+
     return {
       rubricVersion: FHS_RUBRIC_VERSION,
       cutSizeLearnerChars: FHS_CUT_LEARNER_CHARS,
@@ -272,6 +301,24 @@ export class FoundationalSkillsAnalyticsService {
           `than ${MIN_SCORE_SAMPLE_SIZE} learners are withheld. Scores come from an AI judge not yet checked ` +
           `against trained human raters: practice feedback, not a clinical assessment. Rubric ` +
           `${FHS_RUBRIC_VERSION}; test organisations excluded.`,
+      },
+      learnersScatter,
+      doseResponse: {
+        ...dose,
+        provenance: {
+          derivation:
+            `R1 — foundational helping skills cuts (rubric ${FHS_RUBRIC_VERSION}). One point per learner ` +
+            `whose own trend is classifiable (${FHS_PROGRESS_THRESHOLDS.trendMinCuts}+ scored cuts): x = their ` +
+            `scored cuts, or the minutes of countable practice in those cuts; y = mean composite of the last ` +
+            `half of their cuts minus the first half (the "learners beyond noise" quantity). Least-squares ` +
+            `line; slope CI by bootstrapping learners (seeded). Shown only from ` +
+            `${DOSE_RESPONSE_MIN_LEARNERS} classified learners. All time; test organisations excluded.`,
+          note:
+            `Observational: how much someone practises is their own choice, and people who are improving ` +
+            `may be the ones who keep going — a slope is an association, not the effect of practice. A ` +
+            `learner with more cuts has a less noisy change, so the points on the right are steadier than ` +
+            `those on the left. AI-judged; not yet checked against trained human raters.`,
+        },
       },
       computedAt: new Date().toISOString(),
     };

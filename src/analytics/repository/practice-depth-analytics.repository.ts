@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { UserRole } from '../../common/constants/user.constants';
-import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../../learn/enum/scenario-session-status.enum';
 import { AnalyticsBucket } from './platform-analytics.repository';
 import { MIN_COHORT_SIZE } from './cohort-analytics.repository';
 import { countableSessionPredicate } from '../util/session-eligibility.util';
@@ -42,6 +45,15 @@ export interface ActiveDayHistogramRow {
   activeDays: number;
   /** Learners with exactly that many. */
   learners: number;
+}
+
+/** One learner's countable sessions, as gaps between consecutive starts. */
+export interface SessionGapRow {
+  userId: number;
+  /** Countable sessions, ever. */
+  sessions: number;
+  /** Whole days between consecutive session starts, in order (sessions − 1 of them). */
+  gaps: number[];
 }
 
 /** One bucket of the qualifying-session trend. */
@@ -175,6 +187,80 @@ export class PracticeDepthAnalyticsRepository {
     return rows.map((r: Record<string, unknown>) => ({
       activeDays: Number(r.activeDays) || 0,
       learners: Number(r.learners) || 0,
+    }));
+  }
+
+  /**
+   * Every learner's gaps between consecutive countable sessions, all-time — the
+   * input to the practice-spacing block (EFF-51, AAQ-224).
+   *
+   * Same population as the funnel ({@link learnersCte}: LEARNER-group users,
+   * test orgs excluded, narrowed by the USER's tenant when an org is picked), so
+   * "active learners" on the spacing KPI and the funnel's learners are the same
+   * people. ALL of a learner's countable sessions count, whichever non-test org
+   * they ran in — gaps are about the person's rhythm, and dropping sessions run
+   * elsewhere would invent breaks.
+   *
+   * Countable = `status = ENDED`, `eventStatus = COMPLETED`, not a preview or
+   * seed room. A gap is WHOLE days elapsed from one session's start to the
+   * next's (`floor(seconds / 86400)`), so 0 = the next session started within
+   * 24 hours. Timezone-free on purpose: elapsed time needs no notion of the
+   * learner's local midnight.
+   *
+   * One row per learner with at least one countable session: their session
+   * count and their gaps in session order (empty for a single session).
+   */
+  async getSessionGaps(tenantId?: string): Promise<SessionGapRow[]> {
+    const params: unknown[] = [
+      UserRole.LEARNER,
+      ScenarioSessionStatus.ENDED,
+      ScenarioSessionEventStatus.COMPLETED,
+    ];
+    let tenantPlaceholder: string | undefined;
+    if (tenantId) {
+      params.push(tenantId);
+      tenantPlaceholder = `$${params.length}`;
+    }
+
+    const rows = await this.dataSource.query(
+      `
+      WITH ${this.learnersCte(tenantPlaceholder)},
+      sessions AS (
+        SELECT s."counselorId" AS user_id, s.id,
+               COALESCE(s."startedAt", s."createdAt") AS started_at
+          FROM scenario_sessions s
+          JOIN learners l ON l.user_id = s."counselorId"
+         WHERE s.status = $2
+           AND s."eventStatus" = $3
+           AND ${countableSessionPredicate('s')}
+           AND ${excludeTestTenants('s."tenant_id"')}
+      ),
+      gaps AS (
+        SELECT user_id, started_at, id,
+               FLOOR(EXTRACT(EPOCH FROM (
+                 started_at - LAG(started_at) OVER (
+                   PARTITION BY user_id ORDER BY started_at, id
+                 )
+               )) / 86400)::int AS gap_days
+          FROM sessions
+      )
+      SELECT user_id                                      AS "userId",
+             COUNT(*)::int                                AS "sessions",
+             COALESCE(
+               array_agg(gap_days ORDER BY started_at, id)
+                 FILTER (WHERE gap_days IS NOT NULL),
+               '{}'
+             )                                            AS "gaps"
+        FROM gaps
+       GROUP BY user_id
+      `,
+      params,
+    );
+
+    return rows.map((r: Record<string, unknown>) => ({
+      userId: Number(r.userId),
+      sessions: Number(r.sessions) || 0,
+      gaps: (Array.isArray(r.gaps) ? r.gaps : []).map((g) => Number(g)),
     }));
   }
 

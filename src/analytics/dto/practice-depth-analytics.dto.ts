@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, Matches } from 'class-validator';
 
+import { FoundationalSkillsProvenanceDto } from './foundational-skills-analytics.dto';
 import {
   ANALYTICS_BUCKETS,
   AnalyticsBucketParam,
@@ -71,6 +72,146 @@ export class StickinessStepDto {
   ofTopPct!: number | null;
 }
 
+// ── Practice spacing (EFF-51, AAQ-224) ──────────────────────────────────────
+// Additive block on GET practice-stickiness, read by Highlights → Usage.
+
+/** One band of the gap histogram. */
+export class StickinessSpacingBandDto {
+  @ApiProperty({
+    description: 'Stable key',
+    enum: ['0-1', '2-6', '7-13', '14-29', '30+'],
+  })
+  band!: string;
+
+  @ApiProperty({ description: 'Axis label, e.g. "2–6 days"' })
+  label!: string;
+
+  @ApiProperty({ description: 'Smallest gap in the band, whole days' })
+  minDays!: number;
+
+  @ApiProperty({
+    description:
+      'Largest gap in the band, whole days; null for the open 30+ band',
+    nullable: true,
+    type: Number,
+  })
+  maxDays!: number | null;
+
+  @ApiProperty({ description: 'Gaps in the band. Always present.' })
+  gaps!: number;
+
+  @ApiProperty({
+    description:
+      'gaps / totalGaps (%), 1 dp. Null below `minGapSample` gaps in total — ' +
+      'a share of a handful of gaps is one learner’s habit.',
+    nullable: true,
+    type: Number,
+  })
+  sharePct!: number | null;
+
+  @ApiProperty({
+    description:
+      'Distinct learners with at least one gap in the band (a learner can ' +
+      'appear in several bands). Count only.',
+  })
+  learners!: number;
+}
+
+export class StickinessSpacingDto {
+  @ApiProperty({
+    description:
+      'Always `all`: spacing is all-time, like the funnel beside it. A window ' +
+      'would cut every gap that straddles its edge and report recent ' +
+      'learners as having none.',
+    enum: ['all'],
+  })
+  window!: 'all';
+
+  @ApiProperty({
+    description:
+      'Days between consecutive countable sessions of the same learner, ' +
+      'banded. A gap is WHOLE days elapsed from one session’s start to the ' +
+      'next’s, so 0 = within 24 hours (back-to-back sessions in one sitting ' +
+      'land here: the 0–1 band is massed practice). Every gap counts, so ' +
+      'learners who practise more contribute more gaps — the KPI below is ' +
+      'per learner for that reason.',
+    type: [StickinessSpacingBandDto],
+  })
+  bands!: StickinessSpacingBandDto[];
+
+  @ApiProperty({
+    description: 'Gaps across every learner — the share denominator',
+  })
+  totalGaps!: number;
+
+  @ApiProperty({
+    description:
+      'Fewest gaps the band shares are stated from (`MIN_SCORE_SAMPLE_SIZE`).',
+  })
+  minGapSample!: number;
+
+  @ApiProperty({
+    description:
+      'Learners (the funnel’s population) with at least one countable session',
+  })
+  learnersWithSessions!: number;
+
+  @ApiProperty({
+    description:
+      'Active learners: at least 2 countable sessions, so at least one gap. ' +
+      'The KPI’s denominator.',
+  })
+  activeLearners!: number;
+
+  @ApiProperty({
+    description: 'The KPI threshold on a learner’s median gap, in days',
+    example: 7,
+  })
+  targetDays!: number;
+
+  @ApiProperty({
+    description:
+      'Active learners whose MEDIAN gap is at most `targetDays`. Count, always present.',
+  })
+  learnersWithinTarget!: number;
+
+  @ApiProperty({
+    description:
+      'KPI: learnersWithinTarget / activeLearners (%), 1 dp — the share of ' +
+      'active learners who typically come back within a week. Null below ' +
+      '`minLearners` active learners.',
+    nullable: true,
+    type: Number,
+  })
+  withinTargetPct!: number | null;
+
+  @ApiProperty({
+    description:
+      'Median, across active learners, of each learner’s own median gap (days). ' +
+      'One value per learner so a heavy practiser counts once. Null below ' +
+      '`minLearners`.',
+    nullable: true,
+    type: Number,
+  })
+  medianGapDays!: number | null;
+
+  @ApiProperty({
+    description:
+      'Fewest active learners the KPI and the median are stated for ' +
+      '(`MIN_COHORT_SIZE`, the same privacy floor as the funnel’s shares).',
+  })
+  minLearners!: number;
+
+  @ApiProperty({
+    description:
+      'Source line for the card: what a gap is, the population, and the ' +
+      'caveat (spacing is chosen by the learner; this describes rhythm, it ' +
+      'does not show that spacing helps).',
+    type: () => FoundationalSkillsProvenanceDto,
+  })
+  provenance!: FoundationalSkillsProvenanceDto;
+}
+
 export class StickinessResponseDto {
   @ApiProperty({
     description:
@@ -108,6 +249,15 @@ export class StickinessResponseDto {
       'show counts only — the server has already nulled the shares.',
   })
   minPopulation!: number;
+
+  @ApiProperty({
+    description:
+      'Practice spacing (AAQ-224): gaps between consecutive countable sessions, ' +
+      'all-time, over the same learners as the funnel. Shares and the KPI are ' +
+      'floored server-side; counts always travel.',
+    type: () => StickinessSpacingDto,
+  })
+  spacing!: StickinessSpacingDto;
 
   @ApiProperty({ type: AnalyticsScopingDto })
   scoping!: AnalyticsScopingDto;

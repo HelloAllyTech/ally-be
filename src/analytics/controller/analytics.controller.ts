@@ -86,6 +86,48 @@ import {
   SkillRetentionResponseDto,
   TimeToCompetenceResponseDto,
 } from '../dto/foundational-skills-effectiveness.dto';
+import { CourseProgressAnalyticsService } from '../service/course-progress-analytics.service';
+import {
+  CourseProgressAnalyticsQueryDto,
+  KnowledgeVsSkillResponseDto,
+  ProgressCurveResponseDto,
+} from '../dto/course-progress-analytics.dto';
+import { ScenarioCalibrationAnalyticsService } from '../service/scenario-calibration-analytics.service';
+import {
+  ScenarioCalibrationQueryDto,
+  ScenarioCalibrationResponseDto,
+  ScenarioProgressionQueryDto,
+  ScenarioProgressionResponseDto,
+} from '../dto/scenario-calibration-analytics.dto';
+import { EffectivenessOrgsAnalyticsService } from '../service/effectiveness-orgs-analytics.service';
+import { MeasurementConvergenceAnalyticsService } from '../service/measurement-convergence-analytics.service';
+import {
+  CostPerImprovementQueryDto,
+  CostPerImprovementResponseDto,
+  EffectivenessOrgsQueryDto,
+  EffectivenessOrgsResponseDto,
+} from '../dto/effectiveness-orgs-analytics.dto';
+import {
+  MeasurementConvergenceQueryDto,
+  MeasurementConvergenceResponseDto,
+} from '../dto/measurement-convergence-analytics.dto';
+import { FeedbackUptakeAnalyticsService } from '../service/feedback-uptake-analytics.service';
+import {
+  FeedbackUptakeQueryDto,
+  FeedbackUptakeResponseDto,
+} from '../dto/feedback-uptake-analytics.dto';
+import { SelfEfficacyAnalyticsService } from '../service/self-efficacy-analytics.service';
+import {
+  SelfEfficacyQueryDto,
+  SelfEfficacyResponseDto,
+} from '../dto/self-efficacy-analytics.dto';
+import { JudgeAgreementAnalyticsService } from '../service/judge-agreement-analytics.service';
+import { JudgeAgreementResponseDto } from '../dto/judge-agreement-analytics.dto';
+import { FoundationalSkillsTransferAnalyticsService } from '../service/foundational-skills-transfer.service';
+import {
+  FoundationalSkillsTransferQueryDto,
+  FoundationalSkillsTransferResponseDto,
+} from '../dto/foundational-skills-transfer.dto';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
@@ -402,6 +444,14 @@ export class AnalyticsController {
     private readonly practiceQualityAnalyticsService: PracticeQualityAnalyticsService,
     private readonly curriculumAnalyticsService: CurriculumAnalyticsService,
     private readonly foundationalSkillsEffectivenessService: FoundationalSkillsEffectivenessService,
+    private readonly courseProgressAnalyticsService: CourseProgressAnalyticsService,
+    private readonly scenarioCalibrationAnalyticsService: ScenarioCalibrationAnalyticsService,
+    private readonly effectivenessOrgsAnalyticsService: EffectivenessOrgsAnalyticsService,
+    private readonly measurementConvergenceAnalyticsService: MeasurementConvergenceAnalyticsService,
+    private readonly feedbackUptakeAnalyticsService: FeedbackUptakeAnalyticsService,
+    private readonly selfEfficacyAnalyticsService: SelfEfficacyAnalyticsService,
+    private readonly judgeAgreementAnalyticsService: JudgeAgreementAnalyticsService,
+    private readonly foundationalSkillsTransferAnalyticsService: FoundationalSkillsTransferAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
 
@@ -684,7 +734,9 @@ export class AnalyticsController {
       '"did they ever come back" cannot be asked of a window without ' +
       'reporting every recent signup as churned. Percentages are suppressed ' +
       '(null) when their denominator is below `minPopulation`, which is the ' +
-      'same minimum-group-size rule the cohort grid uses; the counts stay.',
+      'same minimum-group-size rule the cohort grid uses; the counts stay. ' +
+      '`spacing` (AAQ-224): gaps between consecutive countable sessions, same ' +
+      'learners, all-time.',
   })
   @ApiResponse({
     status: 200,
@@ -1363,7 +1415,9 @@ export class AnalyticsController {
       'row per panel learner. Start/now are windows (first and last ⌊N/2⌋ cuts). ' +
       'Averages and shares are null below `minSampleSize` while counts travel. ' +
       'All-time and platform-wide unless `tenantId` narrows it to one org; test ' +
-      'organisations excluded, one rubric version.',
+      'organisations excluded, one rubric version. Also `learnersScatter` + ' +
+      '`doseResponse` (AAQ-217): every classifiable learner, gated at ' +
+      '`doseResponse.minLearners`.',
   })
   @ApiResponse({
     status: 200,
@@ -1525,7 +1579,9 @@ export class AnalyticsController {
       'at all — the silent denominator behind any satisfaction figure. (3) ' +
       '`lowRatingTags`: what sessions rated 3 or below were tagged with, ranked, ' +
       'tail pooled into "Other". Percentiles are suppressed below ' +
-      '`minSampleSize` while the counts survive.',
+      '`minSampleSize` while the counts survive. (4) `byOrdinal` (AAQ-229): ' +
+      "rating by the learner's Nth rated session, ALL-TIME regardless of the " +
+      'window.',
   })
   @ApiResponse({
     status: 200,
@@ -2643,6 +2699,275 @@ export class AnalyticsController {
     return this.foundationalSkillsEffectivenessService.getPracticeProgression(
       query,
     );
+  }
+
+  @Get('curriculum/progress-curve')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Where in a course momentum dies: share of started enrolments reaching each item (super-admin)',
+    description:
+      'Backs Highlights → Curriculum (AAQ-225). All time. Per ACTIVE/ARCHIVED course, its live items in unlock order ' +
+      '(sections by order, then items by order); x = position scaled 0–100, y = share of STARTED enrolments (opened or ' +
+      'completed an item, or finished) whose furthest unlocked item is at or beyond it. Courses need `minSampleSize` ' +
+      'started enrolments; the 5 with the most carry points (`courses`), other measurable ones are listed in `others`, ' +
+      'the rest in `belowFloor` with counts only. `steepestDrop` names the item learners stopped at. Reached means ' +
+      "unlocked, not opened (`opened` shows the gap). `tenantId` narrows by the learner's org; test orgs excluded.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Course progress curve retrieved successfully',
+    type: ProgressCurveResponseDto,
+  })
+  async getCurriculumProgressCurve(
+    @Query() query: CourseProgressAnalyticsQueryDto,
+  ): Promise<ProgressCurveResponseDto> {
+    return this.courseProgressAnalyticsService.getProgressCurve(query);
+  }
+
+  @Get('curriculum/knowledge-vs-skill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Does knowing predict doing? First-attempt quiz score vs helping-skills composite (super-admin)',
+    description:
+      'Backs Highlights → Curriculum (AAQ-226). All time. One point per learner × course: x = mean first-attempt ' +
+      "scorePct over the course's live quizzes (pending/ungraded first attempts left out, never replaced by a retry); " +
+      'y = mean FHS composite (pinned rubric) of the first `skillWindowCuts` scored slices made wholly after enrolling. ' +
+      'Spearman r (average ranks) with a learner-clustered deterministic bootstrap 95% CI, null below `minSampleSize` ' +
+      "(30) points, overall and per course. `tenantId` narrows by the learner's org; test orgs excluded.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Knowledge vs skill retrieved successfully',
+    type: KnowledgeVsSkillResponseDto,
+  })
+  async getCurriculumKnowledgeVsSkill(
+    @Query() query: CourseProgressAnalyticsQueryDto,
+  ): Promise<KnowledgeVsSkillResponseDto> {
+    return this.courseProgressAnalyticsService.getKnowledgeVsSkill(query);
+  }
+
+  @Get('scenarios/calibration')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Scenario difficulty calibration: where session scores land (super-admin)',
+    description:
+      'Backs Highlights → Curriculum → Scenarios (AAQ-227). Per scenario VERSION with at least `minSampleSize` countable ' +
+      'scored sessions (unresolved zeros dropped): the share of sessions in bands of the attainable score range derived ' +
+      "from the scenario's current scoring config (positive event score × maxOccurrences + 10 per SHOULD_DO behaviour " +
+      'instruction, an uncapped contributor counted once), over sessions since that config last changed; raw-point bands ' +
+      'when no range applies. Authored difficultyLevel alongside; tooEasy / tooHard flags. All-time; `tenantId` narrows by ' +
+      'session tenant; test organisations excluded. Empty lists, never 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Calibration retrieved successfully',
+    type: ScenarioCalibrationResponseDto,
+  })
+  async getScenarioCalibration(
+    @Query() query: ScenarioCalibrationQueryDto,
+  ): Promise<ScenarioCalibrationResponseDto> {
+    return this.scenarioCalibrationAnalyticsService.getCalibration(query);
+  }
+
+  @Get('scenarios/progression')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Did the learner move the client? Simulation-state progression (super-admin)',
+    description:
+      'Backs Highlights → Curriculum → Scenarios (AAQ-228). Per countable session, bucketed by session end: reached the ' +
+      'terminal simulation state / advanced past the opening state / never got past it, from the per-turn state on ' +
+      'scenario_session_turn_metrics.metadata (since 2026-06-10). Sessions with no usable state are counted as `untracked`, ' +
+      'not plotted; shares null below `minSampleSize`. `byScenario` covers the whole window. Standard window query; ' +
+      '`tenantId` narrows by session tenant; test organisations excluded.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Progression retrieved successfully',
+    type: ScenarioProgressionResponseDto,
+  })
+  async getScenarioProgression(
+    @Query() query: ScenarioProgressionQueryDto,
+  ): Promise<ScenarioProgressionResponseDto> {
+    return this.scenarioCalibrationAnalyticsService.getProgression(query);
+  }
+
+  @Get('effectiveness/orgs')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Org effectiveness scorecard (super-admin)',
+    description:
+      'Backs Highlights → Orgs (EFF-90, AAQ-232). One row per non-test org with data: measurable learners ' +
+      '(2+ scored helping-skills cuts in that org), each classifiable learner’s own first-half → last-half ' +
+      'composite change (paired bootstrap CI), the share improving beyond the PLATFORM noise band, ' +
+      'unhelpful-behaviour change in percentage points, course completion (completed ÷ started enrolments, ' +
+      'by the learner’s org) and the internal self-harm cue follow-up share, plus a 6-month median-composite ' +
+      'sparkline. All-time, one pass over every scored cut; rows below `minSampleSize` measurable learners ' +
+      'carry counts and null rates. `tenantId` narrows the rows only. Test orgs excluded; one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Org effectiveness scorecard retrieved successfully',
+    type: EffectivenessOrgsResponseDto,
+  })
+  async getEffectivenessOrgs(
+    @Query() query: EffectivenessOrgsQueryDto,
+  ): Promise<EffectivenessOrgsResponseDto> {
+    return this.effectivenessOrgsAnalyticsService.getOrgScorecard(query);
+  }
+
+  @Get('effectiveness/cost-per-improvement')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Cost per improved learner (super-admin)',
+    description:
+      'Backs Highlights → Effectiveness (EFF-61, AAQ-218). Learner-caused AI spend in the window (the ' +
+      'roleplay-cost total behind AAQ-076, same window params, range defaults to all) ÷ learners classified ' +
+      'improving beyond noise whose last scored cut closed in that window. Ratio null below `minSampleSize` ' +
+      'improved learners; both sides always returned. Platform-wide by construction (`tenantId` ignored). ' +
+      'A ceiling, not a unit price.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cost per improved learner retrieved successfully',
+    type: CostPerImprovementResponseDto,
+  })
+  async getCostPerImprovement(
+    @Query() query: CostPerImprovementQueryDto,
+  ): Promise<CostPerImprovementResponseDto> {
+    return this.effectivenessOrgsAnalyticsService.getCostPerImprovement(query);
+  }
+
+  @Get('measurement/convergence')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Do the rulers agree? (super-admin)',
+    description:
+      'Backs Highlights → Helping skills (EFF-80, AAQ-222). Over single-scenario scored cuts: Spearman rank ' +
+      'correlation (average ranks for ties), with n, between R1 helping-skills composite, R2 session score ' +
+      'z-scored within scenario version, R3 behaviour-instruction hit balance, R4 mean skill coverage and R6 ' +
+      'learner rating. r null below `minPairs` (50). All-time; `tenantId` narrows the cuts (the R2 yardstick ' +
+      'stays platform-wide). Agreement is not validity.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Ruler convergence retrieved successfully',
+    type: MeasurementConvergenceResponseDto,
+  })
+  async getMeasurementConvergence(
+    @Query() query: MeasurementConvergenceQueryDto,
+  ): Promise<MeasurementConvergenceResponseDto> {
+    return this.measurementConvergenceAnalyticsService.getConvergence(query);
+  }
+
+  @Get('foundational-skills/feedback-uptake')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Named improvements that were acted on (super-admin)',
+    description:
+      'Backs Highlights → Helping skills AAQ-221. Each debriefed session’s areas of growth are ' +
+      'filed under foundational helping skills by a scheduled model call (mapper version pinned). ' +
+      "For each mapped session: the learner's last scored cut closed by the session's end against " +
+      'their first cut whose first session ended after it; sessions sharing both cuts are one ' +
+      'window. Per skill assessable in both cuts: NAMED (a debrief in the window filed an ' +
+      'improvement under it) vs UNNAMED, as the share of each learner’s observations where the ' +
+      'level rose / held / fell, collapsed to one value per learner. `difference` is named − unnamed ' +
+      '"rose" share within learner, with a deterministic bootstrap over learners and a sign test; ' +
+      'shares and differences are null below `minSampleSize` while counts travel. Observational: ' +
+      'regression to the mean inflates the named arm, which the unnamed control and ' +
+      '`beforeLevelAvg` are there to show. All-time; test organisations excluded; one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Feedback uptake retrieved successfully',
+    type: FeedbackUptakeResponseDto,
+  })
+  async getFeedbackUptake(
+    @Query() query: FeedbackUptakeQueryDto,
+  ): Promise<FeedbackUptakeResponseDto> {
+    return this.feedbackUptakeAnalyticsService.getFeedbackUptake(query);
+  }
+
+  @Get('foundational-skills/self-efficacy')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Learner confidence against the judge: start → now, and calibration (super-admin)',
+    description:
+      'Backs Highlights → Quality & sentiment (AAQ-230, AAQ-231). `confidence`: each learner’s ' +
+      'self-rated confidence (0–10, the self-efficacy instrument) on their first vs latest answer, ' +
+      'over the items rated both times, per tier and per skill — beside the judge’s level (1–4) at the ' +
+      'scored cut nearest each answer for the same learners. `calibration`: every rated item against ' +
+      'the nearest cut (±30 days) where the skill was assessable, self rescaled 1 + 3·r/10, over-/under-' +
+      'confident beyond ±0.75 levels, one point per learner (their latest), Spearman r, and scatter ' +
+      'points (no learner ids). Self-ratings are never an outcome alone: learners are poor, often over-' +
+      'confident self-assessors, and the judge is not yet checked against human raters. All-time; one ' +
+      'instrument and one rubric version; test orgs excluded; `tenantId` narrows by the answer’s org. ' +
+      'Numbers below `minSampleSize` learners are null while counts travel; with no answers, zeros and nulls.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Self-efficacy analytics retrieved successfully',
+    type: SelfEfficacyResponseDto,
+  })
+  async getFoundationalSkillsSelfEfficacy(
+    @Query() query: SelfEfficacyQueryDto,
+  ): Promise<SelfEfficacyResponseDto> {
+    return this.selfEfficacyAnalyticsService.getSelfEfficacy(query);
+  }
+
+  @Get('foundational-skills/judge-agreement')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Judge vs human agreement on the helping-skills rubric (super-admin)',
+    description:
+      'Backs AAQ-223. People rate a stratified sample of foundational-skills cuts (30 per ' +
+      'calendar quarter, composite tercile × session language; see ' +
+      '`GET /v1/foundational-skills/human-ratings/sample`) by ticking behaviour codes, and each ' +
+      "level is derived with the judge's own rule. Per skill: Cohen's κ on opportunity, and where " +
+      'both found one, κ unweighted and quadratic-weighted on the 1–4 level plus % exact, for judge ' +
+      'vs human (one pair per rating) and human vs human (every rater pair on a cut); the ' +
+      'any-unhelpful flag likewise. κ and % are null below `minSampleSize` rated cuts while counts ' +
+      'travel; `status` is `notYetMeasured` with no ratings. All-time, platform-wide, test orgs ' +
+      'excluded, one rubric version (other versions excluded and counted).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Judge vs human agreement retrieved successfully',
+    type: JudgeAgreementResponseDto,
+  })
+  async getFoundationalSkillsJudgeAgreement(): Promise<JudgeAgreementResponseDto> {
+    return this.judgeAgreementAnalyticsService.getJudgeAgreement();
+  }
+
+  @Get('foundational-skills/transfer')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Helping skills on first contact with a new scenario (super-admin)',
+    description:
+      'Backs AAQ-220. Only single-scenario cuts (every session one scenario). For learners with ' +
+      '`minSingleScenarioCuts`+ scored single-scenario cuts: the first cut on a scenario met in no ' +
+      'earlier cut (single or mixed, scored or not) against the single-scenario cut just before it, ' +
+      'when that one was on a scenario already played. Pairs collapse to one value per learner; paired ' +
+      'bootstrap interval and sign test; averages, interval, test and slope rows null below ' +
+      '`minSampleSize` learners while counts travel. `sameDifficulty` repeats the comparison over ' +
+      'same-difficulty pairs; `difficultyShift` tallies harder/same/easier. All-time; `tenantId` ' +
+      'narrows by the cut tenant; test organisations excluded; one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Transfer to a new scenario retrieved successfully',
+    type: FoundationalSkillsTransferResponseDto,
+  })
+  async getFoundationalSkillsTransfer(
+    @Query() query: FoundationalSkillsTransferQueryDto,
+  ): Promise<FoundationalSkillsTransferResponseDto> {
+    return this.foundationalSkillsTransferAnalyticsService.getTransfer(query);
   }
 
   @AuthRoles(UserRole.COUNSELOR)

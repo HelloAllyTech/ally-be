@@ -283,7 +283,9 @@ export function buildCourseImpact(
   const cutsByUser = cutsByLearner(cuts);
 
   const competenciesByTrack = new Map<string, string[]>();
+  const competencySourceByTrack = new Map<string, 'explicit' | 'derived'>();
   for (const row of competencies) {
+    competencySourceByTrack.set(row.trackId, row.source ?? 'derived');
     const list = competenciesByTrack.get(row.trackId);
     if (list) list.push(row.name);
     else competenciesByTrack.set(row.trackId, [row.name]);
@@ -364,6 +366,7 @@ export function buildCourseImpact(
       targetedSkills: FHS_RUBRIC.map((s) => s.key).filter((k) =>
         targeted.has(k),
       ),
+      competencySource: competencySourceByTrack.get(id) ?? null,
       medianDaysToComplete: midDays === null ? null : round1(midDays),
       medianCutsBetween: midBetween === null ? null : round1(midBetween),
     });

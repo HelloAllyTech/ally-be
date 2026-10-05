@@ -38,6 +38,8 @@ export interface CourseImpactCutRow {
 export interface CourseImpactCompetencyRow {
   trackId: string;
   name: string;
+  /** `explicit`: the author tagged the course; `derived`: read off its roleplays' scenarios. */
+  source?: 'explicit' | 'derived';
 }
 
 /**
@@ -184,36 +186,59 @@ export class CourseImpactAnalyticsRepository {
   }
 
   /**
-   * Which competencies each course's roleplays assess, by name: every live
-   * ROLEPLAY item's scenario, through `competencyIds` and the legacy
-   * single `competencyId` it mirrors. Custom competencies are left out: they
-   * are one author's private variants, named after their owner's user id.
+   * Which competencies each course teaches, by name. The author's own tag
+   * (`tracks."competencyIds"`) wins when it resolves to at least one shared
+   * competency; otherwise the course falls back to what its live ROLEPLAY
+   * items' scenarios assess (`competencyIds` and the legacy single
+   * `competencyId` it mirrors). Deciding on "resolves" rather than "not NULL"
+   * means a course whose only tagged competency was deleted falls back
+   * instead of losing its skills. Custom competencies are left out on both
+   * paths: they are one author's private variants, named after their owner's
+   * user id.
    */
   async getCourseCompetencies(): Promise<CourseImpactCompetencyRow[]> {
     const rows = await this.dataSource.query(
       `
-      SELECT DISTINCT i."trackId" AS track_id, comp.name
-        FROM track_items i
-        JOIN scenarios sc ON sc.id = i."scenarioId"
-        CROSS JOIN LATERAL (
-          SELECT jsonb_array_elements_text(
-                   CASE WHEN jsonb_typeof(sc."competencyIds") = 'array'
-                        THEN sc."competencyIds" ELSE '[]'::jsonb END
-                 ) AS id
-          UNION
-          SELECT sc."competencyId"::text WHERE sc."competencyId" IS NOT NULL
-        ) cid
-        JOIN competencies comp ON comp.id::text = cid.id
-                              AND comp."isCustom" = false
-       WHERE i."deletedAt" IS NULL
-         AND i.type = $1
-       ORDER BY comp.name
+      WITH explicit AS (
+        SELECT DISTINCT t.id AS track_id, comp.name
+          FROM tracks t
+          CROSS JOIN LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(t."competencyIds") = 'array'
+                 THEN t."competencyIds" ELSE '[]'::jsonb END
+          ) AS cid(id)
+          JOIN competencies comp ON comp.id::text = cid.id
+                                AND comp."isCustom" = false
+         WHERE t."deletedAt" IS NULL
+      ),
+      derived AS (
+        SELECT DISTINCT i."trackId" AS track_id, comp.name
+          FROM track_items i
+          JOIN scenarios sc ON sc.id = i."scenarioId"
+          CROSS JOIN LATERAL (
+            SELECT jsonb_array_elements_text(
+                     CASE WHEN jsonb_typeof(sc."competencyIds") = 'array'
+                          THEN sc."competencyIds" ELSE '[]'::jsonb END
+                   ) AS id
+            UNION
+            SELECT sc."competencyId"::text WHERE sc."competencyId" IS NOT NULL
+          ) cid
+          JOIN competencies comp ON comp.id::text = cid.id
+                                AND comp."isCustom" = false
+         WHERE i."deletedAt" IS NULL
+           AND i.type = $1
+      )
+      SELECT track_id, name, 'explicit' AS source FROM explicit
+      UNION ALL
+      SELECT d.track_id, d.name, 'derived' AS source FROM derived d
+       WHERE NOT EXISTS (SELECT 1 FROM explicit e WHERE e.track_id = d.track_id)
+       ORDER BY name
       `,
       [TrackItemType.ROLEPLAY],
     );
     return rows.map((r: any) => ({
       trackId: String(r.track_id),
       name: String(r.name),
+      source: r.source === 'explicit' ? 'explicit' : 'derived',
     }));
   }
 }

@@ -38,6 +38,8 @@ import {
   FhsAssessmentStatus,
   FhsBenchmarkStatus,
 } from '../../foundational-skills/enum/foundational-skills.enum';
+import { FeedbackSkillLinkStatus } from '../../foundational-skills/enum/feedback-skill-link.enum';
+import { SelfAssessmentTrigger } from '../../foundational-skills/enum/self-assessment.enum';
 import {
   JudgeAttemptFamily,
   JudgeAttemptOutcome,
@@ -184,7 +186,15 @@ describe('CHECK constraints cover their enums', () => {
       'CHK_foundational_skill_benchmark_assessments_status',
       Object.values(FhsBenchmarkStatus),
     ],
+    [
+      'CHK_session_feedback_skill_links_status',
+      Object.values(FeedbackSkillLinkStatus),
+    ],
     ['CHK_judge_attempts_family', Object.values(JudgeAttemptFamily)],
+    [
+      'CHK_learner_self_assessments_trigger',
+      Object.values(SelfAssessmentTrigger),
+    ],
     ['CHK_judge_attempts_last_outcome', Object.values(JudgeAttemptOutcome)],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);

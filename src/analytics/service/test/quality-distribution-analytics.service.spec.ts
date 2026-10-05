@@ -47,6 +47,7 @@ describe('QualityDistributionAnalyticsService', () => {
       getLowRatingTags: jest
         .fn()
         .mockResolvedValue({ tags: [], taggedResponses: 0 }),
+      getRatingsByOrdinal: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({

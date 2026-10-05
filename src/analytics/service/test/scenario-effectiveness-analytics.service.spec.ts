@@ -7,6 +7,7 @@ import {
   FoundationalSkillsLearnerCutRow,
 } from '../../repository/foundational-skills-analytics.repository';
 import { MIN_SCORE_SAMPLE_SIZE } from '../../repository/quality-distribution-analytics.repository';
+import { ScenarioCalibrationAnalyticsRepository } from '../../repository/scenario-calibration-analytics.repository';
 import { ScenarioEffectivenessAnalyticsRepository } from '../../repository/scenario-effectiveness-analytics.repository';
 import { RepeatGroupRow } from '../../util/scenario-effectiveness.util';
 import { ScenarioEffectivenessAnalyticsService } from '../scenario-effectiveness-analytics.service';
@@ -38,11 +39,15 @@ const make = () => {
     getScenarioTags: jest.fn().mockResolvedValue([]),
     getRepeatGroups: jest.fn().mockResolvedValue([]),
   };
+  const calibrationRepository = {
+    getScoringConfigChangedAt: jest.fn().mockResolvedValue([]),
+  };
   const service = new ScenarioEffectivenessAnalyticsService(
     repository as unknown as ScenarioEffectivenessAnalyticsRepository,
     cutsRepository as unknown as FoundationalSkillsAnalyticsRepository,
+    calibrationRepository as unknown as ScenarioCalibrationAnalyticsRepository,
   );
-  return { service, repository, cutsRepository };
+  return { service, repository, cutsRepository, calibrationRepository };
 };
 
 describe('ScenarioEffectivenessAnalyticsService.getOpportunityCoverage', () => {
@@ -145,6 +150,40 @@ describe('ScenarioEffectivenessAnalyticsService.getRepeatImprovement', () => {
     expect(res.provenance.derivation).toContain('R2');
     expect(res.provenance.note).toContain('one scenario version');
     expect(res.scoping).toEqual({ tenantId: 'ally', unscopedSections: [] });
+  });
+
+  it('counts, per version, the pairs that straddle the last scoring-config edit', async () => {
+    const { service, repository, calibrationRepository } = make();
+    repository.getRepeatGroups.mockResolvedValue([
+      group(1, 4), // 07-01 → 07-03: straddles a 07-02 edit
+      {
+        ...group(2, 4),
+        firstAt: new Date('2026-07-02T12:00:00.000Z'),
+        latestAt: new Date('2026-07-04T00:00:00.000Z'),
+      }, // wholly after
+      group(1, 9),
+    ]);
+    calibrationRepository.getScoringConfigChangedAt.mockResolvedValue([
+      { scenarioId: 4, changedAt: new Date('2026-07-02T00:00:00.000Z') },
+      { scenarioId: 9, changedAt: null },
+    ]);
+    const res = await service.getRepeatImprovement({});
+
+    expect(
+      calibrationRepository.getScoringConfigChangedAt,
+    ).toHaveBeenCalledWith(expect.arrayContaining([4, 9]));
+    const s4 = res.scenarios.find((r) => r.scenarioId === 4);
+    const s9 = res.scenarios.find((r) => r.scenarioId === 9);
+    expect(s4).toMatchObject({
+      pairs: 2,
+      pairsSpanningScoringChange: 1,
+      scoringChangedAt: '2026-07-02T00:00:00.000Z',
+    });
+    expect(s9).toMatchObject({
+      pairsSpanningScoringChange: 0,
+      scoringChangedAt: null,
+    });
+    expect(res.provenance.note).toContain('does not pin the scoring config');
   });
 
   it('defaults the selection to the scenario with the most pairs', async () => {

@@ -248,6 +248,28 @@ describe('buildCourseImpact', () => {
     expect(courses[0].targetedSkills).toEqual(['verbal', 'hope']);
   });
 
+  it("says where a course's competencies came from: its own tag, its roleplays, or nowhere", () => {
+    const competencies: CourseImpactCompetencyRow[] = [
+      { trackId: 'track-a', name: 'Verbal Communication', source: 'explicit' },
+      { trackId: 'track-b', name: 'Promote Realistic Hope', source: 'derived' },
+    ];
+    const { courses } = buildCourseImpact(
+      [
+        enrollment(1, 10, 20, 'track-a'),
+        enrollment(2, 10, 20, 'track-b'),
+        enrollment(3, 10, 20, 'track-c'),
+      ],
+      [],
+      competencies,
+      opts,
+    );
+    const source = (id: string) =>
+      courses.find((c) => c.trackId === id)?.competencySource;
+    expect(source('track-a')).toBe('explicit');
+    expect(source('track-b')).toBe('derived');
+    expect(source('track-c')).toBeNull();
+  });
+
   it('returns the chosen course skill by skill, only where assessable on both sides', () => {
     const enrollments = Array.from({ length: MIN_SCORE_SAMPLE_SIZE }, (_, i) =>
       enrollment(i + 1, 10, 20),
