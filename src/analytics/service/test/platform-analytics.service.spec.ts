@@ -1015,6 +1015,35 @@ describe('PlatformAnalyticsService', () => {
       });
       expect(result.totalEstimatedCostUsd).toBe(15.83); // 0.75 + 0.08 + 15
     });
+
+    it('prices Gemini thinking and cached prompt tokens from the usage row', async () => {
+      llmUsageRepo.getTokenUsageByModelAndTask.mockResolvedValue([
+        {
+          service: 'llm',
+          model: 'gemini-2.5-pro', // 1.25 in / 10 out / 0.31 cached per 1M
+          provider: 'gemini',
+          task: 'drift_judge',
+          promptTokens: 1_000_000,
+          completionTokens: 100_000,
+          // 400k thinking tokens, visible only in the total.
+          totalTokens: 1_500_000,
+          // Half the prompt served from cache.
+          cachedTokens: 500_000,
+          audioMs: 0,
+          characters: 0,
+          calls: 10,
+        },
+      ]);
+
+      const result = await service.getTokenConsumption({ range: '30d' });
+
+      // 500k fresh × 1.25 + 500k cached × 0.31 + (100k + 400k) out × 10
+      // = 0.625 + 0.155 + 5 = 5.78
+      expect(result.points[0]).toMatchObject({
+        estimatedCostUsd: 5.78,
+        priced: true,
+      });
+    });
   });
 
   describe('conversationDrift — scenario version slice', () => {

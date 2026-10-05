@@ -28,6 +28,8 @@ const llmRow = (overrides: Partial<SessionUsageRow> = {}): SessionUsageRow => ({
   model: 'gpt-4o-mini',
   promptTokens: 1_000_000,
   completionTokens: 0,
+  totalTokens: 1_000_000,
+  cachedTokens: 0,
   audioMs: 0,
   characters: 0,
   calls: 10,

@@ -25,6 +25,8 @@ const llmRow = (overrides: Partial<CostUsageRow> = {}): CostUsageRow => ({
   model: 'gpt-4o-mini',
   promptTokens: 1_000_000,
   completionTokens: 0,
+  totalTokens: 1_000_000,
+  cachedTokens: 0,
   audioMs: 0,
   characters: 0,
   calls: 10,
@@ -182,6 +184,18 @@ describe('RoleplayCostAnalyticsService', () => {
     expect(
       debriefTasks.filter((task) => TASK_AREA[task] !== 'feedback'),
     ).toEqual([]);
+  });
+
+  it('prices cached prompt tokens from the usage row at the cached rate', async () => {
+    // 1M gpt-4o-mini prompt tokens, all served from cache: $0.075, not $0.15.
+    await setup(
+      [llmRow({ cachedTokens: 1_000_000 })],
+      [{ bucket: '2024-05-01', minutes: 100, activeLearners: 3 }],
+    );
+    const result = await monthly();
+    const may = result.points.find((p) => p.bucket === '2024-05-01');
+
+    expect(may?.attributableCostUsd).toBeCloseTo(0.075, 4);
   });
 
   it('nulls the ratio in a bucket with no practice but keeps cost at zero', async () => {
