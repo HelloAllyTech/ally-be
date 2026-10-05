@@ -1823,7 +1823,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       kind: 'chart',
       chartType: 'LineChart',
       componentFile: f('Analytics/BugAgentPerformance.tsx'),
-      note: 'Distinct top-level findings filed per UTC day across every repo and source, with a trailing 7-day mean; the one daily series on the tab, there to show the count falling. /v1/analytics/bug-agent-performance found[]',
+      note: 'Distinct top-level findings filed per UTC day across every repo and source, excluding any since dismissed or rejected, with a trailing 7-day mean; the one daily series on the tab, there to show the count falling. /v1/analytics/bug-agent-performance found[]',
     },
   ];
 

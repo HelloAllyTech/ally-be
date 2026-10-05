@@ -918,9 +918,14 @@ export class BugFindingRepository extends Repository<BugFinding> {
 
   /**
    * Distinct top-level findings filed per UTC calendar day, every source and
-   * every repo together — the raw material for the Bug Agent tab's
-   * "bugs found per day" trend, whose whole purpose is to show the count
-   * going DOWN as the codebases get cleaner. Day-bucketed (not week like its
+   * every repo together, minus the ones that turned out not to be bugs — the
+   * raw material for the Bug Agent tab's "bugs found per day" trend, whose
+   * whole purpose is to show the count going DOWN as the codebases get
+   * cleaner. A finding later dismissed (verifier refuted it) or rejected (a
+   * human did) is excluded by its CURRENT status, so a day's count can fall
+   * after the fact as its findings are ruled on; that is the right reading
+   * for "real bugs found", and the operations panel's stacked chart is the
+   * one that shows the declined share. Day-bucketed (not week like its
    * siblings) because the sweeps are nightly, so a day is the natural grain
    * and a week would hide a change for seven days. Only days with at least
    * one finding come back; the service gap-fills zeros, since a quiet night
@@ -939,10 +944,11 @@ export class BugFindingRepository extends Repository<BugFinding> {
       WHERE f.parent_finding_id IS NULL
         AND f."createdAt" >= $1
         AND f."createdAt" < $2
+        AND f.status <> ALL($3::text[])
       GROUP BY 1
       ORDER BY 1
       `,
-      [start, end],
+      [start, end, FINDING_DECLINED_STATUSES],
     );
     return rows.map((row) => ({ day: row.day, filed: Number(row.filed) }));
   }

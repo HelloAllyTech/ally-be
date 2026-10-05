@@ -121,7 +121,7 @@ export class FoundDayDto {
 
   @ApiProperty({
     description:
-      'Distinct top-level findings filed that day, every source and repo together. A quiet day is a real 0.',
+      'Distinct top-level findings filed that day, every source and repo together, excluding any since dismissed or rejected. A quiet day is a real 0.',
   })
   filed!: number;
 
