@@ -48,6 +48,15 @@ export const COST_AREA_LABELS: Record<CostArea, string> = {
  *
  * `NUDGE` counts as roleplay: it fires during a live session to steer the
  * conversation, so it is part of what the learner is experiencing.
+ *
+ * The debrief chat and its history summary count as feedback: a learner only
+ * coaches with the debrief because they just practised, and the session-cost
+ * taxonomy (`SESSION_COST_COMPONENT_BY_TASK`) already files both as debrief,
+ * so leaving them out here made the two cost charts disagree about the same
+ * call. The per-language re-evaluation is the same evaluation re-run because a
+ * learner read the debrief in another language, so it sits with
+ * `SCENARIO_EVALUATION`. Studio rehearsal reports and the V2V tester are
+ * authoring and test tooling, so they stay out.
  */
 export const TASK_AREA: Partial<Record<LlmTask, CostArea>> = {
   [LlmTask.AGENT_TURN]: 'roleplay',
@@ -60,6 +69,9 @@ export const TASK_AREA: Partial<Record<LlmTask, CostArea>> = {
   [LlmTask.SUMMARY]: 'feedback',
   [LlmTask.DYNAMIC_SUMMARY]: 'feedback',
   [LlmTask.SCENARIO_EVALUATION]: 'feedback',
+  [LlmTask.SCENARIO_EVALUATION_LANGUAGE]: 'feedback',
+  [LlmTask.DEBRIEF_CHAT]: 'feedback',
+  [LlmTask.DEBRIEF_CHAT_SUMMARY]: 'feedback',
   [LlmTask.COUNSELOR_ANALYSIS]: 'feedback',
   [LlmTask.TRACK_MEMORY_FOLD]: 'feedback',
   [LlmTask.TRACK_QUIZ_GRADING]: 'quiz',
@@ -87,6 +99,10 @@ export interface CostUsageRow {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  /** Read by pricing for Gemini thinking tokens. */
+  totalTokens: number;
+  /** Prompt-cache reads; a subset of promptTokens for OpenAI/Gemini. */
+  cachedTokens: number;
   audioMs: number;
   characters: number;
   calls: number;
@@ -150,6 +166,8 @@ export class RoleplayCostAnalyticsRepository {
         lu.model                                                AS "model",
         COALESCE(SUM(lu."promptTokens"), 0)::bigint             AS "promptTokens",
         COALESCE(SUM(lu."completionTokens"), 0)::bigint         AS "completionTokens",
+        COALESCE(SUM(lu."totalTokens"), 0)::bigint              AS "totalTokens",
+        COALESCE(SUM(lu."cachedTokens"), 0)::bigint             AS "cachedTokens",
         COALESCE(SUM(lu."audioMs"), 0)::bigint                  AS "audioMs",
         COALESCE(SUM(lu."characters"), 0)::bigint               AS "characters",
         COUNT(*)::int                                           AS "calls"
@@ -171,6 +189,8 @@ export class RoleplayCostAnalyticsRepository {
       model: (r.model as string) ?? 'unknown',
       promptTokens: Number(r.promptTokens) || 0,
       completionTokens: Number(r.completionTokens) || 0,
+      totalTokens: Number(r.totalTokens) || 0,
+      cachedTokens: Number(r.cachedTokens) || 0,
       audioMs: Number(r.audioMs) || 0,
       characters: Number(r.characters) || 0,
       calls: Number(r.calls) || 0,

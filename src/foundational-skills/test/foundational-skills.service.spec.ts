@@ -73,6 +73,8 @@ describe('FoundationalSkillsJudgeService', () => {
     expect(request.model).toBe(FHS_JUDGE_MODEL);
     expect(request.jsonMode).toBe(true);
     expect(request.usageMetadata.rubricVersion).toBe(FHS_RUBRIC_VERSION);
+    // A cut spans several sessions, so no single session owns its spend.
+    expect(request.scenarioSessionId).toBeUndefined();
     expect(outcome.compositeScore).toBe(2);
     expect(outcome.hasUnhelpfulBehaviour).toBe(false);
     expect(outcome.stats.missingSkills).toBe(0);
