@@ -29,7 +29,11 @@ export class TrackComponentTemplate extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb' })
   content!: TrackItemContent;
 
-  @Column({ type: 'jsonb', nullable: true })
+  // The migration created this column snake_cased (like `created_by` /
+  // `updated_by` below), unlike `track_items."completionCriteria"`. Without
+  // the explicit name TypeORM queries "completionCriteria" and every
+  // INSERT/SELECT fails with a Postgres "column does not exist" 500.
+  @Column({ name: 'completion_criteria', type: 'jsonb', nullable: true })
   completionCriteria?: TrackItemCompletionCriteria;
 
   @Column({ name: 'created_by' })

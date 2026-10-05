@@ -59,6 +59,7 @@ import {
   BugHunterMemorySearchResponseDto,
   SearchBugHunterMemoryQueryDto,
   WriteBugHunterMemoryDto,
+  BugHunterMemoryFeedbackDto,
 } from '../dto/bug-hunter-memory.dto';
 import {
   BugHunterEvalSetDto,
@@ -71,6 +72,7 @@ import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
+import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
 import {
   BUG_HUNT_REPOS,
   BugHuntRepoConfig,
@@ -110,6 +112,7 @@ export class BugHunterPipelineController {
     private readonly policyService: BugHunterPolicyService,
     private readonly memoryService: AgentMemoryService,
     private readonly dossierService: BugHunterDossierService,
+    private readonly runRepository: BugHuntRunRepository,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -167,6 +170,50 @@ export class BugHunterPipelineController {
       pinned: false,
     });
     return { id: row.id };
+  }
+
+  @Post('pipeline/memory/feedback')
+  @ApiOperation({
+    summary:
+      'Tell the notebook which entries a run used or found wrong (pipeline only)',
+    description:
+      'The feedback half of the notebook (OPP-0752). `applied` ids get times_applied+1 and ' +
+      'a last_applied_at; `contradicted` ids get times_contradicted+1. The run is marked as ' +
+      'having reported, which is what lets the nightly retirement pass count "never applied" ' +
+      'against an entry: only runs that reported are counted, so an empty list is a real ' +
+      'answer and must be sent.',
+  })
+  async memoryFeedback(
+    @Body() body: BugHunterMemoryFeedbackDto,
+  ): Promise<{ applied: number; contradicted: number }> {
+    const counts = await this.memoryService.recordFeedback({
+      applied: body.applied,
+      contradicted: body.contradicted ?? [],
+    });
+    // Best-effort mark on the run: the counters above are the record, this is
+    // the denominator the retirement pass divides by.
+    try {
+      const run = await this.runRepository.findOne({
+        where: { id: body.runId },
+      });
+      if (run) {
+        // `save` rather than `update`: TypeORM's update() types a jsonb
+        // column's nested object as a query expression and refuses a plain
+        // string inside it.
+        run.metadata = {
+          ...(run.metadata ?? {}),
+          memoryFeedback: {
+            reportedAt: new Date().toISOString(),
+            applied: body.applied.length,
+            contradicted: body.contradicted?.length ?? 0,
+          },
+        };
+        await this.runRepository.save(run);
+      }
+    } catch {
+      // Logged by TypeORM; the counters already landed.
+    }
+    return counts;
   }
 
   @Get('pipeline/eval-set')

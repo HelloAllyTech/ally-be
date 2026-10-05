@@ -4,6 +4,7 @@ import { BugHunterService } from '../../service/bug-hunter.service';
 import { BugFindingService } from '../../service/bug-finding.service';
 import { BugHunterFinderDataService } from '../../service/bug-hunter-finder-data.service';
 import { BugFixSessionService } from '../../service/bug-fix-session.service';
+import { BugHuntRunRepository } from '../../repository/bug-hunt-run.repository';
 import { AppConfigService } from 'src/config/config.service';
 import { BugHunterModelSettingsService } from '../../service/bug-hunter-model-settings.service';
 import { BugHunterTelemetryService } from '../../service/bug-hunter-telemetry.service';
@@ -49,6 +50,10 @@ describe('BugHunterPipelineController', () => {
           useValue: { search: jest.fn(), write: jest.fn() },
         },
         { provide: BugHunterDossierService, useValue: { build: jest.fn() } },
+        {
+          provide: BugHuntRunRepository,
+          useValue: { findOne: jest.fn(), save: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -186,6 +191,44 @@ describe('BugHunterPipelineController', () => {
       });
 
       expect(dto.id).toBe('finding-1');
+    });
+  });
+
+  describe('memoryFeedback (OPP-0752)', () => {
+    it('records the counters and marks the run as having reported, so an empty list still counts', async () => {
+      (agentMemoryService as any).recordFeedback = jest
+        .fn()
+        .mockResolvedValue({ applied: 0, contradicted: 0 });
+      const runs = module.get<BugHuntRunRepository>(
+        BugHuntRunRepository,
+      ) as any;
+      runs.findOne.mockResolvedValue({
+        id: 'run-1',
+        metadata: { breadth: { commits: 3 } },
+      });
+
+      const result = await controller.memoryFeedback({
+        runId: 'run-1',
+        applied: [],
+      });
+
+      expect(result).toEqual({ applied: 0, contradicted: 0 });
+      expect((agentMemoryService as any).recordFeedback).toHaveBeenCalledWith({
+        applied: [],
+        contradicted: [],
+      });
+      expect(runs.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'run-1',
+          metadata: expect.objectContaining({
+            breadth: { commits: 3 },
+            memoryFeedback: expect.objectContaining({
+              applied: 0,
+              contradicted: 0,
+            }),
+          }),
+        }),
+      );
     });
   });
 
