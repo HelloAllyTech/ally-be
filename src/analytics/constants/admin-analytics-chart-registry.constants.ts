@@ -1537,6 +1537,15 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     // past a ±0.1 band narrower than a skill's own 95% CI (~±0.2 at n=24), so it
     // headlined noise. Replaced by detectable-only counts on AAQ-174. Reserved.
     {
+      id: 'AAQ-170',
+      tab: 'Bug Agent',
+      title: 'Spend over time',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Estimated cost per period by trigger (metadata.cliReportedCostUsd else totalTokenCostUsd), from GET metrics/operations days; Day / Week / Month folded client-side',
+    },
+    {
       id: 'AAQ-171',
       tab: 'Highlights',
       subTab: 'Helping skills',
