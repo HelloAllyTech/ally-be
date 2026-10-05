@@ -15,7 +15,8 @@ import { ScenarioSessionService } from '../service/scenario-session.service';
  * autofill / translation / drift-judge / embedding events have no room. When a
  * `room_id` IS present (and not a preview), the session is resolved
  * best-effort only to backfill scenarioSessionId/tenantId; the row is persisted
- * regardless. Persistence is best-effort and does NOT rethrow: usage analytics
+ * regardless. A row that names a `scenario_session_id` but carries no tenant
+ * (and resolved none from a room) gets the session's tenant the same way. Persistence is best-effort and does NOT rethrow: usage analytics
  * is loss-tolerant, so a DB hiccup should not retry-storm the SQS queue.
  */
 @Injectable()
@@ -55,6 +56,17 @@ export class LlmUsageProcessor extends BaseEventProcessor {
         scenarioSessionId = scenarioSessionId ?? session.id;
         tenantId = tenantId ?? session.tenantId;
       }
+    }
+
+    // A row that names its session but no room — ally-ai's judges attribute
+    // by scenario_session_id alone — still needs the session's tenant, or it
+    // is stored tenantless and slips past test-org exclusion on every cost
+    // chart. Same best-effort contract as the room path.
+    if (!tenantId && scenarioSessionId) {
+      tenantId =
+        (await this.scenarioSessionService
+          .getScenarioSessionTenantIdOrNull(scenarioSessionId)
+          .catch(() => null)) ?? undefined;
     }
 
     await this.llmUsageService.record({

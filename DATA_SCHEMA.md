@@ -519,6 +519,16 @@ input rate (0.1x for reads, 1.25x for writes) — previously prompt-cache tokens
 priced, which is why Bug Hunter's "Est. cost" tile undercounted the real Anthropic bill: an agentic loop
 that resends a growing transcript every turn generates a lot of cache-write tokens.
 
+**What `cachedTokens` and `totalTokens` mean depends on the provider**, and the cost dashboards
+(`computeServiceCostUsd`, which every one of them now feeds both column sums) price them accordingly.
+Anthropic reports cache tokens IN ADDITION to `promptTokens`, as above. OpenAI and Gemini count them
+INSIDE `promptTokens`, so for those rows the cached share is priced at the model's
+`cachedInputPer1MUsd` and only the rest at the input rate — except `bug_hunter` and `builder_build`
+rows, which come from a CI runner's report with `promptTokens` already net of cache
+(`NET_OF_CACHE_PROMPT_TASKS`). For Gemini, `totalTokens − promptTokens − completionTokens` is the
+model's thinking, billed at the output rate: ally-ai long recorded only the candidate tokens as
+completion, so that difference is priced as output and is ~0 once thoughts are folded in.
+
 **`llm_usage."scenarioSessionId"` is indexed** (`llm_usage_scenario_session_id_idx`, migration
 `1973720000000`) because the roleplay session is now a unit of cost: the Priority tab's
 "Roleplay Cost per Minute" chart (`GET /v1/analytics/roleplay-session-cost`) joins every session
@@ -526,6 +536,11 @@ in a window to its usage rows, and `.../sessions/:sessionId` itemises one. Which
 tasks count as DELIVERY cost, and which as analysis spend reported beside it, is decided by
 `SESSION_COST_COMPONENT_BY_TASK` in `analytics/constants/session-cost.constants.ts` — add a task
 there in the same change that tags it to a session, or it silently lands in the excluded bucket.
+The session-scoped judges (drift and its labels-only top-up, language, groundedness, recall,
+filler) send `scenario_session_id` for ally-ai to stamp on their usage rows, and the foundational
+skills benchmark judge passes its session in-process, so their rows are session-tagged as analysis
+spend — deliberately absent from that map. The per-cut foundational skills judge carries none: a
+cut spans sessions.
 
 ---
 

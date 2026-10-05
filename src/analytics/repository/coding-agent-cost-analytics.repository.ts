@@ -50,6 +50,13 @@ export interface CodingAgentUsageRow {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  /** Read by pricing for Gemini thinking tokens. */
+  totalTokens: number;
+  /**
+   * Prompt-cache reads. Mostly net-of-cache runner rows here, which pricing
+   * recognises by task — see NET_OF_CACHE_PROMPT_TASKS.
+   */
+  cachedTokens: number;
   audioMs: number;
   characters: number;
   calls: number;
@@ -94,6 +101,8 @@ export class CodingAgentCostAnalyticsRepository {
         lu.model                                                AS "model",
         COALESCE(SUM(lu."promptTokens"), 0)::bigint             AS "promptTokens",
         COALESCE(SUM(lu."completionTokens"), 0)::bigint         AS "completionTokens",
+        COALESCE(SUM(lu."totalTokens"), 0)::bigint              AS "totalTokens",
+        COALESCE(SUM(lu."cachedTokens"), 0)::bigint             AS "cachedTokens",
         COALESCE(SUM(lu."audioMs"), 0)::bigint                  AS "audioMs",
         COALESCE(SUM(lu."characters"), 0)::bigint               AS "characters",
         COUNT(*)::int                                           AS "calls"
@@ -116,6 +125,8 @@ export class CodingAgentCostAnalyticsRepository {
       model: (r.model as string) ?? 'unknown',
       promptTokens: Number(r.promptTokens) || 0,
       completionTokens: Number(r.completionTokens) || 0,
+      totalTokens: Number(r.totalTokens) || 0,
+      cachedTokens: Number(r.cachedTokens) || 0,
       audioMs: Number(r.audioMs) || 0,
       characters: Number(r.characters) || 0,
       calls: Number(r.calls) || 0,

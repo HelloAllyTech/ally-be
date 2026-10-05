@@ -9,6 +9,7 @@ import { AiService } from '../ai.service';
 import { PromptSharedService } from '../../../prompt/service/prompt-shared.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 // Mock external dependencies
 jest.mock('axios');
@@ -222,6 +223,56 @@ describe('AiService', () => {
           }),
         }),
       );
+    });
+
+    it('sends usage_task only when a caller labels the call', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        false,
+        'ta',
+        undefined,
+        'sess-1',
+        LlmTask.SCENARIO_EVALUATION_LANGUAGE,
+      );
+      const labelled = (mockedAxios as any).mock.calls.at(-1)[0].data;
+      expect(labelled.usage_task).toBe('scenario_evaluation_language');
+      expect(labelled.scenario_session_id).toBe('sess-1');
+
+      // The default path's body must not change: no key at all, not null.
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        true,
+        null,
+        undefined,
+        false,
+        'en',
+        undefined,
+        'sess-1',
+      );
+      const plain = (mockedAxios as any).mock.calls.at(-1)[0].data;
+      expect('usage_task' in plain).toBe(false);
+      expect(plain.scenario_session_id).toBe('sess-1');
+
+      // ally-ai 422s on any value outside its closed set, which would fail the
+      // debrief — so nothing but the one literal can ever be sent.
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        false,
+        'ta',
+        undefined,
+        'sess-1',
+        'something_else' as any,
+      );
+      const stray = (mockedAxios as any).mock.calls.at(-1)[0].data;
+      expect('usage_task' in stray).toBe(false);
     });
   });
 

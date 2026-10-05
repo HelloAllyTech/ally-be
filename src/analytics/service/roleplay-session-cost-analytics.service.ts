@@ -224,9 +224,12 @@ function priceRow(row: SingleSessionUsageRow): PricedRow {
     {
       promptTokens: row.promptTokens,
       completionTokens: row.completionTokens,
+      totalTokens: row.totalTokens,
+      cachedTokens: row.cachedTokens,
       audioMs: row.audioMs,
       characters: row.characters,
     },
+    row.task,
   );
   return {
     costUsd,

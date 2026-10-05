@@ -28,6 +28,8 @@ const llmRow = (overrides: Partial<SessionUsageRow> = {}): SessionUsageRow => ({
   model: 'gpt-4o-mini',
   promptTokens: 1_000_000,
   completionTokens: 0,
+  totalTokens: 1_000_000,
+  cachedTokens: 0,
   audioMs: 0,
   characters: 0,
   calls: 10,
@@ -317,15 +319,29 @@ describe('RoleplaySessionCostAnalyticsService', () => {
       LlmTask.SUPERVISOR_NOTE,
       LlmTask.CLIENT_WORKING_MEMORY,
       LlmTask.SCENARIO_EVALUATION,
+      LlmTask.SCENARIO_EVALUATION_LANGUAGE,
       LlmTask.DEBRIEF_CHAT,
       LlmTask.TRACK_MEMORY_FOLD,
     ];
     for (const t of delivery) {
       expect(SESSION_COST_COMPONENT_BY_TASK[t]).toBeDefined();
     }
+    // The per-language re-run is the same debrief, so the same component.
+    expect(
+      SESSION_COST_COMPONENT_BY_TASK[LlmTask.SCENARIO_EVALUATION_LANGUAGE],
+    ).toBe(SESSION_COST_COMPONENT_BY_TASK[LlmTask.SCENARIO_EVALUATION]);
+    // Judges now tagged to the session they judge stay analysis spend.
     for (const t of [
       LlmTask.ACTOR_EVALUATION,
       LlmTask.DRIFT_JUDGE,
+      LlmTask.DRIFT_JUDGE_LABELS,
+      LlmTask.LANGUAGE_JUDGE,
+      LlmTask.FEEDBACK_GROUNDEDNESS_JUDGE,
+      LlmTask.RECALL_QUALITY_JUDGE,
+      LlmTask.FILLER_JUDGE,
+      LlmTask.FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE,
+      LlmTask.V2V_TESTER_REPLY,
+      LlmTask.V2V_ROLE_FIDELITY_JUDGE,
       LlmTask.AUTOFILL_FIELD,
     ]) {
       expect(SESSION_COST_COMPONENT_BY_TASK[t]).toBeUndefined();

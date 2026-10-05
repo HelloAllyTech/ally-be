@@ -87,6 +87,7 @@ import {
   AgentMemoryDeleteResponse,
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { WorkerType } from 'src/user/enum/user.enum';
 
 /**
@@ -1030,6 +1031,11 @@ export class AiService {
     },
     /** The session being debriefed — attributes the call's AI spend to it. */
     scenarioSessionId?: string,
+    /**
+     * Records the call under a label other than `scenario_evaluation`. Only the
+     * per-language re-evaluation sets it; see `usage_task` on the request.
+     */
+    usageTask?: LlmTask.SCENARIO_EVALUATION_LANGUAGE,
   ): Promise<ScenarioEvaluationResponse> {
     try {
       const prompts = await this.getPromptOverrides();
@@ -1050,6 +1056,14 @@ export class AiService {
           ? supervisorContext.liveNotes
           : null,
         scenario_session_id: scenarioSessionId ?? null,
+        // ally-ai validates this against a closed set and answers anything
+        // else with a 422, which fails the learner's debrief. So the one
+        // accepted override is sent as a literal, never as whatever arrived,
+        // and the default path omits the key entirely (not null), leaving its
+        // body exactly what it was before this field existed.
+        ...(usageTask === LlmTask.SCENARIO_EVALUATION_LANGUAGE
+          ? { usage_task: LlmTask.SCENARIO_EVALUATION_LANGUAGE }
+          : {}),
       };
 
       const response = await this.makeRequest<

@@ -1,4 +1,5 @@
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { WorkerType } from 'src/user/enum/user.enum';
 
 export type PromptOverride =
@@ -221,6 +222,16 @@ export type ScenarioEvaluationRequest = {
    * Optional: an older ally-ai ignores it.
    */
   scenario_session_id?: string | null;
+  /**
+   * The llm_usage label ally-ai records this call under, when it is not the
+   * default `scenario_evaluation`. Sent only by the per-language re-evaluation,
+   * so the cost of serving a debrief in several languages is its own line.
+   * Omitted (not null) on the default path; an ally-ai that predates the
+   * field ignores it and records the default label. ally-ai accepts only
+   * 'scenario_evaluation' | 'scenario_evaluation_language' here and returns a
+   * 422 for anything else, so do not widen this type casually.
+   */
+  usage_task?: LlmTask.SCENARIO_EVALUATION_LANGUAGE;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

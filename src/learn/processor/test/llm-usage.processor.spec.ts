@@ -8,7 +8,10 @@ import { LlmUsageMessage } from '../../interface/learn-message.interface';
 describe('LlmUsageProcessor', () => {
   let processor: LlmUsageProcessor;
   let llmUsageService: { record: jest.Mock };
-  let scenarioSessionService: { getScenarioSessionByRoomIdOrNull: jest.Mock };
+  let scenarioSessionService: {
+    getScenarioSessionByRoomIdOrNull: jest.Mock;
+    getScenarioSessionTenantIdOrNull: jest.Mock;
+  };
 
   const usage = {
     provider: 'openai',
@@ -38,6 +41,7 @@ describe('LlmUsageProcessor', () => {
     llmUsageService = { record: jest.fn().mockResolvedValue(undefined) };
     scenarioSessionService = {
       getScenarioSessionByRoomIdOrNull: jest.fn(),
+      getScenarioSessionTenantIdOrNull: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,6 +66,10 @@ describe('LlmUsageProcessor', () => {
 
     expect(
       scenarioSessionService.getScenarioSessionByRoomIdOrNull,
+    ).not.toHaveBeenCalled();
+    // Nothing names a session either, so there is no tenant to look up.
+    expect(
+      scenarioSessionService.getScenarioSessionTenantIdOrNull,
     ).not.toHaveBeenCalled();
     expect(llmUsageService.record).toHaveBeenCalledTimes(1);
     const arg = llmUsageService.record.mock.calls[0][0];
@@ -88,6 +96,65 @@ describe('LlmUsageProcessor', () => {
     expect(arg.scenarioSessionId).toBe('sess-1');
     expect(arg.tenantId).toBe('t1');
     expect(arg.roomId).toBe('room-123');
+  });
+
+  describe('rows that name a session but no room (ally-ai judges)', () => {
+    const judgeRow = (extra: Record<string, unknown> = {}) =>
+      message({
+        data: {
+          llm_usage: {
+            ...usage,
+            provider: 'gemini',
+            model: 'gemini-2.5-pro',
+            task: 'drift_judge',
+            scenario_session_id: 'sess-9',
+            ...extra,
+          },
+        } as any,
+      });
+
+    it('takes the tenant from the named session, so the row is not tenantless', async () => {
+      scenarioSessionService.getScenarioSessionTenantIdOrNull.mockResolvedValue(
+        't9',
+      );
+
+      await processor.process(judgeRow());
+
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
+      ).not.toHaveBeenCalled();
+      expect(
+        scenarioSessionService.getScenarioSessionTenantIdOrNull,
+      ).toHaveBeenCalledWith('sess-9');
+      const arg = llmUsageService.record.mock.calls[0][0];
+      expect(arg.scenarioSessionId).toBe('sess-9');
+      expect(arg.tenantId).toBe('t9');
+      expect(arg.roomId).toBeUndefined();
+    });
+
+    it('still records, tenantless, when the session is unknown or the lookup fails', async () => {
+      scenarioSessionService.getScenarioSessionTenantIdOrNull
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error('db down'));
+
+      await processor.process(judgeRow());
+      await processor.process(judgeRow());
+
+      expect(llmUsageService.record).toHaveBeenCalledTimes(2);
+      for (const [arg] of llmUsageService.record.mock.calls) {
+        expect(arg.scenarioSessionId).toBe('sess-9');
+        expect(arg.tenantId).toBeUndefined();
+      }
+    });
+
+    it('keeps a tenant the sender supplied without a lookup', async () => {
+      await processor.process(judgeRow({ tenant_id: 't-sent' }));
+
+      expect(
+        scenarioSessionService.getScenarioSessionTenantIdOrNull,
+      ).not.toHaveBeenCalled();
+      expect(llmUsageService.record.mock.calls[0][0].tenantId).toBe('t-sent');
+    });
   });
 
   it('persists even when the room has no session (still records)', async () => {
