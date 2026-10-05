@@ -917,6 +917,43 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   /**
+   * Distinct top-level findings filed per UTC calendar day, every source and
+   * every repo together, minus the ones that turned out not to be bugs — the
+   * raw material for the Bug Agent tab's "bugs found per day" trend, whose
+   * whole purpose is to show the count going DOWN as the codebases get
+   * cleaner. A finding later dismissed (verifier refuted it) or rejected (a
+   * human did) is excluded by its CURRENT status, so a day's count can fall
+   * after the fact as its findings are ruled on; that is the right reading
+   * for "real bugs found", and the operations panel's stacked chart is the
+   * one that shows the declined share. Day-bucketed (not week like its
+   * siblings) because the sweeps are nightly, so a day is the natural grain
+   * and a week would hide a change for seven days. Only days with at least
+   * one finding come back; the service gap-fills zeros, since a quiet night
+   * is a real zero and the trend must draw it. Distinct from `dailyFiledCounts`
+   * below, the operations panel's per-source/per-proven split with an open
+   * end: this is one total per day over a half-open window.
+   */
+  async dailyFiledTotals(
+    start: Date,
+    end: Date,
+  ): Promise<Array<{ day: Date; filed: number }>> {
+    const rows = await this.manager.query<Array<{ day: Date; filed: string }>>(
+      `
+      SELECT date_trunc('day', f."createdAt") AS day, COUNT(*) AS filed
+      FROM bug_findings f
+      WHERE f.parent_finding_id IS NULL
+        AND f."createdAt" >= $1
+        AND f."createdAt" < $2
+        AND f.status <> ALL($3::text[])
+      GROUP BY 1
+      ORDER BY 1
+      `,
+      [start, end, FINDING_DECLINED_STATUSES],
+    );
+    return rows.map((row) => ({ day: row.day, filed: Number(row.filed) }));
+  }
+
+  /**
    * `regressionCounts`'s two cohorts, bucketed by calendar week — the
    * `regressions` cohort by discovery week, `regressedFixes` by the week the
    * fix that failed either released or (for repos with no release step)

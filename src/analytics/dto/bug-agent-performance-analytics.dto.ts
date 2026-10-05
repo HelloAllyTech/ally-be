@@ -112,6 +112,28 @@ export class ReliabilityWeekDto {
   @ApiProperty() failed!: number;
 }
 
+export class FoundDayDto {
+  @ApiProperty({
+    description:
+      'Calendar day (yyyy-mm-dd, UTC — the clock the sweeps run on).',
+  })
+  day!: string;
+
+  @ApiProperty({
+    description:
+      'Distinct top-level findings filed that day, every source and repo together, excluding any since dismissed or rejected. A quiet day is a real 0.',
+  })
+  filed!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Mean of `filed` over this day and the six before it, so the nightly spikes read as a trend. ' +
+      'Null for the first six days of the window, where there are not seven days to average.',
+  })
+  rollingAvg7!: number | null;
+}
+
 export class BugAgentPerformancePrecisionDto {
   @ApiProperty({ type: [PrecisionWeekDto] }) weekly!: PrecisionWeekDto[];
   @ApiProperty({ type: [SourceAccuracyDto] }) bySource!: SourceAccuracyDto[];
@@ -132,6 +154,14 @@ export class BugAgentPerformanceResponseDto {
 
   @ApiProperty({ type: [ReliabilityWeekDto] })
   reliability!: ReliabilityWeekDto[];
+
+  @ApiProperty({
+    type: [FoundDayDto],
+    description:
+      'Bugs found per day across all repos, oldest first, gap-filled — the one series on this ' +
+      'tab bucketed by day rather than week, because its job is to show the daily count falling.',
+  })
+  found!: FoundDayDto[];
 
   @ApiProperty({ type: AnalyticsWindowDto })
   window!: AnalyticsWindowDto;

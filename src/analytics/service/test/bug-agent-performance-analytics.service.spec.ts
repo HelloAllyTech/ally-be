@@ -21,6 +21,7 @@ describe('BugAgentPerformanceAnalyticsService', () => {
     weeklyRegressionCounts: jest.Mock;
     weeklyQueueToStartLatency: jest.Mock;
     weeklyStageLatencies: jest.Mock;
+    dailyFiledTotals: jest.Mock;
   };
   let runRepository: { weeklyRunStats: jest.Mock; getDataFloor: jest.Mock };
   let eventRepository: {
@@ -37,6 +38,7 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       runRows?: unknown[];
       escalationRows?: unknown[];
       fallbackRows?: unknown[];
+      filedRows?: unknown[];
     } = {},
   ) => {
     findingRepository = {
@@ -50,6 +52,7 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       weeklyStageLatencies: jest
         .fn()
         .mockResolvedValue(over.stageLatencyRows ?? []),
+      dailyFiledTotals: jest.fn().mockResolvedValue(over.filedRows ?? []),
     };
     runRepository = {
       weeklyRunStats: jest.fn().mockResolvedValue(over.runRows ?? []),
@@ -296,6 +299,66 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       filedToMergedMedianHours: null,
       mergedToReleasedMedianHours: null,
       queueToStartMedianHours: null,
+    });
+  });
+
+  describe('bugs found per day', () => {
+    it('gap-fills every day in the window with a real zero, oldest first', async () => {
+      await setup();
+
+      const { found } = await service.getPerformance(query());
+
+      expect(found).toHaveLength(14);
+      expect(found[0]).toEqual({ day: FROM, filed: 0, rollingAvg7: null });
+      expect(found[found.length - 1]).toEqual({
+        day: TO,
+        filed: 0,
+        rollingAvg7: 0,
+      });
+    });
+
+    it('reads each day straight through from the repository by its UTC day', async () => {
+      await setup({
+        filedRows: [
+          { day: new Date('2026-01-06T00:00:00.000Z'), filed: 9 },
+          { day: new Date('2026-01-10T00:00:00.000Z'), filed: 4 },
+        ],
+      });
+
+      const { found } = await service.getPerformance(query());
+
+      expect(found.find((d) => d.day === '2026-01-06')?.filed).toBe(9);
+      expect(found.find((d) => d.day === '2026-01-10')?.filed).toBe(4);
+      expect(found.find((d) => d.day === '2026-01-07')?.filed).toBe(0);
+      expect(findingRepository.dailyFiledTotals).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The nightly sweeps make the raw count spiky, so the line a reader
+     * judges the trend from is the trailing seven-day mean — null until
+     * there are seven days to average, rather than a mean over fewer that
+     * would read as a false early plunge.
+     */
+    it('carries a trailing seven-day mean that starts on the seventh day', async () => {
+      await setup({
+        filedRows: [
+          { day: new Date('2026-01-05T00:00:00.000Z'), filed: 7 },
+          { day: new Date('2026-01-11T00:00:00.000Z'), filed: 7 },
+          { day: new Date('2026-01-12T00:00:00.000Z'), filed: 14 },
+        ],
+      });
+
+      const { found } = await service.getPerformance(query());
+
+      expect(found.slice(0, 6).every((d) => d.rollingAvg7 === null)).toBe(true);
+      // 2026-01-11 is day seven: (7 + 0×5 + 7) / 7
+      expect(found[6]).toEqual({ day: '2026-01-11', filed: 7, rollingAvg7: 2 });
+      // 2026-01-12 drops day one's 7 and adds 14: (0×5 + 7 + 14) / 7
+      expect(found[7]).toEqual({
+        day: '2026-01-12',
+        filed: 14,
+        rollingAvg7: 3,
+      });
     });
   });
 

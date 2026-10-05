@@ -4,6 +4,49 @@ import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 
+/**
+ * Everything the admin scorecard's four tiles and its token line show, for one
+ * window — see `summarize`.
+ */
+export interface RunWindowSummary {
+  runs: number;
+  costUsd: number;
+  completed: number;
+  failed: number;
+  running: number;
+  /** Triggered while the kill switch was off, or with nothing new to sweep. */
+  skipped: number;
+  found: number;
+  autoMerged: number;
+  prOpened: number;
+  dismissed: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Runs that reported both token counts; the sums above are over these only. */
+  tokensReported: number;
+}
+
+/** One calendar day of the scorecard's sparkline — see `dailySeries`. */
+export interface RunDayPoint {
+  /** `YYYY-MM-DD` in the reader's time zone, so a 23:00 shift lands on the day they saw it. */
+  date: string;
+  runs: number;
+  costUsd: number;
+  found: number;
+}
+
+/**
+ * A run's cost in USD, as one SQL expression: the CLI's own figure when the
+ * runner reported one, else the token estimate. The same preference as
+ * `costInWindow` and the web's `runCostUsd`, for the same reason — the
+ * estimate prices prompt-cache reads at full rate and overstates a cache-heavy
+ * run.
+ */
+const RUN_COST_SQL = `COALESCE(
+  NULLIF((r.metadata->>'cliReportedCostUsd'), '')::numeric,
+  r."totalTokenCostUsd"
+)`;
+
 /** One (day, trigger) cell of run spend — see `dailyTokens`. */
 export interface DailyRunTokens {
   /** Calendar day, `YYYY-MM-DD`, in the database's clock (UTC). */
@@ -57,6 +100,132 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
 
   listRecent(limit: number): Promise<BugHuntRun[]> {
     return this.find({ order: { createdAt: 'DESC' }, take: limit });
+  }
+
+  /**
+   * The scorecard's figures for every run since `since` (or ever, when null),
+   * aggregated in Postgres.
+   *
+   * This exists because the admin scorecard used to compute the same numbers
+   * in the browser over `listRecent`'s newest 50 — and five repos sweeping
+   * nightly plus fix sessions fill 50 rows in about a week, so its "7 days",
+   * "30 days" and "All" chips all summed the same week and showed the same
+   * total. Summing here makes a window mean what it says.
+   */
+  async summarize(since: Date | null): Promise<RunWindowSummary> {
+    const [row] = await this.manager.query<
+      Array<{
+        runs: string;
+        cost_usd: string | null;
+        completed: string;
+        failed: string;
+        running: string;
+        skipped: string;
+        found: string | null;
+        auto_merged: string | null;
+        pr_opened: string | null;
+        dismissed: string | null;
+        input_tokens: string | null;
+        output_tokens: string | null;
+        tokens_reported: string;
+      }>
+    >(
+      `
+      SELECT
+        COUNT(*) AS runs,
+        COALESCE(SUM(${RUN_COST_SQL}), 0) AS cost_usd,
+        COUNT(*) FILTER (WHERE r.status = $2) AS completed,
+        COUNT(*) FILTER (WHERE r.status = $3) AS failed,
+        COUNT(*) FILTER (WHERE r.status = $4) AS running,
+        COUNT(*) FILTER (WHERE r.status IN ($5, $6)) AS skipped,
+        COALESCE(SUM(r."foundCount"), 0) AS found,
+        COALESCE(SUM(r."autoMergedCount"), 0) AS auto_merged,
+        COALESCE(SUM(r."prOpenedCount"), 0) AS pr_opened,
+        COALESCE(SUM(r."dismissedCount"), 0) AS dismissed,
+        COALESCE(SUM(r."totalInputTokens") FILTER (
+          WHERE r."totalInputTokens" IS NOT NULL AND r."totalOutputTokens" IS NOT NULL
+        ), 0) AS input_tokens,
+        COALESCE(SUM(r."totalOutputTokens") FILTER (
+          WHERE r."totalInputTokens" IS NOT NULL AND r."totalOutputTokens" IS NOT NULL
+        ), 0) AS output_tokens,
+        COUNT(*) FILTER (
+          WHERE r."totalInputTokens" IS NOT NULL AND r."totalOutputTokens" IS NOT NULL
+        ) AS tokens_reported
+      FROM bug_hunt_runs r
+      WHERE ($1::timestamp IS NULL OR r."createdAt" >= $1)
+      `,
+      [
+        since,
+        BugHuntRunStatus.COMPLETED,
+        BugHuntRunStatus.FAILED,
+        BugHuntRunStatus.RUNNING,
+        BugHuntRunStatus.SKIPPED_DISABLED,
+        BugHuntRunStatus.SKIPPED_QUIET,
+      ],
+    );
+
+    return {
+      runs: Number(row?.runs ?? 0),
+      costUsd: Number(row?.cost_usd ?? 0),
+      completed: Number(row?.completed ?? 0),
+      failed: Number(row?.failed ?? 0),
+      running: Number(row?.running ?? 0),
+      skipped: Number(row?.skipped ?? 0),
+      found: Number(row?.found ?? 0),
+      autoMerged: Number(row?.auto_merged ?? 0),
+      prOpened: Number(row?.pr_opened ?? 0),
+      dismissed: Number(row?.dismissed ?? 0),
+      inputTokens: Number(row?.input_tokens ?? 0),
+      outputTokens: Number(row?.output_tokens ?? 0),
+      tokensReported: Number(row?.tokens_reported ?? 0),
+    };
+  }
+
+  /**
+   * Runs, cost and findings per calendar day for the last `days` days, ending
+   * today in `timeZone` — dense, so a day with no shift is a real zero and the
+   * sparkline keeps its shape. `createdAt` is a naive UTC timestamp, hence the
+   * double `AT TIME ZONE`. `timeZone` must already be a valid IANA name; the
+   * service checks that, because Postgres rejects an unknown one.
+   */
+  async dailySeries(days: number, timeZone: string): Promise<RunDayPoint[]> {
+    const rows = await this.manager.query<
+      Array<{
+        day: string;
+        runs: string;
+        cost_usd: string | null;
+        found: string | null;
+      }>
+    >(
+      `
+      WITH days AS (
+        SELECT d::date AS day
+        FROM generate_series(
+          (now() AT TIME ZONE $1)::date - ($2::int - 1),
+          (now() AT TIME ZONE $1)::date,
+          interval '1 day'
+        ) AS d
+      )
+      SELECT
+        to_char(days.day, 'YYYY-MM-DD') AS day,
+        COUNT(r.id) AS runs,
+        COALESCE(SUM(${RUN_COST_SQL}), 0) AS cost_usd,
+        COALESCE(SUM(r."foundCount"), 0) AS found
+      FROM days
+      LEFT JOIN bug_hunt_runs r
+        ON r."createdAt" >= now() - (($2::int + 2) * interval '1 day')
+       AND (r."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE $1)::date = days.day
+      GROUP BY days.day
+      ORDER BY days.day
+      `,
+      [timeZone, days],
+    );
+    return rows.map((row) => ({
+      date: row.day,
+      runs: Number(row.runs),
+      costUsd: Number(row.cost_usd ?? 0),
+      found: Number(row.found ?? 0),
+    }));
   }
 
   /**
