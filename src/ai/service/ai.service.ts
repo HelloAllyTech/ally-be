@@ -666,6 +666,18 @@ export class AiService {
     return response;
   }
 
+  /**
+   * Starts a run in ai-learn, which answers 202 at once and does the work in
+   * the background. Any 2xx is success and its body is ignored — including
+   * ai-learn's answer to a report_id it is already running.
+   *
+   * That case is real: a retry here resends the same report_id, and when an
+   * earlier attempt reached ai-learn but its response was lost (reset,
+   * timeout), the retry is a second request for a run already in progress.
+   * ai-learn dedupes on report_id; a non-2xx answer to a duplicate would be
+   * retried and then fail the report (and cancel the live run), so a
+   * duplicate must stay a 2xx.
+   */
   @RetryOnFail(3, 1000)
   async triggerScenarioReportGenerate(
     request: ScenarioReportGenerateRequest,
@@ -695,6 +707,12 @@ export class AiService {
    * is still durably recorded in our DB; ai-learn will eventually
    * finish naturally and its final webhook will be ignored by ally-be's
    * status-update guard.
+   *
+   * Also sent when ally-be gives up on a report itself (30-minute expiry,
+   * failed trigger), including from the timeout cron, so it carries an
+   * explicit 10s timeout: ai-learn only flips a flag, and the 5-minute
+   * makeRequest default would hold the user's cancel request, or the cron
+   * tick, hostage to an unhealthy ai-learn.
    */
   async triggerScenarioReportCancel(reportId: string): Promise<void> {
     try {
@@ -705,6 +723,7 @@ export class AiService {
         'post',
         undefined,
         true,
+        10_000,
       );
     } catch {
       // Don't escalate — the user already sees CANCELLED in the UI.
