@@ -99,6 +99,21 @@ export class AgentMemory extends BaseWithoutTenantEntity {
   @Column({ name: 'last_applied_at', type: 'timestamp', nullable: true })
   lastAppliedAt?: Date | null;
 
+  /**
+   * Retirement provenance (OPP-0752). `retiredBy` is the admin who retired it
+   * by hand, or null when the agent's own nightly pass did; `retiredReason`
+   * is then the rule that fired, in the agent's words, and is what the
+   * Notebook tab shows as "retired by me because…". Cleared on restore.
+   */
+  @Column({ name: 'retired_at', type: 'timestamp', nullable: true })
+  retiredAt?: Date | null;
+
+  @Column({ name: 'retired_by', type: 'int', nullable: true })
+  retiredBy?: number | null;
+
+  @Column({ name: 'retired_reason', type: 'text', nullable: true })
+  retiredReason?: string | null;
+
   // ── derived-index reconciliation (see RoadmapOpportunity) ─────────────────
 
   @Column({

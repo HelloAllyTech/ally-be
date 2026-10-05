@@ -34,6 +34,36 @@ export const AGENT_MEMORY_CURATE_TASK = 'agent-memory-curate';
 export const AGENT_MEMORY_REINDEX_INTERVAL = '15min';
 export const AGENT_MEMORY_REINDEX_TASK = 'agent-memory-reindex';
 
+/**
+ * The nightly self-retirement pass (OPP-0752) — see `AgentMemoryRetirementService`.
+ * Daily: a day's worth of evidence is the smallest unit that moves these
+ * counters, and the curator already runs hourly for the additive half.
+ */
+export const AGENT_MEMORY_RETIRE_INTERVAL = 'daily';
+export const AGENT_MEMORY_RETIRE_TASK = 'agent-memory-retire';
+
+/**
+ * How many of a repo's runs must have REPORTED notebook feedback since an
+ * entry was written before "never applied" may retire it. Runs that did not
+ * report do not count, so the rule only bites once the feedback loop has been
+ * live long enough to mean something — it cannot empty a notebook the night
+ * the counters start.
+ */
+export const AGENT_MEMORY_UNUSED_AFTER_RUNS = 30;
+
+/** A bug must have stayed released this long before its entry is considered finished with. */
+export const AGENT_MEMORY_RELEASED_GRACE_DAYS = 14;
+
+/** Tags that mark an entry as a repo trap rather than a note about one bug; never retired for the bug shipping. */
+export const AGENT_MEMORY_REPO_TRAP_TAGS = [
+  'fix-gotcha',
+  'postmortem',
+  'flaky-test',
+];
+
+/** How far back the Notebook tab lists what the agent retired, with an Undo. */
+export const AGENT_MEMORY_RETIRED_WINDOW_DAYS = 30;
+
 /** AI-task-registry id for the curator's one model call — see ai-task-registry.constants.ts. */
 export const AGENT_MEMORY_CURATION_AI_TASK_ID = 'agent-memory-curation';
 

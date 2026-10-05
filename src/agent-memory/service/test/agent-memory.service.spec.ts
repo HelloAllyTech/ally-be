@@ -39,6 +39,10 @@ describe('AgentMemoryService', () => {
     findOneOrFail: jest.Mock;
     findByIds: jest.Mock;
     listActiveForRepo: jest.Mock;
+    listActiveUnpinned: jest.Mock;
+    listRetiredByAgent: jest.Mock;
+    recordApplied: jest.Mock;
+    recordContradicted: jest.Mock;
     listNeedingEmbedding: jest.Mock;
   };
   let aiService: {
@@ -56,6 +60,10 @@ describe('AgentMemoryService', () => {
       findOneOrFail: jest.fn(async () => row()),
       findByIds: jest.fn().mockResolvedValue([]),
       listActiveForRepo: jest.fn().mockResolvedValue([]),
+      listActiveUnpinned: jest.fn().mockResolvedValue([]),
+      listRetiredByAgent: jest.fn().mockResolvedValue([]),
+      recordApplied: jest.fn().mockResolvedValue(0),
+      recordContradicted: jest.fn().mockResolvedValue(0),
       listNeedingEmbedding: jest.fn().mockResolvedValue([]),
     };
     aiService = {
@@ -221,6 +229,97 @@ describe('AgentMemoryService', () => {
         query: 'anything',
       });
       expect(hits.map((h) => h.id)).toEqual(['platform']);
+    });
+  });
+
+  describe('retire — provenance (OPP-0752)', () => {
+    it('records who retired it and why, and no longer overwrites who wrote it', async () => {
+      repository.findOne.mockResolvedValue(row({ createdBy: null }));
+
+      await service.retire('mem-1', 42);
+      expect(repository.update).toHaveBeenCalledWith(
+        'mem-1',
+        expect.objectContaining({
+          status: AgentMemoryStatus.RETIRED,
+          retiredBy: 42,
+          retiredReason: null,
+          retiredAt: expect.any(Date),
+        }),
+      );
+      expect(repository.update).not.toHaveBeenCalledWith(
+        'mem-1',
+        expect.objectContaining({ createdBy: 42 }),
+      );
+
+      await service.retire(
+        'mem-1',
+        null,
+        'No run applied it in the last 30 runs that reported what they used.',
+      );
+      expect(repository.update).toHaveBeenCalledWith(
+        'mem-1',
+        expect.objectContaining({
+          retiredBy: null,
+          retiredReason: expect.stringMatching(/No run applied it/),
+        }),
+      );
+    });
+  });
+
+  describe('restore', () => {
+    it('puts a retired entry back, clears the retirement, and re-embeds it', async () => {
+      repository.findOne.mockResolvedValue(
+        row({
+          status: AgentMemoryStatus.RETIRED,
+          retiredBy: null,
+          retiredReason: 'stale',
+        }),
+      );
+      repository.findOneOrFail.mockResolvedValue(
+        row({ status: AgentMemoryStatus.ACTIVE }),
+      );
+
+      await service.restore('mem-1', 7);
+
+      expect(repository.update).toHaveBeenCalledWith('mem-1', {
+        status: AgentMemoryStatus.ACTIVE,
+        retiredAt: null,
+        retiredBy: null,
+        retiredReason: null,
+        embeddingStatus: AgentMemoryEmbeddingStatus.PENDING,
+      });
+      expect(aiService.upsertAgentMemory).toHaveBeenCalledWith(
+        expect.objectContaining({ memory_id: 'mem-1' }),
+      );
+    });
+
+    it('refuses an entry that is not retired', async () => {
+      repository.findOne.mockResolvedValue(
+        row({ status: AgentMemoryStatus.MERGED }),
+      );
+      await expect(service.restore('mem-1', 7)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recordFeedback', () => {
+    it('counts applied and contradicted once each, and an id in both lists counts as applied', async () => {
+      repository.recordApplied.mockResolvedValue(2);
+      repository.recordContradicted.mockResolvedValue(1);
+
+      const result = await service.recordFeedback({
+        applied: ['a', 'b', 'a'],
+        contradicted: ['b', 'c', 'c'],
+      });
+
+      expect(repository.recordApplied).toHaveBeenCalledWith(
+        ['a', 'b'],
+        expect.any(Date),
+      );
+      expect(repository.recordContradicted).toHaveBeenCalledWith(['c']);
+      expect(result).toEqual({ applied: 2, contradicted: 1 });
     });
   });
 

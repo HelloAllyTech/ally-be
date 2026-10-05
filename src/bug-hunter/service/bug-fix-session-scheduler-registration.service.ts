@@ -1,5 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 
+import {
+  AGENT_MEMORY_RETIRE_INTERVAL,
+  AGENT_MEMORY_RETIRE_TASK,
+} from 'src/agent-memory/constants/agent-memory.constants';
 import { scheduledTaskRegistry } from 'src/scheduler/registry/scheduled-task.registry';
 
 import {
@@ -9,6 +13,7 @@ import {
 import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterService } from './bug-hunter.service';
+import { BugHunterMemoryRetirementService } from './bug-hunter-memory-retirement.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -16,6 +21,7 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly bugFindingService: BugFindingService,
     private readonly bugHunterService: BugHunterService,
+    private readonly memoryRetirement: BugHunterMemoryRetirementService,
   ) {}
 
   onModuleInit(): void {
@@ -52,6 +58,19 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     // unread indefinitely and the bug stops moving with nobody aware it is
     // waiting on them. Hourly so it notices promptly; at most one message a
     // day, and none at all when nothing is waiting.
+    // The notebook's subtractive half (OPP-0752). The hourly curator only
+    // ever folds new lessons in; this is what takes a stale one out, by
+    // evidence, with the reason written on the row. Daily, because a day's
+    // worth of run feedback is the smallest unit that moves the counters it
+    // reads, and nightly sweeps are when the counters move.
+    scheduledTaskRegistry.register(
+      AGENT_MEMORY_RETIRE_INTERVAL,
+      AGENT_MEMORY_RETIRE_TASK,
+      async () => {
+        await this.memoryRetirement.run();
+      },
+    );
+
     scheduledTaskRegistry.register(
       'hourly',
       'bug-hunter-stale-escalation-digest',
