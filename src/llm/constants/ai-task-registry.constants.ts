@@ -364,18 +364,44 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       "A learner turn is checked against the simulation's behaviour instructions",
     detail:
       'detect_behaviors in app/core/scenario/simulation_instructions.py: which ' +
-      'configured SHOULD / SHOULD NOT behaviours the turn exhibited.',
+      'configured SHOULD / SHOULD NOT behaviours the turn exhibited. One ' +
+      'structured-output call per behaviour instruction, on its own OpenAI client ' +
+      '(not the agent_turn client), so it does not follow the scenario LLM: a ' +
+      'Gemini roleplay still classifies behaviours on gpt-4o-mini.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'resolved',
-    defaultModel: "the scenario's main LLM",
-    configuredBy: 'Inherits the agent_turn client',
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy:
+      'SimulationBehaviorInstruction.model default (app/core/scenario/simulation_instructions.py); ally-be sends no model for it',
+  },
+  {
+    id: 'report-counselor',
+    task: LlmTask.SCENARIO_REPORT_COUNSELOR,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger:
+      'An author clicks Generate Report in Simulation Studio and the simulated counsellor speaks',
+    detail:
+      'The counsellor half of a Studio rehearsal (app/core/scenario_report/service.py): one ' +
+      'call per turn for the number of turns the author picked, against the client agent ' +
+      "running the scenario's own graph. Authoring spend — there is no learner and no " +
+      'session, so it never counts towards a learner unit cost. Built with no LLM config, so ' +
+      "it runs on the platform default rather than the scenario's model.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy:
+      'DEFAULT_LLM_CONFIG (app/core/constants.py), via create_llm_client with no config',
   },
   {
     id: 'report-evaluator',
-    task: LlmTask.SCENARIO_EVALUATION,
+    task: LlmTask.SCENARIO_REPORT_EVALUATION,
     runtime: LlmRuntime.AI_LEARN,
-    trigger: 'Session ends and the debrief is scored',
+    trigger: '...and the finished rehearsal is scored',
     detail:
+      'Not the learner debrief (that is scenario-evaluation, in ally-ai). Its only caller is ' +
+      'the Studio rehearsal report: once the simulated counsellor and the client agent have ' +
+      'talked for the chosen number of turns, this judge scores the CLIENT agent against the ' +
+      'prompt-defined metrics (app/core/scenario_report/evaluator.py). One call per report. ' +
       'Pinned deliberately at temperature 0. A prompt-level model override is honoured ' +
       'only when it names an OpenAI model — the judge has no other client.',
     kind: AiTaskKind.COMPLETION,
@@ -484,6 +510,39 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       '_EVALUATOR_MODEL (app/core/scenario_report/evaluator.py), shared with report-evaluator',
   },
   {
+    id: 'v2v-tester-reply',
+    task: LlmTask.V2V_TESTER_REPLY,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger:
+      'A super-admin runs a V2V test (Roleplay Session Logs) and the simulated learner replies',
+    detail:
+      'The tester bot (app/v2v_tester/tester_bot.py) is the LEARNER side of an AI-vs-AI ' +
+      'session: one short reply per exchange, up to the max exchanges picked in the modal ' +
+      '(12 by default). The character side is a normal session and records as usual. Test ' +
+      'tooling, not learner spend. Its own speech runs on Google STT and TTS, which record ' +
+      'no usage.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy:
+      'Hard-coded in _generate_reply (app/v2v_tester/tester_bot.py)',
+  },
+  {
+    id: 'v2v-role-fidelity-judge',
+    task: LlmTask.V2V_ROLE_FIDELITY_JUDGE,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: '...and the test run ends',
+    detail:
+      'One cheap call per run counting tester turns that slipped into the CLIENT role, so a ' +
+      "misbehaving tester can be told apart from a weak character in the session's " +
+      'evaluation. Best-effort: a failure leaves the count empty.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy:
+      'Hard-coded in _assess_role_fidelity (app/v2v_tester/tester_bot.py)',
+  },
+  {
     id: 'video-actor',
     task: null,
     runtime: LlmRuntime.AI_LEARN,
@@ -566,6 +625,24 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: ALLY_AI_DEFAULT_SOURCE,
   },
   {
+    id: 'scenario-evaluation-language',
+    task: LlmTask.SCENARIO_EVALUATION_LANGUAGE,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      'Someone opens a debrief in a UI language other than the one it was written in',
+    detail:
+      'ally-be (ScenarioSessionService.generateLanguageSummary) asks ally-ai to re-run the ' +
+      "same evaluation in the viewer's language, without memory, and caches the result per " +
+      'language on the session, so it runs at most once per (session, language) unless the ' +
+      'previous attempt failed. Same endpoint and model as scenario-evaluation; ally-be ' +
+      'sends usage_task so it records under its own label and the cost of multilingual ' +
+      'debriefs is visible. Counted as feedback spend on the session.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: ALLY_AI_DEFAULT,
+    configuredBy: ALLY_AI_DEFAULT_SOURCE,
+  },
+  {
     id: 'counselor-analysis',
     task: LlmTask.COUNSELOR_ANALYSIS,
     runtime: LlmRuntime.ALLY_AI,
@@ -628,6 +705,24 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: 'DRIFT_JUDGE__MODEL',
   },
   {
+    id: 'drift-judge-labels',
+    task: LlmTask.DRIFT_JUDGE_LABELS,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      'Scheduled: the judge backlog drainer tops up drift labels on already-judged sessions',
+    detail:
+      'POST /drift/judge-labels, the lean path: same rubric, model and temperature as ' +
+      'drift-judge, but the response is constrained to the labels added since v1, which ' +
+      'is where most of the cost is (completion outweighs the re-sent transcript). Only ' +
+      'reaches sessions that already carry a v1 judgment; also runnable by hand as a ' +
+      'drift backfill with lean set. Its own label so the saving over drift-judge is ' +
+      'measured rather than asserted.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
+    configuredBy: 'DRIFT_JUDGE__MODEL, shared with drift-judge',
+  },
+  {
     id: 'language-judge',
     task: LlmTask.LANGUAGE_JUDGE,
     runtime: LlmRuntime.ALLY_AI,
@@ -642,7 +737,7 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'feedback-groundedness-judge',
-    task: null,
+    task: LlmTask.FEEDBACK_GROUNDEDNESS_JUDGE,
     runtime: LlmRuntime.ALLY_AI,
     trigger: 'Scheduled: feedback groundedness is judged',
     detail: 'Is the debrief actually supported by the transcript?',
@@ -686,8 +781,14 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     id: 'filler-judge',
     task: LlmTask.FILLER_JUDGE,
     runtime: LlmRuntime.ALLY_AI,
-    trigger: 'Scheduled: thinking fillers are judged',
-    detail: 'Did the filler sound like the character and fit the turn?',
+    trigger:
+      'A super-admin starts a thinking-filler backfill (Analytics: filler quality)',
+    detail:
+      'Did the filler sound like the character and fit the turn? Manual only: ' +
+      'POST /analytics/filler-quality/backfill is its one entry point, and unlike the ' +
+      'other judges it is not in the scheduled backlog drainer, so it costs nothing ' +
+      'until someone runs it. One call per session that played a filler, plus a free ' +
+      'empty-observation probe per run to read the judge version.',
     kind: AiTaskKind.COMPLETION,
     provider: 'gemini',
     defaultModel: 'gemini-2.5-flash',

@@ -123,6 +123,8 @@ export const SESSION_COST_COMPONENT_BY_TASK: Partial<
   [LlmTask.SUPERVISOR_NOTE]: 'coaching',
 
   [LlmTask.SCENARIO_EVALUATION]: 'debrief',
+  // The same evaluation re-run in the viewer's language — see the enum.
+  [LlmTask.SCENARIO_EVALUATION_LANGUAGE]: 'debrief',
   [LlmTask.DEBRIEF_CHAT]: 'debrief',
   [LlmTask.DEBRIEF_CHAT_SUMMARY]: 'debrief',
   [LlmTask.TRACK_MEMORY_FOLD]: 'debrief',

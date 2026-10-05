@@ -62,6 +62,21 @@ export enum LlmTask {
   // learner, so it is tagged to the session but kept OUT of the session's
   // delivery cost.
   ACTOR_EVALUATION = 'actor_evaluation',
+  // Studio rehearsal report in ally-ai-learn (Simulation Studio -> Generate
+  // Report): a simulated counsellor talks to the client agent for N turns,
+  // then a judge scores the CLIENT agent. Authoring spend — no learner and no
+  // session — so both labels stay out of every per-learner cost. Two labels
+  // because the counsellor runs once per turn while the judge runs once per
+  // report, so one line would hide which of them a long report is paying for.
+  SCENARIO_REPORT_COUNSELOR = 'scenario_report_counselor',
+  SCENARIO_REPORT_EVALUATION = 'scenario_report_evaluation',
+  // V2V tester in ally-ai-learn: the simulated learner in a super-admin
+  // AI-vs-AI test session. One reply per exchange, and one end-of-run judge
+  // counting turns where the tester slipped into the client's role. Test
+  // tooling, so neither is learner spend; separate labels because the reply
+  // scales with exchanges and the judge with runs.
+  V2V_TESTER_REPLY = 'v2v_tester_reply',
+  V2V_ROLE_FIDELITY_JUDGE = 'v2v_role_fidelity_judge',
   // Debrief chat in ally-be: the learner's post-session chat about their
   // debrief, and the rolling summary that keeps its history bounded. Recorded
   // nothing before these labels.
@@ -76,6 +91,13 @@ export enum LlmTask {
   SUMMARY = 'summary',
   DYNAMIC_SUMMARY = 'dynamic_summary',
   SCENARIO_EVALUATION = 'scenario_evaluation',
+  // The same debrief evaluation re-run in another language, when a viewer
+  // opens a debrief in a UI language other than the one it was written in
+  // (ScenarioSessionService.generateLanguageSummary). Learner-caused like
+  // SCENARIO_EVALUATION and costed the same way, but its own label so the
+  // price of serving debriefs in several languages is visible rather than
+  // hidden inside the first evaluation's line.
+  SCENARIO_EVALUATION_LANGUAGE = 'scenario_evaluation_language',
   COUNSELOR_ANALYSIS = 'counselor_analysis',
   USER_IDENTIFICATION = 'user_identification',
   CONTENT_ENHANCE = 'content_enhance',
@@ -83,7 +105,17 @@ export enum LlmTask {
   DIARIZATION = 'diarization',
   EMBEDDING = 'embedding',
   DRIFT_JUDGE = 'drift_judge',
+  // The drift judge's labels-only top-up (POST /drift/judge-labels): same
+  // rubric and model, response constrained to the labels added since v1. Its
+  // own label so the saving over DRIFT_JUDGE is measured rather than asserted.
+  // ally-ai emitted it before this member existed; the processor stores the
+  // raw string, so those rows already carry this value.
+  DRIFT_JUDGE_LABELS = 'drift_judge_labels',
   LANGUAGE_JUDGE = 'language_judge',
+  // Feedback-groundedness judge in ally-ai: is each debrief claim supported by
+  // the transcript? Emitted by ally-ai before this member existed; the
+  // processor stores the raw string, so those rows already carry this value.
+  FEEDBACK_GROUNDEDNESS_JUDGE = 'feedback_groundedness_judge',
   // Thinking-filler judge in ally-ai: scores whether a filler sounded like the
   // character and fitted the turn. Its own label rather than folded into
   // LANGUAGE_JUDGE because it runs on a different cadence over a different
