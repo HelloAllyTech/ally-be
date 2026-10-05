@@ -53,121 +53,6 @@ const truncate = (value) => {
 };
 
 
-/**
- * Gemini CLI's `--output-format stream-json` schema. Originally read from a
- * real local install's compiled TypeScript declarations
- * (@google/gemini-cli-core's dist/src/output/types.d.ts, v0.22.5); the
- * envelope, `init`/`message`/`tool_use`/`tool_result`/`result` shapes, and
- * the real tool param shapes below (`run_shell_command`'s `command`,
- * `read_file`'s `file_path`, `write_file`'s `file_path`+`content`) are now
- * additionally confirmed against one real successful trivial run — a single
- * shell command, a read, and a write, no multi-round tool_use/tool_result
- * loop and no real `edit` (old_string/new_string) call, so treat those two
- * as still resting on the source schema alone.
- *
- * Confirmed gaps, not guesses:
- *  - Gemini's tool events carry no id correlating a `tool_use` to its later
- *    `tool_result`, so — same as Claude Code's own normalise above — they're
- *    emitted as independent events rather than paired.
- *  - Gemini's terminal `result` event's `stats` has token counts only, no
- *    cost figure at all (unlike Claude Code's `total_cost_usd`). This
- *    normaliser reports `totalCostUsd: 0` for a Gemini-engine run rather than
- *    fabricating a number — real cost tracking for this engine needs a
- *    separate per-model pricing table, not built here.
- *  - Assistant text arrives as `delta: true` fragments ("OK", then ".", each
- *    its own record) rather than complete blocks the way Claude Code's own
- *    stream-json does — confirmed by the same real run. `geminiTextBuffer`
- *    accumulates them and flushes as one event the moment anything else
- *    arrives (a tool call, the terminal result, or stream end), so the feed
- *    reads as sentences instead of a word-by-word trickle.
- */
-let geminiTextBuffer = '';
-const flushGeminiBuffer = () => {
-  if (!geminiTextBuffer) return [];
-  const text = geminiTextBuffer;
-  geminiTextBuffer = '';
-  return [{ type: 'text', payload: { text: truncate(text) } }];
-};
-
-
-// ── What a Gemini invocation cost ───────────────────────────────────────────
-//
-// Gemini's CLI reports tokens but no dollar figure, where Claude Code reports
-// `total_cost_usd` directly. This used to be hardcoded to 0, which was honest
-// about what the engine said and wrong about everything downstream: the
-// session spend ceiling, the phase budgets, the routing telemetry and the cost
-// on the session card all read a Gemini run as free. A run that cannot be
-// priced cannot be capped, and "$0.00" on a build that burned 300k tokens is a
-// worse answer than an estimate.
-//
-// So it is computed here from published list prices. Two things follow from
-// that and both matter when reading the number:
-//
-//   - It is an ESTIMATE from a rate card, not a billed amount. Rates change,
-//     and this table has to be updated by hand when they do.
-//   - It does not know about credits. Spending against a credit grant still
-//     shows a dollar figure, because the ceiling exists to stop a runaway run,
-//     and a runaway run is just as runaway when something else is paying.
-//
-// Rates are USD per million tokens. Gemini 2.5 Pro prices in two tiers by
-// prompt size, which is why the long-context tier is not a rounding detail: a
-// coding run carrying a repo's worth of context sits above the 200k boundary
-// for most of its invocations.
-const GEMINI_RATES = {
-  'gemini-2.5-pro': {
-    threshold: 200_000,
-    short: { input: 1.25, cached: 0.31, output: 10.0 },
-    long: { input: 2.5, cached: 0.625, output: 15.0 },
-  },
-  'gemini-2.5-flash': {
-    threshold: Infinity,
-    short: { input: 0.3, cached: 0.075, output: 2.5 },
-    long: { input: 0.3, cached: 0.075, output: 2.5 },
-  },
-  'gemini-2.5-flash-lite': {
-    threshold: Infinity,
-    short: { input: 0.1, cached: 0.025, output: 0.4 },
-    long: { input: 0.1, cached: 0.025, output: 0.4 },
-  },
-};
-
-const geminiCostUsd = (stats, model) => {
-  const modelStr = String(model ?? '');
-  const key = Object.keys(GEMINI_RATES)
-    .filter((k) => modelStr.startsWith(k))
-    .sort((a, b) => b.length - a.length)[0];
-  if (!key) {
-    unpricedModels.add(String(model ?? 'unknown'));
-    console.error(
-      `[cost] no rate card for gemini model "${model}" — reporting 0. ` +
-        `Add it to GEMINI_RATES in forward-events.mjs.`,
-    );
-    return 0;
-  }
-  const card = GEMINI_RATES[key];
-  const totalIn = Number(stats.input_tokens ?? 0) || 0;
-  const cached = Number(stats.cached ?? 0) || 0;
-  const out = Number(stats.output_tokens ?? 0) || 0;
-  // `input` is the uncached remainder Gemini bills at the full rate; falling
-  // back to the subtraction keeps this right if that field ever goes away.
-  const fresh = Number(stats.input ?? Math.max(totalIn - cached, 0)) || 0;
-
-  const rates = totalIn > card.threshold ? card.long : card.short;
-  const usd =
-    (fresh / 1_000_000) * rates.input +
-    (cached / 1_000_000) * rates.cached +
-    (out / 1_000_000) * rates.output;
-
-  return Math.round(usd * 1e6) / 1e6;
-};
-
-// Models this run met that the rate card does not price. Collected so the gap
-// can be SAID rather than only logged: stdout has no consumers, and a phase
-// silently priced at zero is a budget ceiling that has stopped working.
-const unpricedModels = new Set();
-const announcedUnpriced = new Set();
-
-
 /* ── opencode ────────────────────────────────────────────────────────────── */
 
 // Its cost arrives per STEP, not once at the end.
@@ -180,9 +65,9 @@ const announcedUnpriced = new Set();
 //
 // The dollars are opencode's own, not a rate card. That is the one thing this
 // engine gives the budget ceiling that neither other engine can: gemini-cli
-// reports no cost at all and Claude Code reports its own estimate, so spend
-// has been priced from a table someone has to keep up to date, and an unpriced
-// model silently reads as free.
+// reported no cost at all and Claude Code reported its own estimate, so spend
+// was priced from a table someone had to keep up to date, and an unpriced
+// model silently read as free.
 let opencodeCost = 0;
 let opencodeTokens = { input: 0, output: 0, cached: 0 };
 let opencodeSawStep = false;
@@ -455,12 +340,8 @@ readline.on('close', async () => {
   clearInterval(timer);
   // A run that ended mid-repeat still says how many it swallowed.
   flushRepeats();
-  // A Gemini run whose last assistant message was still mid-delta when the
-  // stream ended must not lose it — a no-op for Claude Code, whose buffer is
-  // always empty.
-  queue.push(...flushGeminiBuffer());
   // opencode reports its cost per step and never sums them, so the totals are
-  // only complete once the stream is. A no-op for the other two engines.
+  // only complete once the stream is.
   finaliseOpencode();
   await flush();
   if (RESULT_OUT && lastResult) {
