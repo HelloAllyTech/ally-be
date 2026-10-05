@@ -561,4 +561,64 @@ describe('AiService', () => {
       );
     });
   });
+
+  describe('scenario report trigger and cancel', () => {
+    const request = {
+      prompt: 'helper prompt',
+      turns: 5,
+      language: 'en',
+      scenario_id: 10,
+      report_id: 'report-uuid-1',
+      metadata: {},
+    } as any;
+
+    it('treats any 2xx as started, including ai-learn reporting a duplicate report_id', async () => {
+      mockedAxios.mockResolvedValue({
+        status: 200,
+        data: { report_id: 'report-uuid-1', status: 'already_running' },
+      });
+
+      await expect(
+        service.triggerScenarioReportGenerate(request),
+      ).resolves.toBeUndefined();
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
+    });
+
+    // Why ai-learn has to dedupe: when a first attempt's response is lost
+    // after ai-learn accepted it, the retry asks for the same report again.
+    it('resends the same report_id when it retries', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(
+          Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+        )
+        .mockResolvedValueOnce({ status: 202, data: {} });
+
+      await service.triggerScenarioReportGenerate(request);
+
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+      expect(mockedAxios.mock.calls[0][0].data.report_id).toBe('report-uuid-1');
+      expect(mockedAxios.mock.calls[1][0].data.report_id).toBe('report-uuid-1');
+    });
+
+    it('sends cancel with a short timeout and never throws', async () => {
+      mockedAxios.mockRejectedValue(
+        Object.assign(new Error('timeout of 10000ms exceeded'), {
+          code: 'ECONNABORTED',
+        }),
+      );
+
+      await expect(
+        service.triggerScenarioReportCancel('report-uuid-1'),
+      ).resolves.toBeUndefined();
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'post',
+          url: expect.stringContaining(
+            'api/v1/scenario-report/cancel/report-uuid-1',
+          ),
+          timeout: 10_000,
+        }),
+      );
+    });
+  });
 });
