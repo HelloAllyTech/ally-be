@@ -603,6 +603,40 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: ALLY_AI_DEFAULT_SOURCE,
   },
   {
+    id: 'helpline-final-summary',
+    task: LlmTask.DYNAMIC_SUMMARY,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger: 'A text-helpline chat that a listener took ends',
+    detail:
+      'One call per ended chat, off the request path (HelplineSummaryService.' +
+      "generateFinal → ally-ai /summary/note). Sends the chat's TEXT turns only " +
+      "(talker → CLIENT, listener → COUNSELOR) with the org's summaryFields as " +
+      'keys/key_descriptions. Skipped for chats nobody claimed and for erased ' +
+      'ones; a failure leaves no row and the listener writes the summary by ' +
+      "hand. Never overwrites a listener's edit.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: ALLY_AI_DEFAULT,
+    configuredBy: ALLY_AI_DEFAULT_SOURCE,
+  },
+  {
+    id: 'helpline-rolling-summary',
+    task: LlmTask.DYNAMIC_SUMMARY,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      "A text-helpline talker's turn count reaches the org's rolling-summary cadence",
+    detail:
+      'The copilot pass calls the same ally-ai /summary/note endpoint every ' +
+      'copilot.rollingSummaryEveryTurns talker turns (default 4) and on a ' +
+      'transfer (HANDOFF), with the same summaryFields keys. Staff-only output; ' +
+      'never shown to the talker. Wired by the copilot orchestration — until it ' +
+      'lands, only helpline-final-summary makes this call.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: ALLY_AI_DEFAULT,
+    configuredBy: ALLY_AI_DEFAULT_SOURCE,
+  },
+  {
     id: 'nudge',
     task: LlmTask.NUDGE,
     runtime: LlmRuntime.ALLY_AI,
