@@ -25,7 +25,11 @@ import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugHunterSettings } from '../entity/bug-hunter-settings.entity';
-import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
+import {
+  BugHuntRunRepository,
+  RunDayPoint,
+  RunWindowSummary,
+} from '../repository/bug-hunt-run.repository';
 import { BugHuntEventRepository } from '../repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from '../repository/bug-hunter-settings.repository';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
@@ -42,6 +46,34 @@ import { BugHunterMode } from '../enum/bug-finding.enum';
  * the single place that decides what "a run" and "an event" mean; the
  * pipeline is just a caller.
  */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Days the scorecard sparkline draws. Two weeks reads as "lately" without becoming a chart. */
+export const SCORECARD_SERIES_DAYS = 14;
+
+export interface BugHuntRunsSummary {
+  /** The window asked for; null is all time. */
+  days: number | null;
+  /** The zone the series was bucketed in — what was asked for, or UTC if that was unknown. */
+  timeZone: string;
+  window: RunWindowSummary;
+  series: RunDayPoint[];
+}
+
+/**
+ * Whether ICU knows this IANA zone — `DateTimeFormat` throws a RangeError for
+ * one it does not, and Postgres would reject the same name in `AT TIME ZONE`.
+ */
+const isKnownTimeZone = (zone: string | undefined): zone is string => {
+  if (!zone) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 @Injectable()
 export class BugHunterService {
   private readonly logger = LoggerService.getInstance(BugHunterService.name);
@@ -204,6 +236,30 @@ export class BugHunterService {
 
   listRuns(limit = 50): Promise<BugHuntRun[]> {
     return this.runRepository.listRecent(limit);
+  }
+
+  /**
+   * The scorecard, aggregated in Postgres over the whole window — not over the
+   * newest 50 rows `listRuns` returns, which is what made "7 days" and "30
+   * days" read the same once the platform ran more than 50 shifts a week.
+   *
+   * `days` undefined means all time. `timeZone` is the reader's IANA zone and
+   * only shapes the per-day series; an unknown one falls back to UTC rather
+   * than letting Postgres reject the query.
+   */
+  async summarizeRuns(
+    days: number | undefined,
+    timeZone: string | undefined,
+    now: Date = new Date(),
+  ): Promise<BugHuntRunsSummary> {
+    const since =
+      days == null ? null : new Date(now.getTime() - days * MS_PER_DAY);
+    const zone = isKnownTimeZone(timeZone) ? timeZone : 'UTC';
+    const [window, series] = await Promise.all([
+      this.runRepository.summarize(since),
+      this.runRepository.dailySeries(SCORECARD_SERIES_DAYS, zone),
+    ]);
+    return { days: days ?? null, timeZone: zone, window, series };
   }
 
   async getRunWithEvents(

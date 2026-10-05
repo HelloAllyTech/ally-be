@@ -63,6 +63,8 @@ import {
   BugFindingDto,
   BugFindingDetailDto,
   ListBugHuntRunsResponseDto,
+  BugHuntRunsSummaryDto,
+  BugHuntRunsSummaryQueryDto,
   ListBugFindingsQueryDto,
   ListBugFindingsResponseDto,
   UpdateBugHunterSettingsDto,
@@ -828,6 +830,24 @@ export class BugHunterController {
       limit ? Number(limit) : undefined,
     );
     return { items: runs.map(toRunDto) };
+  }
+
+  @Get('runs/summary')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary: 'Run scorecard totals for a window (super-duper-admin)',
+    description:
+      'Cost, outcomes, the found/merged/PR tallies and token counts over every run in the ' +
+      'window, plus a dense fourteen-day per-day series — aggregated in Postgres. The ' +
+      'scorecard used to sum these in the browser over GET /runs, which is capped at the ' +
+      'newest 50, so "7 days" and "30 days" showed the same figure once the platform ran ' +
+      'more than 50 shifts a week. Declared before runs/:id so "summary" is not read as an id.',
+  })
+  @ApiResponse({ status: 200, type: BugHuntRunsSummaryDto })
+  async summarizeRuns(
+    @Query() query: BugHuntRunsSummaryQueryDto,
+  ): Promise<BugHuntRunsSummaryDto> {
+    return this.bugHunterService.summarizeRuns(query.days, query.timeZone);
   }
 
   @Get('runs/:id')
