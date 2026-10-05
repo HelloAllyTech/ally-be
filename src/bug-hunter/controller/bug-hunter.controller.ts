@@ -32,6 +32,7 @@ import { BugHunterEvalService } from '../service/bug-hunter-eval.service';
 import { ListBugHunterEvalRunsDto } from '../dto/bug-hunter-eval.dto';
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
+import { AGENT_MEMORY_RETIRED_WINDOW_DAYS } from 'src/agent-memory/constants/agent-memory.constants';
 import { AgentMemory } from 'src/agent-memory/entity/agent-memory.entity';
 import {
   BugHunterMemoryEntryDto,
@@ -189,6 +190,48 @@ export class BugHunterController {
     @CurrentUser() user: TokenUser,
   ): Promise<BugHunterMemoryEntryDto> {
     return toMemoryEntryDto(await this.memoryService.retire(id, user.id));
+  }
+
+  @Get('memory/retired')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'What Bug Hunter retired from its own notebook recently, with its reason — undoable (super-duper-admin)',
+    description:
+      'Entries the nightly self-retirement pass took out of the active set in the last ' +
+      `${AGENT_MEMORY_RETIRED_WINDOW_DAYS} days (OPP-0752): each carries the rule that fired, in ` +
+      "the agent's words. Entries an admin retired by hand are not listed; those were a " +
+      'decision, not a guess to review.',
+  })
+  @ApiResponse({ status: 200, type: ListBugHunterMemoryResponseDto })
+  async listRetiredMemory(
+    @Query('repo') repo?: string,
+    @Query('limit') limit?: string,
+  ): Promise<ListBugHunterMemoryResponseDto> {
+    const rows = await this.memoryService.listRetiredByAgent(
+      AgentMemoryAgent.BUG_HUNTER,
+      repo || undefined,
+      AGENT_MEMORY_RETIRED_WINDOW_DAYS,
+      limit ? Math.min(Math.max(Number(limit) || 50, 1), 200) : 50,
+    );
+    return { items: rows.map(toMemoryEntryDto) };
+  }
+
+  @Post('memory/:id/restore')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Put a retired notebook entry back into the active set (super-duper-admin)',
+    description:
+      "The undo for a retirement — the agent's or a person's. Counters are kept; the " +
+      'entry is re-embedded so search finds it again.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterMemoryEntryDto })
+  async restoreMemory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHunterMemoryEntryDto> {
+    return toMemoryEntryDto(await this.memoryService.restore(id, user.id));
   }
 
   @Get('eval-runs')
@@ -1113,6 +1156,10 @@ export function toMemoryEntryDto(row: AgentMemory): BugHunterMemoryEntryDto {
     pinned: row.pinned,
     sourceCount: row.sourceCount,
     timesApplied: row.timesApplied,
+    lastAppliedAt: row.lastAppliedAt ?? null,
+    retiredAt: row.retiredAt ?? null,
+    retiredBy: row.retiredBy ?? null,
+    retiredReason: row.retiredReason ?? null,
     timesContradicted: row.timesContradicted,
     runId: row.runId ?? null,
     findingId: row.findingId ?? null,
