@@ -42,6 +42,23 @@ export const DEFAULT_LANGUAGE_CODE = LanguageCode.EN_IN;
 
 export const DEFAULT_LANGUAGE_TRANSLATION_CODE = 'en';
 
+/**
+ * The language ally-ai writes the debrief evaluation in when the request
+ * carries no `language_code` (its `_wants_translated_feedback` treats a
+ * missing code as English). Recorded as `summary.language` in that case so a
+ * viewer reading in English is not sent for a second, identical evaluation.
+ */
+export const DEFAULT_FEEDBACK_LANGUAGE = 'en';
+
+/**
+ * Lifetime of the per-session lock that keeps two end-session calls from both
+ * paying for the debrief evaluation. Released when the evaluation finishes;
+ * the TTL only matters if the process dies holding it, so it must comfortably
+ * outlast the evaluation itself — ally-ai's request timeout is 5 minutes
+ * (AiService.maxTimeout), plus the reads and writes around it.
+ */
+export const SESSION_SUMMARY_LOCK_TTL_SECONDS = 15 * 60;
+
 export const STT_LLM_PROVIDER_CONFIG = {
   // Speech-to-Text service configuration
   stt: {

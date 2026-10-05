@@ -76,6 +76,7 @@ import { ScenarioSessionDetailsRepository } from '../../repository/scenario-sess
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { LearnerSupervisorMemoryService } from '../learner-supervisor-memory.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
+import { RedisService } from 'src/redis/service/redis.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -121,6 +122,9 @@ describe('ScenarioSessionService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let transcriptTranslationService: jest.Mocked<TranscriptTranslationService>;
   let tenantFeatureService: { isEnabledForTenant: jest.Mock };
+  /** Set-backed SET NX, so locks behave like the real thing across calls. */
+  let redisService: { acquireLock: jest.Mock; releaseLock: jest.Mock };
+  let heldLocks: Set<string>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -287,6 +291,19 @@ describe('ScenarioSessionService', () => {
 
     const mockDataSource = {
       transaction: jest.fn(),
+      query: jest.fn(),
+    };
+
+    heldLocks = new Set();
+    redisService = {
+      acquireLock: jest.fn(async (key: string) => {
+        if (heldLocks.has(key)) return false;
+        heldLocks.add(key);
+        return true;
+      }),
+      releaseLock: jest.fn(async (key: string) => {
+        heldLocks.delete(key);
+      }),
     };
 
     const mockPermissionValidatorService = {
@@ -410,6 +427,7 @@ describe('ScenarioSessionService', () => {
           provide: TenantFeatureService,
           useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
         },
+        { provide: RedisService, useValue: redisService },
         {
           provide: PreviewMonologueService,
           useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
@@ -1659,7 +1677,8 @@ describe('ScenarioSessionService', () => {
       expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
       expect(mockDetailsSave).toHaveBeenCalledWith(
         expect.objectContaining({
-          summary: { feedback: mockSummaryResponse },
+          // No language code on the end call: ally-ai wrote English.
+          summary: { feedback: mockSummaryResponse, language: 'en' },
         }),
         { conflictPaths: ['scenarioSessionId'] },
       );
@@ -1719,7 +1738,7 @@ describe('ScenarioSessionService', () => {
       expect(aiService.getScenarioSessionEvaluation).not.toHaveBeenCalled();
       expect(mockDetailsSave).toHaveBeenCalledWith(
         expect.objectContaining({
-          summary: { feedback: mockFeedbackResponse },
+          summary: { feedback: mockFeedbackResponse, language: 'en' },
         }),
         { conflictPaths: ['scenarioSessionId'] },
       );
@@ -4785,6 +4804,241 @@ describe('ScenarioSessionService', () => {
         found: 0,
         finalised: 0,
       });
+    });
+  });
+
+  // Two end calls (learner POST + auto-termination / room_finished /
+  // /end-v2v, a client retry, web and mobile) used to both pay for a full
+  // evaluation and both write the learner's supervisor memory, because the
+  // only guard looked for FINISHED feedback. And a summary written without a
+  // language code was stored with no language, so an English viewer triggered
+  // a second, identical evaluation.
+  describe('debrief evaluation — once per session, in its real language', () => {
+    const lockKey = `scenario-session-summary:${mockScenarioSessionId}`;
+    let upsert: jest.Mock;
+    const flush = () => new Promise((r) => setImmediate(r));
+
+    beforeEach(() => {
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue([
+        {
+          id: 1,
+          senderId: mockCounselorId,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+        },
+      ] as unknown as ScenarioSessionMessages[]);
+      upsert = jest.fn().mockResolvedValue(undefined);
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb({ getRepository: () => ({ upsert }) }),
+      );
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+      aiService.getScenarioSessionEvaluation.mockResolvedValue({
+        positives: ['Warm opening'],
+        emotional_movement: [],
+      } as any);
+    });
+
+    afterEach(() => {
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    const persistedSummary = () =>
+      upsert.mock.calls.map(([row]) => row.summary).find(Boolean);
+
+    it('a second end while the first evaluation is in flight pays for nothing', async () => {
+      let finish!: (value: any) => void;
+      aiService.getScenarioSessionEvaluation.mockReturnValue(
+        new Promise((resolve) => (finish = resolve)) as any,
+      );
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledTimes(1);
+
+      finish({ positives: [], emotional_movement: [], memory_update: 'x' });
+      await flush();
+
+      expect(redisService.releaseLock).toHaveBeenCalledWith(lockKey);
+      expect(heldLocks.has(lockKey)).toBe(false);
+    });
+
+    it('does not read the transcript when another evaluation holds the lock', async () => {
+      heldLocks.add(lockKey);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+
+      expect(scenarioSessionMessagesRepository.find).not.toHaveBeenCalled();
+      expect(aiService.getScenarioSessionEvaluation).not.toHaveBeenCalled();
+      // Not ours to release.
+      expect(redisService.releaseLock).not.toHaveBeenCalled();
+      expect(heldLocks.has(lockKey)).toBe(true);
+    });
+
+    it('releases the lock when the evaluation fails, so the session stays retriable', async () => {
+      aiService.getScenarioSessionEvaluation.mockRejectedValue(
+        new Error('ally-ai timeout'),
+      );
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+
+      expect(persistedSummary()).toEqual({
+        errorMessage: 'Failed to generate summary. Please try again.',
+      });
+      expect(redisService.acquireLock).toHaveBeenCalledWith(lockKey, 15 * 60);
+      expect(heldLocks.has(lockKey)).toBe(false);
+    });
+
+    it('still evaluates when Redis is unreachable', async () => {
+      redisService.acquireLock.mockRejectedValue(new Error('redis down'));
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledTimes(1);
+      expect(redisService.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it("records 'en' when the end call carries no language code", async () => {
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await flush();
+
+      expect(aiService.getScenarioSessionEvaluation.mock.calls[0][5]).toBe(
+        undefined,
+      );
+      expect(persistedSummary()).toEqual(
+        expect.objectContaining({ language: 'en' }),
+      );
+    });
+
+    it('records the requested language when there is one', async () => {
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId, {
+        languageCode: 'ta-IN',
+      });
+      await flush();
+
+      expect(persistedSummary()).toEqual(
+        expect.objectContaining({ language: 'ta' }),
+      );
+    });
+  });
+
+  describe('getScenarioSession - summary stored without a language', () => {
+    const endedSession = (summary: Record<string, any>) =>
+      ({
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:30:00Z'),
+        details: { summary },
+      }) as any;
+
+    beforeEach(() => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+    });
+
+    it('serves an English viewer the stored feedback without re-evaluating', async () => {
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        endedSession({ feedback: { positives: ['English'] } }),
+      );
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+        'en-IN',
+      );
+
+      expect((result as any).details.summary.feedback).toEqual({
+        positives: ['English'],
+      });
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(aiService.getScenarioSessionEvaluation).not.toHaveBeenCalled();
+    });
+
+    it('still re-evaluates for a viewer in another language', async () => {
+      const repoStub = {
+        findOne: jest.fn().mockResolvedValue({
+          summary: { feedback: { positives: ['English'] } },
+        }),
+        save: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb({ getRepository: () => repoStub }),
+      );
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        endedSession({ feedback: { positives: ['English'] } }),
+      );
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+        'hi',
+      );
+
+      expect((result as any).details.summary.feedback).toBeUndefined();
+      expect(repoStub.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('addSessionMemory', () => {
+    const memory = {
+      summary: 'They talked about sleep.',
+      message_count: 30,
+      summarized_message_count: 24,
+    };
+
+    it('reports a stored memory when the guarded upsert returns a row', async () => {
+      (dataSource.query as jest.Mock).mockResolvedValue([
+        { scenarioSessionId: mockScenarioSessionId },
+      ]);
+
+      await expect(
+        service.addSessionMemory(mockScenarioSession, memory),
+      ).resolves.toBe(true);
+      expect((dataSource.query as jest.Mock).mock.calls[0][0]).toContain(
+        'RETURNING "scenarioSessionId"',
+      );
+    });
+
+    it('reports nothing stored when a higher-coverage memory won the guard', async () => {
+      (dataSource.query as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.addSessionMemory(mockScenarioSession, memory),
+      ).resolves.toBe(false);
+    });
+
+    it('reads stored memory back within the tenant', async () => {
+      scenarioSessionDetailsRepository.findOne.mockResolvedValue({
+        id: 'd-1',
+        sessionMemory: { summary: 'stored' },
+      });
+
+      await expect(
+        service.getStoredSessionMemory(mockScenarioSessionId, mockTenantId),
+      ).resolves.toEqual({ summary: 'stored' });
+      expect(scenarioSessionDetailsRepository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            scenarioSessionId: mockScenarioSessionId,
+            tenantId: mockTenantId,
+          },
+        }),
+      );
     });
   });
 });

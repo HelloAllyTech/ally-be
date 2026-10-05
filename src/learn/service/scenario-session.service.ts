@@ -73,8 +73,10 @@ import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
 import { PreviewMonologueService } from './preview-monologue.service';
 import { v4 } from 'uuid';
 import {
+  DEFAULT_FEEDBACK_LANGUAGE,
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  SESSION_SUMMARY_LOCK_TTL_SECONDS,
   STUCK_SESSION_AGE_MS,
   STUCK_SESSION_SWEEP_LIMIT,
   UNFINALISED_SESSION_GRACE_MS,
@@ -141,6 +143,7 @@ import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { SimulationStateDto } from '../dto/simulation-state.dto';
 import { PostHog } from 'posthog-node';
 import { userDistinctId } from 'src/posthog/posthog.util';
+import { RedisService } from 'src/redis/service/redis.service';
 import {
   ROLEPLAY_ANALYTICS_EVENTS,
   RoleplayEntryPoint,
@@ -198,6 +201,7 @@ export class ScenarioSessionService {
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
     private readonly posthog: PostHog,
     private readonly tenantFeatureService: TenantFeatureService,
+    private readonly redisService: RedisService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -1676,7 +1680,7 @@ export class ScenarioSessionService {
     // end-session response returns immediately and the client polls for the
     // result. The method persists its own success/failure row, so the only
     // thing left to guard here is an unexpected rejection.
-    this.getScenarioSessionSummaryFromAI(
+    this.getScenarioSessionSummaryFromAIOnce(
       scenarioSessionId,
       needMemory,
       callDuration,
@@ -1933,6 +1937,75 @@ export class ScenarioSessionService {
     }
   }
 
+  /**
+   * getScenarioSessionSummaryFromAI, at most one run in flight per session.
+   *
+   * endScenarioSession has several entry points — the learner's POST,
+   * auto-termination, room_finished, /end-v2v, a client retry, web and mobile
+   * both ending — and none of them waits for the evaluation. The "feedback
+   * already exists" check inside only sees a FINISHED evaluation, so two ends
+   * within the minutes one takes both paid for a full evaluation and both
+   * wrote the learner's supervisor memory. This lock is the in-flight half of
+   * that guard; the feedback check stays the finished half, and because the
+   * lock is released when the run ends, a failed summary stays retriable.
+   *
+   * A Redis lock rather than a reservation in the details row (the
+   * per-language path's approach) so the `summary` JSON that web and mobile
+   * poll keeps its shape. Fails open: if Redis is unreachable, a duplicate
+   * evaluation beats none.
+   */
+  private async getScenarioSessionSummaryFromAIOnce(
+    scenarioSessionId: string,
+    needMemory: boolean,
+    callDuration?: number,
+    previousMemory?: string | null,
+    enableRecommendations?: boolean,
+    languageCode?: string,
+  ): Promise<void> {
+    const lockKey = `scenario-session-summary:${scenarioSessionId}`;
+    let locked = false;
+    try {
+      locked = await this.redisService.acquireLock(
+        lockKey,
+        SESSION_SUMMARY_LOCK_TTL_SECONDS,
+      );
+      if (!locked) {
+        this.logger.info(
+          `Skipping summary generation for ${scenarioSessionId}: an evaluation is already in progress.`,
+        );
+        return;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Summary lock unavailable for ${scenarioSessionId}; evaluating unguarded: ${JSON.stringify(
+          (error as Error)?.message,
+        )}`,
+      );
+    }
+
+    try {
+      await this.getScenarioSessionSummaryFromAI(
+        scenarioSessionId,
+        needMemory,
+        callDuration,
+        previousMemory,
+        enableRecommendations,
+        languageCode,
+      );
+    } finally {
+      if (locked) {
+        await this.redisService.releaseLock(lockKey).catch((error) => {
+          // The TTL frees it; until then a retry is refused, not a run lost.
+          this.logger.warn(
+            `Failed to release summary lock for ${scenarioSessionId}: ${JSON.stringify(
+              (error as Error)?.message,
+            )}`,
+          );
+        });
+      }
+    }
+  }
+
   private async getScenarioSessionSummaryFromAI(
     scenarioSessionId: string,
     needMemory: boolean,
@@ -2104,7 +2177,11 @@ export class ScenarioSessionService {
           // subtag, e.g. 'hi'). getScenarioSession() reads this to decide
           // whether a viewer's selected UI language needs an on-demand
           // per-language re-evaluation (cached under summary.translations).
-          language: ScenarioSessionService.normalizeLanguage(languageCode),
+          // No code (auto-termination, room_finished, /end-v2v, a client that
+          // omits it) means ally-ai wrote English, so say so.
+          language:
+            ScenarioSessionService.normalizeLanguage(languageCode) ??
+            DEFAULT_FEEDBACK_LANGUAGE,
         };
       }
     } catch (error) {
@@ -2178,9 +2255,12 @@ export class ScenarioSessionService {
     const summary = details.summary;
     if (!summary) return;
 
-    const baseLanguage = ScenarioSessionService.normalizeLanguage(
-      summary.language,
-    );
+    // A row with no stored language was evaluated without a language code,
+    // i.e. in English (rows written before end-session recorded 'en'), so an
+    // English viewer must not trigger a second evaluation of it.
+    const baseLanguage =
+      ScenarioSessionService.normalizeLanguage(summary.language) ??
+      DEFAULT_FEEDBACK_LANGUAGE;
 
     let feedbackToServe = summary.feedback;
 
@@ -2771,12 +2851,16 @@ export class ScenarioSessionService {
    * the unique scenarioSessionId index (migration 1869) — only sessionMemory
    * (and tenantId on insert) is written, so it never clobbers the summary or
    * evaluation columns regardless of arrival order relative to session end.
+   *
+   * Returns whether this memory was stored. False means the row already holds
+   * a memory covering more messages (a stale phase 1, an out-of-order
+   * delivery, a redrive), so nothing downstream should act on this payload.
    */
   async addSessionMemory(
     scenarioSession: ScenarioSessions,
     memory: LearnSessionMemoryData,
     receivedAt?: Date,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const sessionMemory: Record<string, any> = {
       summary: memory.summary,
       language: memory.language ?? null,
@@ -2792,20 +2876,38 @@ export class ScenarioSessionService {
     // delivery or a duplicate redrive can never replace an upgrade with the
     // stale phase-1 payload. Insert path matches the details-row upsert
     // convention (unique scenarioSessionId index, migration 1869).
-    await this.dataSource.query(
+    // RETURNING yields a row only when the insert or the guarded update ran.
+    const written: unknown[] = await this.dataSource.query(
       `INSERT INTO scenario_session_details ("scenarioSessionId", "tenant_id", "sessionMemory")
        VALUES ($1, $2, $3::jsonb)
        ON CONFLICT ("scenarioSessionId") DO UPDATE SET
          "sessionMemory" = EXCLUDED."sessionMemory",
          "updatedAt" = now()
        WHERE COALESCE((scenario_session_details."sessionMemory"->>'summarizedMessageCount')::int, -1)
-         <= COALESCE((EXCLUDED."sessionMemory"->>'summarizedMessageCount')::int, 0)`,
+         <= COALESCE((EXCLUDED."sessionMemory"->>'summarizedMessageCount')::int, 0)
+       RETURNING "scenarioSessionId"`,
       [
         scenarioSession.id,
         scenarioSession.tenantId,
         JSON.stringify(sessionMemory),
       ],
     );
+    return Array.isArray(written) && written.length > 0;
+  }
+
+  /**
+   * The episodic memory currently stored for a session — whichever delivery
+   * won addSessionMemory's coverage guard — or null when none has landed.
+   */
+  async getStoredSessionMemory(
+    scenarioSessionId: string,
+    tenantId: string,
+  ): Promise<Record<string, any> | null> {
+    const details = await this.scenarioSessionDetailsRepository.findOne({
+      where: { scenarioSessionId, tenantId },
+      select: { id: true, sessionMemory: true },
+    });
+    return details?.sessionMemory ?? null;
   }
 
   /**
