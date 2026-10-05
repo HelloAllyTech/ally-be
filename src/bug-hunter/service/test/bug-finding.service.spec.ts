@@ -10,6 +10,7 @@ import { BugFindingRepository } from '../../repository/bug-finding.repository';
 import { BugFindingService, RawFinding } from '../bug-finding.service';
 import { BugHunterNotificationService } from '../bug-hunter-notification.service';
 import { BugHunterService } from '../bug-hunter.service';
+import { BugHunterRepoClassifierService } from '../bug-hunter-repo-classifier.service';
 
 import { BugFinding } from '../../entity/bug-finding.entity';
 import {
@@ -75,6 +76,17 @@ const roadmapRepository = (
   }) as unknown as Repository<RoadmapOpportunity>;
 
 /** Name resolution for `enrich` — irrelevant to every case in this file, so it returns nothing. */
+/** The repo classifier, answering nothing unless a test says otherwise. */
+const classifier = (
+  result: { repo: string | null; rationale: string } = {
+    repo: null,
+    rationale: '',
+  },
+) =>
+  ({
+    classifyRepo: jest.fn().mockResolvedValue(result),
+  }) as unknown as BugHunterRepoClassifierService;
+
 const userRepository = () =>
   ({ find: jest.fn().mockResolvedValue([]) }) as unknown as Repository<User>;
 
@@ -125,6 +137,7 @@ describe('BugFindingService.persistFindings', () => {
       roadmapRepository(),
       userRepository(),
       bugHunterService(),
+      classifier(),
     );
   });
 
@@ -194,6 +207,7 @@ describe('BugFindingService.persistFindings', () => {
         roadmapRepository(),
         userRepository(),
         bugHunterService({ appendFindingEvent: events }),
+        classifier(),
       );
       repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
 
@@ -419,6 +433,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
       roadmapRepository(),
       userRepository(),
       bugHunterService(),
+      classifier(),
     );
   });
 
@@ -527,6 +542,7 @@ describe('BugFindingService.setStatus — a failed session’s post-mortem', () 
       } as unknown as Repository<RoadmapOpportunity>,
       userRepository(),
       { appendFindingEvent: jest.fn() } as unknown as BugHunterService,
+      classifier(),
     );
 
     await service.setStatus('finding-1', {
@@ -587,6 +603,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       roadmap as unknown as Repository<RoadmapOpportunity>,
       userRepository(),
       hunterService as unknown as BugHunterService,
+      classifier(),
     );
   };
 
@@ -760,7 +777,13 @@ describe('BugFindingService.editDescription', () => {
   let repo: { findOne: jest.Mock; update: jest.Mock };
   let hunter: { appendFindingEvent: jest.Mock };
 
-  const build = (finding: BugFinding) => {
+  const build = (
+    finding: BugFinding,
+    classifyResult: { repo: string | null; rationale: string } = {
+      repo: null,
+      rationale: '',
+    },
+  ) => {
     repo = {
       findOne: jest.fn().mockResolvedValue(finding),
       update: jest.fn().mockResolvedValue(undefined),
@@ -775,8 +798,53 @@ describe('BugFindingService.editDescription', () => {
       roadmapRepository(),
       userRepository(),
       hunter as unknown as BugHunterService,
+      classifier(classifyResult),
     );
   };
+
+  it('re-classifies a repo-less bug from the new text, and says so on the timeline', async () => {
+    build(
+      row({ id: 'finding-1', description: 'something is off', repo: null }),
+      {
+        repo: 'ally-web',
+        rationale: 'names apps/ally-helpline-dashboard',
+      },
+    );
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(repo.update).toHaveBeenCalledWith('finding-1', { repo: 'ally-web' });
+    expect(hunter.appendFindingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: 'ally-web',
+        payload: expect.objectContaining({
+          classifiedRepo: 'ally-web',
+          afterEdit: true,
+        }),
+      }),
+    );
+  });
+
+  it('leaves a bug that already has a repo alone', async () => {
+    build(
+      row({
+        id: 'finding-1',
+        description: 'something is off',
+        repo: 'ally-be',
+      }),
+      {
+        repo: 'ally-web',
+        rationale: 'x',
+      },
+    );
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(repo.update).not.toHaveBeenCalledWith(
+      'finding-1',
+      expect.objectContaining({ repo: expect.anything() }),
+    );
+  });
 
   it('rewrites the description and keeps the original words', async () => {
     build(row({ id: 'finding-1', description: 'search is broken' }));
@@ -923,6 +991,7 @@ describe('BugFindingService.setStage', () => {
       roadmapRepository(),
       userRepository(),
       hunter as unknown as BugHunterService,
+      classifier(),
     );
   };
 
@@ -1064,6 +1133,7 @@ describe('BugFindingService.enrich', () => {
         roadmap as unknown as Repository<RoadmapOpportunity>,
         usersRepo as unknown as Repository<User>,
         bugHunterService(),
+        classifier(),
       ),
     };
   };
@@ -1191,6 +1261,7 @@ describe('BugFindingService.enrich', () => {
       } as unknown as Repository<RoadmapOpportunity>,
       { find: jest.fn().mockResolvedValue([]) } as unknown as Repository<User>,
       bugHunterService({ getRunsByIds }),
+      classifier(),
     );
 
     const enriched = await service.enrich([
@@ -1234,6 +1305,7 @@ describe('BugFindingService.reject', () => {
       roadmapRepository(),
       userRepository(),
       bugHunterService({ appendFindingEvent: events }),
+      classifier(),
     );
     return { service, repo, events };
   };
@@ -1318,6 +1390,7 @@ describe('BugFindingService.setStatus — a declined bug stays declined', () => 
       roadmapRepository(),
       userRepository(),
       bugHunterService(),
+      classifier(),
     );
   };
 
@@ -1373,6 +1446,7 @@ describe('BugFindingService.setStatus — verifier confidence', () => {
       roadmapRepository(),
       userRepository(),
       bugHunterService(),
+      classifier(),
     );
     return { service, repo };
   };
@@ -1443,6 +1517,7 @@ describe('BugFindingService.recordPreExistingFailure', () => {
       {} as never,
       {} as never,
       {} as never,
+      classifier(),
     );
   });
 

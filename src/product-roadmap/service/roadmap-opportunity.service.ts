@@ -164,6 +164,8 @@ export class RoadmapOpportunityService {
       source?: RoadmapOpportunitySource;
       tenantId?: string | null;
       reporterContext?: Record<string, any> | null;
+      /** The repo a staff reporter named; when set, Bug Hunter skips classification. */
+      repo?: string | null;
       /**
        * Whether the caller holds edit:admin:product-roadmap, resolved in the controller the same
        * way comment and saved-view deletion resolve it — see RoadmapAccessService for why a
@@ -250,16 +252,20 @@ export class RoadmapOpportunityService {
         // so this stays inside the same best-effort try/catch as the rest of
         // this block, and a null result just means the row starts unfiled
         // exactly as it always has.
-        const classification = await this.repoClassifier.classifyRepo(
-          saved.description,
-        );
+        // A reporter who named the repo has answered the question; the
+        // classifier is for the ones who did not (and it gives up on a bug
+        // that names files in two folders of one repo, which staff reports
+        // often do).
+        const repo =
+          extra?.repo ??
+          (await this.repoClassifier.classifyRepo(saved.description)).repo;
         await this.bugFindingRepository.save(
           this.bugFindingRepository.create({
             source: BugFindingSource.REPORTED_BUG,
             title: truncateTitle(saved.description),
             description: saved.description,
             reportedBugId: saved.id,
-            repo: classification.repo,
+            repo,
             status: BugFindingStatus.NEW,
           }),
         );
@@ -379,6 +385,7 @@ export class RoadmapOpportunityService {
           : RoadmapOpportunitySource.CONSUMER,
         tenantId,
         reporterContext: dto.context ?? null,
+        repo: dto.repo ?? null,
       },
     );
     return { id: created.id, stage: created.stage };

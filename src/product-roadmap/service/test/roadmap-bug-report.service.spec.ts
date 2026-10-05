@@ -54,6 +54,16 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       }),
     };
 
+    const bugFindingRepository = {
+      create: jest.fn().mockImplementation((v) => v),
+      save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
+    };
+    // Repo classification is best-effort and unrelated to most of what these
+    // tests assert — "unclassified" keeps the created finding's repo null.
+    const repoClassifier = {
+      classifyRepo: jest.fn().mockResolvedValue({ repo: null, rationale: '' }),
+    };
+
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
       {} as never, // allocationRepository — unused by these tests
@@ -77,10 +87,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       } as unknown as RoadmapVectorService,
       { emit: jest.fn() } as unknown as RoadmapNotificationService,
       userRepository as unknown as Repository<User>,
-      {
-        create: jest.fn().mockImplementation((v) => v),
-        save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
-      } as unknown as Repository<BugFinding>,
+      bugFindingRepository as unknown as Repository<BugFinding>,
       // Images play no part in a bug report; these satisfy the constructor.
       { parseS3Url: jest.fn() } as never,
       { s3: { assetsBucket: 'ally-assets' } } as never,
@@ -97,15 +104,31 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       // Repo classification is best-effort and unrelated to what these tests
       // assert — a stub that resolves to "unclassified" keeps the created
       // finding's repo null, same as before this dependency existed.
-      {
-        classifyRepo: jest
-          .fn()
-          .mockResolvedValue({ repo: null, rationale: '' }),
-      } as never,
+      repoClassifier as never,
     );
 
-    return { service, opportunityRepository };
+    return {
+      service,
+      opportunityRepository,
+      bugFindingRepository,
+      repoClassifier,
+    };
   };
+
+  it('files the finding in the repo a staff reporter named, without asking the classifier', async () => {
+    const { service, bugFindingRepository, repoClassifier } = build(true);
+
+    await service.createBugReport(1, 'tenant-a', {
+      description:
+        'Modal footer buttons misaligned on the helpline Report a problem form',
+      repo: 'ally-web',
+    });
+
+    expect(repoClassifier.classifyRepo).not.toHaveBeenCalled();
+    expect(bugFindingRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'ally-web' }),
+    );
+  });
 
   it('badges a report from somebody internal as staff', async () => {
     const { service, opportunityRepository } = build(true);
@@ -171,6 +194,16 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       }),
     };
 
+    const bugFindingRepository = {
+      create: jest.fn().mockImplementation((v) => v),
+      save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
+    };
+    // Repo classification is best-effort and unrelated to most of what these
+    // tests assert — "unclassified" keeps the created finding's repo null.
+    const repoClassifier = {
+      classifyRepo: jest.fn().mockResolvedValue({ repo: null, rationale: '' }),
+    };
+
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
       {} as never, // allocationRepository — unused by these tests
@@ -194,10 +227,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       } as unknown as RoadmapVectorService,
       { emit: jest.fn() } as unknown as RoadmapNotificationService,
       userRepository as unknown as Repository<User>,
-      {
-        create: jest.fn().mockImplementation((v) => v),
-        save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
-      } as unknown as Repository<BugFinding>,
+      bugFindingRepository as unknown as Repository<BugFinding>,
       // Images play no part in a bug report; these satisfy the constructor.
       { parseS3Url: jest.fn() } as never,
       { s3: { assetsBucket: 'ally-assets' } } as never,
@@ -214,11 +244,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       // Repo classification is best-effort and unrelated to what these tests
       // assert — a stub that resolves to "unclassified" keeps the created
       // finding's repo null, same as before this dependency existed.
-      {
-        classifyRepo: jest
-          .fn()
-          .mockResolvedValue({ repo: null, rationale: '' }),
-      } as never,
+      repoClassifier as never,
     );
 
     await service.createBugReport(7, 'tenant-a', {
