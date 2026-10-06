@@ -32,6 +32,8 @@ function build(chatRow: unknown, permissions: string[]) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, chats, views, lifecycle };
 }
@@ -144,6 +146,21 @@ describe('HelplineListenerService access rule', () => {
   });
 });
 
+type Twelve = [
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+  never,
+];
+
 describe('HelplineListenerService.copilotFeedback', () => {
   const build = (row: unknown) => {
     const messages = {
@@ -165,18 +182,7 @@ describe('HelplineListenerService.copilotFeedback', () => {
           .fn()
           .mockResolvedValue([PERMISSIONS.VIEW_HELPLINE_COPILOT]),
       } as never,
-      ...([{}, {}, {}, {}, {}, {}, {}, {}, {}, {}] as [
-        never,
-        never,
-        never,
-        never,
-        never,
-        never,
-        never,
-        never,
-        never,
-        never,
-      ]),
+      ...(Array(12).fill({}) as Twelve),
     );
     return { service, messages };
   };

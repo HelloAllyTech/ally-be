@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiModule } from '../ai/ai.module';
 import { BrokerModule } from '../message-broker/broker.module';
+import { NotificationModule } from '../notification/notification.module';
 import { PromptModule } from '../prompt/prompt.module';
 import { Preference } from '../settings/entity/preference.entity';
 import { HelplineAdminController } from './controller/helpline-admin.controller';
@@ -29,6 +30,7 @@ import { HelplineGuestGuard } from './guard/helpline-guest.guard';
 import { HelplineChatRepository } from './repository/helpline-chat.repository';
 import { HelplineMessageRepository } from './repository/helpline-message.repository';
 import { HelplineAdminService } from './service/helpline-admin.service';
+import { HelplineAlertService } from './service/helpline-alert.service';
 import { HelplineChatLifecycleService } from './service/helpline-chat-lifecycle.service';
 import { HelplineChatViewService } from './service/helpline-chat-view.service';
 import { HelplineClaimService } from './service/helpline-claim.service';
@@ -53,6 +55,7 @@ import { HelplineRiskService } from './service/helpline-risk.service';
 import { HelplineSchedulerRegistrationService } from './service/helpline-scheduler-registration.service';
 import { HelplineSessionService } from './service/helpline-session.service';
 import { HelplineSettingsService } from './service/helpline-settings.service';
+import { HelplineStaffDirectoryService } from './service/helpline-staff-directory.service';
 import { HelplineSummaryService } from './service/helpline-summary.service';
 import { HelplineTeamService } from './service/helpline-team.service';
 import { HelplineTenantService } from './service/helpline-tenant.service';
@@ -88,6 +91,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     BrokerModule,
     AiModule,
     PromptModule,
+    NotificationModule,
   ],
   controllers: [
     HelplinePublicController,
@@ -110,6 +114,8 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineMessageWriter,
     HelplineRiskKeywordService,
     HelplineChatViewService,
+    HelplineStaffDirectoryService,
+    HelplineAlertService,
     HelplineQueueService,
     HelplineRiskService,
     HelplineSummaryService,

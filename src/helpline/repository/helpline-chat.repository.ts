@@ -135,6 +135,22 @@ export class HelplineChatRepository {
     );
   }
 
+  /**
+   * Claim the once-per-chat emergency-resources send: true for exactly one
+   * caller, and never for an ended chat.
+   */
+  async markResourcesSent(tenantId: string, chatId: string): Promise<boolean> {
+    const result = await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "resources_sent_at" = now(), "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2
+          AND "resources_sent_at" IS NULL AND "status" <> 'ENDED'
+      RETURNING "id"`,
+      [chatId, tenantId],
+    );
+    return returningRows<{ id: string }>(result).length === 1;
+  }
+
   /** Counters for one persisted talker TEXT; returns the new talker count. */
   async recordTalkerMessage(tenantId: string, chatId: string): Promise<number> {
     const result = await this.repo.query(

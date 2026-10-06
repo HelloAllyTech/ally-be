@@ -17,6 +17,7 @@ import { TenantFeatureService } from 'src/authorization/service/tenant-feature.s
 import { PreferenceName } from 'src/common/constants/user.constants';
 import {
   AcknowledgeRiskFlagDto,
+  AlertSupervisorDto,
   CopilotFeedbackDto,
   HelplineAfterIdQueryDto,
   ListChatsQueryDto,
@@ -242,6 +243,23 @@ export class HelplineController {
     @Body() body: CopilotFeedbackDto,
   ): Promise<void> {
     await this.listeners.copilotFeedback(tenant, chatId, user, body);
+  }
+
+  @RequireHelplineEnabledForChat()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_COPILOT])
+  @Post('chats/:id/alert-supervisor')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Listener of record asks a supervisor for help (returns how many were alerted)',
+  })
+  alertSupervisor(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+    @Body() body: AlertSupervisorDto,
+  ): Promise<{ alertedCount: number }> {
+    return this.listeners.alertSupervisor(tenant, chatId, user, body.note);
   }
 
   @RequireHelplineEnabled()

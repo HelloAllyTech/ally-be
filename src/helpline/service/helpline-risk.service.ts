@@ -7,6 +7,7 @@ import {
   HELPLINE_RISK_MESSAGE_COPY,
   HelplineChatEventType,
   HelplineChatStatus,
+  HelplineGuestSystemKind,
   HelplineMessageType,
   HelplineRiskFlagLevel,
   HelplineRiskOutcome,
@@ -22,13 +23,19 @@ import { HelplineChatRepository } from '../repository/helpline-chat.repository';
 import { RiskFlagDto } from '../type/helpline.types';
 import { helplineAudit } from '../util/helpline-audit';
 import { badRequest, chatNotFound } from '../util/helpline-errors';
+import { HELPLINE_DEFAULT_SETTINGS } from '../constants/helpline-settings.defaults';
+import { HelplineSettings } from '../type/helpline.types';
+import { HelplineAlertService } from './helpline-alert.service';
 import { HelplineChatViewService } from './helpline-chat-view.service';
 import { HelplineContentCipher } from './helpline-content-cipher.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplineMessageWriter } from './helpline-message-writer.service';
+import { HelplineNotifyService } from './helpline-notify.service';
 import { HelplineQueueService } from './helpline-queue.service';
 import { HelplineRealtimeService } from './helpline-realtime.service';
 import { HelplineRiskKeywordService } from './helpline-risk-keyword.service';
+import { HelplineSettingsService } from './helpline-settings.service';
+import { HelplineTenantService } from './helpline-tenant.service';
 
 /**
  * Risk flags (contract §9.3). Phase 1 implements the keyword source end to end
@@ -52,6 +59,10 @@ export class HelplineRiskService {
     private readonly queue: HelplineQueueService,
     private readonly realtime: HelplineRealtimeService,
     private readonly cipher: HelplineContentCipher,
+    private readonly alerts: HelplineAlertService,
+    private readonly settings: HelplineSettingsService,
+    private readonly tenants: HelplineTenantService,
+    private readonly notify: HelplineNotifyService,
   ) {}
 
   /**
@@ -142,6 +153,14 @@ export class HelplineRiskService {
       { flagId: flag.id, level: flag.level, source: flag.source },
     );
 
+    // HIGH side effects run BEFORE the RISK_FLAGGED emit, so the listener's
+    // banner carries the truth about resources and supervisors from the start
+    // (`resourcesSent`, `supervisorsAlerted`) instead of assuming it. Every
+    // step is fast; push and Slack are detached inside the alert service.
+    if (flag.level === HelplineRiskFlagLevel.HIGH) {
+      await this.onHighRisk(chat, flag);
+    }
+
     const dto = this.views.riskFlagDto(flag, message);
     await this.realtime.emit(
       HelplineRooms.staff(chat.id),
@@ -160,26 +179,92 @@ export class HelplineRiskService {
       source: flag.source,
       signal: dto.signal,
     });
-
-    if (flag.level === HelplineRiskFlagLevel.HIGH) {
-      await this.onHighRisk(chat, flag);
-    }
     return flag;
   }
 
   /**
-   * HIGH-risk side effects beyond the flag itself (contract §9.3): supervisor
-   * alerts (in-app + push + optional Slack, deduped 1 per chat per 10 min,
-   * never the text) and the org's emergency resources sent to the talker as a
-   * SYSTEM `RESOURCES` message once per chat (`resources_sent_at`).
+   * HIGH-risk side effects beyond the flag itself (contract §9.3), each
+   * isolated so one failing cannot stop the other:
    *
-   * Intentionally empty in Phase 1 — the second backend pass fills it. It is
-   * awaited inside `raiseFlag`, which already runs after delivery, so an
-   * implementation should still not block for long.
+   *  1. the org's emergency resources, in the talker's language (English,
+   *     then the platform default, as fallbacks), as a talker-visible SYSTEM
+   *     `RESOURCES` message — ONCE per chat (`resources_sent_at`, claimed by a
+   *     conditional UPDATE), waiting room included;
+   *  2. the supervisor alert (HelplineAlertService: deduped 1 per chat per
+   *     10 min, never the text), whose reach is stored on the flag as
+   *     `supervisors_alerted` so the banner never claims an alert that did not
+   *     happen.
+   *
+   * Mutates `flag.resourcesSent` / `flag.supervisorsAlerted` for the caller's
+   * DTO. Never throws.
    */
   async onHighRisk(chat: HelplineChat, flag: HelplineRiskFlag): Promise<void> {
-    void chat;
-    void flag;
+    try {
+      if (await this.sendResources(chat, flag)) flag.resourcesSent = true;
+    } catch (error) {
+      this.logger.error(
+        `Emergency resources failed for chat ${chat.id}: ${(error as Error).message}`,
+      );
+    }
+    let alerted = 0;
+    try {
+      const result = await this.alerts.riskHigh(
+        chat,
+        flag.source,
+        chat.resourcesSentAt != null,
+      );
+      alerted = result.recipients;
+    } catch (error) {
+      this.logger.error(
+        `Supervisor alert failed for chat ${chat.id}: ${(error as Error).message}`,
+      );
+    }
+    flag.supervisorsAlerted = alerted;
+    await this.flags
+      .update(
+        { id: flag.id, tenantId: chat.tenantId },
+        { supervisorsAlerted: alerted, resourcesSent: flag.resourcesSent },
+      )
+      .catch((error) =>
+        this.logger.error(
+          `Could not record the alert on flag ${flag.id}: ${(error as Error).message}`,
+        ),
+      );
+  }
+
+  /** Step 1 of `onHighRisk`. True when THIS call sent them. */
+  private async sendResources(
+    chat: HelplineChat,
+    flag: HelplineRiskFlag,
+  ): Promise<boolean> {
+    const tenant = await this.tenants.resolve(chat.tenantId);
+    const settings = tenant
+      ? await this.settings.getSettings(tenant)
+      : this.settings.defaults;
+    const text = emergencyResourcesText(settings, chat.language);
+    if (!text) return false;
+    // The conditional UPDATE is the once-per-chat guarantee across replicas.
+    if (!(await this.chats.markResourcesSent(chat.tenantId, chat.id))) {
+      return false;
+    }
+    chat.resourcesSentAt = new Date();
+    await this.writer.system(chat, HelplineGuestSystemKind.RESOURCES, text, {
+      visibleToTalker: true,
+    });
+    await this.events.record(
+      chat.tenantId,
+      chat.id,
+      HelplineChatEventType.RESOURCES_SENT,
+      null,
+      { flagId: flag.id, language: chat.language },
+    );
+    helplineAudit('HELPLINE_RESOURCES_SENT', chat.tenantId, {
+      chatId: chat.id,
+      flagId: flag.id,
+      language: chat.language,
+    });
+    await this.notify.chatUpdated(chat);
+    return true;
   }
 
   /** Every flag already raised on one message (classifier dedupe). */
@@ -258,4 +343,24 @@ export class HelplineRiskService {
     );
     return dto;
   }
+}
+
+/**
+ * The org's emergency resources for a talker's language: that language, then
+ * the org's English, then the platform default English. A wrong number in a
+ * translation is worse than English, so nothing is machine-translated.
+ */
+export function emergencyResourcesText(
+  settings: Pick<HelplineSettings, 'emergencyResources'>,
+  language: string,
+): string | null {
+  const pick = (record: Record<string, string> | undefined, key: string) => {
+    const value = record?.[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  };
+  return (
+    pick(settings.emergencyResources, language) ??
+    pick(settings.emergencyResources, 'en') ??
+    pick(HELPLINE_DEFAULT_SETTINGS.emergencyResources, 'en')
+  );
 }

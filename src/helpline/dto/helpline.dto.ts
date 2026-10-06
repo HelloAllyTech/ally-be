@@ -221,3 +221,15 @@ export class CopilotFeedbackDto {
   @IsIn(['UP', 'DOWN'])
   rating!: 'UP' | 'DOWN';
 }
+
+export class AlertSupervisorDto {
+  @ApiPropertyOptional({
+    maxLength: 300,
+    description:
+      'Staff-only note for the supervisor. Stored encrypted in the chat; never sent in a notification.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}

@@ -9,6 +9,8 @@ import {
   HelplineEndedReason,
   HelplineMessageType,
   HelplinePresence,
+  HelplineSenderRole,
+  HelplineStaffSystemKind,
   HelplineRiskOutcome,
 } from '../constants/helpline.constants';
 import { HelplineChat } from '../entity/helpline-chat.entity';
@@ -30,11 +32,14 @@ import { resolveChatAccess } from '../util/helpline-access';
 import { helplineAudit } from '../util/helpline-audit';
 import {
   badRequest,
+  chatEnded,
   chatNotFound,
   helplineError,
 } from '../util/helpline-errors';
+import { HelplineAlertService } from './helpline-alert.service';
 import { HelplineChatLifecycleService } from './helpline-chat-lifecycle.service';
 import { HelplineChatViewService } from './helpline-chat-view.service';
+import { HelplineMessageWriter } from './helpline-message-writer.service';
 import { HelplineNotifyService } from './helpline-notify.service';
 import { HelplinePresenceService } from './helpline-presence.service';
 import { HelplineProfileService } from './helpline-profile.service';
@@ -79,6 +84,8 @@ export class HelplineListenerService {
     private readonly summaries: HelplineSummaryService,
     private readonly risk: HelplineRiskService,
     private readonly tenants: HelplineTenantService,
+    private readonly alerts: HelplineAlertService,
+    private readonly writer: HelplineMessageWriter,
   ) {}
 
   /**
@@ -350,6 +357,39 @@ export class HelplineListenerService {
       index,
       body.rating,
     );
+  }
+
+  /**
+   * "Alert supervisor" (the escalation checklist's "tell a supervisor now"):
+   * the listener of record of an ACTIVE chat asks for help. The optional note
+   * is staff-only — stored encrypted on a SYSTEM `SUPERVISOR_REQUESTED` row in
+   * the chat so a supervisor who opens it reads it there, and NEVER put in a
+   * notification. Alerts go through the shared alert service, deduped 1 per
+   * chat per 2 min. `alertedCount` is how many supervisors it reached (0 when
+   * the org has none — the UI must say so rather than claim help is coming).
+   */
+  async alertSupervisor(
+    tenant: HelplineTenant,
+    chatId: string,
+    user: HelplineStaffUser,
+    note?: string | null,
+  ): Promise<{ alertedCount: number }> {
+    const { chat, access } = await this.loadChat(tenant, chatId, user);
+    if (access !== HelplineAccess.LISTENER) throw notListener();
+    if (chat.status !== HelplineChatStatus.ACTIVE) throw chatEnded();
+    const clean = typeof note === 'string' ? note.trim() : '';
+    if (clean.length > HELPLINE_LIMITS.SUPERVISOR_NOTE_MAX_CHARS) {
+      throw badRequest(
+        `note must be at most ${HELPLINE_LIMITS.SUPERVISOR_NOTE_MAX_CHARS} characters`,
+      );
+    }
+    await this.writer.staffOnly(chat, HelplineMessageType.SYSTEM, clean, null, {
+      systemKind: HelplineStaffSystemKind.SUPERVISOR_REQUESTED,
+      senderRole: HelplineSenderRole.LISTENER,
+      senderUserId: user.id,
+    });
+    const result = await this.alerts.listenerRequestedHelp(chat, user.id);
+    return { alertedCount: result.recipients };
   }
 
   /** Reading an ENDED transcript is a HIPAA access event. */

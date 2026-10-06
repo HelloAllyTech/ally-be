@@ -21,6 +21,7 @@ import {
   SweepAction,
   decideSweepActions,
 } from '../util/helpline-lifecycle-decisions';
+import { HelplineAlertService } from './helpline-alert.service';
 import { HelplineChatLifecycleService } from './helpline-chat-lifecycle.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplineMessageWriter } from './helpline-message-writer.service';
@@ -65,6 +66,7 @@ export class HelplineLifecycleService
     private readonly events: HelplineEventService,
     private readonly queue: HelplineQueueService,
     private readonly realtime: HelplineRealtimeService,
+    private readonly alerts: HelplineAlertService,
   ) {}
 
   static isDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -205,25 +207,13 @@ export class HelplineLifecycleService
         }
         return;
       case 'LISTENER_GONE_ALERT':
+        // Once per chat (the sweep flag), through the shared alert service:
+        // socket ALERT, in-app notifications, push/Slack per org settings and
+        // the SUPERVISOR_ALERTED event — never content.
         if (
           await this.presence.setFlagOnce(chat.id, SWEEP_FLAGS.LISTENER_ALERT)
         ) {
-          await this.realtime.emit(
-            HelplineRooms.supervisors(chat.tenantId),
-            HelplineServerEvents.ALERT,
-            {
-              type: 'LISTENER_DISCONNECTED',
-              chatId: chat.id,
-              at: now.toISOString(),
-            },
-          );
-          await this.events.record(
-            chat.tenantId,
-            chat.id,
-            HelplineChatEventType.SUPERVISOR_ALERTED,
-            null,
-            { type: 'LISTENER_DISCONNECTED' },
-          );
+          await this.alerts.listenerDisconnected(chat);
         }
         return;
     }

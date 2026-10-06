@@ -266,6 +266,8 @@ export interface RiskFlagDto {
   subject: HelplineRiskSubject | null;
   signal: string | null;
   resourcesSent: boolean;
+  /** null = not applicable (ELEVATED); 0 = HIGH but nobody alerted; n = supervisors notified. */
+  supervisorsAlerted: number | null;
   acknowledgedAt: string | null;
   acknowledgedByName: string | null;
   outcome: HelplineRiskOutcome;

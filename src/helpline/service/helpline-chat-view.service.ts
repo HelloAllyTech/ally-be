@@ -293,6 +293,7 @@ export class HelplineChatViewService {
       subject: flag.subject,
       signal: deriveSignal(flag, message),
       resourcesSent: flag.resourcesSent,
+      supervisorsAlerted: flag.supervisorsAlerted ?? null,
       acknowledgedAt: iso(flag.acknowledgedAt),
       acknowledgedByName:
         flag.acknowledgedBy != null

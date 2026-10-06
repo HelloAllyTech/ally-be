@@ -49,6 +49,14 @@ export class HelplineRiskFlag extends HelplineTenantScopedEntity {
   @Column({ type: 'boolean', name: 'resources_sent', default: false })
   resourcesSent!: boolean;
 
+  /**
+   * Supervisors the HIGH alert reached: null = not applicable (ELEVATED),
+   * 0 = nobody could be alerted, n = notified by this flag's alert or the
+   * deduped one that already covered the chat (contract §9.3).
+   */
+  @Column({ type: 'int', name: 'supervisors_alerted', nullable: true })
+  supervisorsAlerted!: number | null;
+
   @Column({ type: 'int', name: 'acknowledged_by', nullable: true })
   acknowledgedBy!: number | null;
 

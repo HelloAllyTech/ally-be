@@ -128,7 +128,8 @@ to talkers; defaults to first name), `max_concurrent_chats int default 2` (≤ o
 **`helpline_risk_flags`** — `chat_id`, `message_id int`, `level` (`ELEVATED`|`HIGH`), `source`
 (`KEYWORD`|`CLASSIFIER`), `confidence real null`, `subject` (`SELF`|`OTHER`|`UNCLEAR`) null,
 `rule_id uuid null`, `signal_start int null`, `signal_end int null` (**offsets into the message
-body**, never the text), `resources_sent bool default false`, `acknowledged_by int null`,
+body**, never the text), `resources_sent bool default false`, `supervisors_alerted int null`
+(second pass, migration `1975810000000`; §9.3), `acknowledged_by int null`,
 `acknowledged_at null`, `outcome` (`UNREVIEWED`|`CONFIRMED`|`FALSE_POSITIVE`) default `UNREVIEWED`,
 `outcome_note varchar(500) null` (blanked by retention).
 
@@ -284,6 +285,7 @@ helpline is switched off (§5.4).
 | `GET /v1/helpline/chats?scope=mine\|all&status=ENDED&page=1&limit=25` | `view:helpline:chat` (`all` needs `view:helpline:monitor`) | — | `{ items: ChatListItemDto[]; total }` |
 | `POST /v1/helpline/chats/:id/risk-flags/:flagId/ack` † | `view:helpline:copilot` | `{ outcome: 'CONFIRMED' \| 'FALSE_POSITIVE'; note?: string }` | `RiskFlagDto` |
 | `POST /v1/helpline/chats/:id/copilot-feedback` † | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204`. SUGGESTION: `index` required (400 otherwise) → `metadata.feedback[index]`; NUDGE → `metadata.feedback`; latest rating wins; any other row → 404 |
+| `POST /v1/helpline/chats/:id/alert-supervisor` † | `view:helpline:copilot`, listener of record of an ACTIVE chat | `{ note?: string /* ≤ 300, staff-only */ }` | `{ alertedCount: number }` (§9.3) · 403 `HELPLINE_NOT_LISTENER` · 409 `HELPLINE_CHAT_ENDED` |
 | `POST /v1/helpline/chats/:id/transfer` | `edit:helpline:transfer` **or** listener of record with `edit:helpline:end` | `{ targetListenerId?: number }` | `ChatDetailDto` |
 | `POST /v1/helpline/chats/:id/assign` | `edit:helpline:transfer` | `{ listenerId: number }` | `ChatDetailDto` (WAITING or transfer-pending → that listener) |
 | `POST /v1/helpline/chats/:id/take-over` | `edit:helpline:transfer` | — | `ChatDetailDto` |
@@ -415,6 +417,7 @@ interface RiskFlagDto {
   confidence: number | null; subject: 'SELF' | 'OTHER' | 'UNCLEAR' | null;
   signal: string | null;            // re-derived from offsets on the live message body; null once erased
   resourcesSent: boolean;
+  supervisorsAlerted: number | null; // null = n/a (ELEVATED); 0 = HIGH, nobody alerted; n = supervisors reached (§9.3)
   acknowledgedAt: string | null; acknowledgedByName: string | null;
   outcome: 'UNREVIEWED' | 'CONFIRMED' | 'FALSE_POSITIVE'; outcomeNote: string | null;
   createdAt: string;
@@ -492,7 +495,7 @@ Server → client:
 | `SUMMARY_UPDATED` | staff | `{ chatId, summary: SummaryDto }` |
 | `WHISPER` | staff | `{ chatId, message }` (type WHISPER; **never** the talker room) |
 | `TRANSFER_REQUESTED` / `TRANSFERRED` | staff + lobby | `{ chatId, toListenerId? }` |
-| `ALERT` | supervisors / user | `{ type: 'RISK_HIGH' \| 'LISTENER_DISCONNECTED' \| 'TRANSFER_REQUESTED' \| 'HIGH_RISK_WAITING'; chatId; level?; at }` |
+| `ALERT` | supervisors / user | `{ type: 'RISK_HIGH' \| 'HIGH_RISK_WAITING' \| 'LISTENER_DISCONNECTED' \| 'LISTENER_REQUESTED_HELP' \| 'TRANSFER_REQUESTED' \| 'ASSIGNED'; chatId; level?; at }` — `level` only on the two risk types. `supervisors:{tenantId}` gets RISK_HIGH, HIGH_RISK_WAITING, LISTENER_DISCONNECTED, LISTENER_REQUESTED_HELP, TRANSFER_REQUESTED; `user:{id}` gets ASSIGNED (and TRANSFER_REQUESTED when a transfer names them) |
 | `RISK_FLAG_UPDATED` | staff | `{ chatId, flag: RiskFlagDto }` — additive: a flag was acknowledged (clears a banner without re-alerting) |
 | `ERROR` | either | `{ code, message }` |
 
@@ -516,7 +519,7 @@ Server → client:
 | ACTIVE, talker conn missing ≥ `idleEndMinutes` | end `TALKER_DISCONNECTED` |
 | ACTIVE, listener conn missing ≥ 30 s | talker SYSTEM `LISTENER_RECONNECTING` (once) |
 | ACTIVE, listener conn missing ≥ 3 min | staff `PARTICIPANT_STATUS` + monitor flag |
-| ACTIVE, listener conn missing ≥ 10 min | supervisor `ALERT LISTENER_DISCONNECTED` (once) |
+| ACTIVE, listener conn missing ≥ 10 min | supervisor alert `LISTENER_DISCONNECTED` (once per chat) through the §9.3 alert service: socket `ALERT` + in-app/push/Slack per org settings + `SUPERVISOR_ALERTED` |
 | listener back after `LISTENER_RECONNECTING` | talker SYSTEM `LISTENER_BACK` |
 
 "Missing since" timestamps live in Redis (`hl:gone:*`) so a replica crash is detected via key expiry.
@@ -685,14 +688,50 @@ this — the send path only calls the hooks, which return synchronously.
 
 ### 9.3 Risk protocol
 ```
-HIGH     → RISK message (staff) + helpline_risk_flags row; chat.risk_level = HIGH; priority 100 if WAITING
-         → supervisors: in_app_notifications + FCM push + optional Slack, deduped 1 per chat per 10 min,
-           payload names chat + level + source, never the text
-         → emergencyResources[language] → talker as SYSTEM 'RESOURCES', once per chat (resources_sent_at)
+HIGH     → helpline_risk_flags row + RISK message (staff); chat.risk_level = HIGH; priority 100 if WAITING
+         → emergencyResources[talker language] (→ org en → platform default en) → talker as SYSTEM
+           'RESOURCES', once per chat (conditional UPDATE on resources_sent_at; never for an ENDED chat),
+           also while WAITING; RESOURCES_SENT event; HIPAA audit HELPLINE_RESOURCES_SENT; CHAT_UPDATED
+         → supervisor alert (HelplineAlertService), deduped 1 per chat per 10 min across replicas
+           (Redis SET NX EX 600): ALERT to supervisors:{tenantId}, in-app + FCM push + optional Slack,
+           SUPERVISOR_ALERTED event — payloads name the org, the level, the source and the listener's
+           alias, never the text or the talker
+         → flag.resources_sent / flag.supervisors_alerted recorded, THEN RISK_FLAGGED (so the banner is true)
          → HIPAA audit HELPLINE_RISK_FLAGGED {chatId, level, source} (+ signal, audit logger only)
-ELEVATED → RISK message + flag row + banner; no alert, no resources
+ELEVATED → RISK message + flag row + banner; no alert, no resources (supervisorsAlerted: null)
 Ack      → listener marks CONFIRMED / FALSE_POSITIVE (+ optional note) → feeds the calibration view
 ```
+
+**Alert recipients**: users of the tenant (`users.tenant_id` = uuid or code) holding
+`view:helpline:monitor` through `user_groups → groups → group_permissions → permissions` (cached 5 min),
+excluding Ally platform-tier accounts, the chat's listener and whoever asked. **Channels**: the socket
+`ALERT` always; one `in_app_notifications` row per recipient when `supervisorAlertChannels.inApp`
+(`type` `HELPLINE_RISK_HIGH` | `HELPLINE_LISTENER_DISCONNECTED` | `HELPLINE_LISTENER_REQUESTED_HELP` |
+`HELPLINE_CHAT_ASSIGNED`; `data { chatId, level, source, alert, screen: 'HelplineMonitor' }`); FCM data
+push to their devices when `push`; a Slack POST (only `https://hooks.slack.com/…`, 3 s timeout, text =
+org + level + source + the path `/helpline/monitor`) when set. Push and Slack are detached. **Copy**
+(plain, specific, one next step):
+
+| Alert | Title | Body |
+|---|---|---|
+| `RISK_HIGH` | High-risk flag in a helpline chat — open the monitor | "{alias}'s chat was flagged high risk by {the keyword screen \| the AI risk check}. [Emergency resources were sent to the talker.] Open the monitor to support the listener." |
+| `HIGH_RISK_WAITING` | High-risk talker waiting in the helpline queue | "A waiting talker was flagged high risk by … and no listener has taken the chat yet. It is now first in the queue. Open the monitor to assign it." |
+| `LISTENER_DISCONNECTED` | A helpline listener has been disconnected for 10 minutes | "{alias} lost their connection during an active chat and the talker is still there. Open the monitor to take over or reassign the chat." |
+| `LISTENER_REQUESTED_HELP` | A listener asked for a supervisor | "{alias} pressed Alert supervisor in an active helpline chat. Open the monitor to join them." |
+
+**`supervisorsAlerted`** on a flag: `null` = not applicable (ELEVATED); `0` = HIGH but nobody could be
+alerted (no supervisor in the org, or the alert failed); `n` = supervisors reached by this flag's alert or
+by the deduped alert (≤ 10 min old) that already covered the chat. Socket-only reach is counted (an
+offline supervisor still gets the in-app row); Slack is not a supervisor and does not count. The banner
+must not say "your supervisor has been alerted" unless it is ≥ 1.
+
+**Alert supervisor** (`POST chats/:id/alert-supervisor`, the checklist's "tell a supervisor now"): the
+listener of record of an ACTIVE chat; the same alert service with type `LISTENER_REQUESTED_HELP`, deduped
+1 per chat per 2 min; the optional note (≤ 300) is stored encrypted on a staff-only SYSTEM message
+`systemKind: 'SUPERVISOR_REQUESTED'` (sender = the listener; emitted as `MESSAGE_RECEIVED` to
+`staff:{chatId}`) and never put in a notification; `SUPERVISOR_ALERTED { requestedBy }` event. Returns
+`{ alertedCount }` (the deduped alert's count inside the window; 0 when the org has no supervisor — the
+UI must say so).
 
 ### 9.4 Registry + LlmTask
 New `LlmTask`: `HELPLINE_RISK_CLASSIFY = 'helpline_risk_classify'`, `HELPLINE_COPILOT_TURN = 'helpline_copilot_turn'`,
