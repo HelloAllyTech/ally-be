@@ -6,6 +6,7 @@ import {
   HELPLINE_WAIT_ESTIMATE,
   HelplineChatStatus,
   HelplineEndedReason,
+  HelplineQaStatus,
   HelplineRiskFlagLevel,
   HelplineRiskLevel,
 } from '../constants/helpline.constants';
@@ -465,6 +466,48 @@ export class HelplineChatRepository {
       order: { endedAt: 'ASC' },
       take: limit,
     });
+  }
+
+  /**
+   * QA candidates for the scheduler (contract §10): ENDED, never QA'd, ended
+   * at least the settle time ago, not erased. Cross-tenant by nature (one
+   * job for every org) and so named; it returns only ids and tenant ids, and
+   * every later read is tenant-scoped.
+   */
+  async findQaCandidatesAcrossTenants(
+    endedBefore: Date,
+    limit: number,
+  ): Promise<{ id: string; tenantId: string }[]> {
+    const rows: { id: string; tenant_id: string }[] = await this.repo.query(
+      `SELECT "id", "tenant_id" FROM "helpline_chats"
+        WHERE "status" = 'ENDED' AND "qa_status" IS NULL
+          AND "erased_at" IS NULL AND "ended_at" <= $1
+        ORDER BY "ended_at" ASC
+        LIMIT $2`,
+      [endedBefore, limit],
+    );
+    return rows.map((r) => ({ id: r.id, tenantId: r.tenant_id }));
+  }
+
+  /** Take a chat for QA exactly once (NULL → PENDING); false if someone else did. */
+  async claimQa(tenantId: string, chatId: string): Promise<boolean> {
+    const result = await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "qa_status" = 'PENDING', "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2 AND "qa_status" IS NULL
+          AND "status" = 'ENDED' AND "erased_at" IS NULL
+      RETURNING "id"`,
+      [chatId, tenantId],
+    );
+    return returningRows<{ id: string }>(result).length === 1;
+  }
+
+  async setQaStatus(
+    tenantId: string,
+    chatId: string,
+    status: HelplineQaStatus,
+  ): Promise<void> {
+    await this.repo.update({ id: chatId, tenantId }, { qaStatus: status });
   }
 
   /** Tenant ids with an open chat — for the lifecycle sweep only. */

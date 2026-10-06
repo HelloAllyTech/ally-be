@@ -31,6 +31,12 @@ export interface SkillVerdict {
   observed: string[];
   notApplicable: string[];
   level: FhsLevel | null;
+  /**
+   * The accepted ticks with the line each cites and its quote, for callers
+   * that show evidence (helpline QA). Never persisted by the cut or benchmark
+   * writers — `storedJudgement` keeps codes only.
+   */
+  evidence?: { code: string; line: string; quote: string }[];
 }
 
 export function deriveLevel(
@@ -167,9 +173,15 @@ export function validateJudgement(
     if (!raw.opportunity) return blank(skill.key);
 
     const observed = new Set<string>();
+    const evidence: { code: string; line: string; quote: string }[] = [];
     for (const obs of asArray<RawObservation>(raw.observed)) {
       if (acceptObservation(skill, obs, byId)) {
         observed.add(String(obs.code));
+        evidence.push({
+          code: String(obs.code),
+          line: String(obs.line).trim(),
+          quote: String(obs.quote),
+        });
       } else {
         stats.droppedTicks += 1;
       }
@@ -197,6 +209,7 @@ export function validateJudgement(
       observed: [...observed].sort(),
       notApplicable: [...notApplicable].sort(),
       level: deriveLevel(skill, observed, notApplicable),
+      evidence,
     };
   });
 

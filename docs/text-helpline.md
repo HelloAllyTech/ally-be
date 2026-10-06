@@ -293,9 +293,9 @@ helpline is switched off (§5.4).
 | `POST /v1/helpline/talkers/:talkerId/block` | `edit:helpline:transfer` | `{ reason?: string }` | `204` (ends chat `TALKER_BLOCKED`; `reason` is not stored — the audit records only whether one was given) · unknown talker 404 |
 | `GET /v1/helpline/monitor` | `view:helpline:monitor` | — | `MonitorDto` |
 | `GET /v1/helpline/risk-flags?outcome=&days=7` | `view:helpline:monitor` | `days` 1–90 (default 7); `outcome` narrows `items` only | `RiskCalibrationDto` (calibration view; newest first, ≤ 200 items; audited `HELPLINE_TRANSCRIPT_ACCESSED { view: 'risk-calibration' }` because items carry live signals) |
-| `GET /v1/helpline/qa?listenerId=&page=` | `view:helpline:qa` | — | `{ items: QaListItemDto[]; total }` |
-| `GET /v1/helpline/qa/mine` | `view:helpline:lobby` | — | `{ items: QaListItemDto[] }` (own only) |
-| `GET /v1/helpline/qa/:chatId` | own, or `view:helpline:qa` | — | `QaDetailDto` |
+| `GET /v1/helpline/qa?listenerId=&page=` | `view:helpline:qa` | — | `{ items: QaListItemDto[]; total }` (25 a page, newest first — never by score) |
+| `GET /v1/helpline/qa/mine` | `view:helpline:lobby` | — | `{ items: QaListItemDto[] }` (own only, newest 100) |
+| `GET /v1/helpline/qa/:chatId` | `view:helpline:lobby` and own, or `view:helpline:qa` | — | `QaDetailDto` · anyone else 404 |
 | `GET /v1/helpline/team?search=` | `edit:helpline:team` | `search?` (name/email contains; additive) | `{ items: TeamMemberDto[] }` (ACTIVE users of caller's tenant, helpline members first, ≤ 1000; Ally platform staff are never listed or editable) |
 | `PUT /v1/helpline/team/:userId` | `edit:helpline:team` | `{ listener: boolean; supervisor: boolean }` | `TeamMemberDto` (only these two groups; busts permission cache) |
 
@@ -449,6 +449,9 @@ interface QaListItemDto { chatId: string; listenerId: number; listenerName: stri
 interface QaDetailDto extends QaListItemDto {
   skills: { key: string; label: string; tier: 'Engage' | 'Understand' | 'Support'; level: 1 | 2 | 3 | 4;
             unhelpful: string[]; basicMet: string[]; basicMissing: string[]; advanced: string[]; evidence: { messageId: number; quote: string }[] }[];
+  // Only the skills the chat gave an opportunity for, in rubric order. The behaviour strings are the
+  // rubric's own descriptions; basicMissing leaves out a conditional basic the talker never made possible.
+  // evidence.quote is re-derived from the (decrypted) message by offsets — '' once the chat is erased.
 }
 interface TeamMemberDto { userId: number; name: string; email: string; isListener: boolean; isSupervisor: boolean; isAdmin: boolean }
 ```
@@ -782,12 +785,23 @@ tier REASONING, `neverFallback`).
   notification `HELPLINE_CHAT_ASSIGNED`.
 - **Block**: supervisor-only; ends `TALKER_BLOCKED`, revokes token, refuses new sessions from the same
   `ip_hash` for 24 h with neutral copy.
-- **QA**: scheduler `30min` job picks ENDED chats with `qa_status IS NULL`, ≥ 3 listener messages and
-  ≥ 300 listener chars (else `SKIPPED`), builds helper lines from listener messages and client lines from
-  talker messages, runs the helping-skills judge (`FoundationalSkillsJudgeService`, task
-  `HELPLINE_QA_JUDGE`), writes `helpline_qa_scores`. Visible to the listener (own) and supervisors.
-  Copy: strengths → specific improvements with a way to practise → positive close. **No leaderboard,
-  no points, no ranking.** Levels are "score 1–4".
+- **QA**: scheduler `30min` job (`helpline-qa`; off with `HELPLINE_QA_SCHEDULE=off`, read every tick)
+  takes ≤ 10 ENDED chats per tick with `qa_status IS NULL`, ended ≥ 5 min ago, not erased, claiming each
+  with `qa_status = 'PENDING'` (one replica wins). A chat nobody took, or with < 3 listener-of-record TEXT
+  messages or < 300 listener characters (code points), is `SKIPPED` with no model call. Otherwise the
+  listener of record's TEXT become HELPER lines and the talker's TEXT CLIENT lines (decrypted; a previous
+  listener's lines, whispers and copilot rows are left out), rendered as one whole session and judged by
+  `FoundationalSkillsJudgeService.judgeHelpline` — the same rubric, validation and pinned model as the
+  foundational-skills measure, with the prompt's opening framed as "a real text chat on a support
+  helpline" (task id `helpline-qa-judge`, `LlmTask.HELPLINE_QA_JUDGE`). The model only ticks behaviours
+  with evidence; levels come from `deriveLevel` (never asked of the model). `rubric_version =
+  'fhs-text-v1+helpline-chat-v1'`. `helpline_qa_scores.verdicts = { skills: [{ skill, opportunity, level,
+  observed, notApplicable, evidence: [{ code, messageId, start, end }] }], stats }` — evidence is offsets
+  into the message, never text, so it ages out with the body. `qa_status` `DONE` / `SKIPPED` / `FAILED`
+  (a judge failure is not retried). Visible to the listener (own, `GET qa/mine`, `GET qa/:chatId`) and
+  supervisors (`view:helpline:qa`); reading a breakdown is audited `HELPLINE_TRANSCRIPT_ACCESSED { view:
+  'qa' }`. Lists are ordered by date. Copy: strengths → specific improvements with a way to practise →
+  positive close. **No leaderboard, no points, no ranking.** Levels are "score 1–4".
 - **Retention**: hourly, batches of 500, per tenant `retentionDays`: blanks `helpline_messages.content`
   (all types) to `'[erased]'`, `helpline_talker_feedback.comment`, `helpline_chat_summaries.fields`,
   `helpline_risk_flags.outcome_note`, `helpline_talkers.display_name → 'Anonymous'`; sets `erased_at`.

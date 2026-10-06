@@ -657,6 +657,15 @@ with `FOUNDATIONAL_SKILLS_SCHEDULE=off`):
    learners (`MIN_SCORE_SAMPLE_SIZE`), and the axis ends at the last cut reached by at least
    5. The chart is **AAQ-166** on Highlights → Priority.
 
+**Second consumer — text-helpline QA** (`src/helpline/service/helpline-qa.service.ts`, contract
+`docs/text-helpline.md` §10): an ended helpline chat is rendered as one whole session (the listener of
+record's typed messages as HELPER, the talker's as CLIENT) and scored by
+`FoundationalSkillsJudgeService.judgeHelpline` — the same rubric, validation, level rule and pinned model,
+under its own task (`helpline-qa-judge`). Only the prompt's opening differs: it says the transcript is a
+real, typed chat with a person seeking support, not speech-to-text roleplay with an AI client (the
+roleplay prompt is byte-for-byte unchanged, which a spec pins). Its scores carry their own version,
+`FHS_RUBRIC_VERSION + '+helpline-chat-v1'`, and are never averaged with the measure's.
+
 **Changing the ruler:** any edit to the rubric, the prompt or the model means bumping
 `FHS_RUBRIC_VERSION`. Every cut is then re-scored under the new version, and scores from two
 versions are never averaged together.

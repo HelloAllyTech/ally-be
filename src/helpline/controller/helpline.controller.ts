@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import { PreferenceName } from 'src/common/constants/user.constants';
 import {
@@ -23,6 +24,7 @@ import {
   CopilotFeedbackDto,
   HelplineAfterIdQueryDto,
   ListChatsQueryDto,
+  QaListQueryDto,
   RiskFlagsQueryDto,
   TeamQueryDto,
   UpdateListenerProfileDto,
@@ -40,6 +42,7 @@ import {
 import { HelplineClaimService } from '../service/helpline-claim.service';
 import { HelplineListenerService } from '../service/helpline-listener.service';
 import { HelplineMonitorService } from '../service/helpline-monitor.service';
+import { HelplineQaService } from '../service/helpline-qa.service';
 import { HelplineSupervisionService } from '../service/helpline-supervision.service';
 import { HelplineTeamService } from '../service/helpline-team.service';
 import {
@@ -52,6 +55,8 @@ import {
 import { HelplineChatIdPipe, HelplineUserIdPipe } from '../util/helpline-pipes';
 import {
   MonitorDto,
+  QaDetailDto,
+  QaListItemDto,
   RiskCalibrationDto,
   StaffMessageDto,
 } from '../type/helpline.types';
@@ -80,6 +85,8 @@ export class HelplineController {
     private readonly tenantFeatureService: TenantFeatureService,
     private readonly supervision: HelplineSupervisionService,
     private readonly monitorService: HelplineMonitorService,
+    private readonly qa: HelplineQaService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   /**
@@ -384,6 +391,49 @@ export class HelplineController {
     @Query() query: RiskFlagsQueryDto,
   ): Promise<RiskCalibrationDto> {
     return this.monitorService.calibration(tenant, user, query);
+  }
+
+  // ── QA (contract §10) — scores 1–4, never ranked ─────────────────────────
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_QA])
+  @Get('qa')
+  @ApiOperation({ summary: "Listeners' QA scores, newest first (supervisors)" })
+  qaList(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @Query() query: QaListQueryDto,
+  ): Promise<{ items: QaListItemDto[]; total: number }> {
+    return this.qa.list(tenant, query);
+  }
+
+  /** Declared before `qa/:chatId` so "mine" is never read as a chat id. */
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_LOBBY])
+  @Get('qa/mine')
+  @ApiOperation({ summary: 'My own QA scores' })
+  qaMine(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+  ): Promise<{ items: QaListItemDto[] }> {
+    return this.qa.mine(tenant, user);
+  }
+
+  /** Own chat with the lobby permission, or any chat with view:helpline:qa. */
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_LOBBY])
+  @Get('qa/:chatId')
+  @ApiOperation({ summary: 'One QA breakdown (own, or view:helpline:qa)' })
+  async qaDetail(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('chatId', HelplineChatIdPipe) chatId: string,
+  ): Promise<QaDetailDto> {
+    return this.qa.detail(
+      tenant,
+      chatId,
+      user,
+      await this.permissionsService.getUserPermissions(user.id),
+    );
   }
 
   @RequireHelplineEnabled()

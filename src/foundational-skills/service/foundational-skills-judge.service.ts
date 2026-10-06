@@ -25,6 +25,33 @@ export const FHS_JUDGE_TASK_ID = 'foundational-skills-judge';
  */
 export const FHS_BENCHMARK_JUDGE_TASK_ID =
   'foundational-skills-benchmark-judge';
+/**
+ * AI-task-registry row id for scoring a text-helpline chat (src/helpline QA).
+ * Same rubric, validation, level rule and pinned model; the prompt's framing
+ * says what the transcript really is (a typed chat with a real person).
+ */
+export const HELPLINE_QA_JUDGE_TASK_ID = 'helpline-qa-judge';
+
+/**
+ * Who is in the transcript. The rubric, the rules and the output contract are
+ * identical for both; only the opening that tells the judge what it is reading
+ * differs, because a rater told "the client is an AI and this is speech-to-
+ * text" reads a real person's typed words differently.
+ */
+export type JudgeFraming = 'roleplay' | 'helpline';
+
+const FRAMING: Record<JudgeFraming, string> = {
+  roleplay: `You are a careful rater applying a structured helping-skills rubric to a transcript of roleplay practice.
+
+The HELPER is a learner practising helping skills. The CLIENT is a simulated person played by an AI. You rate only the HELPER.
+
+The transcript comes from speech-to-text: ignore transcription errors, missing punctuation and filler words. It may be in any language; judge meaning, not English phrasing.`,
+  helpline: `You are a careful rater applying a structured helping-skills rubric to a transcript of a real text chat on a support helpline.
+
+The HELPER is a trained listener. The CLIENT is a real person who reached out for support. You rate only the HELPER.
+
+The chat was typed: ignore spelling slips, missing punctuation and chat shorthand. It may be in any language, or mix languages; judge meaning, not English phrasing.`,
+};
 
 export interface JudgeOutcome {
   verdicts: SkillVerdict[];
@@ -37,7 +64,9 @@ export interface JudgeOutcome {
 }
 
 /** The judge's instructions. Part of the ruler — edit only with a version bump. */
-export function buildJudgeSystemPrompt(): string {
+export function buildJudgeSystemPrompt(
+  framing: JudgeFraming = 'roleplay',
+): string {
   const skills = FHS_RUBRIC.map((skill) => {
     const list = (title: string, behaviours: FhsBehaviour[]) =>
       behaviours.length === 0
@@ -60,11 +89,7 @@ export function buildJudgeSystemPrompt(): string {
     ].join('\n');
   }).join('\n\n');
 
-  return `You are a careful rater applying a structured helping-skills rubric to a transcript of roleplay practice.
-
-The HELPER is a learner practising helping skills. The CLIENT is a simulated person played by an AI. You rate only the HELPER.
-
-The transcript comes from speech-to-text: ignore transcription errors, missing punctuation and filler words. It may be in any language; judge meaning, not English phrasing.
+  return `${FRAMING[framing]}
 
 ## What you are given
 - An optional CONTEXT block: earlier turns of the first session. Use it to understand the situation. Never cite it and never rate behaviour that happened in it.
@@ -141,6 +166,27 @@ export class FoundationalSkillsJudgeService {
   }
 
   /**
+   * Score one ended text-helpline chat (the listener of record as HELPER,
+   * the talker as CLIENT) — the same judgement with the helpline framing,
+   * tagged with its own task id and usage label. Same failure contract.
+   */
+  async judgeHelpline(
+    windowText: string,
+    lines: readonly NumberedLine[],
+    meta: { chatId: string; rubricVersion: string },
+  ): Promise<JudgeOutcome> {
+    return this.run(windowText, lines, {
+      taskId: HELPLINE_QA_JUDGE_TASK_ID,
+      task: LlmTask.HELPLINE_QA_JUDGE,
+      framing: 'helpline',
+      usageMetadata: {
+        rubricVersion: meta.rubricVersion,
+        helplineChatId: meta.chatId,
+      },
+    });
+  }
+
+  /**
    * The one judgement both entry points share. Everything that makes it the
    * ruler — system prompt, pinned model, JSON mode, validation, level rule —
    * lives here, so a cut and a benchmark session can never be judged
@@ -155,13 +201,14 @@ export class FoundationalSkillsJudgeService {
       /** The scenario session the usage row is attributed to, if one owns the call. */
       scenarioSessionId?: string;
       usageMetadata: Record<string, unknown>;
+      framing?: JudgeFraming;
     },
   ): Promise<JudgeOutcome> {
     const result = await this.llm.complete({
       taskId: call.taskId,
       task: call.task,
       model: FHS_JUDGE_MODEL,
-      system: buildJudgeSystemPrompt(),
+      system: buildJudgeSystemPrompt(call.framing ?? 'roleplay'),
       prompt: windowText,
       jsonMode: true,
       // Reasoning models spend completion tokens thinking before they answer;

@@ -352,6 +352,34 @@ export interface RiskCalibrationDto {
   days: number;
 }
 
+export interface QaListItemDto {
+  chatId: string;
+  listenerId: number;
+  listenerName: string;
+  endedAt: string;
+  compositeScore: number;
+  hasUnhelpfulBehaviour: boolean;
+  rubricVersion: string;
+}
+
+export interface QaSkillDto {
+  key: string;
+  label: string;
+  tier: 'Engage' | 'Understand' | 'Support';
+  /** Score 1–4 (never "L1–L4"). */
+  level: 1 | 2 | 3 | 4;
+  unhelpful: string[];
+  basicMet: string[];
+  basicMissing: string[];
+  advanced: string[];
+  /** `quote` is '' once the chat's content is erased. */
+  evidence: { messageId: number; quote: string }[];
+}
+
+export interface QaDetailDto extends QaListItemDto {
+  skills: QaSkillDto[];
+}
+
 export interface TeamMemberDto {
   userId: number;
   name: string;

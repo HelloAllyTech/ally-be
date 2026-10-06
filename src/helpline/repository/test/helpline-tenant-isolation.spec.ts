@@ -135,6 +135,8 @@ const chatMethods: [string, (r: HelplineChatRepository) => Promise<unknown>][] =
     ['listActiveForListener', (r) => r.listActiveForListener(TENANT, 7)],
     ['listOpen', (r) => r.listOpen(TENANT)],
     ['listActive', (r) => r.listActive(TENANT)],
+    ['claimQa', (r) => r.claimQa(TENANT, CHAT_ID)],
+    ['setQaStatus', (r) => r.setQaStatus(TENANT, CHAT_ID, 'DONE' as never)],
     [
       'recentClaimWaitSeconds',
       (r) => r.recentClaimWaitSeconds(TENANT, new Date()),
@@ -217,7 +219,7 @@ describe('helpline tenant isolation', () => {
       }
     });
 
-    it('the only cross-tenant reads are the two named sweeps, returning tenant ids', async () => {
+    it('the only cross-tenant reads are the named sweeps, returning ids', async () => {
       const own = Object.getOwnPropertyNames(
         HelplineChatRepository.prototype,
       ).filter((name) => name !== 'constructor');
@@ -225,6 +227,7 @@ describe('helpline tenant isolation', () => {
       const uncovered = own.filter((name) => !covered.has(name));
       expect(uncovered.sort()).toEqual([
         'create',
+        'findQaCandidatesAcrossTenants',
         'listOpenTenantIdsAcrossTenants',
         'listRetentionTenantIdsAcrossTenants',
       ]);

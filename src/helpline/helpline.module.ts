@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiModule } from '../ai/ai.module';
 import { BrokerModule } from '../message-broker/broker.module';
+import { FoundationalSkillsModule } from '../foundational-skills/foundational-skills.module';
 import { NotificationModule } from '../notification/notification.module';
 import { PromptModule } from '../prompt/prompt.module';
 import { Preference } from '../settings/entity/preference.entity';
@@ -48,6 +49,7 @@ import { HelplineMonitorService } from './service/helpline-monitor.service';
 import { HelplineNotifyService } from './service/helpline-notify.service';
 import { HelplinePresenceService } from './service/helpline-presence.service';
 import { HelplineProfileService } from './service/helpline-profile.service';
+import { HelplineQaService } from './service/helpline-qa.service';
 import { HelplineQueueService } from './service/helpline-queue.service';
 import { HelplineRealtimeService } from './service/helpline-realtime.service';
 import { HelplineRetentionService } from './service/helpline-retention.service';
@@ -94,6 +96,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     AiModule,
     PromptModule,
     NotificationModule,
+    FoundationalSkillsModule,
   ],
   controllers: [
     HelplinePublicController,
@@ -131,6 +134,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineListenerService,
     HelplineSupervisionService,
     HelplineMonitorService,
+    HelplineQaService,
     HelplineTeamService,
     HelplineLifecycleService,
     HelplineConnectionService,

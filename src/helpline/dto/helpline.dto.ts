@@ -287,3 +287,19 @@ export class RiskFlagsQueryDto {
   @Max(90)
   days?: number;
 }
+
+export class QaListQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  listenerId?: number;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+}
