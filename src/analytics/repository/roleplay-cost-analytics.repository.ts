@@ -43,6 +43,12 @@ export const COST_AREA_LABELS: Record<CostArea, string> = {
  *    costs. They scale with authoring activity and would make the unit cost spike
  *    in a week when nobody practised but somebody wrote ten scenarios.
  *  - **Analytics agent, suggestions, Bug Hunter** are internal tooling.
+ *  - **The text helpline** (risk screen, copilot turn, QA judge) serves people
+ *    in distress and the listeners helping them — no learner is practising.
+ *    Its summaries go through ally-ai's shared `/summary/note` and are recorded
+ *    as DYNAMIC_SUMMARY, which this map files as feedback; that call carries no
+ *    label of its own today, so helpline summaries are the one helpline cost
+ *    this chart cannot yet separate.
  *  - **Embeddings and diarization** are shared infrastructure whose calls cannot
  *    be attributed to one learner's session from `llm_usage` alone.
  *

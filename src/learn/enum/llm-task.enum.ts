@@ -160,6 +160,16 @@ export enum LlmTask {
   // benchmark's spend separates from the cut pipeline's, and like that one it is
   // analytics spend, deliberately absent from TASK_AREA.
   FOUNDATIONAL_SKILLS_BENCHMARK_JUDGE = 'foundational_skills_benchmark_judge',
+  // Text helpline (src/helpline, docs/text-helpline.md §9). Three labels
+  // because the three calls differ in volume and shape: the risk screen runs
+  // on EVERY talker message, the copilot turn once per talker burst (debounced)
+  // in an active chat, the QA judge once per ended chat. The first two are
+  // made by ally-ai, which records them under these same strings. All three
+  // serve helpline talkers and listeners, not a learner practising, so they
+  // are deliberately absent from TASK_AREA (non-learner spend).
+  HELPLINE_RISK_CLASSIFY = 'helpline_risk_classify',
+  HELPLINE_COPILOT_TURN = 'helpline_copilot_turn',
+  HELPLINE_QA_JUDGE = 'helpline_qa_judge',
   // Mobile Releases admin page (src/mobile-releases): one call per
   // ios-whats-new-suggestion request, turning raw ally-mobile commit
   // subjects since the last release into a draft App Store "What's New"

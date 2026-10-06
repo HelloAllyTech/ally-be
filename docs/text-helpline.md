@@ -660,10 +660,15 @@ Ack      → listener marks CONFIRMED / FALSE_POSITIVE (+ optional note) → fee
 
 ### 9.4 Registry + LlmTask
 New `LlmTask`: `HELPLINE_RISK_CLASSIFY = 'helpline_risk_classify'`, `HELPLINE_COPILOT_TURN = 'helpline_copilot_turn'`,
-`HELPLINE_QA_JUDGE = 'helpline_qa_judge'` (ally-be enum, ally-ai `LLMTask`, and `TASK_AREA` in
-`roleplay-cost-analytics.repository.ts`). Registry rows: `helpline-risk-screen`, `helpline-copilot-turn`
-(ally-ai), `helpline-rolling-summary`, `helpline-final-summary` (ally-ai `/summary/note`, task
-`DYNAMIC_SUMMARY`), `helpline-qa-judge` (ally-be, tier REASONING, `neverFallback`).
+`HELPLINE_QA_JUDGE = 'helpline_qa_judge'` (ally-be enum; ally-ai `LLMTask` carries the first two, the
+only ones it makes). **Deliberately absent from `TASK_AREA`** in `roleplay-cost-analytics.repository.ts`:
+that map's areas are the three things a *learner* receives, and a task in it is averaged into the
+per-roleplay-minute unit cost; helpline calls serve talkers and listeners, so they belong in the chart's
+non-learner spend (a spec pins this). The helpline summaries are recorded as `DYNAMIC_SUMMARY`, which
+`TASK_AREA` files as learner feedback — a known mis-attribution until `/summary/note` takes a task label.
+Registry rows: `helpline-risk-screen`, `helpline-copilot-turn` (ally-ai), `helpline-rolling-summary`,
+`helpline-final-summary` (ally-ai `/summary/note`, task `DYNAMIC_SUMMARY`), `helpline-qa-judge` (ally-be,
+tier REASONING, `neverFallback`).
 
 ---
 

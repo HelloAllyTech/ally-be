@@ -626,15 +626,59 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     trigger:
       "A text-helpline talker's turn count reaches the org's rolling-summary cadence",
     detail:
-      'The copilot pass calls the same ally-ai /summary/note endpoint every ' +
-      'copilot.rollingSummaryEveryTurns talker turns (default 4) and on a ' +
-      'transfer (HANDOFF), with the same summaryFields keys. Staff-only output; ' +
-      'never shown to the talker. Wired by the copilot orchestration — until it ' +
-      'lands, only helpline-final-summary makes this call.',
+      'The same ally-ai /summary/note call as helpline-final-summary, made off the ' +
+      'message path every copilot.rollingSummaryEveryTurns talker turns (default 4: ' +
+      'turns 4, 8, 12 …) as the ROLLING summary, and once per transfer request as ' +
+      "the HANDOFF summary. Input is the chat's TEXT turns so far with the org's " +
+      'summaryFields as keys; the request body is redacted from logs. Staff-only ' +
+      'output, never shown to the talker. Recorded as DYNAMIC_SUMMARY (no helpline ' +
+      'label of its own).',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: ALLY_AI_DEFAULT,
     configuredBy: ALLY_AI_DEFAULT_SOURCE,
+  },
+  {
+    id: 'helpline-risk-screen',
+    task: LlmTask.HELPLINE_RISK_CLASSIFY,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      'A talker sends a message in a text-helpline chat (waiting room included)',
+    detail:
+      'The highest-volume helpline call: one per talker message, after the keyword ' +
+      'screen and off the delivery path (HelplineCopilotService → ally-ai ' +
+      '/helpline/risk). Input is the message plus the last 4 text turns. 3 s timeout, ' +
+      'no retry; a failure records no flag and marks the copilot unavailable while ' +
+      'the keyword screen keeps working. Skipped when the org turns ' +
+      'copilot.riskClassifier off. Biased towards false positives on purpose; ' +
+      "ally-be turns its confidence into HIGH or ELEVATED with the org's " +
+      'riskHighConfidence. A prompt row may name another provider/model.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'HELPLINE__RISK_MODEL',
+    promptOverride: 'ally_ai_helpline_risk_classify',
+  },
+  {
+    id: 'helpline-copilot-turn',
+    task: LlmTask.HELPLINE_COPILOT_TURN,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      'A talker in an active helpline chat pauses for 2.5 seconds after writing',
+    detail:
+      'One call per talker burst, not per message: debounced 2.5 s after the ' +
+      "talker's latest message (a newer message cancels the pending call on every " +
+      'replica), ACTIVE chats only. Input is the last 12 text turns, the rolling ' +
+      "summary and the chat's risk level. Returns 2–3 suggested replies for the " +
+      'listener (never sent to the talker), the conversation stage and — at most 10 ' +
+      'times per chat, never on the first talker turn or two talker turns running — a ' +
+      'coaching nudge. 6 s timeout, no retry. Skipped when the org turns off both ' +
+      'suggestions and nudges. A prompt row may name another provider/model.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4.1-mini',
+    configuredBy: 'HELPLINE__TURN_MODEL',
+    promptOverride: 'ally_ai_helpline_copilot_turn',
   },
   {
     id: 'nudge',
@@ -1273,6 +1317,31 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     defaultModel: 'gpt-5-mini',
     configuredBy:
       'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned, shared with foundational-skills-judge; changing it is a rubric version bump',
+  },
+  {
+    id: 'helpline-qa-judge',
+    task: LlmTask.HELPLINE_QA_JUDGE,
+    runtime: LlmRuntime.ALLY_BE,
+    // Pinned exactly like foundational-skills-judge: the call names
+    // FHS_JUDGE_MODEL, the tier is only the resolver's floor, and neverFallback
+    // keeps a substitute model from scoring some listeners' chats.
+    tier: LlmModelTier.REASONING,
+    neverFallback: true,
+    trigger: 'Scheduled: a text-helpline chat that a listener took has ended',
+    detail:
+      "Scores the listener's side of one ended chat against the helping-skills " +
+      'rubric (same rubric, pinned model and validation as the cut judge; the prompt ' +
+      'frames it as a real text chat rather than a roleplay). Every 30 min, at most 10 ' +
+      'chats per tick, 5 min after the end. Chats with fewer than 3 listener messages ' +
+      'or 300 listener characters are stored SKIPPED with no call; erased chats are ' +
+      'never scored. One call per eligible chat, not retried (a failure is FAILED). ' +
+      'Levels are derived in code, never asked of the model. Off with ' +
+      'HELPLINE_QA_SCHEDULE=off.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy:
+      'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned, shared with foundational-skills-judge',
   },
   {
     id: 'mobile-release-whats-new',
