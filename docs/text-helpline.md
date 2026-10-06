@@ -286,11 +286,11 @@ helpline is switched off (§5.4).
 | `POST /v1/helpline/chats/:id/risk-flags/:flagId/ack` † | `view:helpline:copilot` | `{ outcome: 'CONFIRMED' \| 'FALSE_POSITIVE'; note?: string }` | `RiskFlagDto` |
 | `POST /v1/helpline/chats/:id/copilot-feedback` † | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204`. SUGGESTION: `index` required (400 otherwise) → `metadata.feedback[index]`; NUDGE → `metadata.feedback`; latest rating wins; any other row → 404 |
 | `POST /v1/helpline/chats/:id/alert-supervisor` † | `view:helpline:copilot`, listener of record of an ACTIVE chat | `{ note?: string /* ≤ 300, staff-only */ }` | `{ alertedCount: number }` (§9.3) · 403 `HELPLINE_NOT_LISTENER` · 409 `HELPLINE_CHAT_ENDED` |
-| `POST /v1/helpline/chats/:id/transfer` | `edit:helpline:transfer` **or** listener of record with `edit:helpline:end` | `{ targetListenerId?: number }` | `ChatDetailDto` |
-| `POST /v1/helpline/chats/:id/assign` | `edit:helpline:transfer` | `{ listenerId: number }` | `ChatDetailDto` (WAITING or transfer-pending → that listener) |
-| `POST /v1/helpline/chats/:id/take-over` | `edit:helpline:transfer` | — | `ChatDetailDto` |
-| `POST /v1/helpline/chats/:id/whisper` | `edit:helpline:whisper` | `{ content: string }` | `StaffMessageDto` |
-| `POST /v1/helpline/talkers/:talkerId/block` | `edit:helpline:transfer` | `{ reason?: string }` | `204` (ends chat `TALKER_BLOCKED`) |
+| `POST /v1/helpline/chats/:id/transfer` | `edit:helpline:transfer` **or** listener of record with `edit:helpline:end` (route floor: `edit:helpline:end`) | `{ targetListenerId?: number }` | `ChatDetailDto` · ACTIVE only (WAITING 400, ENDED 409) · target must be a listener of the tenant, not the current one (400) · repeat while pending is idempotent (a new target re-aims it) |
+| `POST /v1/helpline/chats/:id/assign` | `edit:helpline:transfer` | `{ listenerId: number }` | `ChatDetailDto` (WAITING, not abandoned, or transfer-pending → that listener; otherwise 409 `HELPLINE_ALREADY_CLAIMED`) |
+| `POST /v1/helpline/chats/:id/take-over` | `edit:helpline:transfer` | — | `ChatDetailDto` (`myAccess: LISTENER`) · ACTIVE only (WAITING 400 — claim it; ENDED 409) |
+| `POST /v1/helpline/chats/:id/whisper` | `edit:helpline:whisper` | `{ content: string /* ≤ 2000 */ }` | `StaffMessageDto` (type WHISPER) · empty 400 · ENDED 409 |
+| `POST /v1/helpline/talkers/:talkerId/block` | `edit:helpline:transfer` | `{ reason?: string }` | `204` (ends chat `TALKER_BLOCKED`; `reason` is not stored — the audit records only whether one was given) · unknown talker 404 |
 | `GET /v1/helpline/monitor` | `view:helpline:monitor` | — | `MonitorDto` |
 | `GET /v1/helpline/risk-flags?outcome=&days=7` | `view:helpline:monitor` | — | `{ items: RiskFlagRowDto[]; counts: { UNREVIEWED; CONFIRMED; FALSE_POSITIVE }; bySource: {...} }` (calibration view) |
 | `GET /v1/helpline/qa?listenerId=&page=` | `view:helpline:qa` | — | `{ items: QaListItemDto[]; total }` |
@@ -401,7 +401,8 @@ interface StaffMessageDto {
   type: 'TEXT' | 'SYSTEM' | 'SUGGESTION' | 'NUDGE' | 'STAGE' | 'RISK' | 'WHISPER' | 'TRANSFER';
   senderRole: 'TALKER' | 'LISTENER' | 'SUPERVISOR' | 'SYSTEM' | 'COPILOT';
   senderUserId: number | null; senderName: string | null;
-  systemKind: string | null;        // talker kinds + staff-only: TALKER_DISCONNECTED, TALKER_RECONNECTED, TAKEN_OVER, TRANSFERRED, ASSIGNED
+  systemKind: string | null;        // talker kinds + staff-only: TALKER_DISCONNECTED, TALKER_RECONNECTED, TAKEN_OVER, TRANSFERRED, ASSIGNED, SUPERVISOR_REQUESTED
+                                    // (staff-only SYSTEM rows carry metadata.params.listenerName where it applies; SUPERVISOR_REQUESTED's content is the listener's note, may be '')
   content: string;
   parentMessageId: number | null;
   visibleToTalker: boolean;
@@ -494,7 +495,7 @@ Server → client:
 | `COPILOT_STATUS` | staff | `{ chatId, status: 'OK' \| 'UNAVAILABLE' \| 'OFF' }` |
 | `SUMMARY_UPDATED` | staff | `{ chatId, summary: SummaryDto }` |
 | `WHISPER` | staff | `{ chatId, message }` (type WHISPER; **never** the talker room) |
-| `TRANSFER_REQUESTED` / `TRANSFERRED` | staff + lobby | `{ chatId, toListenerId? }` |
+| `TRANSFER_REQUESTED` / `TRANSFERRED` | staff + lobby | `{ chatId, toListenerId? }` — TRANSFER_REQUESTED carries the target if one was named; TRANSFERRED (on the transfer claim) carries the new listener. The previous listener stays in `staff:{chatId}` read-only and receives the READ_ONLY `CHAT_UPDATED` |
 | `ALERT` | supervisors / user | `{ type: 'RISK_HIGH' \| 'HIGH_RISK_WAITING' \| 'LISTENER_DISCONNECTED' \| 'LISTENER_REQUESTED_HELP' \| 'TRANSFER_REQUESTED' \| 'ASSIGNED'; chatId; level?; at }` — `level` only on the two risk types. `supervisors:{tenantId}` gets RISK_HIGH, HIGH_RISK_WAITING, LISTENER_DISCONNECTED, LISTENER_REQUESTED_HELP, TRANSFER_REQUESTED; `user:{id}` gets ASSIGNED (and TRANSFER_REQUESTED when a transfer names them) |
 | `RISK_FLAG_UPDATED` | staff | `{ chatId, flag: RiskFlagDto }` — additive: a flag was acknowledged (clears a banner without re-alerting) |
 | `ERROR` | either | `{ code, message }` |
@@ -529,7 +530,8 @@ Server → client:
 UPDATE helpline_chats
    SET status = 'ACTIVE', listener_id = $user, claimed_at = now(),
        previous_listener_ids = CASE WHEN listener_id IS NOT NULL THEN previous_listener_ids || listener_id ELSE previous_listener_ids END,
-       transfer_requested_at = NULL, transfer_target_listener_id = NULL
+       transfer_requested_at = NULL, transfer_requested_by = NULL, transfer_target_listener_id = NULL,
+       taken_over_at = NULL   -- second pass: the claimer is a listener, not a supervisor who took over
  WHERE id = $chat AND tenant_id = $tenant
    AND (status = 'WAITING' AND abandoned_at IS NULL
         OR status = 'ACTIVE' AND transfer_requested_at IS NOT NULL AND listener_id <> $user)
@@ -749,13 +751,20 @@ tier REASONING, `neverFallback`).
 
 ## 10. Supervision, QA, retention
 
-- **Whisper**: persisted `WHISPER` (staff-only), emitted to `staff:{chatId}`. Excluded from any talker
-  export.
+- **Whisper**: persisted `WHISPER` (staff-only, `senderRole: SUPERVISOR`), emitted as `WHISPER` to
+  `staff:{chatId}` only — never `MESSAGE_RECEIVED`, and the realtime guard drops it from any `talker:` room.
+  Excluded from any talker export.
 - **Transfer**: sets `transfer_requested_at` (+ optional target); HANDOFF summary generated; talker
   gets SYSTEM `TRANSFERRING`; chat appears in the lobby as `kind: 'TRANSFER'`; claim moves the previous
   listener into `previous_listener_ids` (read-only). **Assign**: supervisor points a WAITING or
   transfer-pending chat at one listener (`transfer_target_listener_id`) and alerts them.
-  **Take over**: supervisor becomes listener of record immediately.
+  **Take over**: supervisor becomes listener of record immediately (conditional UPDATE; the replaced
+  listener → `previous_listener_ids`, read-only; any pending transfer is cancelled); their sockets join
+  `staff:{chatId}` on every replica; staff-only SYSTEM `TAKEN_OVER`; the talker sees only SYSTEM `ACCEPTED`
+  with the new alias (never that a supervisor stepped in); `TAKEN_OVER` event; HIPAA audit
+  `HELPLINE_CHAT_TRANSFERRED { takeOver: true }`. Staff-only SYSTEM `ASSIGNED` on assign, `TRANSFERRED` on a
+  transfer claim. The assigned listener gets `ALERT { type: 'ASSIGNED' }` on `user:{id}` and an in-app
+  notification `HELPLINE_CHAT_ASSIGNED`.
 - **Block**: supervisor-only; ends `TALKER_BLOCKED`, revokes token, refuses new sessions from the same
   `ip_hash` for 24 h with neutral copy.
 - **QA**: scheduler `30min` job picks ENDED chats with `qa_status IS NULL`, ≥ 3 listener messages and

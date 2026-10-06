@@ -68,7 +68,8 @@ export class HelplineChatRepository {
               "previous_listener_ids" = CASE WHEN "listener_id" IS NOT NULL
                 THEN "previous_listener_ids" || "listener_id"
                 ELSE "previous_listener_ids" END,
-              "transfer_requested_at" = NULL, "transfer_target_listener_id" = NULL,
+              "transfer_requested_at" = NULL, "transfer_requested_by" = NULL,
+              "transfer_target_listener_id" = NULL, "taken_over_at" = NULL,
               "updated_at" = now()
         WHERE "id" = $1 AND "tenant_id" = $2
           AND ("status" = 'WAITING' AND "abandoned_at" IS NULL
@@ -101,6 +102,105 @@ export class HelplineChatRepository {
       [chatId, tenantId, reason, actorUserId],
     );
     return returningRows<{ id: string }>(result).length === 1;
+  }
+
+  /**
+   * Put an ACTIVE chat up for transfer (contract §10). Only one pending
+   * request at a time: false when it is not ACTIVE or already pending.
+   */
+  async requestTransfer(
+    tenantId: string,
+    chatId: string,
+    byUserId: number,
+    targetListenerId: number | null,
+  ): Promise<boolean> {
+    const result = await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "transfer_requested_at" = now(), "transfer_requested_by" = $3,
+              "transfer_target_listener_id" = $4, "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2 AND "status" = 'ACTIVE'
+          AND "transfer_requested_at" IS NULL
+      RETURNING "id"`,
+      [chatId, tenantId, byUserId, targetListenerId],
+    );
+    return returningRows<{ id: string }>(result).length === 1;
+  }
+
+  /**
+   * Aim a claimable chat (WAITING and not abandoned, or transfer-pending) at
+   * one listener; the claim UPDATE then admits only them. Never the chat's
+   * current listener.
+   */
+  async assignTarget(
+    tenantId: string,
+    chatId: string,
+    listenerId: number,
+  ): Promise<boolean> {
+    const result = await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "transfer_target_listener_id" = $3, "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2
+          AND ("status" = 'WAITING' AND "abandoned_at" IS NULL
+               OR "status" = 'ACTIVE' AND "transfer_requested_at" IS NOT NULL)
+          AND "listener_id" IS DISTINCT FROM $3
+      RETURNING "id"`,
+      [chatId, tenantId, listenerId],
+    );
+    return returningRows<{ id: string }>(result).length === 1;
+  }
+
+  /**
+   * A supervisor becomes listener of record of an ACTIVE chat at once. The
+   * listener being replaced moves to `previous_listener_ids` (read-only), and
+   * any pending transfer is cancelled. Returns the replaced listener id
+   * (null if there was none), or undefined when nothing changed.
+   */
+  async takeOver(
+    tenantId: string,
+    chatId: string,
+    userId: number,
+  ): Promise<{ previousListenerId: number | null } | undefined> {
+    const result = await this.repo.query(
+      `WITH "before" AS (
+         SELECT "listener_id" FROM "helpline_chats"
+          WHERE "id" = $1 AND "tenant_id" = $2 FOR UPDATE
+       )
+       UPDATE "helpline_chats" c
+          SET "listener_id" = $3, "taken_over_at" = now(),
+              "previous_listener_ids" = CASE
+                WHEN c."listener_id" IS NOT NULL
+                 AND NOT (c."listener_id" = ANY(c."previous_listener_ids"))
+                THEN c."previous_listener_ids" || c."listener_id"
+                ELSE c."previous_listener_ids" END,
+              "transfer_requested_at" = NULL, "transfer_requested_by" = NULL,
+              "transfer_target_listener_id" = NULL, "updated_at" = now()
+        WHERE c."id" = $1 AND c."tenant_id" = $2 AND c."status" = 'ACTIVE'
+          AND c."listener_id" IS DISTINCT FROM $3
+      RETURNING (SELECT "listener_id" FROM "before") AS "previousListenerId"`,
+      [chatId, tenantId, userId],
+    );
+    const row = returningRows<{ previousListenerId: number | null }>(result)[0];
+    return row
+      ? {
+          previousListenerId:
+            row.previousListenerId == null
+              ? null
+              : Number(row.previousListenerId),
+        }
+      : undefined;
+  }
+
+  /** A talker's WAITING / ACTIVE chats (block ends them all). */
+  listOpenForTalker(
+    tenantId: string,
+    talkerId: string,
+  ): Promise<HelplineChat[]> {
+    return this.repo.find({
+      where: [
+        { tenantId, talkerId, status: HelplineChatStatus.WAITING },
+        { tenantId, talkerId, status: HelplineChatStatus.ACTIVE },
+      ],
+    });
   }
 
   /** Raise `risk_level` monotonically; HIGH lifts a WAITING chat's priority. */

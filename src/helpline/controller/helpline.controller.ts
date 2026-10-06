@@ -18,6 +18,8 @@ import { PreferenceName } from 'src/common/constants/user.constants';
 import {
   AcknowledgeRiskFlagDto,
   AlertSupervisorDto,
+  AssignChatDto,
+  BlockTalkerDto,
   CopilotFeedbackDto,
   HelplineAfterIdQueryDto,
   ListChatsQueryDto,
@@ -25,7 +27,9 @@ import {
   UpdateListenerProfileDto,
   UpdatePresenceDto,
   UpdateSummaryDto,
+  TransferChatDto,
   UpdateTeamMemberDto,
+  WhisperDto,
 } from '../dto/helpline.dto';
 import {
   HelplineTenantParam,
@@ -34,6 +38,7 @@ import {
 } from '../guard/helpline-enabled.guard';
 import { HelplineClaimService } from '../service/helpline-claim.service';
 import { HelplineListenerService } from '../service/helpline-listener.service';
+import { HelplineSupervisionService } from '../service/helpline-supervision.service';
 import { HelplineTeamService } from '../service/helpline-team.service';
 import {
   ChatDetailDto,
@@ -43,6 +48,7 @@ import {
   MeDto,
 } from '../type/helpline.types';
 import { HelplineChatIdPipe, HelplineUserIdPipe } from '../util/helpline-pipes';
+import { StaffMessageDto } from '../type/helpline.types';
 
 /**
  * Listener / supervisor routes (contract §5.3).
@@ -66,6 +72,7 @@ export class HelplineController {
     private readonly claims: HelplineClaimService,
     private readonly team: HelplineTeamService,
     private readonly tenantFeatureService: TenantFeatureService,
+    private readonly supervision: HelplineSupervisionService,
   ) {}
 
   /**
@@ -260,6 +267,91 @@ export class HelplineController {
     @Body() body: AlertSupervisorDto,
   ): Promise<{ alertedCount: number }> {
     return this.listeners.alertSupervisor(tenant, chatId, user, body.note);
+  }
+
+  // ── Supervision (contract §5.3, §10) ─────────────────────────────────────
+
+  /**
+   * `edit:helpline:end` is the floor (listeners and supervisors both hold
+   * it); the service then requires the listener of record OR
+   * `edit:helpline:transfer` — the contract's "either" rule, which a single
+   * AND/OR permission list cannot express.
+   */
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_END])
+  @Post('chats/:id/transfer')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Put an active chat up for another listener' })
+  transfer(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+    @Body() body: TransferChatDto,
+  ): Promise<ChatDetailDto> {
+    return this.supervision.transfer(
+      tenant,
+      chatId,
+      user,
+      body.targetListenerId ?? null,
+    );
+  }
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_TRANSFER])
+  @Post('chats/:id/assign')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Aim a waiting or transfer-pending chat at one listener',
+  })
+  assign(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+    @Body() body: AssignChatDto,
+  ): Promise<ChatDetailDto> {
+    return this.supervision.assign(tenant, chatId, user, body.listenerId);
+  }
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_TRANSFER])
+  @Post('chats/:id/take-over')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Become the listener of record now' })
+  takeOver(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+  ): Promise<ChatDetailDto> {
+    return this.supervision.takeOver(tenant, chatId, user);
+  }
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_WHISPER])
+  @Post('chats/:id/whisper')
+  @ApiOperation({ summary: 'A staff-only note into an open chat' })
+  whisper(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+    @Body() body: WhisperDto,
+  ): Promise<StaffMessageDto> {
+    return this.supervision.whisper(tenant, chatId, user, body.content);
+  }
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_TRANSFER])
+  @Post('talkers/:talkerId/block')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Block a talker: ends their chat, refuses their ip for 24 h',
+  })
+  async blockTalker(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('talkerId', HelplineChatIdPipe) talkerId: string,
+    @Body() body: BlockTalkerDto,
+  ): Promise<void> {
+    await this.supervision.block(tenant, talkerId, user, body?.reason);
   }
 
   @RequireHelplineEnabled()

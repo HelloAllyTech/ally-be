@@ -57,6 +57,7 @@ import { HelplineSessionService } from './service/helpline-session.service';
 import { HelplineSettingsService } from './service/helpline-settings.service';
 import { HelplineStaffDirectoryService } from './service/helpline-staff-directory.service';
 import { HelplineSummaryService } from './service/helpline-summary.service';
+import { HelplineSupervisionService } from './service/helpline-supervision.service';
 import { HelplineTeamService } from './service/helpline-team.service';
 import { HelplineTenantService } from './service/helpline-tenant.service';
 
@@ -127,6 +128,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineRetentionService,
     HelplineGuestService,
     HelplineListenerService,
+    HelplineSupervisionService,
     HelplineTeamService,
     HelplineLifecycleService,
     HelplineConnectionService,

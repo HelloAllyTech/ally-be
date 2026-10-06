@@ -7,8 +7,11 @@ import {
   HelplineChatEventType,
   HelplineChatStatus,
   HelplineGuestSystemKind,
+  HelplineMessageType,
   HelplineRooms,
+  HelplineSenderRole,
   HelplineServerEvents,
+  HelplineStaffSystemKind,
 } from '../constants/helpline.constants';
 import { HelplineChat } from '../entity/helpline-chat.entity';
 import { HelplineChatRepository } from '../repository/helpline-chat.repository';
@@ -148,6 +151,40 @@ export class HelplineClaimService {
       },
       userId,
     );
+
+    if (transfer) {
+      // Staff-side record of the handover, and the TRANSFERRED push to the
+      // chat's staff room (the previous listener stays in it, now read-only:
+      // sendListenerText refuses anyone but the listener of record) and to
+      // the lobby, where the TRANSFER entry disappears.
+      try {
+        await this.writer.staffOnly(
+          chat,
+          HelplineMessageType.SYSTEM,
+          `Transferred to ${listenerName}.`,
+          { params: { listenerName } },
+          {
+            systemKind: HelplineStaffSystemKind.TRANSFERRED,
+            senderRole: HelplineSenderRole.SYSTEM,
+          },
+        );
+      } catch (error) {
+        this.logger.error(
+          `TRANSFERRED notice failed for chat ${chat.id}: ${(error as Error).message}`,
+        );
+      }
+      const payload = { chatId: chat.id, toListenerId: userId };
+      await this.realtime.emit(
+        HelplineRooms.staff(chat.id),
+        HelplineServerEvents.TRANSFERRED,
+        payload,
+      );
+      await this.realtime.emit(
+        HelplineRooms.lobby(chat.tenantId),
+        HelplineServerEvents.TRANSFERRED,
+        payload,
+      );
+    }
 
     await this.realtime.emit(
       HelplineRooms.talker(chat.id),

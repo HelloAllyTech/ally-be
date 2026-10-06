@@ -233,3 +233,39 @@ export class AlertSupervisorDto {
   @MaxLength(300)
   note?: string;
 }
+
+export class TransferChatDto {
+  @ApiPropertyOptional({ description: 'Aim the transfer at one listener' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  targetListenerId?: number;
+}
+
+export class AssignChatDto {
+  @ApiProperty()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  listenerId!: number;
+}
+
+export class WhisperDto {
+  @ApiProperty({ maxLength: HELPLINE_LIMITS.MESSAGE_MAX_CHARS })
+  @IsString()
+  @MaxLength(HELPLINE_LIMITS.MESSAGE_MAX_CHARS)
+  content!: string;
+}
+
+export class BlockTalkerDto {
+  @ApiPropertyOptional({
+    maxLength: 500,
+    description:
+      'Not stored (free text about a person); the audit records only whether one was given',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}

@@ -54,7 +54,10 @@ function build(
   const settings = {
     getSettings: jest.fn().mockResolvedValue(HELPLINE_DEFAULT_SETTINGS),
   };
-  const writer = { system: jest.fn().mockResolvedValue({}) };
+  const writer = {
+    system: jest.fn().mockResolvedValue({}),
+    staffOnly: jest.fn().mockResolvedValue({}),
+  };
   const events = { record: jest.fn().mockResolvedValue(undefined) };
   const views = {
     guestChat: jest.fn().mockResolvedValue({ id: CHAT_ID }),
@@ -187,6 +190,38 @@ describe('HelplineClaimService', () => {
       { fromListenerId: 3, toListenerId: ME },
     );
   });
+
+  it('a transfer claim writes a staff-only TRANSFERRED notice and emits TRANSFERRED to staff + lobby', async () => {
+    const { service, writer, realtime } = build({
+      before: chat({ status: HelplineChatStatus.ACTIVE, listenerId: 3 }),
+    });
+    await service.claim(TENANT, CHAT_ID, ME);
+    expect(writer.staffOnly).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CHAT_ID }),
+      'SYSTEM',
+      'Transferred to Ravi.',
+      { params: { listenerName: 'Ravi' } },
+      expect.objectContaining({ systemKind: 'TRANSFERRED' }),
+    );
+    const transferred = realtime.emit.mock.calls.filter(
+      ([, event]) => event === HelplineServerEvents.TRANSFERRED,
+    );
+    expect(transferred.map(([room]) => room).sort()).toEqual(
+      [`lobby:${TENANT.id}`, `staff:${CHAT_ID}`].sort(),
+    );
+    expect(transferred[0][2]).toEqual({ chatId: CHAT_ID, toListenerId: ME });
+  });
+
+  it('a first claim writes no TRANSFERRED notice', async () => {
+    const { service, writer, realtime } = build();
+    await service.claim(TENANT, CHAT_ID, ME);
+    expect(writer.staffOnly).not.toHaveBeenCalled();
+    expect(
+      realtime.emit.mock.calls.some(
+        ([, event]) => event === HelplineServerEvents.TRANSFERRED,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('HelplineChatRepository.claim (contract §6.6 SQL)', () => {
@@ -213,6 +248,8 @@ describe('HelplineChatRepository.claim (contract §6.6 SQL)', () => {
       '("transfer_target_listener_id" IS NULL OR "transfer_target_listener_id" = $3)',
     );
     expect(sql).toContain('"previous_listener_ids" || "listener_id"');
+    // A claim after a take-over: the new listener is not a supervisor.
+    expect(sql).toContain('"taken_over_at" = NULL');
     expect(sql).toContain('RETURNING');
     expect(params).toEqual([CHAT_ID, 't-1', ME]);
   });
