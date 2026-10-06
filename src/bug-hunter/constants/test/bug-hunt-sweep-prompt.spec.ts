@@ -218,6 +218,14 @@ describe('buildSweepPrompt', () => {
       expect(p.slice(write, write + 400)).toContain('"runId":"run-1"');
     });
 
+    it('tells the agent to stop after the close call and run nothing further', () => {
+      const p = build();
+      const close = p.indexOf('## Phase 5 — Close');
+      const stop = p.indexOf('run no further command');
+      expect(stop).toBeGreaterThan(close);
+      expect(p.slice(stop - 200, stop + 200)).toMatch(/signal completion/);
+    });
+
     it('reports which entries it applied BEFORE writing new ones, and says an empty report still counts (OPP-0752)', () => {
       const p = build();
       const feedback = p.indexOf('pipeline/memory/feedback');
