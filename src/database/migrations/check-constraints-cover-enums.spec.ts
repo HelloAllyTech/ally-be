@@ -44,6 +44,22 @@ import {
   JudgeAttemptFamily,
   JudgeAttemptOutcome,
 } from '../../analytics/constants/judge-scheduling.constants';
+import {
+  HelplineChannel,
+  HelplineChatEventType,
+  HelplineChatStatus,
+  HelplineEndedReason,
+  HelplineKeywordMatchType,
+  HelplineMessageType,
+  HelplineQaStatus,
+  HelplineRiskFlagLevel,
+  HelplineRiskLevel,
+  HelplineRiskOutcome,
+  HelplineRiskSource,
+  HelplineRiskSubject,
+  HelplineSenderRole,
+  HelplineSummaryKind,
+} from '../../helpline/constants/helpline.constants';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -196,6 +212,29 @@ describe('CHECK constraints cover their enums', () => {
       Object.values(SelfAssessmentTrigger),
     ],
     ['CHK_judge_attempts_last_outcome', Object.values(JudgeAttemptOutcome)],
+    // Text helpline — every enum-backed column, from day one.
+    ['CHK_helpline_talkers_channel', Object.values(HelplineChannel)],
+    ['CHK_helpline_chats_channel', Object.values(HelplineChannel)],
+    ['CHK_helpline_chats_status', Object.values(HelplineChatStatus)],
+    ['CHK_helpline_chats_ended_reason', Object.values(HelplineEndedReason)],
+    ['CHK_helpline_chats_risk_level', Object.values(HelplineRiskLevel)],
+    ['CHK_helpline_chats_qa_status', Object.values(HelplineQaStatus)],
+    ['CHK_helpline_messages_sender_role', Object.values(HelplineSenderRole)],
+    ['CHK_helpline_messages_type', Object.values(HelplineMessageType)],
+    ['CHK_helpline_risk_flags_level', Object.values(HelplineRiskFlagLevel)],
+    ['CHK_helpline_risk_flags_source', Object.values(HelplineRiskSource)],
+    ['CHK_helpline_risk_flags_subject', Object.values(HelplineRiskSubject)],
+    ['CHK_helpline_risk_flags_outcome', Object.values(HelplineRiskOutcome)],
+    [
+      'CHK_helpline_risk_keyword_rules_match_type',
+      Object.values(HelplineKeywordMatchType),
+    ],
+    [
+      'CHK_helpline_risk_keyword_rules_level',
+      Object.values(HelplineRiskFlagLevel),
+    ],
+    ['CHK_helpline_chat_events_type', Object.values(HelplineChatEventType)],
+    ['CHK_helpline_chat_summaries_kind', Object.values(HelplineSummaryKind)],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

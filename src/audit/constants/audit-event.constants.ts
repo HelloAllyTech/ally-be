@@ -74,6 +74,18 @@ export const AUDIT_EVENTS = {
   // refusal. A surface that reads platform-wide data from a free-text prompt needs
   // a record of what was actually read, not only that the tab was opened.
   ANALYTICS_AGENT_QUERY: 'ANALYTICS_AGENT_QUERY',
+  // Text helpline (docs/text-helpline.md §10). Details carry ids, levels and
+  // counts — never a message body. HELPLINE_RISK_FLAGGED is the one place the
+  // matched `signal` is recorded, because this logger is the HIPAA sink.
+  HELPLINE_SESSION_CREATED: 'HELPLINE_SESSION_CREATED',
+  HELPLINE_CHAT_CLAIMED: 'HELPLINE_CHAT_CLAIMED',
+  HELPLINE_RISK_FLAGGED: 'HELPLINE_RISK_FLAGGED',
+  HELPLINE_RESOURCES_SENT: 'HELPLINE_RESOURCES_SENT',
+  HELPLINE_CHAT_TRANSFERRED: 'HELPLINE_CHAT_TRANSFERRED',
+  HELPLINE_CHAT_ENDED: 'HELPLINE_CHAT_ENDED',
+  HELPLINE_TRANSCRIPT_ACCESSED: 'HELPLINE_TRANSCRIPT_ACCESSED',
+  HELPLINE_ERASURE_REQUESTED: 'HELPLINE_ERASURE_REQUESTED',
+  HELPLINE_TALKER_BLOCKED: 'HELPLINE_TALKER_BLOCKED',
 } as const;
 
 export const AUDIT_ACTIONS = {

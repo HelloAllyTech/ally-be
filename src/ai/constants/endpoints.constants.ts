@@ -65,4 +65,11 @@ export const ENDPOINTS = {
   KNOWLEDGE_CHUNK_SET_AUDIENCE: 'api/v1/knowledge-chunks/document',
   KNOWLEDGE_AGENT_ANSWER: 'api/v1/knowledge-agent/answer',
   KNOWLEDGE_AGENT_CRISIS_CHECK: 'api/v1/knowledge-agent/crisis-check',
+
+  // ── Text helpline copilot (docs/text-helpline.md §9.1) ────────────────────
+  // Both always answer 200 and report `failed` rather than erroring, so a caller
+  // can tell "looked and found nothing" from "could not look". Payloads are a
+  // person in distress's own words: every call passes redactBody=true.
+  HELPLINE_RISK: 'api/v1/helpline/risk',
+  HELPLINE_TURN: 'api/v1/helpline/turn',
 } as const;

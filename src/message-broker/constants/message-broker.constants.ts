@@ -8,4 +8,8 @@ export enum MessageBrokerChannel {
   // replica doesn't hold the stream, it broadcasts here so the replica that
   // does can finalize the upload (otherwise the audio is never persisted).
   MICROPHONE_STREAM_END = 'microphone-stream-end',
+  // Text helpline socket fan-out (docs/text-helpline.md §6.2). Every emit to a
+  // `/helpline-chat` room is published here and each replica's gateway applies
+  // it to its LOCAL sockets — the namespace has no Redis adapter on purpose.
+  HELPLINE_SOCKET_EMIT = 'helpline-socket-emit',
 }

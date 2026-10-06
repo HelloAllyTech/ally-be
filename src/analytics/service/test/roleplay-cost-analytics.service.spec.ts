@@ -186,6 +186,17 @@ describe('RoleplayCostAnalyticsService', () => {
     ).toEqual([]);
   });
 
+  it('keeps text-helpline calls out of the learner unit cost', () => {
+    // They serve helpline talkers and listeners; nobody is practising.
+    expect(
+      [
+        LlmTask.HELPLINE_RISK_CLASSIFY,
+        LlmTask.HELPLINE_COPILOT_TURN,
+        LlmTask.HELPLINE_QA_JUDGE,
+      ].map((task) => TASK_AREA[task]),
+    ).toEqual([undefined, undefined, undefined]);
+  });
+
   it('prices cached prompt tokens from the usage row at the cached rate', async () => {
     // 1M gpt-4o-mini prompt tokens, all served from cache: $0.075, not $0.15.
     await setup(

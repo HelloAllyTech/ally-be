@@ -74,6 +74,7 @@ import { ProductUpdatesModule } from './product-updates/product-updates.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { FoundationalSkillsModule } from './foundational-skills/foundational-skills.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
+import { HelplineModule } from './helpline/helpline.module';
 
 @Module({
   imports: [
@@ -151,6 +152,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     UxSignalsModule,
     FoundationalSkillsModule,
     MobileReleasesModule,
+    HelplineModule,
   ],
   controllers: [],
   providers: [

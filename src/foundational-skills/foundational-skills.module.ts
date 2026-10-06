@@ -71,6 +71,8 @@ import { SelfAssessmentService } from './service/self-assessment.service';
     SelfAssessmentRepository,
     SelfAssessmentService,
   ],
-  exports: [FoundationalSkillsService],
+  // The judge is shared with the text helpline's QA job (src/helpline), which
+  // scores a listener's chats on the same ruler.
+  exports: [FoundationalSkillsService, FoundationalSkillsJudgeService],
 })
 export class FoundationalSkillsModule {}

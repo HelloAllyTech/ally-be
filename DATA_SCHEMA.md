@@ -269,7 +269,7 @@ UI yet.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `in_app_notifications` | BaseEntity | `id` (uuid), `userId`, `type` (varchar, e.g. `ENGAGEMENT_REMINDER`), `title`, `body` (text), `data` (jsonb, nullable — deep-link hints only, no PII/PHI), `readAt` (timestamp, nullable) | Generic in-app feed (nav-sidebar bell on web, Notifications screen on mobile), not specific to engagement reminders. **Also doubles as the evaluator's own dedup/cooldown record** — "already reminded in the last `REMINDER_COOLDOWN_DAYS`" is a `NOT EXISTS` against this table, so there is no separate deliveries table. Idx `(userId, type, createdAt)`, `(userId, readAt)` |
+| `in_app_notifications` | BaseEntity | `id` (uuid), `userId`, `type` (varchar, e.g. `ENGAGEMENT_REMINDER`; the text helpline writes `HELPLINE_RISK_HIGH`, `HELPLINE_LISTENER_DISCONNECTED`, `HELPLINE_LISTENER_REQUESTED_HELP`, `HELPLINE_CHAT_ASSIGNED` — ids and enums in `data`, never chat text), `title`, `body` (text), `data` (jsonb, nullable — deep-link hints only, no PII/PHI), `readAt` (timestamp, nullable) | Generic in-app feed (nav-sidebar bell on web, Notifications screen on mobile), not specific to engagement reminders. **Also doubles as the evaluator's own dedup/cooldown record** — "already reminded in the last `REMINDER_COOLDOWN_DAYS`" is a `NOT EXISTS` against this table, so there is no separate deliveries table. Idx `(userId, type, createdAt)`, `(userId, readAt)` |
 | `user_device_tokens` | BaseEntity | `id` (uuid), `userId`, `token` (unique), `platform` (`IOS`/`ANDROID`) | FCM registration tokens, one row per (user, device). Upserted on `token` (not `(userId, token)`) so a device re-registering under a different user doesn't leave stale duplicates; self-cleaned by `PushService` when FCM reports a token as no-longer-registered, and deleted client-side on logout |
 
 ### 3.8 Analytics, prompts, content & platform ops (`analytics`, `prompt`, `audit`, `reference-document`, `conversational-guardrails`, `tooltip`, `product-updates`)
@@ -749,6 +749,52 @@ judge can be checked against humans: `GET /v1/analytics/foundational-skills/judg
 
 > ⚠️ All six tables are hand-written SQL (migrations `1974600000000`, `1975400000000`, `1975700000000`, `1975710000000` and `1975720000000`); never `migration:generate` them.
 
+### 3.17 Text helpline (`helpline`)
+
+Anonymous web **talkers** chat in text with trained human **listeners**, with an AI copilot that
+only ever speaks to the listener. Contract: [`docs/text-helpline.md`](docs/text-helpline.md) — its
+invariants (humans only write to talkers; staff-only rows never reach a talker; no bodies in logs,
+audit payloads or events) are enforced partly by the schema below. All ten tables are hand-written
+SQL (migration `1975740000000`); never `migration:generate` them. Every column is `snake_case`,
+timestamps are `timestamptz` (`created_at`/`updated_at` are the module's own, not `BaseEntity`'s),
+and `tenant_id` holds the tenant **uuid** (`tenants.id`, as text), not the code.
+
+Separate from `chats`/`messages` on purpose: those are read raw by Scribe analytics and the
+call-log services, and helpline chats would inflate Scribe adoption metrics.
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `helpline_talkers` | `id` (uuid), `channel` (CHECK `TEXT_WEB`/`TEXT_WHATSAPP`), `display_name` (text — **encrypted**, ≤ 40 chars of plaintext, default `Anonymous`), `language`, `consent_version`, `consent_accepted_at`, `ip_hash` (varchar(64) — HMAC-SHA256 of ip + server salt, abuse windows only), `user_agent`, `last_seen_at`, `revoked_at`, `blocked_at`/`blocked_by`, `erased_at`, `wa_contact_id` (Phase 5) | One per session; no row exists before consent. Authenticated only by the guest JWT, which every guest request re-checks against `revoked_at IS NULL`. A block refuses new sessions from the same `ip_hash` for 24 h |
+| `helpline_chats` | `id` (uuid), `talker_id` (FK), `status` (CHECK `WAITING`/`ACTIVE`/`ENDED`), `language`, `priority` (100 once WAITING + HIGH risk), `wait_started_at`, `abandoned_at`, `claimed_at`, `listener_id` (int → `users.id`, no FK), `previous_listener_ids` (int[] — read-only access after transfer/take-over), `transfer_requested_at`/`_by`, `transfer_target_listener_id`, `taken_over_at`, `ended_at`/`ended_reason` (CHECK, 9 values)/`ended_by`, `risk_level` (CHECK `NONE`/`ELEVATED`/`HIGH`, denormalised max, only rises), `resources_sent_at`, `last_talker_message_at`/`last_listener_message_at`, `talker_message_count`/`listener_message_count`, `talker_turns_since_nudge`/`nudge_count`, `qa_status` (CHECK, nullable — NULL → PENDING → DONE/SKIPPED/FAILED; a failed QA judgement returns to NULL until `metadata.qaAttempts` reaches 3), `erased_at`, `metadata` (jsonb) | **Also the queue**: a WAITING row is a queue entry, so a claim is one conditional `UPDATE … RETURNING` (contract §6.6) and two listeners can never both win. Lobby order is `priority DESC, wait_started_at ASC`; `abandoned_at` hides a row from the lobby without losing its place |
+| `helpline_messages` | `id` (**serial int** — monotonic, drives `afterId` resync), `chat_id` (FK), `sender_role` (CHECK `TALKER`/`LISTENER`/`SUPERVISOR`/`SYSTEM`/`COPILOT`), `sender_user_id`, `type` (CHECK `TEXT`/`SYSTEM`/`SUGGESTION`/`NUDGE`/`STAGE`/`RISK`/`WHISPER`/`TRANSFER`), `system_kind`, `content` (text), `parent_message_id`, `client_message_id` (uuid), `visible_to_talker` (bool, default false), `metadata`, `erased_at` | `CHK_helpline_messages_talker_visibility`: only TEXT and SYSTEM rows can ever be talker-visible. Partial unique `(chat_id, client_message_id)` makes a resend return the existing row. `content` (every type) and `metadata.suggestions[].text` are **encrypted at rest** (see below); retention/erasure blank bodies to the plaintext marker `[erased]` |
+| `helpline_listener_profiles` | `user_id` (int, unique), `display_name` (varchar(40) — the alias talkers see), `max_concurrent_chats` (default 2, capped by the org setting on read), `languages` (text[]), `notifications_enabled` | Absent until a listener first saves one; reads fall back to their first name and 2 chats |
+| `helpline_risk_flags` | `chat_id`, `message_id` (FK), `level` (CHECK `ELEVATED`/`HIGH`), `source` (CHECK `KEYWORD`/`CLASSIFIER`), `confidence`, `subject` (CHECK `SELF`/`OTHER`/`UNCLEAR`, nullable), `rule_id`, `signal_start`/`signal_end` (**offsets into the message body, never the text**), `resources_sent`, `supervisors_alerted` (int, nullable — null n/a, 0 nobody, n supervisors reached; `1975810000000`), `hit_count` (int, default 1), `last_hit_at`, `latest_message_id`, `latest_signal_start`/`latest_signal_end` (offsets, `1975820000000`), `acknowledged_by`/`_at`, `outcome` (CHECK `UNREVIEWED`/`CONFIRMED`/`FALSE_POSITIVE`), `outcome_note` (text — **encrypted**, ≤ 500 chars of plaintext) | The live `signal` shown to the listener is re-derived from the body by offset, so it disappears with the body. **At most one open (unacknowledged) flag per chat**: later hits fold into it (`hit_count`, `latest_*`) until a listener acknowledges it; partial index `idx_helpline_risk_flags_open` `(tenant_id, chat_id) WHERE acknowledged_at IS NULL`. Each counted hit also leaves a staff-only `RISK` row in `helpline_messages` on its message. Acknowledgements feed the calibration view |
+| `helpline_risk_keyword_rules` | `tenant_id` (**nullable** — NULL = platform default), `phrase`, `language`, `match_type` (CHECK `CONTAINS`/`WORD`), `level`, `enabled` | Seeded by `1975760000000` (en, hi Devanagari + romanised, mr, ta, kn). Unique `(COALESCE(tenant_id,''), language, phrase)`. Matching normalises NFKC + case + whitespace and **keeps `\p{M}`** (Indic vowel signs are Marks) |
+| `helpline_chat_events` | `chat_id`, `type` (CHECK, 17 values — `ENQUEUED`, `CLAIMED`, `ENDED` …), `actor_user_id`, `payload` (jsonb) | The timeline. `payload` carries ids, levels and reasons — **never a message body** |
+| `helpline_chat_summaries` | `chat_id`, `kind` (CHECK `ROLLING`/`HANDOFF`/`FINAL`), `fields` (jsonb — **encrypted** as `{"enc": "<ciphertext of {key: string}>"}`; the org's `summaryFields`), `through_message_id`, `edited_by`, `version` | One row per (chat, kind), unique, updated in place with `version++`. FINAL is generated after the chat ends (ally-ai `/summary/note`) and never overwrites a listener's edit |
+| `helpline_qa_scores` | `chat_id` (unique), `listener_id`, `rubric_version` (`fhs-text-v1+helpline-chat-v1`), `levels` (jsonb `{skillKey: 1–4}`, assessed skills only), `verdicts` (jsonb `{ skills: [{ skill, opportunity, level, observed, notApplicable, evidence: [{ code, messageId, start, end }] }], stats }` — evidence is **offsets into the message, never text**), `composite_score` (real), `has_unhelpful_behaviour`, `judge_model` | Helping-skills judgement of an ended chat (`HelplineQaService`, 30-min job). Visible to that listener and supervisors; never ranked. Levels derived in code (`deriveLevel`), never by the model |
+| `helpline_talker_feedback` | `chat_id` (unique), `rating` (smallint, CHECK 1–5), `comment` (text — **encrypted**, ≤ 1,000 chars of plaintext) | Once per chat |
+
+**Not tables:** the org switch and settings are `preference` rows `TEXT_HELPLINE_ENABLED`
+(`{enabled}`) and `TEXT_HELPLINE_SETTINGS` (a partial settings object merged over code defaults),
+keyed by tenant **code**. Presence, connection liveness and typing are Redis keys under `hl:*`
+(contract §6.4); the public status is cached 10 s at `hl:status:<tenant uuid>`.
+
+**Encryption at rest:** the PHI columns above are AES-256-GCM through `CryptoService` with the
+same `PHI_DATA_ENCRYPTION_KEY` as Scribe transcripts (`HelplineContentCipher`). Ciphertext is
+`hlenc:v1:<base64(iv ‖ tag ‖ data)>`; a value without that prefix is legacy plaintext and is read
+as is, and `[erased]` is always plaintext. `HelplineMessageRepository` encrypts on insert and
+decrypts on every read, so services only see plaintext. Writing without the key fails rather than
+storing plaintext. The three bounded columns were widened to `text` by `1975800000000` because
+ciphertext is longer than the plaintext limits, which are enforced on write instead.
+
+**Retention:** hourly, per tenant `retentionDays` (0 = keep). For chats ended before the cutoff it
+blanks `helpline_messages.content` (all types) to `[erased]` and drops suggestion text from
+`metadata`, nulls `helpline_talker_feedback.comment` and `helpline_risk_flags.outcome_note`, empties
+`helpline_chat_summaries.fields`, resets `helpline_talkers.display_name` to `Anonymous`, and sets
+`erased_at`. Rows, counts, levels, scores and timings stay, so history does not shrink. A talker's
+own **erasure** does the same to one chat immediately and revokes their token.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -841,6 +887,15 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | Whether learners get better at foundational helping skills, independent of scenario | `foundational_skill_cuts` + `foundational_skill_assessments` (one rubric version at a time) |
 | Whether a learner did better on the fixed benchmark roleplay after practising | `foundational_skill_benchmark_assessments` (first vs latest scored session per learner and scenario; benchmark scenarios are `scenarios.metadata.fhsBenchmark = true`) |
 | Whether a course's learners did better on helping skills after it than before | `track_enrollments` (`startedAt`/`completedAt`) against `foundational_skill_cuts` + `foundational_skill_assessments` either side — computed per read by `GET /v1/analytics/course-impact`, nothing stored |
+| A text-helpline conversation and its transcript | `helpline_chats` + `helpline_messages` (talker-visible = `visible_to_talker`; staff-only types are SUGGESTION/NUDGE/STAGE/RISK/WHISPER/TRANSFER) |
+| Who is waiting for a helpline listener, in what order | `helpline_chats` where `status = 'WAITING' AND abandoned_at IS NULL`, ordered `priority DESC, wait_started_at` |
+| The anonymous person behind a helpline chat | `helpline_talkers` (no PII beyond an alias, language, consent version and an ip HMAC) |
+| A helpline listener's alias and chat limit | `helpline_listener_profiles` (absent = defaults) |
+| Why a helpline chat was flagged for risk, and whether it was right | `helpline_risk_flags` (offsets only) + `helpline_risk_keyword_rules` (`tenant_id` NULL = platform default) |
+| A helpline chat's timeline (claimed, transferred, ended …) | `helpline_chat_events` |
+| The listener's notes on a helpline chat | `helpline_chat_summaries` (`kind = 'FINAL'`) |
+| How a helpline chat went, from either side | `helpline_qa_scores` (listener skills, 1–4), `helpline_talker_feedback` (talker rating) |
+| Whether an org has the text helpline on, and its settings | `preference` rows `TEXT_HELPLINE_ENABLED` / `TEXT_HELPLINE_SETTINGS`, keyed by tenant code — not a table |
 | Whether a skill a debrief told the learner to work on then improved | `session_feedback_skill_links` against `foundational_skill_cuts` + `foundational_skill_assessments` either side of the session — computed per read by `GET /v1/analytics/foundational-skills/feedback-uptake` |
 | How confident a learner says they are at each helping skill, and whether it matches the judge | `learner_self_assessments` (first vs latest per learner; matched to `foundational_skill_cuts` + `foundational_skill_assessments` by nearest `closedSessionEndedAt`) — computed per read by `GET /v1/analytics/foundational-skills/self-efficacy` |
 | Whether the foundational-skills judge agrees with people (and people with each other) | `fhs_human_ratings` against `foundational_skill_assessments` for the same cut and rubric version — `GET /v1/analytics/foundational-skills/judge-agreement` |

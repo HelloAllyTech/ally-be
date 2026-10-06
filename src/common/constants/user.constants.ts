@@ -33,6 +33,16 @@ export enum UserRole {
    * something different: a tenant-scoped org admin.
    */
   PLATFORM_ADMIN = 'PLATFORM_ADMIN',
+  /**
+   * Text helpline listener: answers anonymous talkers' chats. Additive, like
+   * EVALUATOR — granted alongside the account's normal role from
+   * Helpline → Team. Gate on the `view:helpline:*` permissions, never on this
+   * name (see docs/text-helpline.md §2). A LISTENER-only account collapses to
+   * `role: 'LISTENER'` in determineUserRole's fallback.
+   */
+  LISTENER = 'LISTENER',
+  /** Text helpline supervisor: a LISTENER who can also monitor, whisper and transfer. */
+  HELPLINE_SUPERVISOR = 'HELPLINE_SUPERVISOR',
 }
 
 /**
@@ -148,6 +158,21 @@ export enum PreferenceName {
    * platform admin turns this on for it.
    */
   TEXT_CHAT_ROLEPLAY_ENABLED = 'TEXT_CHAT_ROLEPLAY_ENABLED',
+  /**
+   * Org-level switch for the copilot-supported text helpline (anonymous web
+   * talkers ↔ trained listeners; docs/text-helpline.md). Value `{ enabled }`.
+   * OFF when the row is absent, and read fail-closed by
+   * `@RequireHelplineEnabled()` on every listener route and the socket
+   * handshake. Written only by platform admins from the admin console.
+   */
+  TEXT_HELPLINE_ENABLED = 'TEXT_HELPLINE_ENABLED',
+  /**
+   * The org's text-helpline settings (hours, languages, emergency resources,
+   * retention, copilot switches …) as a PARTIAL `HelplineSettings` — merged
+   * over the defaults in `src/helpline/constants/helpline-settings.defaults.ts`
+   * on every read, so a new setting needs no backfill.
+   */
+  TEXT_HELPLINE_SETTINGS = 'TEXT_HELPLINE_SETTINGS',
 }
 
 export enum PreferenceRelatedEntity {

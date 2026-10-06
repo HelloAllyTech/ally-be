@@ -1,0 +1,98 @@
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  HelplineRiskFlagLevel,
+  HelplineRiskOutcome,
+  HelplineRiskSource,
+  HelplineRiskSubject,
+} from '../constants/helpline.constants';
+import { HelplineTenantScopedEntity } from './helpline-base';
+
+/**
+ * One risk signal on one talker message. Stores OFFSETS into the message body,
+ * never the matched text (invariant 5) — the live `signal` is re-derived from
+ * the body for the listener and is null once the body is erased.
+ */
+@Entity('helpline_risk_flags')
+@Index('idx_helpline_risk_flags_chat', ['tenantId', 'chatId'])
+@Index('idx_helpline_risk_flags_created', ['tenantId', 'createdAt'])
+// Partial (WHERE acknowledged_at IS NULL) in migration 1975820000000.
+@Index('idx_helpline_risk_flags_open', ['tenantId', 'chatId'])
+export class HelplineRiskFlag extends HelplineTenantScopedEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ type: 'uuid', name: 'chat_id' })
+  chatId!: string;
+
+  @Column({ type: 'int', name: 'message_id' })
+  messageId!: number;
+
+  @Column({ type: 'varchar', length: 16 })
+  level!: HelplineRiskFlagLevel;
+
+  @Column({ type: 'varchar', length: 16 })
+  source!: HelplineRiskSource;
+
+  @Column({ type: 'real', nullable: true })
+  confidence!: number | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  subject!: HelplineRiskSubject | null;
+
+  @Column({ type: 'uuid', name: 'rule_id', nullable: true })
+  ruleId!: string | null;
+
+  @Column({ type: 'int', name: 'signal_start', nullable: true })
+  signalStart!: number | null;
+
+  @Column({ type: 'int', name: 'signal_end', nullable: true })
+  signalEnd!: number | null;
+
+  /**
+   * Hits folded into this flag while it was open (contract §9.3): every later
+   * talker message that hit before a listener acknowledged it. 1 = the opener.
+   */
+  @Column({ type: 'int', name: 'hit_count', default: 1 })
+  hitCount!: number;
+
+  @Column({ type: 'timestamptz', name: 'last_hit_at', nullable: true })
+  lastHitAt!: Date | null;
+
+  /** The latest hit's message, and its signal as offsets into that body. */
+  @Column({ type: 'int', name: 'latest_message_id', nullable: true })
+  latestMessageId!: number | null;
+
+  @Column({ type: 'int', name: 'latest_signal_start', nullable: true })
+  latestSignalStart!: number | null;
+
+  @Column({ type: 'int', name: 'latest_signal_end', nullable: true })
+  latestSignalEnd!: number | null;
+
+  @Column({ type: 'boolean', name: 'resources_sent', default: false })
+  resourcesSent!: boolean;
+
+  /**
+   * Supervisors the HIGH alert reached: null = not applicable (ELEVATED),
+   * 0 = nobody could be alerted, n = notified by this flag's alert or the
+   * deduped one that already covered the chat (contract §9.3).
+   */
+  @Column({ type: 'int', name: 'supervisors_alerted', nullable: true })
+  supervisorsAlerted!: number | null;
+
+  @Column({ type: 'int', name: 'acknowledged_by', nullable: true })
+  acknowledgedBy!: number | null;
+
+  @Column({ type: 'timestamptz', name: 'acknowledged_at', nullable: true })
+  acknowledgedAt!: Date | null;
+
+  @Column({
+    type: 'varchar',
+    length: 16,
+    default: HelplineRiskOutcome.UNREVIEWED,
+  })
+  outcome!: HelplineRiskOutcome;
+
+  /** Encrypted at rest; ≤ 500 characters of plaintext. Blanked by retention. */
+  @Column({ type: 'text', name: 'outcome_note', nullable: true })
+  outcomeNote!: string | null;
+}
