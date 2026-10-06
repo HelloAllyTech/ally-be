@@ -44,6 +44,7 @@ import { HelplineLifecycleService } from './service/helpline-lifecycle.service';
 import { HelplineListenerService } from './service/helpline-listener.service';
 import { HelplineMessageWriter } from './service/helpline-message-writer.service';
 import { HelplineMessageService } from './service/helpline-message.service';
+import { HelplineMonitorService } from './service/helpline-monitor.service';
 import { HelplineNotifyService } from './service/helpline-notify.service';
 import { HelplinePresenceService } from './service/helpline-presence.service';
 import { HelplineProfileService } from './service/helpline-profile.service';
@@ -129,6 +130,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineGuestService,
     HelplineListenerService,
     HelplineSupervisionService,
+    HelplineMonitorService,
     HelplineTeamService,
     HelplineLifecycleService,
     HelplineConnectionService,

@@ -45,6 +45,35 @@ export class HelplineProfileService {
     };
   }
 
+  /**
+   * Profiles for many listeners at once (the monitor roster). Users with no
+   * row get the same defaults `getProfile` gives, named from `names`.
+   */
+  async getProfiles(
+    tenantId: string,
+    users: { id: number; name: string }[],
+    orgMaxConcurrent: number,
+  ): Promise<Map<number, ListenerProfileDto>> {
+    const out = new Map<number, ListenerProfileDto>();
+    if (!users.length) return out;
+    const rows = await this.profiles.find({
+      where: { tenantId, userId: In(users.map((u) => u.id)) },
+    });
+    rows.forEach((row) =>
+      out.set(row.userId, this.toDto(row, orgMaxConcurrent)),
+    );
+    for (const user of users) {
+      if (out.has(user.id)) continue;
+      out.set(user.id, {
+        displayName: defaultAlias(user.name),
+        maxConcurrentChats: Math.min(DEFAULT_MAX_CONCURRENT, orgMaxConcurrent),
+        languages: [],
+        notificationsEnabled: true,
+      });
+    }
+    return out;
+  }
+
   /** `min(profile.max, org cap)` — the claim's capacity limit. */
   async capacity(
     tenantId: string,

@@ -134,6 +134,7 @@ const chatMethods: [string, (r: HelplineChatRepository) => Promise<unknown>][] =
     ['countActiveForListener', (r) => r.countActiveForListener(TENANT, 7)],
     ['listActiveForListener', (r) => r.listActiveForListener(TENANT, 7)],
     ['listOpen', (r) => r.listOpen(TENANT)],
+    ['listActive', (r) => r.listActive(TENANT)],
     [
       'recentClaimWaitSeconds',
       (r) => r.recentClaimWaitSeconds(TENANT, new Date()),

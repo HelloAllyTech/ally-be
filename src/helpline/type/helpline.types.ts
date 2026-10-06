@@ -299,6 +299,59 @@ export interface ChatDetailDto {
   events: { type: string; at: string; actorName: string | null }[];
 }
 
+export interface MonitorActiveChatDto extends ChatListItemDto {
+  lastMessageAgeSeconds: number | null;
+  listenerConnected: boolean;
+  talkerConnected: boolean;
+  transferPending: boolean;
+  /** Flags on this chat nobody has acknowledged yet. */
+  openFlags: number;
+}
+
+export interface MonitorListenerDto {
+  userId: number;
+  displayName: string;
+  presence: HelplinePresence;
+  activeChatCount: number;
+  maxConcurrentChats: number;
+  languages: string[];
+}
+
+export interface MonitorDto {
+  tiles: {
+    waiting: number;
+    active: number;
+    listenersAvailable: number;
+    /** Unacknowledged HIGH flags on WAITING / ACTIVE chats. */
+    openHighFlags: number;
+  };
+  activeChats: MonitorActiveChatDto[];
+  waiting: LobbyEntryDto[];
+  listeners: MonitorListenerDto[];
+}
+
+export type RiskOutcomeCounts = Record<HelplineRiskOutcome, number>;
+
+export interface RiskFlagRowDto extends RiskFlagDto {
+  chatId: string;
+  chatStatus: HelplineChatStatus;
+  chatRiskLevel: HelplineRiskLevel;
+  listener: { id: number; displayName: string } | null;
+  erased: boolean;
+}
+
+export interface RiskCalibrationDto {
+  items: RiskFlagRowDto[];
+  /** By outcome over the whole window (not narrowed by `outcome`). */
+  counts: RiskOutcomeCounts;
+  bySource: Record<HelplineRiskSource, RiskOutcomeCounts & { total: number }>;
+  /** CLASSIFIER flags by confidence band — where false positives sit. */
+  classifierByConfidence: ({ from: number; to: number } & RiskOutcomeCounts)[];
+  /** The org's current HIGH threshold, for reading the bands against. */
+  riskHighConfidence: number;
+  days: number;
+}
+
 export interface TeamMemberDto {
   userId: number;
   name: string;

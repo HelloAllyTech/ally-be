@@ -374,6 +374,14 @@ export class HelplineChatRepository {
     });
   }
 
+  /** Every ACTIVE chat of the tenant (the monitor). */
+  listActive(tenantId: string): Promise<HelplineChat[]> {
+    return this.repo.find({
+      where: { tenantId, status: HelplineChatStatus.ACTIVE },
+      order: { claimedAt: 'ASC' },
+    });
+  }
+
   listOpen(tenantId: string): Promise<HelplineChat[]> {
     return this.repo.find({
       where: [

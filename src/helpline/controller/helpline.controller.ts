@@ -23,6 +23,7 @@ import {
   CopilotFeedbackDto,
   HelplineAfterIdQueryDto,
   ListChatsQueryDto,
+  RiskFlagsQueryDto,
   TeamQueryDto,
   UpdateListenerProfileDto,
   UpdatePresenceDto,
@@ -38,6 +39,7 @@ import {
 } from '../guard/helpline-enabled.guard';
 import { HelplineClaimService } from '../service/helpline-claim.service';
 import { HelplineListenerService } from '../service/helpline-listener.service';
+import { HelplineMonitorService } from '../service/helpline-monitor.service';
 import { HelplineSupervisionService } from '../service/helpline-supervision.service';
 import { HelplineTeamService } from '../service/helpline-team.service';
 import {
@@ -48,7 +50,11 @@ import {
   MeDto,
 } from '../type/helpline.types';
 import { HelplineChatIdPipe, HelplineUserIdPipe } from '../util/helpline-pipes';
-import { StaffMessageDto } from '../type/helpline.types';
+import {
+  MonitorDto,
+  RiskCalibrationDto,
+  StaffMessageDto,
+} from '../type/helpline.types';
 
 /**
  * Listener / supervisor routes (contract §5.3).
@@ -73,6 +79,7 @@ export class HelplineController {
     private readonly team: HelplineTeamService,
     private readonly tenantFeatureService: TenantFeatureService,
     private readonly supervision: HelplineSupervisionService,
+    private readonly monitorService: HelplineMonitorService,
   ) {}
 
   /**
@@ -352,6 +359,31 @@ export class HelplineController {
     @Body() body: BlockTalkerDto,
   ): Promise<void> {
     await this.supervision.block(tenant, talkerId, user, body?.reason);
+  }
+
+  // ── Monitor + calibration ────────────────────────────────────────────────
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_MONITOR])
+  @Get('monitor')
+  @ApiOperation({ summary: 'Live supervisor monitor for my organisation' })
+  monitor(@HelplineTenantParam() tenant: HelplineTenant): Promise<MonitorDto> {
+    return this.monitorService.monitor(tenant);
+  }
+
+  @RequireHelplineEnabled()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_MONITOR])
+  @Get('risk-flags')
+  @ApiOperation({
+    summary:
+      'Risk flags and outcomes over a window, to calibrate the classifier',
+  })
+  riskFlags(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Query() query: RiskFlagsQueryDto,
+  ): Promise<RiskCalibrationDto> {
+    return this.monitorService.calibration(tenant, user, query);
   }
 
   @RequireHelplineEnabled()

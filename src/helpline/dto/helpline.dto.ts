@@ -269,3 +269,21 @@ export class BlockTalkerDto {
   @MaxLength(500)
   reason?: string;
 }
+
+export class RiskFlagsQueryDto {
+  @ApiPropertyOptional({
+    enum: ['UNREVIEWED', 'CONFIRMED', 'FALSE_POSITIVE'],
+    description: 'Narrows `items` only; counts cover the whole window',
+  })
+  @IsOptional()
+  @IsIn(['UNREVIEWED', 'CONFIRMED', 'FALSE_POSITIVE'])
+  outcome?: string;
+
+  @ApiPropertyOptional({ default: 7, minimum: 1, maximum: 90 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  days?: number;
+}

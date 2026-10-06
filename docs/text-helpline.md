@@ -292,7 +292,7 @@ helpline is switched off (§5.4).
 | `POST /v1/helpline/chats/:id/whisper` | `edit:helpline:whisper` | `{ content: string /* ≤ 2000 */ }` | `StaffMessageDto` (type WHISPER) · empty 400 · ENDED 409 |
 | `POST /v1/helpline/talkers/:talkerId/block` | `edit:helpline:transfer` | `{ reason?: string }` | `204` (ends chat `TALKER_BLOCKED`; `reason` is not stored — the audit records only whether one was given) · unknown talker 404 |
 | `GET /v1/helpline/monitor` | `view:helpline:monitor` | — | `MonitorDto` |
-| `GET /v1/helpline/risk-flags?outcome=&days=7` | `view:helpline:monitor` | — | `{ items: RiskFlagRowDto[]; counts: { UNREVIEWED; CONFIRMED; FALSE_POSITIVE }; bySource: {...} }` (calibration view) |
+| `GET /v1/helpline/risk-flags?outcome=&days=7` | `view:helpline:monitor` | `days` 1–90 (default 7); `outcome` narrows `items` only | `RiskCalibrationDto` (calibration view; newest first, ≤ 200 items; audited `HELPLINE_TRANSCRIPT_ACCESSED { view: 'risk-calibration' }` because items carry live signals) |
 | `GET /v1/helpline/qa?listenerId=&page=` | `view:helpline:qa` | — | `{ items: QaListItemDto[]; total }` |
 | `GET /v1/helpline/qa/mine` | `view:helpline:lobby` | — | `{ items: QaListItemDto[] }` (own only) |
 | `GET /v1/helpline/qa/:chatId` | own, or `view:helpline:qa` | — | `QaDetailDto` |
@@ -425,10 +425,25 @@ interface RiskFlagDto {
 }
 interface SummaryDto { kind: 'ROLLING' | 'HANDOFF' | 'FINAL'; fields: Record<string, string>; throughMessageId: number; editedByName: string | null; version: number; updatedAt: string }
 interface MonitorDto {
-  tiles: { waiting: number; active: number; listenersAvailable: number; openHighFlags: number };
-  activeChats: (ChatListItemDto & { lastMessageAgeSeconds: number | null; listenerConnected: boolean; talkerConnected: boolean; transferPending: boolean; openFlags: number })[];
-  waiting: LobbyEntryDto[];
+  tiles: { waiting: number; active: number; listenersAvailable: number; openHighFlags: number /* unacknowledged HIGH flags on WAITING/ACTIVE chats */ };
+  activeChats: (ChatListItemDto & { lastMessageAgeSeconds: number | null; listenerConnected: boolean; talkerConnected: boolean; transferPending: boolean; openFlags: number /* unacknowledged */ })[];
+                                    // ACTIVE chats, risk HIGH → NONE, then the longest silence first
+  waiting: LobbyEntryDto[];         // = the lobby (NEW + TRANSFER entries)
   listeners: { userId: number; displayName: string; presence: Presence; activeChatCount: number; maxConcurrentChats: number; languages: string[] }[];
+                                    // every user of the tenant holding view:helpline:lobby (platform staff excluded), OFFLINE when no live socket — the assign picker
+}
+interface RiskFlagRowDto extends RiskFlagDto {
+  chatId: string; chatStatus: 'WAITING' | 'ACTIVE' | 'ENDED'; chatRiskLevel: 'NONE' | 'ELEVATED' | 'HIGH';
+  listener: { id: number; displayName: string } | null; erased: boolean;
+}
+type OutcomeCounts = { UNREVIEWED: number; CONFIRMED: number; FALSE_POSITIVE: number };
+interface RiskCalibrationDto {
+  items: RiskFlagRowDto[];
+  counts: OutcomeCounts;                                         // whole window, not narrowed by `outcome`
+  bySource: { KEYWORD: OutcomeCounts & { total: number }; CLASSIFIER: OutcomeCounts & { total: number } };
+  classifierByConfidence: ({ from: number; to: number } & OutcomeCounts)[];   // bands 0–.5, .5–.6 … .9–1
+  riskHighConfidence: number;                                    // the org's current threshold
+  days: number;
 }
 interface QaListItemDto { chatId: string; listenerId: number; listenerName: string; endedAt: string; compositeScore: number; hasUnhelpfulBehaviour: boolean; rubricVersion: string }
 interface QaDetailDto extends QaListItemDto {
