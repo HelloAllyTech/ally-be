@@ -20,6 +20,7 @@ import { HelplineChat } from '../entity/helpline-chat.entity';
 import { HelplineMessage } from '../entity/helpline-message.entity';
 import { HelplineRiskFlag } from '../entity/helpline-risk-flag.entity';
 import { HelplineChatRepository } from '../repository/helpline-chat.repository';
+import { HelplineMessageRepository } from '../repository/helpline-message.repository';
 import { RiskFlagDto } from '../type/helpline.types';
 import { helplineAudit } from '../util/helpline-audit';
 import { badRequest, chatNotFound } from '../util/helpline-errors';
@@ -63,6 +64,7 @@ export class HelplineRiskService {
     private readonly settings: HelplineSettingsService,
     private readonly tenants: HelplineTenantService,
     private readonly notify: HelplineNotifyService,
+    private readonly messages: HelplineMessageRepository,
   ) {}
 
   /**
@@ -94,8 +96,26 @@ export class HelplineRiskService {
   }
 
   /**
-   * Record a flag from any source. Public so the classifier (second pass)
-   * goes through exactly the same path as the keyword screen.
+   * Record one risk HIT from any source — the keyword screen and the
+   * classifier both come through here (contract §9.3, "fold until
+   * acknowledged"):
+   *
+   *  - the chat has no open (unacknowledged) flag → a FRESH flag, the staff
+   *    `RISK_FLAGGED`, and for HIGH the side effects (`onHighRisk`);
+   *  - it has one → the hit FOLDS into it (`hit_count + 1`, the latest
+   *    message and its signal offsets, max confidence, latest subject) and
+   *    staff get `RISK_FLAG_UPDATED`, never a second banner; a hit above the
+   *    open flag's level (ELEVATED open, HIGH arrives) UPGRADES it and runs
+   *    `onHighRisk`; same-or-lower is silent (no alert, no resources);
+   *  - a second hit on the SAME message (keyword then classifier) is still one
+   *    hit: it can upgrade the level, never the count.
+   *
+   * After a listener acknowledges the flag, the next hit opens a fresh one
+   * (re-escalation). Every counted hit writes a staff-only RISK marker on its
+   * message (`metadata.flagId`, `folded`), so the transcript shows where.
+   *
+   * The open-flag lookup and the write run under a per-chat advisory lock, so
+   * two hits racing on different replicas cannot both open a flag.
    */
   async raiseFlag(
     chat: HelplineChat,
@@ -111,29 +131,26 @@ export class HelplineRiskService {
       | 'signalEnd'
     >,
   ): Promise<HelplineRiskFlag> {
-    const flag = await this.flags.save(
-      this.flags.create({
-        tenantId: chat.tenantId,
-        chatId: chat.id,
-        messageId: message.id,
-        ...input,
-        outcome: HelplineRiskOutcome.UNREVIEWED,
-      }),
-    );
+    const markers = await this.hitsForMessage(chat, message.id);
+    const { flag, kind } = await this.recordHit(chat, message, input, markers);
+    if (kind === 'IGNORED') return flag;
 
-    await this.writer.staffOnly(
-      chat,
-      HelplineMessageType.RISK,
-      HELPLINE_RISK_MESSAGE_COPY[flag.source][flag.level],
-      {
-        flagId: flag.id,
-        level: flag.level,
-        source: flag.source,
-        confidence: flag.confidence,
-        subject: flag.subject,
-      },
-      { parentMessageId: message.id },
-    );
+    if (kind !== 'SAME_MESSAGE_UPGRADE') {
+      await this.writer.staffOnly(
+        chat,
+        HelplineMessageType.RISK,
+        HELPLINE_RISK_MESSAGE_COPY[input.source][input.level],
+        {
+          flagId: flag.id,
+          level: input.level,
+          source: input.source,
+          confidence: input.confidence,
+          subject: input.subject,
+          folded: kind !== 'NEW',
+        },
+        { parentMessageId: message.id },
+      );
+    }
 
     const raised = await this.chats.raiseRisk(
       chat.tenantId,
@@ -145,41 +162,148 @@ export class HelplineRiskService {
       chat.priority = raised.priority;
     }
 
-    await this.events.record(
-      chat.tenantId,
-      chat.id,
-      HelplineChatEventType.RISK_FLAGGED,
-      null,
-      { flagId: flag.id, level: flag.level, source: flag.source },
-    );
+    const upgraded = kind === 'UPGRADED' || kind === 'SAME_MESSAGE_UPGRADE';
+    // The timeline records a flag opening or rising, not every folded hit
+    // (those are the RISK markers in the transcript).
+    if (kind === 'NEW' || upgraded) {
+      await this.events.record(
+        chat.tenantId,
+        chat.id,
+        HelplineChatEventType.RISK_FLAGGED,
+        null,
+        {
+          flagId: flag.id,
+          level: flag.level,
+          source: input.source,
+          ...(upgraded ? { upgraded: true } : {}),
+        },
+      );
+    }
 
-    // HIGH side effects run BEFORE the RISK_FLAGGED emit, so the listener's
-    // banner carries the truth about resources and supervisors from the start
-    // (`resourcesSent`, `supervisorsAlerted`) instead of assuming it. Every
-    // step is fast; push and Slack are detached inside the alert service.
-    if (flag.level === HelplineRiskFlagLevel.HIGH) {
+    // HIGH side effects run BEFORE the emit, so the banner carries the truth
+    // about resources and supervisors (`resourcesSent`, `supervisorsAlerted`)
+    // from the start. Only a NEW HIGH flag or an upgrade to HIGH runs them; a
+    // folded same-or-lower hit never re-alerts.
+    if (
+      flag.level === HelplineRiskFlagLevel.HIGH &&
+      (kind === 'NEW' || upgraded)
+    ) {
       await this.onHighRisk(chat, flag);
     }
 
-    const dto = this.views.riskFlagDto(flag, message);
+    const messages = new Map<number, HelplineMessage>([[message.id, message]]);
+    if (flag.messageId !== message.id) {
+      const opener = await this.messages.findById(
+        chat.tenantId,
+        chat.id,
+        flag.messageId,
+      );
+      if (opener) messages.set(opener.id, opener);
+    }
+    const dto = this.views.riskFlagDto(flag, messages);
     await this.realtime.emit(
       HelplineRooms.staff(chat.id),
-      HelplineServerEvents.RISK_FLAGGED,
+      kind === 'NEW'
+        ? HelplineServerEvents.RISK_FLAGGED
+        : HelplineServerEvents.RISK_FLAG_UPDATED,
       { chatId: chat.id, flag: dto },
     );
     if (chat.status === HelplineChatStatus.WAITING) {
       this.queue.queueChanged(chat.tenantId);
     }
 
-    // The audit logger is the one sink allowed the matched text (invariant 5).
+    // The audit logger is the one sink allowed the matched text (invariant 5):
+    // every counted hit, folded or not, with its own signal.
     helplineAudit('HELPLINE_RISK_FLAGGED', chat.tenantId, {
       chatId: chat.id,
       flagId: flag.id,
-      level: flag.level,
-      source: flag.source,
-      signal: dto.signal,
+      level: input.level,
+      source: input.source,
+      folded: kind !== 'NEW',
+      hitCount: flag.hitCount,
+      signal:
+        input.signalStart != null && input.signalEnd != null
+          ? message.content.slice(input.signalStart, input.signalEnd) || null
+          : null,
     });
     return flag;
+  }
+
+  /**
+   * The fold itself, under a per-chat transaction-scoped advisory lock:
+   * find the open flag; open a fresh one, fold into it, or (same message)
+   * upgrade it in place. Returns what happened.
+   */
+  private async recordHit(
+    chat: HelplineChat,
+    message: HelplineMessage,
+    input: Pick<
+      HelplineRiskFlag,
+      | 'level'
+      | 'source'
+      | 'confidence'
+      | 'subject'
+      | 'ruleId'
+      | 'signalStart'
+      | 'signalEnd'
+    >,
+    markers: { flagId: string | null }[],
+  ): Promise<{ flag: HelplineRiskFlag; kind: FoldKind }> {
+    return this.flags.manager.transaction(async (em) => {
+      await em.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `helpline-risk:${chat.id}`,
+      ]);
+      const repo = em.getRepository(HelplineRiskFlag);
+      const open = await repo.findOne({
+        where: {
+          tenantId: chat.tenantId,
+          chatId: chat.id,
+          acknowledgedAt: IsNull(),
+        },
+        order: { createdAt: 'DESC' },
+      });
+      const now = new Date();
+
+      if (!open) {
+        const flag = await repo.save(
+          repo.create({
+            tenantId: chat.tenantId,
+            chatId: chat.id,
+            messageId: message.id,
+            ...input,
+            outcome: HelplineRiskOutcome.UNREVIEWED,
+            hitCount: 1,
+            lastHitAt: now,
+            latestMessageId: message.id,
+            latestSignalStart: input.signalStart,
+            latestSignalEnd: input.signalEnd,
+          }),
+        );
+        return { flag, kind: 'NEW' as const };
+      }
+
+      const decision = foldDecision(
+        open,
+        input.level,
+        markers.some((m) => m.flagId === open.id),
+      );
+      if (decision === 'IGNORED') return { flag: open, kind: decision };
+
+      open.confidence = maxConfidence(open.confidence, input.confidence);
+      if (input.subject) open.subject = input.subject;
+      if (decision === 'UPGRADED' || decision === 'SAME_MESSAGE_UPGRADE') {
+        open.level = input.level;
+      }
+      if (decision === 'FOLDED' || decision === 'UPGRADED') {
+        open.hitCount = (open.hitCount ?? 1) + 1;
+        open.lastHitAt = now;
+        open.latestMessageId = message.id;
+        open.latestSignalStart = input.signalStart;
+        open.latestSignalEnd = input.signalEnd;
+      }
+      const flag = await repo.save(open);
+      return { flag, kind: decision };
+    });
   }
 
   /**
@@ -267,27 +391,54 @@ export class HelplineRiskService {
     return true;
   }
 
-  /** Every flag already raised on one message (classifier dedupe). */
-  flagsForMessage(
+  /**
+   * The hits already counted on one message — its RISK markers — with the
+   * flag each went to and its own source and level. What the classifier
+   * dedupes against: a flag row no longer says which messages folded into it.
+   */
+  async hitsForMessage(
     chat: Pick<HelplineChat, 'id' | 'tenantId'>,
     messageId: number,
-  ): Promise<HelplineRiskFlag[]> {
-    return this.flags.find({
-      where: { tenantId: chat.tenantId, chatId: chat.id, messageId },
-    });
+  ): Promise<
+    {
+      flagId: string | null;
+      source: HelplineRiskSource;
+      level: HelplineRiskFlagLevel;
+    }[]
+  > {
+    const markers = await this.messages.listRiskMarkers(
+      chat.tenantId,
+      chat.id,
+      messageId,
+    );
+    return markers
+      .map((m) => m.metadata ?? {})
+      .filter(
+        (meta) =>
+          (meta.source === HelplineRiskSource.KEYWORD ||
+            meta.source === HelplineRiskSource.CLASSIFIER) &&
+          (meta.level === HelplineRiskFlagLevel.HIGH ||
+            meta.level === HelplineRiskFlagLevel.ELEVATED),
+      )
+      .map((meta) => ({
+        flagId: typeof meta.flagId === 'string' ? meta.flagId : null,
+        source: meta.source as HelplineRiskSource,
+        level: meta.level as HelplineRiskFlagLevel,
+      }));
   }
 
   /** Subject of the chat's latest flag that has one (the classifier's). */
   async latestSubject(
     chat: Pick<HelplineChat, 'id' | 'tenantId'>,
   ): Promise<HelplineRiskSubject | null> {
+    // updatedAt, not createdAt: a folded hit updates the open flag's subject.
     const flag = await this.flags.findOne({
       where: {
         tenantId: chat.tenantId,
         chatId: chat.id,
         subject: Not(IsNull()),
       },
-      order: { createdAt: 'DESC' },
+      order: { updatedAt: 'DESC' },
     });
     return flag?.subject ?? null;
   }
@@ -363,4 +514,45 @@ export function emergencyResourcesText(
     pick(settings.emergencyResources, 'en') ??
     pick(HELPLINE_DEFAULT_SETTINGS.emergencyResources, 'en')
   );
+}
+
+/**
+ * What a hit does to the chat's open flag. `sameMessage`: this message
+ * already counted a hit on it (keyword, then the classifier).
+ *
+ *  - higher level, new message  → UPGRADED (counts a hit, runs the HIGH effects)
+ *  - higher level, same message → SAME_MESSAGE_UPGRADE (level only)
+ *  - same or lower, new message → FOLDED (counts a hit, silent)
+ *  - same or lower, same message → IGNORED
+ */
+export type FoldKind =
+  | 'NEW'
+  | 'FOLDED'
+  | 'UPGRADED'
+  | 'SAME_MESSAGE_UPGRADE'
+  | 'IGNORED';
+
+const LEVEL_RANK: Record<HelplineRiskFlagLevel, number> = {
+  [HelplineRiskFlagLevel.ELEVATED]: 1,
+  [HelplineRiskFlagLevel.HIGH]: 2,
+};
+
+export function foldDecision(
+  open: Pick<HelplineRiskFlag, 'level'>,
+  level: HelplineRiskFlagLevel,
+  sameMessage: boolean,
+): Exclude<FoldKind, 'NEW'> {
+  const higher = LEVEL_RANK[level] > LEVEL_RANK[open.level];
+  if (sameMessage) return higher ? 'SAME_MESSAGE_UPGRADE' : 'IGNORED';
+  return higher ? 'UPGRADED' : 'FOLDED';
+}
+
+function maxConfidence(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): number | null {
+  const values = [a, b].filter(
+    (v): v is number => typeof v === 'number' && Number.isFinite(v),
+  );
+  return values.length ? Math.max(...values) : null;
 }

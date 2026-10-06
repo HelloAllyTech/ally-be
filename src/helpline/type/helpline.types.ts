@@ -268,6 +268,11 @@ export interface RiskFlagDto {
   resourcesSent: boolean;
   /** null = not applicable (ELEVATED); 0 = HIGH but nobody alerted; n = supervisors notified. */
   supervisorsAlerted: number | null;
+  /** Messages that hit while this flag was open (folded); 1 = the opener. */
+  hitCount: number;
+  lastHitAt: string;
+  /** The latest folded hit's signal, re-derived from its body; null once erased. */
+  latestSignal: string | null;
   acknowledgedAt: string | null;
   acknowledgedByName: string | null;
   outcome: HelplineRiskOutcome;
@@ -342,9 +347,14 @@ export interface RiskFlagRowDto extends RiskFlagDto {
 
 export interface RiskCalibrationDto {
   items: RiskFlagRowDto[];
-  /** By outcome over the whole window (not narrowed by `outcome`). */
+  /** By outcome over the whole window (not narrowed by `outcome`), per FLAG. */
   counts: RiskOutcomeCounts;
-  bySource: Record<HelplineRiskSource, RiskOutcomeCounts & { total: number }>;
+  /** Hits folded into those flags, in all (≥ the number of flags). */
+  totalHits: number;
+  bySource: Record<
+    HelplineRiskSource,
+    RiskOutcomeCounts & { total: number; hits: number }
+  >;
   /** CLASSIFIER flags by confidence band — where false positives sit. */
   classifierByConfidence: ({ from: number; to: number } & RiskOutcomeCounts)[];
   /** The org's current HIGH threshold, for reading the bands against. */

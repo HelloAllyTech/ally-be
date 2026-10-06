@@ -271,7 +271,9 @@ export class HelplineCopilotService
 
       const level = mapRiskVerdict(verdict, settings.riskHighConfidence);
       if (!level) return;
-      const existing = await this.risk.flagsForMessage(chat, message.id);
+      // Hits already counted on THIS message (its RISK markers), so keyword
+      // + classifier on one message stay one hit.
+      const existing = await this.risk.hitsForMessage(chat, message.id);
       if (!classifierAddsFlag(existing, level)) return;
 
       const offsets = signalOffsets(message.content, verdict.signal);

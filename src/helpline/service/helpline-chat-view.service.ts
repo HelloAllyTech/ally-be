@@ -241,10 +241,14 @@ export class HelplineChatViewService {
         order: { createdAt: 'ASC' },
       }));
     if (!flags.length) return [];
+    // The opener's message and, for a folded flag, the latest hit's.
+    const ids = new Set<number>();
+    for (const f of flags) {
+      ids.add(f.messageId);
+      if (f.latestMessageId != null) ids.add(f.latestMessageId);
+    }
     const messageRows = await Promise.all(
-      [...new Set(flags.map((f) => f.messageId))].map((id) =>
-        this.messages.findById(chat.tenantId, chat.id, id),
-      ),
+      [...ids].map((id) => this.messages.findById(chat.tenantId, chat.id, id)),
     );
     const byId = new Map(
       messageRows
@@ -258,9 +262,7 @@ export class HelplineChatViewService {
         .filter((id): id is number => id != null),
     );
     const readable = await this.decryptNotes(flags);
-    return readable.map((flag) =>
-      this.riskFlagDto(flag, byId.get(flag.messageId), ackNames),
-    );
+    return readable.map((flag) => this.riskFlagDto(flag, byId, ackNames));
   }
 
   /** Copies of the flags with `outcomeNote` decrypted (encrypted at rest). */
@@ -279,11 +281,32 @@ export class HelplineChatViewService {
     );
   }
 
+  /**
+   * `messages`: the flag's message(s) — a map by id, or the one message the
+   * caller holds (used for whichever of the opener / latest hit it is). Both
+   * signals are re-derived from (decrypted) bodies by offset.
+   */
   riskFlagDto(
     flag: HelplineRiskFlag,
-    message: HelplineMessage | null | undefined,
+    messages: Map<number, HelplineMessage> | HelplineMessage | null | undefined,
     ackNames: Map<number, string> = new Map(),
   ): RiskFlagDto {
+    const lookup = (id: number | null | undefined) => {
+      if (id == null || !messages) return undefined;
+      if (messages instanceof Map) return messages.get(id);
+      return messages.id === id ? messages : undefined;
+    };
+    const latestId = flag.latestMessageId ?? flag.messageId;
+    const latestSignal =
+      flag.latestMessageId == null
+        ? deriveSignal(flag, lookup(flag.messageId))
+        : deriveSignal(
+            {
+              signalStart: flag.latestSignalStart,
+              signalEnd: flag.latestSignalEnd,
+            },
+            lookup(latestId),
+          );
     return {
       id: flag.id,
       messageId: flag.messageId,
@@ -291,9 +314,12 @@ export class HelplineChatViewService {
       source: flag.source,
       confidence: flag.confidence,
       subject: flag.subject,
-      signal: deriveSignal(flag, message),
+      signal: deriveSignal(flag, lookup(flag.messageId)),
       resourcesSent: flag.resourcesSent,
       supervisorsAlerted: flag.supervisorsAlerted ?? null,
+      hitCount: flag.hitCount ?? 1,
+      lastHitAt: new Date(flag.lastHitAt ?? flag.createdAt).toISOString(),
+      latestSignal,
       acknowledgedAt: iso(flag.acknowledgedAt),
       acknowledgedByName:
         flag.acknowledgedBy != null

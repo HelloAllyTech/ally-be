@@ -12,7 +12,6 @@ import type {
 } from 'src/ai/dto/helpline-copilot.dto';
 import { HelplineChat } from '../entity/helpline-chat.entity';
 import { HelplineMessage } from '../entity/helpline-message.entity';
-import { HelplineRiskFlag } from '../entity/helpline-risk-flag.entity';
 import {
   HelplineCopilotStatus,
   HelplineSettings,
@@ -95,7 +94,7 @@ export function mapRiskVerdict(
  * classifier HIGH over a keyword ELEVATED is an escalation and is recorded.
  */
 export function classifierAddsFlag(
-  existing: Pick<HelplineRiskFlag, 'source' | 'level'>[],
+  existing: { source: HelplineRiskSource; level: HelplineRiskFlagLevel }[],
   level: HelplineRiskFlagLevel,
 ): boolean {
   if (existing.some((f) => f.source === HelplineRiskSource.CLASSIFIER)) {

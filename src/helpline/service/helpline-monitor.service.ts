@@ -61,12 +61,18 @@ const zeroCounts = (): RiskOutcomeCounts => ({
 
 /** Pure: the calibration aggregates over a window's flags. */
 export function calibrationAggregates(
-  flags: Pick<HelplineRiskFlag, 'source' | 'outcome' | 'confidence'>[],
-): Pick<RiskCalibrationDto, 'counts' | 'bySource' | 'classifierByConfidence'> {
+  flags: (Pick<HelplineRiskFlag, 'source' | 'outcome' | 'confidence'> & {
+    hitCount?: number | null;
+  })[],
+): Pick<
+  RiskCalibrationDto,
+  'counts' | 'bySource' | 'classifierByConfidence' | 'totalHits'
+> {
   const counts = zeroCounts();
+  let totalHits = 0;
   const bySource = {
-    [HelplineRiskSource.KEYWORD]: { ...zeroCounts(), total: 0 },
-    [HelplineRiskSource.CLASSIFIER]: { ...zeroCounts(), total: 0 },
+    [HelplineRiskSource.KEYWORD]: { ...zeroCounts(), total: 0, hits: 0 },
+    [HelplineRiskSource.CLASSIFIER]: { ...zeroCounts(), total: 0, hits: 0 },
   };
   const bands = CONFIDENCE_BANDS.map(([from, to]) => ({
     from,
@@ -74,11 +80,16 @@ export function calibrationAggregates(
     ...zeroCounts(),
   }));
   for (const flag of flags) {
+    // Outcomes are per FLAG (one listener judgement each); hits are the
+    // messages folded into it.
+    const hits = Math.max(1, Number(flag.hitCount) || 1);
     counts[flag.outcome] += 1;
+    totalHits += hits;
     const source = bySource[flag.source];
     if (source) {
       source[flag.outcome] += 1;
       source.total += 1;
+      source.hits += hits;
     }
     if (
       flag.source === HelplineRiskSource.CLASSIFIER &&
@@ -90,7 +101,7 @@ export function calibrationAggregates(
       if (i >= 0) bands[i][flag.outcome] += 1;
     }
   }
-  return { counts, bySource, classifierByConfidence: bands };
+  return { counts, totalHits, bySource, classifierByConfidence: bands };
 }
 
 /** Pure: seconds since the chat's last message, or null if there was none. */
@@ -265,7 +276,7 @@ export class HelplineMonitorService {
     const [window, settings] = await Promise.all([
       this.flags.find({
         where: { tenantId: tenant.id, createdAt: MoreThanOrEqual(since) },
-        select: ['id', 'source', 'outcome', 'confidence'],
+        select: ['id', 'source', 'outcome', 'confidence', 'hitCount'],
       }),
       this.settings.getSettings(tenant),
     ]);
@@ -282,10 +293,12 @@ export class HelplineMonitorService {
     const chatIds = [...new Set(rows.map((f) => f.chatId))];
     const [chatRows, messageRows, readable] = await Promise.all([
       Promise.all(chatIds.map((id) => this.chats.findById(tenant.id, id))),
-      this.messages.findByIds(
-        tenant.id,
-        rows.map((f) => f.messageId),
-      ),
+      this.messages.findByIds(tenant.id, [
+        ...rows.map((f) => f.messageId),
+        ...rows
+          .map((f) => f.latestMessageId)
+          .filter((id): id is number => id != null),
+      ]),
       this.views.decryptNotes(rows),
     ]);
     const chats = new Map(
@@ -307,7 +320,7 @@ export class HelplineMonitorService {
     const items = readable.map((flag) => {
       const chat = chats.get(flag.chatId);
       return {
-        ...this.views.riskFlagDto(flag, messages.get(flag.messageId), names),
+        ...this.views.riskFlagDto(flag, messages, names),
         chatId: flag.chatId,
         chatStatus: chat?.status ?? HelplineChatStatus.ENDED,
         chatRiskLevel: chat?.riskLevel ?? HelplineRiskLevel.NONE,

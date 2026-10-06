@@ -276,6 +276,7 @@ describe('other PHI columns are written encrypted', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     await service.acknowledge(
       { id: CHAT_ID, tenantId: 't-1', erasedAt: null } as never,

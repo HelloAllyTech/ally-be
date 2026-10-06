@@ -24,6 +24,7 @@ import { HelplineListenerService } from '../helpline-listener.service';
 import {
   HelplineRiskService,
   emergencyResourcesText,
+  foldDecision,
 } from '../helpline-risk.service';
 import { HelplineStaffDirectoryService } from '../helpline-staff-directory.service';
 import { testCipher } from './helpline-test-cipher';
@@ -378,6 +379,16 @@ describe('HelplineStaffDirectoryService', () => {
 
 // ── Risk service: the HIGH protocol ──────────────────────────────────────────
 
+type StoredFlag = Record<string, unknown> & {
+  id: string;
+  acknowledgedAt: Date | null;
+};
+
+/**
+ * The risk service over in-memory flag and marker stores, so folding is
+ * exercised through the real raiseFlag / recordHit code (transaction and
+ * advisory lock included).
+ */
 function buildRisk(
   o: {
     resourcesClaimed?: boolean[];
@@ -391,17 +402,52 @@ function buildRisk(
     event: string;
     payload: Record<string, unknown>;
   }[] = [];
-  const deps = {
-    flags: {
-      create: (x: unknown) => x,
-      save: jest.fn(async (f: Record<string, unknown>) => ({
-        ...f,
-        id: 'flag-1',
-        createdAt: new Date(),
+  const store: StoredFlag[] = [];
+  const markers: {
+    parentMessageId: number;
+    metadata: Record<string, unknown>;
+  }[] = [];
+  const locks: string[] = [];
+  let nextFlag = 1;
+  const flagRepo = {
+    create: (x: Record<string, unknown>) => ({ ...x }),
+    findOne: jest.fn(async () => {
+      const open = store.filter((f) => f.acknowledgedAt == null);
+      return open.length ? { ...open[open.length - 1] } : null;
+    }),
+    save: jest.fn(async (f: Record<string, unknown>) => {
+      const row = {
         resourcesSent: false,
         supervisorsAlerted: null,
-      })),
-      update: jest.fn().mockResolvedValue({}),
+        acknowledgedAt: null,
+        createdAt: new Date(),
+        ...f,
+        id: (f.id as string) ?? `flag-${nextFlag++}`,
+      } as StoredFlag;
+      const i = store.findIndex((x) => x.id === row.id);
+      if (i >= 0) store[i] = row;
+      else store.push(row);
+      return { ...row };
+    }),
+  };
+  const deps = {
+    flags: {
+      manager: {
+        transaction: async (fn: (em: unknown) => Promise<unknown>) =>
+          fn({
+            query: async (_sql: string, params: string[]) => {
+              locks.push(params[0]);
+            },
+            getRepository: () => flagRepo,
+          }),
+      },
+      update: jest.fn(
+        async (where: { id: string }, patch: Record<string, unknown>) => {
+          const row = store.find((f) => f.id === where.id);
+          if (row) Object.assign(row, patch);
+          return {};
+        },
+      ),
     },
     chats: {
       raiseRisk: jest
@@ -410,14 +456,27 @@ function buildRisk(
       markResourcesSent: jest.fn(async () => claims.shift() ?? false),
     },
     writer: {
-      staffOnly: jest.fn().mockResolvedValue({}),
+      staffOnly: jest.fn(
+        async (
+          _chat: unknown,
+          _type: string,
+          _content: string,
+          metadata: Record<string, unknown>,
+          options: { parentMessageId: number },
+        ) => {
+          markers.push({ parentMessageId: options.parentMessageId, metadata });
+          return {};
+        },
+      ),
       system: jest.fn().mockResolvedValue({}),
     },
     views: {
       riskFlagDto: jest.fn((flag: Record<string, unknown>) => ({
         id: flag.id,
+        level: flag.level,
         resourcesSent: flag.resourcesSent,
         supervisorsAlerted: flag.supervisorsAlerted ?? null,
+        hitCount: flag.hitCount,
         signal: null,
       })),
     },
@@ -446,6 +505,17 @@ function buildRisk(
     },
     tenants: { resolve: jest.fn().mockResolvedValue(TENANT) },
     notify: { chatUpdated: jest.fn().mockResolvedValue(undefined) },
+    messages: {
+      findById: jest.fn(async (_t: string, _c: string, id: number) => ({
+        id,
+        content: TALKER_TEXT,
+        erasedAt: null,
+      })),
+      listRiskMarkers: jest.fn(
+        async (_t: string, _c: string, parentMessageId: number) =>
+          markers.filter((m) => m.parentMessageId === parentMessageId),
+      ),
+    },
   };
   const service = new HelplineRiskService(
     deps.flags as never,
@@ -461,6 +531,7 @@ function buildRisk(
     deps.settings as never,
     deps.tenants as never,
     deps.notify as never,
+    deps.messages as never,
   );
   const chat = {
     id: CHAT_ID,
@@ -470,18 +541,34 @@ function buildRisk(
     listenerId: 7,
     resourcesSentAt: null,
   };
-  const message = { id: 5, content: TALKER_TEXT } as never;
-  const raise = (level: HelplineRiskFlagLevel) =>
-    service.raiseFlag(chat as never, message, {
-      level,
-      source: HelplineRiskSource.CLASSIFIER,
-      confidence: 0.9,
-      subject: null,
-      ruleId: null,
-      signalStart: null,
-      signalEnd: null,
-    });
-  return { service, deps, emits, chat, raise };
+  const raise = (
+    level: HelplineRiskFlagLevel,
+    r: {
+      messageId?: number;
+      source?: HelplineRiskSource;
+      confidence?: number | null;
+      subject?: string | null;
+      signal?: [number, number] | null;
+    } = {},
+  ) =>
+    service.raiseFlag(
+      chat as never,
+      { id: r.messageId ?? 5, content: TALKER_TEXT } as never,
+      {
+        level,
+        source: r.source ?? HelplineRiskSource.CLASSIFIER,
+        confidence: r.confidence === undefined ? 0.9 : r.confidence,
+        subject: (r.subject ?? null) as never,
+        ruleId: null,
+        signalStart: r.signal ? r.signal[0] : null,
+        signalEnd: r.signal ? r.signal[1] : null,
+      },
+    );
+  const ack = (id: string) => {
+    const row = store.find((f) => f.id === id);
+    if (row) row.acknowledgedAt = new Date();
+  };
+  return { service, deps, emits, chat, raise, store, markers, locks, ack };
 }
 
 describe('HelplineRiskService HIGH protocol', () => {
@@ -533,10 +620,11 @@ describe('HelplineRiskService HIGH protocol', () => {
     expect(flagged?.payload.flag).toMatchObject({ supervisorsAlerted: 0 });
   });
 
-  it('resources go once per chat — a second HIGH sends none', async () => {
-    const { deps, raise } = buildRisk({ resourcesClaimed: [true, false] });
-    await raise(HelplineRiskFlagLevel.HIGH);
-    await raise(HelplineRiskFlagLevel.HIGH);
+  it('resources go once per chat — even a fresh HIGH flag after an ack sends none', async () => {
+    const { deps, raise, ack } = buildRisk({ resourcesClaimed: [true, false] });
+    const first = await raise(HelplineRiskFlagLevel.HIGH, { messageId: 5 });
+    ack(first.id as string);
+    await raise(HelplineRiskFlagLevel.HIGH, { messageId: 6 });
     expect(deps.writer.system).toHaveBeenCalledTimes(1);
     expect(deps.chats.markResourcesSent).toHaveBeenCalledTimes(2);
   });
@@ -566,6 +654,146 @@ describe('HelplineRiskService HIGH protocol', () => {
       expect.anything(),
       expect.objectContaining({ supervisorsAlerted: 0 }),
     );
+  });
+});
+
+// ── Fold until acknowledged ──────────────────────────────────────────────────
+
+describe('repeated hits fold into the open flag until it is acknowledged', () => {
+  const HIGH = HelplineRiskFlagLevel.HIGH;
+  const ELEVATED = HelplineRiskFlagLevel.ELEVATED;
+  type Emit = { event: string; payload: Record<string, unknown> };
+  const flaggedEvents = (emits: Emit[]) =>
+    emits.filter((e) => e.event === HelplineServerEvents.RISK_FLAGGED);
+  const updatedEvents = (emits: Emit[]) =>
+    emits.filter((e) => e.event === HelplineServerEvents.RISK_FLAG_UPDATED);
+
+  it('foldDecision: higher upgrades, same-or-lower folds, same message never counts twice', () => {
+    expect(foldDecision({ level: ELEVATED }, HIGH, false)).toBe('UPGRADED');
+    expect(foldDecision({ level: HIGH }, HIGH, false)).toBe('FOLDED');
+    expect(foldDecision({ level: HIGH }, ELEVATED, false)).toBe('FOLDED');
+    expect(foldDecision({ level: ELEVATED }, HIGH, true)).toBe(
+      'SAME_MESSAGE_UPGRADE',
+    );
+    expect(foldDecision({ level: HIGH }, HIGH, true)).toBe('IGNORED');
+    expect(foldDecision({ level: ELEVATED }, ELEVATED, true)).toBe('IGNORED');
+  });
+
+  it('while unacknowledged, a new hit folds: one flag, hit_count + latest updated, RISK_FLAG_UPDATED, no re-alert', async () => {
+    const { deps, emits, raise, store, markers, locks } = buildRisk();
+    const first = await raise(HIGH, {
+      messageId: 5,
+      confidence: 0.75,
+      subject: 'SELF',
+      signal: [0, 6],
+    });
+    const second = await raise(HIGH, {
+      messageId: 6,
+      source: HelplineRiskSource.KEYWORD,
+      confidence: null,
+      signal: [10, 20],
+    });
+    const third = await raise(ELEVATED, {
+      messageId: 7,
+      confidence: 0.95,
+      subject: 'OTHER',
+      signal: [2, 4],
+    });
+    expect(store).toHaveLength(1);
+    expect(second.id).toBe(first.id);
+    expect(third.id).toBe(first.id);
+    expect(store[0]).toMatchObject({
+      level: HIGH,
+      hitCount: 3,
+      messageId: 5,
+      latestMessageId: 7,
+      latestSignalStart: 2,
+      latestSignalEnd: 4,
+      confidence: 0.95, // the max
+      subject: 'OTHER', // the latest
+      source: HelplineRiskSource.CLASSIFIER, // the opener's
+    });
+    expect(store[0].lastHitAt).toBeInstanceOf(Date);
+    expect(flaggedEvents(emits)).toHaveLength(1);
+    expect(updatedEvents(emits)).toHaveLength(2);
+    expect(updatedEvents(emits)[1].payload).toMatchObject({
+      flag: { id: first.id, hitCount: 3 },
+    });
+    // The HIGH side effects ran once, for the opener only.
+    expect(deps.alerts.riskHigh).toHaveBeenCalledTimes(1);
+    expect(deps.chats.markResourcesSent).toHaveBeenCalledTimes(1);
+    // A RISK marker per hit, pointing at the folded flag.
+    expect(markers.map((m) => [m.parentMessageId, m.metadata.folded])).toEqual([
+      [5, false],
+      [6, true],
+      [7, true],
+    ]);
+    expect(markers.every((m) => m.metadata.flagId === first.id)).toBe(true);
+    // Every hit took the per-chat lock.
+    expect(locks).toEqual(Array(3).fill(`helpline-risk:${CHAT_ID}`));
+  });
+
+  it('an ELEVATED flag upgraded to HIGH by a later message runs onHighRisk once', async () => {
+    const { deps, emits, raise, store } = buildRisk();
+    await raise(ELEVATED, { messageId: 5 });
+    expect(deps.alerts.riskHigh).not.toHaveBeenCalled();
+    await raise(HIGH, { messageId: 6 });
+    await raise(HIGH, { messageId: 7 });
+    expect(store).toHaveLength(1);
+    expect(store[0]).toMatchObject({ level: HIGH, hitCount: 3 });
+    expect(deps.alerts.riskHigh).toHaveBeenCalledTimes(1);
+    expect(deps.writer.system).toHaveBeenCalledTimes(1); // resources
+    expect(store[0].supervisorsAlerted).toBe(2);
+    expect(updatedEvents(emits)[0].payload).toMatchObject({
+      flag: { level: HIGH, supervisorsAlerted: 2, resourcesSent: true },
+    });
+    expect(deps.events.record).toHaveBeenCalledWith(
+      TENANT.id,
+      CHAT_ID,
+      'RISK_FLAGGED',
+      null,
+      expect.objectContaining({ level: HIGH, upgraded: true }),
+    );
+  });
+
+  it('after an acknowledgement the next hit opens a FRESH flag and re-escalates', async () => {
+    const { deps, emits, raise, store, ack } = buildRisk({
+      resourcesClaimed: [true, false],
+    });
+    const first = await raise(HIGH, { messageId: 5 });
+    ack(first.id as string);
+    const fresh = await raise(HIGH, { messageId: 6 });
+    expect(fresh.id).not.toBe(first.id);
+    expect(store).toHaveLength(2);
+    expect(flaggedEvents(emits)).toHaveLength(2);
+    // Through onHighRisk again (the alert service applies its own 10-min dedupe).
+    expect(deps.alerts.riskHigh).toHaveBeenCalledTimes(2);
+  });
+
+  it('keyword + classifier on the SAME message is still one hit (the classifier may upgrade it)', async () => {
+    const { deps, emits, raise, store, markers } = buildRisk();
+    await raise(ELEVATED, {
+      messageId: 5,
+      source: HelplineRiskSource.KEYWORD,
+      confidence: null,
+    });
+    await raise(HIGH, { messageId: 5, confidence: 0.9, subject: 'SELF' });
+    expect(store).toHaveLength(1);
+    expect(store[0]).toMatchObject({
+      level: HIGH,
+      hitCount: 1,
+      confidence: 0.9,
+      subject: 'SELF',
+    });
+    expect(markers).toHaveLength(1);
+    expect(deps.alerts.riskHigh).toHaveBeenCalledTimes(1);
+    expect(updatedEvents(emits)).toHaveLength(1);
+    // A same-or-lower second hit on that message records nothing at all.
+    emits.length = 0;
+    await raise(HIGH, { messageId: 5, source: HelplineRiskSource.KEYWORD });
+    expect(store[0].hitCount).toBe(1);
+    expect(markers).toHaveLength(1);
+    expect(emits).toEqual([]);
   });
 });
 

@@ -40,9 +40,10 @@ describe('pure helpers', () => {
       source: HelplineRiskSource,
       outcome: HelplineRiskOutcome,
       confidence: number | null,
-    ) => ({ source, outcome, confidence });
+      hitCount = 1,
+    ) => ({ source, outcome, confidence, hitCount });
     const out = calibrationAggregates([
-      f(HelplineRiskSource.KEYWORD, HelplineRiskOutcome.CONFIRMED, null),
+      f(HelplineRiskSource.KEYWORD, HelplineRiskOutcome.CONFIRMED, null, 4),
       f(HelplineRiskSource.KEYWORD, HelplineRiskOutcome.FALSE_POSITIVE, null),
       f(
         HelplineRiskSource.CLASSIFIER,
@@ -57,12 +58,16 @@ describe('pure helpers', () => {
       CONFIRMED: 2,
       FALSE_POSITIVE: 2,
     });
+    // Outcomes count FLAGS (one listener judgement each); hits count the
+    // messages folded into them.
     expect(out.bySource.KEYWORD).toEqual({
       UNREVIEWED: 0,
       CONFIRMED: 1,
       FALSE_POSITIVE: 1,
       total: 2,
+      hits: 5,
     });
+    expect(out.totalHits).toBe(8);
     expect(out.bySource.CLASSIFIER.total).toBe(3);
     const band = (from: number) =>
       out.classifierByConfidence.find((b) => b.from === from);
@@ -304,6 +309,54 @@ describe('GET /monitor', () => {
 });
 
 describe('GET /risk-flags (calibration)', () => {
+  it('items carry hitCount and the latest folded signal from the latest message', async () => {
+    const { service, deps } = build();
+    deps.flags.find.mockImplementation(
+      async (options: { select?: string[] }) =>
+        options.select
+          ? []
+          : [
+              {
+                id: 'f-9',
+                chatId: 'c-live',
+                messageId: 11,
+                latestMessageId: 13,
+                signalStart: 10,
+                signalEnd: 20,
+                latestSignalStart: 0,
+                latestSignalEnd: 7,
+                hitCount: 3,
+                lastHitAt: NOW,
+                level: HelplineRiskFlagLevel.HIGH,
+                source: HelplineRiskSource.KEYWORD,
+                outcome: HelplineRiskOutcome.UNREVIEWED,
+                outcomeNote: null,
+                acknowledgedBy: null,
+                createdAt: NOW,
+                resourcesSent: true,
+                supervisorsAlerted: 1,
+              },
+            ],
+    );
+    deps.messages.findByIds.mockResolvedValue([
+      { id: 11, content: 'I want to end it all', erasedAt: null },
+      { id: 13, content: 'goodbye everyone', erasedAt: null },
+    ]);
+    const dto = await service.calibration(
+      TENANT,
+      { id: 9, tenantId: TENANT.id },
+      {},
+      NOW,
+    );
+    expect(deps.messages.findByIds).toHaveBeenCalledWith(TENANT.id, [11, 13]);
+    expect(dto.items[0]).toMatchObject({
+      hitCount: 3,
+      signal: 'end it all',
+      latestSignal: 'goodbye',
+      lastHitAt: NOW.toISOString(),
+    });
+  });
+
   it('items carry the live signal (null once erased), chat context and alert reach', async () => {
     const { service } = build();
     const dto = await service.calibration(

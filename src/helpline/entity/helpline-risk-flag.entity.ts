@@ -15,6 +15,8 @@ import { HelplineTenantScopedEntity } from './helpline-base';
 @Entity('helpline_risk_flags')
 @Index('idx_helpline_risk_flags_chat', ['tenantId', 'chatId'])
 @Index('idx_helpline_risk_flags_created', ['tenantId', 'createdAt'])
+// Partial (WHERE acknowledged_at IS NULL) in migration 1975820000000.
+@Index('idx_helpline_risk_flags_open', ['tenantId', 'chatId'])
 export class HelplineRiskFlag extends HelplineTenantScopedEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -45,6 +47,26 @@ export class HelplineRiskFlag extends HelplineTenantScopedEntity {
 
   @Column({ type: 'int', name: 'signal_end', nullable: true })
   signalEnd!: number | null;
+
+  /**
+   * Hits folded into this flag while it was open (contract §9.3): every later
+   * talker message that hit before a listener acknowledged it. 1 = the opener.
+   */
+  @Column({ type: 'int', name: 'hit_count', default: 1 })
+  hitCount!: number;
+
+  @Column({ type: 'timestamptz', name: 'last_hit_at', nullable: true })
+  lastHitAt!: Date | null;
+
+  /** The latest hit's message, and its signal as offsets into that body. */
+  @Column({ type: 'int', name: 'latest_message_id', nullable: true })
+  latestMessageId!: number | null;
+
+  @Column({ type: 'int', name: 'latest_signal_start', nullable: true })
+  latestSignalStart!: number | null;
+
+  @Column({ type: 'int', name: 'latest_signal_end', nullable: true })
+  latestSignalEnd!: number | null;
 
   @Column({ type: 'boolean', name: 'resources_sent', default: false })
   resourcesSent!: boolean;

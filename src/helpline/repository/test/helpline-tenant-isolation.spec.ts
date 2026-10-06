@@ -185,6 +185,7 @@ const messageMethods: [
       r.setCopilotFeedback(TENANT, CHAT_ID, 5, 'NUDGE' as never, null, 'UP'),
   ],
   ['firstTalkerTexts', (r) => r.firstTalkerTexts(TENANT, [CHAT_ID])],
+  ['listRiskMarkers', (r) => r.listRiskMarkers(TENANT, CHAT_ID, 5)],
   ['maxId', (r) => r.maxId(TENANT, CHAT_ID)],
   ['blankForChats', (r) => r.blankForChats(TENANT, [CHAT_ID])],
 ];

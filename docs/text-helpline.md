@@ -129,7 +129,10 @@ to talkers; defaults to first name), `max_concurrent_chats int default 2` (≤ o
 (`KEYWORD`|`CLASSIFIER`), `confidence real null`, `subject` (`SELF`|`OTHER`|`UNCLEAR`) null,
 `rule_id uuid null`, `signal_start int null`, `signal_end int null` (**offsets into the message
 body**, never the text), `resources_sent bool default false`, `supervisors_alerted int null`
-(second pass, migration `1975810000000`; §9.3), `acknowledged_by int null`,
+(second pass, migration `1975810000000`; §9.3), `hit_count int default 1`, `last_hit_at null`,
+`latest_message_id int null`, `latest_signal_start int null`, `latest_signal_end int null` (fold until
+acknowledged, migration `1975820000000`; §9.3 — `message_id`/`signal_*` stay the OPENING hit,
+`latest_*` the newest folded one), `acknowledged_by int null`,
 `acknowledged_at null`, `outcome` (`UNREVIEWED`|`CONFIRMED`|`FALSE_POSITIVE`) default `UNREVIEWED`,
 `outcome_note varchar(500) null` (blanked by retention).
 
@@ -419,6 +422,10 @@ interface RiskFlagDto {
   signal: string | null;            // re-derived from offsets on the live message body; null once erased
   resourcesSent: boolean;
   supervisorsAlerted: number | null; // null = n/a (ELEVATED); 0 = HIGH, nobody alerted; n = supervisors reached (§9.3)
+  hitCount: number;                  // messages that hit while this flag was open (folded); 1 = the opener
+  lastHitAt: string;
+  latestSignal: string | null;       // the newest folded hit's signal, re-derived from ITS message; null once erased
+                                     // (= signal when hitCount is 1). messageId / signal are the opening hit.
   acknowledgedAt: string | null; acknowledgedByName: string | null;
   outcome: 'UNREVIEWED' | 'CONFIRMED' | 'FALSE_POSITIVE'; outcomeNote: string | null;
   createdAt: string;
@@ -439,8 +446,9 @@ interface RiskFlagRowDto extends RiskFlagDto {
 type OutcomeCounts = { UNREVIEWED: number; CONFIRMED: number; FALSE_POSITIVE: number };
 interface RiskCalibrationDto {
   items: RiskFlagRowDto[];
-  counts: OutcomeCounts;                                         // whole window, not narrowed by `outcome`
-  bySource: { KEYWORD: OutcomeCounts & { total: number }; CLASSIFIER: OutcomeCounts & { total: number } };
+  counts: OutcomeCounts;                                         // per FLAG, whole window, not narrowed by `outcome`
+  totalHits: number;                                             // hits folded into those flags (≥ number of flags)
+  bySource: { KEYWORD: OutcomeCounts & { total: number; hits: number }; CLASSIFIER: OutcomeCounts & { total: number; hits: number } };
   classifierByConfidence: ({ from: number; to: number } & OutcomeCounts)[];   // bands 0–.5, .5–.6 … .9–1
   riskHighConfidence: number;                                    // the org's current threshold
   days: number;
@@ -506,7 +514,7 @@ Server → client:
 | `QUEUE_UPDATED` | lobby | `{ waiting: LobbyEntryDto[]; counts }` |
 | `PRESENCE_UPDATED` | user | `{ presence, activeChatCount }` |
 | `PARTICIPANT_STATUS` | staff | `{ chatId, role: 'TALKER' \| 'LISTENER', connected: boolean }` |
-| `RISK_FLAGGED` | staff | `{ chatId, flag: RiskFlagDto }` (carries live `signal`) |
+| `RISK_FLAGGED` | staff | `{ chatId, flag: RiskFlagDto }` (carries live `signal`) — only when a flag OPENS (none open, or the last one was acknowledged): one banner per chat at a time (§9.3) |
 | `SUGGESTIONS` | staff | `{ chatId, message: StaffMessageDto }` (type SUGGESTION). SUGGESTION, NUDGE and WHISPER rows go out **only** on their own event, never also as `MESSAGE_RECEIVED`; `GET messages` / `SYNC_SINCE` return them with every other type |
 | `NUDGE` | staff | `{ chatId, message }` |
 | `STAGE` | staff | `{ chatId, stage }` |
@@ -515,7 +523,7 @@ Server → client:
 | `WHISPER` | staff | `{ chatId, message }` (type WHISPER; **never** the talker room) |
 | `TRANSFER_REQUESTED` / `TRANSFERRED` | staff + lobby | `{ chatId, toListenerId? }` — TRANSFER_REQUESTED carries the target if one was named; TRANSFERRED (on the transfer claim) carries the new listener. The previous listener stays in `staff:{chatId}` read-only and receives the READ_ONLY `CHAT_UPDATED` |
 | `ALERT` | supervisors / user | `{ type: 'RISK_HIGH' \| 'HIGH_RISK_WAITING' \| 'LISTENER_DISCONNECTED' \| 'LISTENER_REQUESTED_HELP' \| 'TRANSFER_REQUESTED' \| 'ASSIGNED'; chatId; level?; at }` — `level` only on the two risk types. `supervisors:{tenantId}` gets RISK_HIGH, HIGH_RISK_WAITING, LISTENER_DISCONNECTED, LISTENER_REQUESTED_HELP, TRANSFER_REQUESTED; `user:{id}` gets ASSIGNED (and TRANSFER_REQUESTED when a transfer names them) |
-| `RISK_FLAG_UPDATED` | staff | `{ chatId, flag: RiskFlagDto }` — additive: a flag was acknowledged (clears a banner without re-alerting) |
+| `RISK_FLAG_UPDATED` | staff | `{ chatId, flag: RiskFlagDto }` — the open flag changed: a hit folded into it (`hitCount`, `lastHitAt`, `latestSignal`), it was upgraded ELEVATED → HIGH, or it was acknowledged (clears the banner). Update the existing banner by `flag.id`; never a new one |
 | `ERROR` | either | `{ code, message }` |
 
 ### 6.4 Presence and connection liveness (Redis)
@@ -721,6 +729,27 @@ HIGH     → helpline_risk_flags row + RISK message (staff); chat.risk_level = H
 ELEVATED → RISK message + flag row + banner; no alert, no resources (supervisorsAlerted: null)
 Ack      → listener marks CONFIRMED / FALSE_POSITIVE (+ optional note) → feeds the calibration view
 ```
+
+**Fold until acknowledged** (product decision, 2026-10-06). A chat has at most one OPEN (unacknowledged)
+flag; every hit — keyword or classifier — goes through `HelplineRiskService.raiseFlag`, which under a
+per-chat advisory lock:
+
+| Open flag | Hit | Result |
+|---|---|---|
+| none (or the last was acknowledged) | any | a **fresh** flag (`hit_count 1`, `latest_* = this hit`); `RISK_FLAGGED`; HIGH → the side effects above. After an ack this is re-escalation: the alert's 10-min dedupe still applies, resources stay once per chat |
+| open | same or lower level, new message | **folded**: `hit_count + 1`, `last_hit_at`, `latest_message_id` + `latest_signal_start/end` (offsets into that message), max `confidence`, latest non-null `subject`; level and `source` (the opener's) unchanged; `RISK_FLAG_UPDATED`; **no alert, no resources** |
+| open | higher level (ELEVATED open, HIGH arrives), new message | **upgraded**: as folded, plus `level = HIGH` and the HIGH side effects run once for this flag; `RISK_FLAG_UPDATED`; `RISK_FLAGGED` chat event `{ upgraded: true }` |
+| open | the same message already hit it (keyword, then classifier) | still **one hit**: a higher level upgrades the flag (side effects as above) without counting; same or lower records nothing |
+
+Every counted hit writes a staff-only `RISK` marker on its message (`parentMessageId` = that message,
+`metadata { flagId, level, source, confidence, subject, folded }` — the hit's own level/source, `flagId`
+the flag it went to), so the transcript shows where each hit was; these markers are also what the
+classifier dedupes against (no second classifier hit per message, nothing when an earlier hit on the
+message was the same level or higher). The `RISK_FLAGGED` chat event is written when a flag opens or
+rises, not per folded hit; the HIPAA audit `HELPLINE_RISK_FLAGGED` is written per counted hit with that
+hit's signal and `folded`. Calibration counts outcomes per **flag** (one listener judgement each) and
+reports `totalHits` / `bySource[x].hits` beside them; the monitor's `openFlags` is now at most 1 per chat
+for new flags.
 
 **Alert recipients**: users of the tenant (`users.tenant_id` = uuid or code) holding
 `view:helpline:monitor` through `user_groups → groups → group_permissions → permissions` (cached 5 min),

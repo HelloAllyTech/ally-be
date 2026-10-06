@@ -313,7 +313,7 @@ function build(
       ),
     },
     risk: {
-      flagsForMessage: jest.fn().mockResolvedValue(o.existingFlags ?? []),
+      hitsForMessage: jest.fn().mockResolvedValue(o.existingFlags ?? []),
       raiseFlag: jest.fn().mockResolvedValue({}),
       latestSubject: jest.fn().mockResolvedValue(null),
     },

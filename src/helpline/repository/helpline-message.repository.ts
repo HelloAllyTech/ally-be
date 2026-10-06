@@ -189,6 +189,24 @@ export class HelplineMessageRepository {
     return row ? decryptRow(this.cipher, row) : null;
   }
 
+  /** The staff-only RISK markers written on one talker message (one per counted hit). */
+  async listRiskMarkers(
+    tenantId: string,
+    chatId: string,
+    parentMessageId: number,
+  ): Promise<HelplineMessage[]> {
+    const rows = await this.repo.find({
+      where: {
+        tenantId,
+        chatId,
+        parentMessageId,
+        type: HelplineMessageType.RISK,
+      },
+      order: { id: 'ASC' },
+    });
+    return decryptRows(this.cipher, rows);
+  }
+
   /** The first talker TEXT of each chat — the lobby preview. */
   async firstTalkerTexts(
     tenantId: string,
