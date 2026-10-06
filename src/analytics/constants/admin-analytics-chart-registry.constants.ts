@@ -1853,7 +1853,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       kind: 'group',
       chartType: 'kpi',
       componentFile: f('Analytics/tabs/EffectivenessSubTab.tsx'),
-      note: "Eight KpiTiles, one per link of the theory of change, each loading from the endpoint that owns the definition and naming that sub-tab: activated learners (activation, last 90d), measurable learners (2+ scored slices, foundational-skills/progress depth), helping skills start → now (AAQ-168), learners beyond noise (AAQ-171), unhelpful behaviour start → now (AAQ-169), course lift (course-impact pooled, each learner once), self-harm cues followed up (AAQ-185, internal), practice per point (time-to-competence, Engage median slices). A summary of other tabs' definitions, not new ones.",
+      note: "Eight KpiTiles, one per link of the theory of change, each loading from the endpoint that owns the definition and naming that sub-tab: activated learners (activation, all time), measurable learners (2+ scored slices, foundational-skills/progress depth), helping skills start → now (AAQ-168), learners beyond noise (AAQ-171), unhelpful behaviour start → now (AAQ-169), course lift (course-impact pooled, each learner once), self-harm cues followed up (AAQ-185, internal), practice to Engage competence (time-to-competence, median slices). A summary of other tabs' definitions, not new ones.",
     },
     {
       id: 'AAQ-203',
@@ -1882,7 +1882,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Time to competence',
       kind: 'chart',
       chartType: 'LineChart (step)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsTimeSection.tsx'),
       note: "Ruler R1. One step line per tier: Kaplan–Meier share of learners who, by their Nth 5,000-character slice, have reached level 3 (every basic behaviour) at least once on all but one of the tier's MOVABLE skills (Engage 2 of 3, Understand 3 of 4, Support 2 of 3; rapport and family are capped at 2 by the rubric and confidentiality and harm rarely assessable, so they are left out — counting them made Engage unreachable for every learner on 2026-10-05 production data). Learners who stop are censored, not counted as never; at-risk count under each point. One-time crossing, not sustained. KPI: median slices (or 'not reached by half') and median practice minutes among those who reached it; names the skill not-yet-reached learners most often lack. Shares null below minSampleSize at risk; axis ends at minCohortSize. All time. /v1/analytics/foundational-skills/time-to-competence",
     },
     {
@@ -1892,7 +1892,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Skill retention after a break',
       kind: 'chart',
       chartType: 'custom (whiskers)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsTimeSection.tsx'),
       note: "Ruler R1. Consecutive scored slices k → k+1 banded by the gap between them (<7 / 7–13 / 14–29 / 30+ days; gap = first new session's start − slice k's last session end). Per band: composite change averaged per learner, then paired bootstrap 95% CI over learners; <7 days is the no-break reference. Withheld below 20 pairs from 10 learners; counts travel. Associated with a break, not caused by it (self-selected). All time. /v1/analytics/foundational-skills/retention",
     },
     {
@@ -1902,7 +1902,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Difficulty mix by practice ordinal',
       kind: 'chart',
       chartType: 'StackedBarChart (100%)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsTimeSection.tsx'),
       note: "Learner's 1st..12th countable session by scenario difficulty label (EASY / MEDIUM / HARD / untagged), with a fixed 12+-session panel as the survivorship control; counts in the table view. Shares null below minSampleSize sessions. Difficulty is an authoring label (defaults to MEDIUM), not a measured property. All time. /v1/analytics/practice-progression",
     },
     {
@@ -1912,7 +1912,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Learner talk share per session',
       kind: 'chart',
       chartType: 'LineChart',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
+      componentFile: f('Analytics/PracticeQualitySection.tsx'),
       note: 'Ruler R7 (transcript shape). Per countable session: learner characters ÷ all characters (client filler/interim lines dropped), median with p25–p75 band per bucket by session end, plus a median learner-turns line; null below minSampleSize sessions. Compare within one language (characters per word differ by script). /v1/analytics/practice-quality points[].talkShare*, learnerTurnsMedian',
     },
     {
@@ -1922,7 +1922,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Sessions that count as practice',
       kind: 'chart',
       chartType: 'SimpleBarChart',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
+      componentFile: f('Analytics/PracticeQualitySection.tsx'),
       note: 'Ruler R7. Share of countable sessions with ≥ 3 learner turns, ≥ 2 minutes net of pauses and ≥ 300 learner characters (practiceThresholds), per bucket; companion to AAQ-041 (minutes only). Takeaway: share with < 3 learner turns. Null below minSampleSize sessions. /v1/analytics/practice-quality points[].practicePct, summary',
     },
     {
@@ -1932,7 +1932,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Course funnel',
       kind: 'chart',
       chartType: 'SimpleBarChart (hBarOpts) + table',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: 'Ruler R10. Per course, of enrolments created in the window (default 12m): enrolled → started (opened an item) → halfway (≥ 50% items, the tenant course-usage definition) → finished, plus stalled (started, no activity in 30 days) and median/IQR days to finish. Rates null below minCohortSize; top 15 by enrolments drawn (inChart), rest in the table. /v1/analytics/curriculum/course-funnel',
     },
     {
@@ -1942,7 +1942,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Pass on first attempt, by quiz',
       kind: 'chart',
       chartType: 'SimpleBarChart (hBarOpts)',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: 'Ruler R5. Share of learners whose first attempt (earliest attemptNumber 1, submitted in the window) passed, per quiz, hardest first; null below minSampleSize first attempts. Expanded view: questions most often wrong first time, by id and type only. Open-ended answers are LLM-graded (track-quiz-grading), so a step may be a grader change. /v1/analytics/curriculum/quiz-outcomes quizzes[].passedFirstPct',
     },
     {
@@ -1952,7 +1952,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'First → best attempt gain',
       kind: 'chart',
       chartType: 'custom (ChangeWhiskers)',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: 'Ruler R5. Per quiz, first vs best scorePct over learners with 2+ scored attempts (one pair per learner), paired bootstrap 95% CI, plus share needing a 2nd attempt. Best ≥ first by construction: it measures what a retry recovers, not learning. Null below minSampleSize. /v1/analytics/curriculum/quiz-outcomes quizzes[].firstToBest',
     },
     {
@@ -1962,7 +1962,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Roleplay gates inside courses',
       kind: 'chart',
       chartType: 'StackedBarChart',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: 'Ruler R2 + R10, all time. Per course roleplay with a minScore above 0: progress rows with a linked session, stacked passed first time / passed later / stuck (14 days) / in progress; median attempts to pass; flagged tooHard (< 40% first-time) or tooEasy (> 95%). Session score is scenario-scaled: says whether the gate fits the scenario, not learner skill. Null below minSampleSize. /v1/analytics/curriculum/roleplay-gates',
     },
     {
@@ -1972,7 +1972,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Which skills each scenario exercises',
       kind: 'chart',
       chartType: 'custom-table',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/ScenarioContentSection.tsx'),
       note: 'Ruler R1. Heatmap: scenarios with ≥ minSampleSize single-scenario helping-skills cuts × the 14 rubric skills; cell = share of those cuts where the judge found an opportunity for the skill (skillLevels key present, as AAQ-178). Tagged skills (competency tags → rubric keys) outlined; singleScenarioShare on the card. All time. /v1/analytics/scenarios/opportunity-coverage scenarios',
     },
     {
@@ -1982,7 +1982,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Scenario tags that rarely get an opportunity',
       kind: 'chart',
       chartType: 'custom-table',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/ScenarioContentSection.tsx'),
       note: 'Fix list derived from AAQ-214: (scenario, tagged skill) with opportunity share < 30% over ≥ 20 single-scenario cuts, most sessions played first. Opportunity is the judge’s call; a self-harm cue exists only if the persona produces one. /v1/analytics/scenarios/opportunity-coverage tagGaps',
     },
     {
@@ -1992,7 +1992,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Same-scenario repeat improvement',
       kind: 'chart',
       chartType: 'custom (paired slope)',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/ScenarioContentSection.tsx'),
       note: 'Ruler R2 within one scenario version. Per learner × scenario version: first vs latest countable session score, 2+ plays ≥ 1 day apart, unresolved zeros (score 0 with no detected event) dropped. One slope per learner on the selected scenario (picker: top 10 by pairs); per-version paired change ± bootstrap CI in the table; pooled share improving counts each learner once (scale-free). A version does not pin scoring (mappings/behaviour instructions are edited in place): each row carries pairsSpanningScoringChange against the last scoring edit; the score also counts behaviour-instruction points. Floor 20 pairs. /v1/analytics/scenarios/repeat-improvement',
     },
     {
@@ -2021,7 +2021,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Change start → now, within difficulty',
       kind: 'chart',
       chartType: 'ChangeWhiskers',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsTimeSection.tsx'),
       note: "Ruler R1: AAQ-168's paired start→now composite change split by each panel learner's majority scenario difficulty in their start window → their now window (e.g. EASY→HARD; mixed/untagged otherwise), ± bootstrap 95% CI. Renders only when at least one cell clears 20 learners, otherwise the gated empty state. Difficulty is the scenario's current tag and MEDIUM is the column default. /v1/analytics/foundational-skills/progress/segments?dimension=difficultyTransition",
     },
     {
@@ -2031,7 +2031,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Transfer to a new scenario',
       kind: 'chart',
       chartType: 'custom (paired slope)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsValiditySection.tsx'),
       note: 'Ruler R1, single-scenario cuts only (share on the card). For learners with 3+ scored single-scenario cuts: the first cut on a scenario met in no earlier cut (single or mixed, scored or not) against the single-scenario cut just before it, when that one was on a scenario already played. Pairs averaged per learner; paired bootstrap 95% CI + sign test; withheld below 20 learners, slope rows too. A same-difficulty comparison and the harder/same/easier tally ride along: new scenarios are often harder (read with AAQ-207), so a drop can be difficulty or novelty, not lost skill. Associated with, not caused by. All time. /v1/analytics/foundational-skills/transfer',
     },
     {
@@ -2041,7 +2041,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Named improvements that were acted on',
       kind: 'chart',
       chartType: 'custom (change rows)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsValiditySection.tsx'),
       note: "Ruler R1 (L4 feedback loop). Per rubric skill: when a session debrief's areas of growth were filed under the skill (AI task feedback-improvement-skill-mapping, off unless FEEDBACK_SKILL_MAPPING_SCHEDULE=on), did the learner's level rise / hold / fall from their last cut closed by the session's end to their first cut wholly after it — vs the same learners' skills the debrief did not name. One share per learner per skill per role; named − unnamed 'rose' share within learner ± bootstrap 95% CI and sign test; null below minSampleSize. Observational; regression to the mean inflates the named arm. /v1/analytics/foundational-skills/feedback-uptake",
     },
     {
@@ -2051,7 +2051,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Do the rulers agree?',
       kind: 'chart',
       chartType: 'table (correlation matrix)',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsValiditySection.tsx'),
       note: 'Rulers R1–R4, R6 (L0 validity). Single-scenario scored cuts, all time: Spearman r with n between R1 FHS composite, R2 session score z within scenario version, R3 behaviour-instruction hit balance, R4 mean skillCoverage, R6 learner rating. Cells below 50 pairs show n only; cut-level (one learner gives several cuts). R2 includes behaviour-instruction points, so R2–R3 agreement is partly mechanical. Agreement is not validity; human ratings are AAQ-223. /v1/analytics/measurement/convergence',
     },
     {
@@ -2061,7 +2061,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Judge vs human agreement',
       kind: 'chart',
       chartType: 'custom-table',
-      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      componentFile: f('Analytics/FoundationalSkillsValiditySection.tsx'),
       note: "Ruler R1 validity (L0). Per rubric skill: Cohen's κ on opportunity and, where both found one, κ (unweighted and quadratic-weighted) and % exact on the 1–4 level, judge vs each human rating and human vs human (all rater pairs on a cut); plus the any-unhelpful flag. Humans tick behaviour codes on a 30-cut-per-quarter sample stratified by composite tercile × session language; levels derived with the judge's rule. κ null below 20 rated cuts, counts travel; 'not yet measured' until ratings exist (no rating UI yet — POST /v1/foundational-skills/human-ratings). One rubric version, test orgs excluded, all time. /v1/analytics/foundational-skills/judge-agreement",
     },
     {
@@ -2071,7 +2071,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Practice spacing',
       kind: 'chart',
       chartType: 'SimpleBarChart',
-      componentFile: f('Analytics/tabs/UsageLevelsSubTab.tsx'),
+      componentFile: f('Analytics/PracticeSpacingCard.tsx'),
       note: "Whole days between a learner's consecutive countable sessions (start to start), all-time, banded 0–1 / 2–6 / 7–13 / 14–29 / 30+ as a share of gaps (null below 20 gaps; 0–1 is massed practice, back-to-back sessions included). KPI: share of active learners (2+ sessions) whose median gap is 7 days or less, one vote each, null below 5. Same learners as the stickiness funnel (LEARNER role, org by the learner's tenant); test orgs excluded. Describes rhythm; does not show spacing helps. /v1/analytics/practice-stickiness spacing",
     },
     {
@@ -2081,7 +2081,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Where in a course momentum dies',
       kind: 'chart',
       chartType: 'LineChart',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: "Ruler R10. One line per course (top 5 by started enrolments, ≥ 20 each): x = item position 0–100% of the course's live items in unlock order, y = share of started enrolments that reached it (furthest unlocked item; finished = all). Reached means unlocked, not opened. Expanded view: steepest drop. All time. /v1/analytics/curriculum/progress-curve",
     },
     {
@@ -2091,7 +2091,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Does knowing predict doing?',
       kind: 'chart',
       chartType: 'ScatterChart',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/CourseOutcomesSection.tsx'),
       note: 'Rulers R5 × R1. One point per learner × course: mean first-attempt quiz score (x) vs mean helping-skills composite of the first 6 slices after enrolling (y, pinned rubric). Spearman r with a learner-clustered bootstrap CI, withheld below 30 points; per-course r where a course alone has 30. Both measures are noisy; a weak r is expected. /v1/analytics/curriculum/knowledge-vs-skill',
     },
     {
@@ -2101,7 +2101,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Scenario difficulty calibration',
       kind: 'chart',
       chartType: 'StackedBarChart',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/ScenarioContentSection.tsx'),
       note: 'Ruler R2. Per scenario VERSION with ≥ minSampleSize countable scored sessions (unresolved zeros dropped), all time: share of sessions in bands of the attainable score range (Σ positive event score × maxOccurrences + 10 per SHOULD_DO behaviour instruction, an uncapped contributor counted once), read over sessions since the scoring config last changed; raw bands (< 0, 0–49, 50–99, 100+) when no range applies. Authored difficultyLevel alongside; tooEasy (> 80% top band) / tooHard (> 50% below 0) flagged; > 100% counted, never hidden. Measures how scores land, a property of the scoring and the learners. /v1/analytics/scenarios/calibration rows',
     },
     {
@@ -2111,7 +2111,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Did the learner move the client?',
       kind: 'chart',
       chartType: 'StackedBarChart',
-      componentFile: f('Analytics/tabs/CurriculumSubTab.tsx'),
+      componentFile: f('Analytics/ScenarioContentSection.tsx'),
       note: 'Ruler R9. Per countable session, bucketed by session end: reached the terminal simulation state / advanced past the opening state / never got past it, from the per-turn state on scenario_session_turn_metrics.metadata (from 2026-06-10). Sessions with no usable state (older builds, branching mode, single-state scenarios) counted as untracked under the chart, not plotted; shares null below minSampleSize. States are score-windowed, so this is a learner-progress proxy only as far as event scores track good helping. Expanded view: by scenario. /v1/analytics/scenarios/progression points',
     },
     {
@@ -2121,7 +2121,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Satisfaction by practice ordinal',
       kind: 'chart',
       chartType: 'LineChart',
-      componentFile: f('Analytics/tabs/QualitySentimentSubTab.tsx'),
+      componentFile: f('Analytics/PerceptionSection.tsx'),
       note: "Ruler R6. The 1–5 post-session rating (latest per session) by the learner's Nth RATED session, ordered by session start, N = 1..12: mean rating and share rated 4–5, all-comers plus a fixed panel of learners with 6+ ratings (survivorship control). Null below 20 ratings per ordinal; counts travel; tail past 12 counted. All time whatever the page window; test orgs and org filter by the session's tenant; preview/seed rooms out. /v1/analytics/quality-distribution byOrdinal",
     },
     {
@@ -2131,7 +2131,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Confidence start → now, per tier',
       kind: 'chart',
       chartType: 'custom (ChangeWhiskers)',
-      componentFile: f('Analytics/tabs/QualitySentimentSubTab.tsx'),
+      componentFile: f('Analytics/PerceptionSection.tsx'),
       note: "L9 perception. Each learner's self-rated confidence (0–10, self-efficacy instrument v1) on their first vs latest answer, over the items rated both times, per tier (skills in the expanded view); always beside the judge's level change (1–4) at the cuts nearest those answers for the same learners (selfMatched vs judge). Paired change ± bootstrap 95% CI, null below minSampleSize. Never an outcome alone. No learner-facing prompt yet (API: GET/POST /v1/self-assessment), so 'not yet measured' until one ships. All time. /v1/analytics/foundational-skills/self-efficacy confidence",
     },
     {
@@ -2141,7 +2141,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Confidence against competence',
       kind: 'chart',
       chartType: 'ScatterChart',
-      componentFile: f('Analytics/tabs/QualitySentimentSubTab.tsx'),
+      componentFile: f('Analytics/PerceptionSection.tsx'),
       note: 'L9 calibration. x = self-rating (0–10), y = FHS level of the nearest scored cut (±30 days) where the skill was assessable; over-confident / calibrated / under-confident beyond ±0.75 levels after rescaling 1 + 3·r/10, one point per learner (latest) for shares and Spearman r; points withheld below minSampleSize. Over-confidence on harm is flagged INTERNAL (unaudited judge coding). /v1/analytics/foundational-skills/self-efficacy calibration',
     },
     {
@@ -2151,7 +2151,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       title: 'Org effectiveness scorecard',
       kind: 'chart',
       chartType: 'table',
-      componentFile: f('Analytics/tabs/OrgEngagementSubTab.tsx'),
+      componentFile: f('Analytics/OrgEffectivenessCard.tsx'),
       note: 'Ruler R1 + R10. Per non-test org, all time, one pass: measurable learners, own start→now composite change ± CI, share improving beyond the platform noise band, unhelpful-behaviour change, course completion, self-harm follow-up (internal: share only privately with partners), 6-month median-composite sparkline. Rows with < 20 measurable learners show counts only. Sorted by measurable learners. First candidate to expose to tenant admins later, with the same floors. /v1/analytics/effectiveness/orgs',
     },
   ];
