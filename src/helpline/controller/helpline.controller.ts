@@ -28,6 +28,7 @@ import {
 import {
   HelplineTenantParam,
   RequireHelplineEnabled,
+  RequireHelplineEnabledForChat,
 } from '../guard/helpline-enabled.guard';
 import { HelplineClaimService } from '../service/helpline-claim.service';
 import { HelplineListenerService } from '../service/helpline-listener.service';
@@ -65,7 +66,12 @@ export class HelplineController {
     private readonly tenantFeatureService: TenantFeatureService,
   ) {}
 
-  /** The nav gate: authenticated only, never a 403 (contract §5.3). */
+  /**
+   * The nav gate: authenticated only, never a 403 (contract §5.3). While the
+   * helpline is switched off, `continuingChatIds` lists the ACTIVE chats the
+   * caller is still listener of record for, so the workspace can keep those
+   * open (the chat-scoped routes still serve them); always [] when enabled.
+   */
   @AuthPermissions([])
   @Get('enabled')
   @ApiOperation({
@@ -73,12 +79,16 @@ export class HelplineController {
   })
   async enabled(
     @CurrentUser() user: HelplineStaffUser,
-  ): Promise<{ enabled: boolean }> {
+  ): Promise<{ enabled: boolean; continuingChatIds: string[] }> {
+    const enabled = await this.tenantFeatureService.isEnabledForTenant(
+      PreferenceName.TEXT_HELPLINE_ENABLED,
+      user.tenantId,
+    );
     return {
-      enabled: await this.tenantFeatureService.isEnabledForTenant(
-        PreferenceName.TEXT_HELPLINE_ENABLED,
-        user.tenantId,
-      ),
+      enabled,
+      continuingChatIds: enabled
+        ? []
+        : await this.listeners.continuingChatIds(user),
     };
   }
 
@@ -151,7 +161,7 @@ export class HelplineController {
     return this.claims.claim(tenant, chatId, user.id);
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledForChat()
   @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_CHAT])
   @Get('chats/:id')
   chatDetail(
@@ -162,7 +172,7 @@ export class HelplineController {
     return this.listeners.chatDetail(tenant, chatId, user);
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledForChat()
   @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_CHAT])
   @Get('chats/:id/messages')
   chatMessages(
@@ -174,7 +184,7 @@ export class HelplineController {
     return this.listeners.chatMessages(tenant, chatId, user, query.afterId);
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledForChat()
   @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_END])
   @Post('chats/:id/end')
   @HttpCode(HttpStatus.OK)
@@ -186,7 +196,7 @@ export class HelplineController {
     return this.listeners.endChat(tenant, chatId, user);
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledForChat()
   @AuthPermissions([PERMISSIONS.EDIT_HELPLINE_SUMMARY])
   @Put('chats/:id/summary')
   saveSummary(
@@ -198,7 +208,7 @@ export class HelplineController {
     return this.listeners.saveSummary(tenant, chatId, user, body.fields);
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledForChat()
   @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_COPILOT])
   @Post('chats/:id/risk-flags/:flagId/ack')
   @HttpCode(HttpStatus.OK)

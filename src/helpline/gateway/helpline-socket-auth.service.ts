@@ -28,6 +28,12 @@ export type HelplineSocketData =
       userId: number;
       tenantId: string;
       permissions: string[];
+      /**
+       * Connected while the helpline is switched off, as the listener of
+       * record of an ACTIVE chat: the socket joins only `user:{id}` and those
+       * chats' staff rooms — no lobby, no supervisors room, no monitoring.
+       */
+      restricted?: boolean;
     };
 
 export function extractSocketToken(socket: Socket): string | null {
@@ -51,7 +57,9 @@ export function extractSocketToken(socket: Socket): string | null {
  *  - guest: guest secret + `aud`, talker not revoked, chat exists
  *  - staff: the existing user-JWT verification (WebSocketAuthMiddleware, with
  *    no permission list), then `view:helpline:lobby` OR `view:helpline:monitor`,
- *    then the tenant gate (invariant 4)
+ *    then the tenant gate (invariant 4). With the helpline switched off, the
+ *    one exception is the listener of record of an ACTIVE chat, who connects
+ *    `restricted` so the conversation can finish (contract §5.4).
  *
  * Any failure is `next(new Error('unauthorized'))` — the client learns nothing
  * about which check failed.
@@ -127,13 +135,23 @@ export class HelplineSocketAuthService {
     ) {
       throw new Error(`user ${user.id} has no helpline permission`);
     }
+    const tenant = await this.tenants.resolve(user.tenantId);
+    if (!tenant) throw new Error('unknown tenant');
     const enabled = await this.tenantFeatureService.isEnabledForTenant(
       PreferenceName.TEXT_HELPLINE_ENABLED,
       user.tenantId,
     );
-    if (!enabled) throw new Error('helpline disabled for tenant');
-    const tenant = await this.tenants.resolve(user.tenantId);
-    if (!tenant) throw new Error('unknown tenant');
+    if (!enabled) {
+      const active = await this.chats.listActiveForListener(tenant.id, user.id);
+      if (!active.length) throw new Error('helpline disabled for tenant');
+      return {
+        kind: 'staff',
+        userId: user.id,
+        tenantId: tenant.id,
+        permissions,
+        restricted: true,
+      };
+    }
 
     return { kind: 'staff', userId: user.id, tenantId: tenant.id, permissions };
   }

@@ -40,6 +40,7 @@ function build() {
     { getUserPermissions: jest.fn().mockResolvedValue([]) } as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   gateway.server = server as never;
   return { gateway, emitted, joins, chats };

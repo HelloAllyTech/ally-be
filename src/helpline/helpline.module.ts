@@ -20,7 +20,10 @@ import { HelplineTalkerFeedback } from './entity/helpline-talker-feedback.entity
 import { HelplineTalker } from './entity/helpline-talker.entity';
 import { HelplineChatGateway } from './gateway/helpline-chat.gateway';
 import { HelplineSocketAuthService } from './gateway/helpline-socket-auth.service';
-import { HelplineEnabledGuard } from './guard/helpline-enabled.guard';
+import {
+  HelplineChatScopedGuard,
+  HelplineEnabledGuard,
+} from './guard/helpline-enabled.guard';
 import { HelplineGuestGuard } from './guard/helpline-guest.guard';
 import { HelplineChatRepository } from './repository/helpline-chat.repository';
 import { HelplineMessageRepository } from './repository/helpline-message.repository';
@@ -122,6 +125,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineSchedulerRegistrationService,
     HelplineAdminService,
     HelplineEnabledGuard,
+    HelplineChatScopedGuard,
     HelplineGuestGuard,
     HelplineSocketAuthService,
     HelplineChatGateway,

@@ -41,6 +41,7 @@ import { HelplineQueueService } from './helpline-queue.service';
 import { HelplineRiskService } from './helpline-risk.service';
 import { HelplineSettingsService } from './helpline-settings.service';
 import { HelplineSummaryService } from './helpline-summary.service';
+import { HelplineTenantService } from './helpline-tenant.service';
 
 export interface StaffChatAccess {
   chat: HelplineChat;
@@ -76,7 +77,19 @@ export class HelplineListenerService {
     private readonly lifecycle: HelplineChatLifecycleService,
     private readonly summaries: HelplineSummaryService,
     private readonly risk: HelplineRiskService,
+    private readonly tenants: HelplineTenantService,
   ) {}
+
+  /**
+   * ACTIVE chats this user is listener of record for — what they may keep
+   * working on while the helpline is switched off (GET /enabled).
+   */
+  async continuingChatIds(user: HelplineStaffUser): Promise<string[]> {
+    const tenant = await this.tenants.resolve(user.tenantId);
+    if (!tenant) return [];
+    const chats = await this.chats.listActiveForListener(tenant.id, user.id);
+    return chats.map((c) => c.id);
+  }
 
   async loadChat(
     tenant: HelplineTenant,

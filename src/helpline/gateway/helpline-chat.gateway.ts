@@ -12,6 +12,8 @@ import {
 import { Namespace, Socket } from 'socket.io';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { PreferenceName } from 'src/common/constants/user.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { LoggerService } from 'src/logger/logger.service';
@@ -20,6 +22,7 @@ import { MessageBrokerService } from 'src/message-broker/service/message-broker.
 import {
   HELPLINE_LIMITS,
   HELPLINE_NAMESPACE,
+  HelplineAccess,
   HelplineAckErrors,
   HelplineChatStatus,
   HelplineClientEvents,
@@ -114,6 +117,7 @@ export class HelplineChatGateway
     private readonly permissions: PermissionsService,
     private readonly tenants: HelplineTenantService,
     private readonly realtime: HelplineRealtimeService,
+    private readonly tenantFeatureService: TenantFeatureService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -190,11 +194,19 @@ export class HelplineChatGateway
           await this.connection.talkerConnected(ctx);
           return;
         }
+        // A restricted socket (helpline switched off, listener of record of
+        // an ACTIVE chat) gets its own user room and its chats only.
         const rooms = [HelplineRooms.user(ctx.userId)];
-        if (ctx.permissions.includes(PERMISSIONS.VIEW_HELPLINE_LOBBY)) {
+        if (
+          !ctx.restricted &&
+          ctx.permissions.includes(PERMISSIONS.VIEW_HELPLINE_LOBBY)
+        ) {
           rooms.push(HelplineRooms.lobby(ctx.tenantId));
         }
-        if (ctx.permissions.includes(PERMISSIONS.VIEW_HELPLINE_MONITOR)) {
+        if (
+          !ctx.restricted &&
+          ctx.permissions.includes(PERMISSIONS.VIEW_HELPLINE_MONITOR)
+        ) {
           rooms.push(HelplineRooms.supervisors(ctx.tenantId));
         }
         await socket.join(rooms);
@@ -342,7 +354,8 @@ export class HelplineChatGateway
       const chat = await this.staffChat(ctx, body?.chatId);
       if (!chat) return fail(HelplineAckErrors.NOT_FOUND);
       const permissions = await this.permissions.getUserPermissions(ctx.userId);
-      if (!resolveChatAccess(chat, ctx.userId, permissions)) {
+      const access = resolveChatAccess(chat, ctx.userId, permissions);
+      if (!access || !(await this.mayUseAccess(ctx, access))) {
         return fail(HelplineAckErrors.NOT_FOUND);
       }
       const rows = await this.messages.listForChat(
@@ -370,7 +383,9 @@ export class HelplineChatGateway
       if (!chat) return fail(HelplineAckErrors.NOT_FOUND);
       const permissions = await this.permissions.getUserPermissions(ctx.userId);
       const access = resolveChatAccess(chat, ctx.userId, permissions);
-      if (!access) return fail(HelplineAckErrors.NOT_FOUND);
+      if (!access || !(await this.mayUseAccess(ctx, access))) {
+        return fail(HelplineAckErrors.NOT_FOUND);
+      }
       await socket.join(HelplineRooms.staff(chat.id));
       return { ok: true, access };
     });
@@ -404,6 +419,14 @@ export class HelplineChatGateway
       }
       const tenant = await this.tenants.resolve(ctx.tenantId);
       if (!tenant) return fail(HelplineAckErrors.NOT_ALLOWED);
+      // Going Available is new work: refused while the helpline is off.
+      // Going Away is always allowed.
+      if (
+        body?.status === 'AVAILABLE' &&
+        (ctx.restricted || !(await this.helplineEnabled(ctx.tenantId)))
+      ) {
+        return fail(HelplineAckErrors.NOT_ALLOWED);
+      }
       // A presence change means a live socket: refresh liveness with it.
       await this.presence.touchConnection('listener', ctx.userId);
       const presence = await this.listeners.setPresence(
@@ -428,6 +451,29 @@ export class HelplineChatGateway
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
+
+  private helplineEnabled(tenantId: string): Promise<boolean> {
+    return this.tenantFeatureService.isEnabledForTenant(
+      PreferenceName.TEXT_HELPLINE_ENABLED,
+      tenantId,
+    );
+  }
+
+  /**
+   * LISTENER access (listener of record) is always usable. READ_ONLY access —
+   * monitoring, or a previous listener — is new work, so it needs the
+   * helpline on and an unrestricted socket. Checked per event: the handshake
+   * gate alone would leave a socket opened before the switch-off monitoring
+   * after it.
+   */
+  private async mayUseAccess(
+    ctx: Extract<HelplineSocketData, { kind: 'staff' }>,
+    access: HelplineAccess,
+  ): Promise<boolean> {
+    if (access === HelplineAccess.LISTENER) return true;
+    if (ctx.restricted) return false;
+    return this.helplineEnabled(ctx.tenantId);
+  }
 
   private async relayTyping(
     socket: Socket,

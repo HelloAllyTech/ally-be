@@ -17,7 +17,9 @@ Product invariants (never trade these away):
 3. **A copilot failure never delays message delivery.** Persist + emit first, copilot after, off the
    request path, with hard timeouts.
 4. **Fail closed on the gate.** Every listener route and the socket handshake require the permission
-   **and** `TEXT_HELPLINE_ENABLED` for the caller's tenant.
+   **and** `TEXT_HELPLINE_ENABLED` for the caller's tenant — with one narrow exception: the listener of
+   record of an ACTIVE chat keeps that chat after a switch-off, so nobody in distress is dropped
+   mid-conversation (§5.4).
 5. **No message bodies in logs, audit payloads, chat events, PostHog or notifications.** The
    classifier's verbatim `signal` goes to the listener over the socket and to the HIPAA audit logger
    only; the DB stores offsets.
@@ -263,23 +265,25 @@ type GuestSystemKind = 'ACCEPTED' | 'RESOURCES' | 'CLOSING' | 'TRANSFERRING' | '
 
 ### 5.3 Listener / supervisor (user JWT) — `HelplineController`
 
-All require `@RequireHelplineEnabled()`. Permission per row.
+All require `@RequireHelplineEnabled()`. Permission per row. The chat-scoped rows marked **†** use
+`@RequireHelplineEnabledForChat()` instead, which also admits the listener of record while the
+helpline is switched off (§5.4).
 
 | Route | Permission | Body / query | Returns |
 |---|---|---|---|
-| `GET /v1/helpline/enabled` | authenticated only | — | `{ enabled: boolean }` (for the nav gate; no helpline permission needed, no 403) |
+| `GET /v1/helpline/enabled` | authenticated only | — | `{ enabled: boolean; continuingChatIds: string[] }` (for the nav gate; no helpline permission needed, no 403). `continuingChatIds`: while disabled, the ACTIVE chats the caller is still listener of record for (§5.4) — keep those reachable; always `[]` when enabled |
 | `GET /v1/helpline/me` | `view:helpline:lobby` | — | `MeDto` |
 | `PUT /v1/helpline/me/profile` | `edit:helpline:presence` | `{ displayName?, maxConcurrentChats?, languages?, notificationsEnabled? }` | `MeDto` |
 | `PUT /v1/helpline/me/presence` | `edit:helpline:presence` | `{ status: 'AVAILABLE' \| 'AWAY' }` | `MeDto` |
 | `GET /v1/helpline/lobby` | `view:helpline:lobby` | — | `LobbyDto` |
 | `POST /v1/helpline/chats/:id/claim` | `edit:helpline:claim` | — | `ChatDetailDto` · 409 `HELPLINE_ALREADY_CLAIMED` · 409 `HELPLINE_AT_CAPACITY` · 409 `HELPLINE_NOT_AVAILABLE` |
-| `GET /v1/helpline/chats/:id` | `view:helpline:chat` | — | `ChatDetailDto` (audited `HELPLINE_TRANSCRIPT_ACCESSED` when ENDED) |
-| `GET /v1/helpline/chats/:id/messages?afterId=` | `view:helpline:chat` | — | `{ messages: StaffMessageDto[] }` |
-| `POST /v1/helpline/chats/:id/end` | `edit:helpline:end` | — | `ChatDetailDto` |
-| `PUT /v1/helpline/chats/:id/summary` | `edit:helpline:summary` | `{ fields: Record<string,string> }` | `SummaryDto` (FINAL, `editedBy`) |
+| `GET /v1/helpline/chats/:id` † | `view:helpline:chat` | — | `ChatDetailDto` (audited `HELPLINE_TRANSCRIPT_ACCESSED` when ENDED) |
+| `GET /v1/helpline/chats/:id/messages?afterId=` † | `view:helpline:chat` | — | `{ messages: StaffMessageDto[] }` |
+| `POST /v1/helpline/chats/:id/end` † | `edit:helpline:end` | — | `ChatDetailDto` |
+| `PUT /v1/helpline/chats/:id/summary` † | `edit:helpline:summary` | `{ fields: Record<string,string> }` | `SummaryDto` (FINAL, `editedBy`) |
 | `GET /v1/helpline/chats?scope=mine\|all&status=ENDED&page=1&limit=25` | `view:helpline:chat` (`all` needs `view:helpline:monitor`) | — | `{ items: ChatListItemDto[]; total }` |
-| `POST /v1/helpline/chats/:id/risk-flags/:flagId/ack` | `view:helpline:copilot` | `{ outcome: 'CONFIRMED' \| 'FALSE_POSITIVE'; note?: string }` | `RiskFlagDto` |
-| `POST /v1/helpline/chats/:id/copilot-feedback` | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204` |
+| `POST /v1/helpline/chats/:id/risk-flags/:flagId/ack` † | `view:helpline:copilot` | `{ outcome: 'CONFIRMED' \| 'FALSE_POSITIVE'; note?: string }` | `RiskFlagDto` |
+| `POST /v1/helpline/chats/:id/copilot-feedback` † | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204` |
 | `POST /v1/helpline/chats/:id/transfer` | `edit:helpline:transfer` **or** listener of record with `edit:helpline:end` | `{ targetListenerId?: number }` | `ChatDetailDto` |
 | `POST /v1/helpline/chats/:id/assign` | `edit:helpline:transfer` | `{ listenerId: number }` | `ChatDetailDto` (WAITING or transfer-pending → that listener) |
 | `POST /v1/helpline/chats/:id/take-over` | `edit:helpline:transfer` | — | `ChatDetailDto` |
@@ -303,10 +307,25 @@ All require `@RequireHelplineEnabled()`. Permission per row.
 ```ts
 interface AdminSettingsDto { tenantId: string; tenantCode: string; enabled: boolean; settings: HelplineSettings; defaults: HelplineSettings; publicPath: string /* "/talk/<code>" */ }
 ```
-Turning `enabled` off refuses new sessions; open chats are not force-ended. Invariant 4 still holds:
-listener HTTP routes and new staff socket handshakes answer `HELPLINE_DISABLED` from that moment, so
-an open chat continues over already-connected sockets and then ends through the talker or the
-lifecycle sweep (idle / wait limits). Re-enabling restores the listener routes.
+Turning `enabled` off refuses new work and never cuts a listener off mid-conversation (second pass):
+
+- **Refused from that moment** (`HELPLINE_DISABLED`): new talker sessions, `lobby`, `claim`,
+  `me`/presence (and the `PRESENCE_SET AVAILABLE` socket event — `AWAY` is still accepted), `monitor`,
+  `risk-flags`, every supervision route, QA, team, and any staff socket handshake from a user with no
+  ACTIVE chat of record. Read-only access over a socket (`JOIN_CHAT`/`SYNC_SINCE` as a monitoring
+  supervisor or previous listener) is refused per event, so a socket opened before the switch-off
+  cannot keep monitoring after it.
+- **Still served to the listener of record of an ACTIVE chat**, for that chat only, until it ends:
+  the † routes (`GET chats/:id`, `messages`, `end`, `PUT summary`, risk-flag `ack`,
+  `copilot-feedback`, `alert-supervisor`) plus `SEND_MESSAGE`/typing/`SYNC_SINCE` over the socket. A
+  new handshake from that listener is accepted as **restricted**: it joins only `user:{id}` and the
+  `staff:{chatId}` rooms of their ACTIVE chats — no `lobby:`, no `supervisors:`. After the chat ends
+  the † routes stay open to them for 60 minutes (read back, save the summary), then close.
+- Open chats are not force-ended; the copilot and the risk protocol keep running for them. They end
+  through the listener, the talker or the lifecycle sweep. Re-enabling restores everything.
+
+`GET /v1/helpline/enabled` returns `continuingChatIds` so the workspace can keep those chats reachable
+while the nav gate is off.
 
 ### 5.5 Staff DTOs
 
@@ -422,7 +441,8 @@ interface TeamMemberDto { userId: number; name: string; email: string; isListene
 ### 6.1 Handshake
 `handshake.auth.token` = guest token **or** user access token.
 - Guest: verify with the guest secret + `aud`; talker not revoked; chat exists → `socket.data = { kind: 'talker', talkerId, chatId, tenantId }`; joins `talker:{chatId}` **only**.
-- User: existing user-JWT verification; requires `view:helpline:lobby` **or** `view:helpline:monitor`, and the tenant gate → `socket.data = { kind: 'staff', userId, tenantId, permissions }`; joins `user:{userId}`, `lobby:{tenantId}` (lobby perm), `supervisors:{tenantId}` (monitor perm), and `staff:{chatId}` for every ACTIVE chat where they are listener of record.
+- User: existing user-JWT verification; requires `view:helpline:lobby` **or** `view:helpline:monitor`, and the tenant gate → `socket.data = { kind: 'staff', userId, tenantId, permissions }`; joins `user:{userId}`, `lobby:{tenantId}` (lobby perm), `supervisors:{tenantId}` (monitor perm), and `staff:{chatId}` for every ACTIVE chat where they are listener of record. With the helpline switched off, a user who is listener of record of ≥ 1 ACTIVE chat is accepted with `restricted: true` and joins only `user:{userId}` + those `staff:{chatId}` rooms (§5.4); anyone else is refused.
+- **Reconnect** (e.g. after a server restart): the handshake re-joins the talker to `talker:{chatId}` and the listener of record to `staff:{chatId}` of every ACTIVE chat. Rooms joined with `JOIN_CHAT` (monitoring, read-only previous listener) are **not** restored — the client re-sends `JOIN_CHAT` and then `SYNC_SINCE` for each open chat view after every reconnect.
 - Failure → `next(new Error('unauthorized'))`.
 
 ### 6.2 Cross-replica emit

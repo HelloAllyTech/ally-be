@@ -6,7 +6,10 @@ import { PERMISSIONS_KEY } from 'src/auth/decorators/permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { CustomThrottlerGuard } from 'src/rate-limit/guard/custom-throttler.guard';
-import { HelplineEnabledGuard } from '../../guard/helpline-enabled.guard';
+import {
+  HelplineChatScopedGuard,
+  HelplineEnabledGuard,
+} from '../../guard/helpline-enabled.guard';
 import { HelplineGuestGuard } from '../../guard/helpline-guest.guard';
 import { HelplineAdminController } from '../helpline-admin.controller';
 import { HelplineGuestController } from '../helpline-guest.controller';
@@ -29,17 +32,57 @@ const handlers = (controller: { prototype: object }) =>
 const guardsOf = (target: object): unknown[] =>
   Reflect.getMetadata(GUARDS_METADATA, target) ?? [];
 
+/**
+ * The only routes a listener of record keeps while the helpline is switched
+ * off (contract §5.4). Everything else — lobby, claim, presence, monitor,
+ * supervision, QA, team — refuses with HELPLINE_DISABLED.
+ */
+const CHAT_SCOPED_ROUTES = [
+  'chatDetail',
+  'chatMessages',
+  'endChat',
+  'saveSummary',
+  'acknowledgeFlag',
+  'copilotFeedback',
+  'alertSupervisor',
+];
+
 describe('helpline controller guards', () => {
+  it('exactly the chat-scoped routes use the chat-scoped gate', () => {
+    const scoped = handlers(HelplineController)
+      .filter(([, handler]) =>
+        guardsOf(handler as object).includes(HelplineChatScopedGuard),
+      )
+      .map(([name]) => name)
+      .sort();
+    expect(scoped).toEqual(
+      CHAT_SCOPED_ROUTES.filter((name) =>
+        handlers(HelplineController).some(([n]) => n === name),
+      ).sort(),
+    );
+    // …and never both: the plain gate would refuse the listener of record.
+    for (const [name, handler] of handlers(HelplineController)) {
+      if (!CHAT_SCOPED_ROUTES.includes(name)) continue;
+      expect(
+        guardsOf(handler as object).filter((g) => g === HelplineEnabledGuard),
+      ).toEqual([]);
+    }
+  });
+
   describe('HelplineController (listener routes)', () => {
     it.each(
       handlers(HelplineController).filter(([name]) => name !== 'enabled'),
     )(
       '%s requires JWT → permission → helpline gate, in that order',
-      (_, handler) => {
+      (name, handler) => {
         const guards = guardsOf(handler as object);
         const jwt = guards.indexOf(JwtGuard);
         const perms = guards.indexOf(PermissionsGuard);
-        const gate = guards.indexOf(HelplineEnabledGuard);
+        const gate = guards.indexOf(
+          CHAT_SCOPED_ROUTES.includes(name)
+            ? HelplineChatScopedGuard
+            : HelplineEnabledGuard,
+        );
         expect(jwt).toBeGreaterThanOrEqual(0);
         expect(perms).toBeGreaterThan(jwt);
         expect(gate).toBeGreaterThan(perms);

@@ -31,6 +31,7 @@ function build(chatRow: unknown, permissions: string[]) {
     lifecycle as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, chats, views, lifecycle };
 }
