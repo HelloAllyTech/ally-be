@@ -510,6 +510,32 @@ export class HelplineChatRepository {
     await this.repo.update({ id: chatId, tenantId }, { qaStatus: status });
   }
 
+  /**
+   * A QA attempt failed: count it in `metadata.qaAttempts`. Below
+   * `maxAttempts` the chat goes back to `qa_status = NULL` (a later tick
+   * retries it); at the limit it stays FAILED. Returns the status written.
+   */
+  async recordQaFailure(
+    tenantId: string,
+    chatId: string,
+    maxAttempts: number,
+  ): Promise<HelplineQaStatus | null> {
+    const result = await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "metadata" = jsonb_set(COALESCE("metadata", '{}'::jsonb), '{qaAttempts}',
+                to_jsonb(COALESCE(("metadata"->>'qaAttempts')::int, 0) + 1)),
+              "qa_status" = CASE
+                WHEN COALESCE(("metadata"->>'qaAttempts')::int, 0) + 1 >= $3 THEN 'FAILED'
+                ELSE NULL END,
+              "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2
+      RETURNING "qa_status" AS "qaStatus"`,
+      [chatId, tenantId, maxAttempts],
+    );
+    const row = returningRows<{ qaStatus: HelplineQaStatus | null }>(result)[0];
+    return row?.qaStatus ?? null;
+  }
+
   /** Tenant ids with an open chat — for the lifecycle sweep only. */
   async listOpenTenantIdsAcrossTenants(): Promise<string[]> {
     const rows: { tenant_id: string }[] = await this.repo.query(

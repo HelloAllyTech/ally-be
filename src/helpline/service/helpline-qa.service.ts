@@ -53,6 +53,12 @@ export const HELPLINE_QA = {
   SETTLE_MS: 5 * 60 * 1000,
   MIN_LISTENER_MESSAGES: 3,
   MIN_LISTENER_CHARS: 300,
+  /**
+   * A failed judgement (transport, or a reply that omits a skill) is retried
+   * on later ticks up to this many attempts, then left FAILED — the same
+   * bound the foundational-skills pipeline uses.
+   */
+  MAX_ATTEMPTS: 3,
   /** Evidence when the judge's quote cannot be located in its line. */
   FALLBACK_QUOTE_CHARS: 200,
   LIST_PAGE_SIZE: 25,
@@ -340,7 +346,11 @@ export class HelplineQaService {
       this.logger.error(
         `Helpline QA failed for chat ${chatId}: ${(error as Error).message}`,
       );
-      return this.finish(tenantId, chatId, HelplineQaStatus.FAILED);
+      // Back to NULL for a later tick, until the attempt limit; then FAILED.
+      const status = await this.chats
+        .recordQaFailure(tenantId, chatId, HELPLINE_QA.MAX_ATTEMPTS)
+        .catch(() => HelplineQaStatus.FAILED);
+      return status ?? HelplineQaStatus.PENDING;
     }
   }
 

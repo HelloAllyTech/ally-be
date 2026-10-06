@@ -298,19 +298,45 @@ describe('HelplineQaService.scoreChat', () => {
     );
   });
 
-  it('a judge failure is FAILED, never thrown', async () => {
+  it('a judge failure is retried on a later tick, then FAILED at 3 attempts — never thrown', async () => {
     const judge = {
       judgeHelpline: jest.fn().mockRejectedValue(new Error('timeout')),
     };
     const { service, deps } = build({ judge: judge as never });
+    const recordQaFailure = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(HelplineQaStatus.FAILED);
+    Object.assign(deps.chats, { recordQaFailure });
+    // Below the limit the chat goes back in the queue (reported as PENDING).
+    await expect(service.scoreChat(TENANT.id, CHAT_ID)).resolves.toBe(
+      HelplineQaStatus.PENDING,
+    );
     await expect(service.scoreChat(TENANT.id, CHAT_ID)).resolves.toBe(
       HelplineQaStatus.FAILED,
     );
-    expect(deps.chats.setQaStatus).toHaveBeenLastCalledWith(
+    expect(recordQaFailure).toHaveBeenCalledWith(
       TENANT.id,
       CHAT_ID,
-      HelplineQaStatus.FAILED,
+      HELPLINE_QA.MAX_ATTEMPTS,
     );
+    expect(deps.scores.save).not.toHaveBeenCalled();
+  });
+
+  it('the failure SQL counts attempts in metadata and only FAILs at the limit', async () => {
+    const { HelplineChatRepository } =
+      await import('../../repository/helpline-chat.repository');
+    const repo = {
+      query: jest.fn().mockResolvedValue([[{ qaStatus: null }], 1]),
+    };
+    const status = await new HelplineChatRepository(
+      repo as never,
+    ).recordQaFailure(TENANT.id, CHAT_ID, 3);
+    expect(status).toBeNull();
+    const [sql, params] = repo.query.mock.calls[0];
+    expect(sql).toContain(`'{qaAttempts}'`);
+    expect(sql).toContain(`>= $3 THEN 'FAILED'`);
+    expect(params).toEqual([CHAT_ID, TENANT.id, 3]);
   });
 
   it('a chat another replica already took is left alone', async () => {

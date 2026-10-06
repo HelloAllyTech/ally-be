@@ -1335,7 +1335,8 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'frames it as a real text chat rather than a roleplay). Every 30 min, at most 10 ' +
       'chats per tick, 5 min after the end. Chats with fewer than 3 listener messages ' +
       'or 300 listener characters are stored SKIPPED with no call; erased chats are ' +
-      'never scored. One call per eligible chat, not retried (a failure is FAILED). ' +
+      'never scored. One call per eligible chat; a failure is retried on later ticks, ' +
+      'at most 3 attempts in all. ' +
       'Levels are derived in code, never asked of the model. Off with ' +
       'HELPLINE_QA_SCHEDULE=off.',
     kind: AiTaskKind.COMPLETION,

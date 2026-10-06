@@ -136,6 +136,7 @@ const chatMethods: [string, (r: HelplineChatRepository) => Promise<unknown>][] =
     ['listOpen', (r) => r.listOpen(TENANT)],
     ['listActive', (r) => r.listActive(TENANT)],
     ['claimQa', (r) => r.claimQa(TENANT, CHAT_ID)],
+    ['recordQaFailure', (r) => r.recordQaFailure(TENANT, CHAT_ID, 3)],
     ['setQaStatus', (r) => r.setQaStatus(TENANT, CHAT_ID, 'DONE' as never)],
     [
       'recentClaimWaitSeconds',

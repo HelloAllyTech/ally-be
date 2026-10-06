@@ -797,8 +797,10 @@ tier REASONING, `neverFallback`).
   with evidence; levels come from `deriveLevel` (never asked of the model). `rubric_version =
   'fhs-text-v1+helpline-chat-v1'`. `helpline_qa_scores.verdicts = { skills: [{ skill, opportunity, level,
   observed, notApplicable, evidence: [{ code, messageId, start, end }] }], stats }` — evidence is offsets
-  into the message, never text, so it ages out with the body. `qa_status` `DONE` / `SKIPPED` / `FAILED`
-  (a judge failure is not retried). Visible to the listener (own, `GET qa/mine`, `GET qa/:chatId`) and
+  into the message, never text, so it ages out with the body. `qa_status` `DONE` / `SKIPPED` / `FAILED`:
+  a failed judgement (transport, or a reply that omits a skill) is counted in `helpline_chats.metadata.
+  qaAttempts` and the chat returns to `qa_status = NULL` for a later tick, up to 3 attempts, then stays
+  `FAILED`. Visible to the listener (own, `GET qa/mine`, `GET qa/:chatId`) and
   supervisors (`view:helpline:qa`); reading a breakdown is audited `HELPLINE_TRANSCRIPT_ACCESSED { view:
   'qa' }`. Lists are ordered by date. Copy: strengths → specific improvements with a way to practise →
   positive close. **No leaderboard, no points, no ranking.** Levels are "score 1–4".
