@@ -17,6 +17,7 @@ import {
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
+import { BugHunterRepoClassifierService } from './bug-hunter-repo-classifier.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
@@ -140,6 +141,7 @@ export class BugFindingService {
     // the module's one-way edge that keeps `editDescription` able to write to
     // the shared event timeline without a circular provider.
     private readonly bugHunterService: BugHunterService,
+    private readonly repoClassifier: BugHunterRepoClassifierService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -148,9 +150,11 @@ export class BugFindingService {
     return finding;
   }
 
-  list(
-    filter: ListBugFindingsFilter,
-  ): Promise<{ items: BugFinding[]; count: number }> {
+  list(filter: ListBugFindingsFilter): Promise<{
+    items: BugFinding[];
+    count: number;
+    countsByStatus: Record<string, number>;
+  }> {
     return this.findingRepository.listPaginated(filter);
   }
 
@@ -1065,6 +1069,37 @@ export class BugFindingService {
       // `original_description` alone can't answer it after a second edit.
       payload: { editedBy: userId, from: finding.description, to: next },
     });
+
+    // "File it more specifically" has to do something. A bug with no repo is
+    // re-read by the classifier against the new text here, not only when the
+    // admin next presses "Put me on it" — best-effort, like the intake pass.
+    if (!finding.repo) {
+      try {
+        const classification = await this.repoClassifier.classifyRepo(next);
+        if (classification.repo) {
+          await this.findingRepository.update(id, {
+            repo: classification.repo,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: id,
+            repo: classification.repo,
+            stage: BugHuntEventStage.FINDER_RESULT,
+            summary: `Classified this as ${classification.repo} from the rewritten description${classification.rationale ? ` (${classification.rationale})` : ''}.`,
+            payload: {
+              classifiedRepo: classification.repo,
+              rationale: classification.rationale,
+              afterEdit: true,
+            },
+          });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[BUG_HUNTER] Could not re-classify finding ${id} after its description was edited: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     return this.getOne(id);
   }

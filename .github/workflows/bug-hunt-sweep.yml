@@ -352,13 +352,74 @@ jobs:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -uo pipefail
+
+          # ── Engine supervisor ──────────────────────────────────────────
+          # Runs the engine in the background and stops it when EITHER the
+          # backend says this run is no longer running (the agent has already
+          # reported completion) OR a wall-clock cap passes. Needed because
+          # some engines hand the model another turn for as long as it keeps
+          # running commands: on 2026-10-06 OpenCode + gemini-2.5-pro finished
+          # a sweep in 7 minutes, closed the run, then spent 113 more minutes
+          # saying "Done" and running `exit 0`, resending the whole session to
+          # the model each turn, until the job's timeout-minutes killed it.
+          # That timeout is the safety net; this is the budget.
+          ENGINE_CAP_SECONDS=3600
+          RUN_STATUS_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status"
+          RUN_REPORT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report"
+          supervise() {
+            : > /tmp/engine-stop-reason.txt
+            # `set -m` gives the background job its own process group, so the
+            # kill below reaches the engine's node/binary children too, not
+            # just the subshell that launched the pipeline.
+            set -m
+            "$@" &
+            local pid=$!
+            set +m
+            local started; started=$(date +%s)
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 30
+              kill -0 "$pid" 2>/dev/null || break
+              local now; now=$(date +%s)
+              if [ $((now - started)) -ge "$ENGINE_CAP_SECONDS" ]; then
+                echo "::warning::The engine has run for $((ENGINE_CAP_SECONDS / 60)) minutes — stopping it. This is the per-run budget, not a crash."
+                echo timeout > /tmp/engine-stop-reason.txt
+                curl -sS -m 20 -X POST -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" "$RUN_REPORT_URL" \
+                  -d "$(jq -n --arg repo "${{ steps.cfg.outputs.repo }}" --arg m "The engine was stopped after $((ENGINE_CAP_SECONDS / 60)) minutes without closing the run — the per-run budget. Whatever it had reported stands; nothing after this point ran." \
+                    '{repo: $repo, stage: "error", summary: $m, payload: {engineStopped: "timeout", capSeconds: 3600}}')" || true
+                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+                sleep 15
+                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+                break
+              fi
+              local status
+              status=$(curl -sS -m 20 -H "x-api-key: $ALLY_BE_API_KEY" "$RUN_STATUS_URL" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)
+              if [ "$status" != "running" ] && [ "$status" != "unknown" ]; then
+                echo "::notice::The run is '$status' — the agent reported completion; stopping the engine rather than letting it keep buying model turns."
+                echo closed > /tmp/engine-stop-reason.txt
+                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+                sleep 15
+                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+                break
+              fi
+            done
+            local rc=0
+            wait "$pid" 2>/dev/null || rc=$?
+            # A stop we chose is not an engine failure.
+            if [ -s /tmp/engine-stop-reason.txt ]; then return 0; fi
+            return $rc
+          }
+
           if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
             # `.response` (not `.result`) is Gemini's non-streaming json field.
-            gemini "$(cat /tmp/sweep-prompt.txt)" \
-              --model "${{ steps.models.outputs.default_model }}" \
-              --approval-mode auto_edit \
-              --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
-              --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+            run_gemini() {
+              gemini "$(cat /tmp/sweep-prompt.txt)" \
+                --model "${{ steps.models.outputs.default_model }}" \
+                --approval-mode auto_edit \
+                --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
+                --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+            }
+            echo "gemini" > /tmp/actual-engine.txt
+            supervise run_gemini
             echo "gemini" > /tmp/actual-engine.txt
 
             # Same fallback bug-fix-session.yml already carries: Gemini's own
@@ -373,7 +434,7 @@ jobs:
             STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
               "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
               | jq -r '.status // "unknown"')
-            if [ "$STATUS" = "running" ]; then
+            if [ "$STATUS" = "running" ] && [ "$(cat /tmp/engine-stop-reason.txt 2>/dev/null)" != "timeout" ]; then
               echo "Gemini left the run '$STATUS' without closing it — retrying once with Gemini on a clean checkout."
 
               # Visible on the timeline even if the Claude retry goes on to
@@ -406,11 +467,7 @@ jobs:
               git clean -fd
               # No Claude path: Claude spend is a hard no, so the one retry is Gemini
               # again on a clean checkout rather than Claude Code.
-              gemini "$(cat /tmp/sweep-prompt.txt)" \
-                --model "${{ steps.models.outputs.default_model }}" \
-                --approval-mode auto_edit \
-                --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
-                --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+              supervise run_gemini
               echo "gemini" > /tmp/actual-engine.txt
             fi
           elif [ "${{ steps.models.outputs.engine }}" = "opencode" ]; then
@@ -446,8 +503,8 @@ jobs:
                 "$(cat /tmp/sweep-prompt.txt)" 2> >(tee -a /tmp/opencode.log >&2) | tee -a /tmp/opencode-out.txt
             }
             : > /tmp/opencode.log; : > /tmp/opencode-out.txt
-            run_opencode
             echo "opencode" > /tmp/actual-engine.txt
+            supervise run_opencode
 
             # Same stuck-check the gemini path runs: an agent that ended its
             # turn mid-protocol leaves the run where it was. One retry on a
@@ -456,7 +513,7 @@ jobs:
             STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
                 "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
                 | jq -r '.status // "unknown"')
-            if [ "$STATUS" = "running" ]; then
+            if [ "$STATUS" = "running" ] && [ "$(cat /tmp/engine-stop-reason.txt 2>/dev/null)" != "timeout" ]; then
               echo "opencode left the run '$STATUS' without reporting an outcome — retrying once on a clean checkout."
               EXCERPT=$(tail -c 400 /tmp/opencode-out.txt 2>/dev/null || true)
               REPORT_BODY=$(jq -n \
@@ -471,7 +528,7 @@ jobs:
               git checkout master --force
               git reset --hard origin/master
               git clean -fd
-              run_opencode
+              supervise run_opencode
             fi
           else
             echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — only gemini or opencode is allowed (no Claude path). Set the engine in admin."

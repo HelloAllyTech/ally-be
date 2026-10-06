@@ -1545,6 +1545,15 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
     // past a ±0.1 band narrower than a skill's own 95% CI (~±0.2 at n=24), so it
     // headlined noise. Replaced by detectable-only counts on AAQ-174. Reserved.
     {
+      id: 'AAQ-170',
+      tab: 'Bug Agent',
+      title: 'Spend over time',
+      kind: 'chart',
+      chartType: 'StackedBarChart',
+      componentFile: f('Analytics/BugHunterOperationsCards.tsx'),
+      note: 'Estimated cost per period by trigger (metadata.cliReportedCostUsd else totalTokenCostUsd), from GET metrics/operations days; Day / Week / Month folded client-side',
+    },
+    {
       id: 'AAQ-171',
       tab: 'Highlights',
       subTab: 'Helping skills',
@@ -1801,19 +1810,19 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       id: 'AAQ-198',
       tab: 'Bug Agent',
       title: "How I'm doing (scorecard)",
-      kind: 'group',
+      kind: 'unmounted',
       chartType: 'kpi',
       componentFile: f('BugHunter/AgentScorecard.tsx'),
-      note: 'Four tiles plus fourteen-day sparkbars, derived from GET /v1/bug-hunter/runs; mounted on Analytics → Bug Agent since OPP-0749',
+      note: 'Four tiles plus fourteen-day sparkbars from GET /v1/bug-hunter/runs. Moved to Analytics → Bug Agent with OPP-0749 and removed from it the same day (2026-10-05, product head): the trends and operations charts already carry these figures',
     },
     {
       id: 'AAQ-199',
       tab: 'Bug Agent',
       title: "How often I'm right (accuracy panel)",
-      kind: 'funnel',
+      kind: 'unmounted',
       chartType: 'FunnelBars',
       componentFile: f('BugHunter/AccuracyPanel.tsx'),
-      note: 'GET /v1/bug-hunter/metrics: finding funnel, accuracy by source and decision reason, stage latency, cost per landed fix',
+      note: 'GET /v1/bug-hunter/metrics: funnel, accuracy by source and decision reason, stage latency, cost per landed fix. Removed from Analytics → Bug Agent on 2026-10-05 with the scorecard; the Precision trend covers the headline rate',
     },
     {
       id: 'AAQ-200',

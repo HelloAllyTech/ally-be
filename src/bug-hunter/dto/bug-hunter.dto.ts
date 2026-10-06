@@ -1197,8 +1197,17 @@ export class ListBugFindingsResponseDto {
   @ApiProperty({ type: [BugFindingDto] })
   items!: BugFindingDto[];
 
-  @ApiProperty()
+  @ApiProperty({
+    description: 'Total rows matching the filters, not the page.',
+  })
   count!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Rows per status over the same source/repo/run scope, ignoring the status filter and the page — what the lifecycle chips count.',
+    example: { new: 12, pending_approval: 3, released: 140 },
+  })
+  countsByStatus?: Record<string, number>;
 }
 
 export class AnswerBugFindingDto {

@@ -30,7 +30,10 @@ jobs:
     env:
       ALLY_BE_API_URL: ${{ vars.ALLY_BE_API_URL }}
       ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # The Gemini key, under the one name opencode's google provider reads.
+      # It ignores GEMINI_API_KEY, which is what this job used to set — see
+      # install-engine.sh and builder-session.yml.
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       REFRESH_REPOS: ${{ inputs.repos || '["ally-be","ally-web","ally-ai","ally-ai-learn","ally-mobile"]' }}
       # Job-level, not step-level: install-engine.sh and refresh-repo-map.sh
@@ -56,12 +59,34 @@ jobs:
       - name: Refresh each repo's map
         run: |
           set -uo pipefail
+          attempted=0
+          failed=""
           for repo in $(echo "$REFRESH_REPOS" | jq -r '.[]'); do
+            attempted=$((attempted + 1))
             echo "::group::map $repo"
             # Per-repo failure is tolerated: one repo whose clone or model call
             # failed should not cost the other four their refresh. A stale map
             # is usable; no map at all sends the agent back to paging files.
-            protocol/scripts/builder/refresh-repo-map.sh "$repo" || \
+            if ! protocol/scripts/builder/refresh-repo-map.sh "$repo"; then
               echo "::warning::Could not refresh the map for ${repo}"
+              failed="${failed} ${repo}"
+            fi
             echo "::endgroup::"
           done
+
+          # ...but not total failure. Every repo failing is one broken thing —
+          # an engine, a key, the endpoint — not five bad draws, and tolerating
+          # it is how this job stayed green after 2026-09-25 while refresh-repo-map.sh
+          # rejected the engine it was handed for every repo, every week.
+          # Zero attempted counts too: a malformed `repos` input leaves the
+          # loop with nothing to do, which is the same silence.
+          if [ "$attempted" -eq 0 ]; then
+            echo "::error::No repos to refresh — the repos input did not parse as a non-empty JSON array: ${REFRESH_REPOS}"
+            exit 1
+          fi
+          refreshed=$((attempted - $(echo "$failed" | wc -w)))
+          if [ "$refreshed" -eq 0 ]; then
+            echo "::error::No map was refreshed: all ${attempted} repos failed (${failed# }). The agents are reading stale maps."
+            exit 1
+          fi
+          echo "Refreshed ${refreshed} of ${attempted} maps."

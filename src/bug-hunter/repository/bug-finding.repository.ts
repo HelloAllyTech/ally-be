@@ -1308,26 +1308,48 @@ export class BugFindingRepository extends Repository<BugFinding> {
     };
   }
 
-  async listPaginated(
-    filter: ListBugFindingsFilter,
-  ): Promise<{ items: BugFinding[]; count: number }> {
+  async listPaginated(filter: ListBugFindingsFilter): Promise<{
+    items: BugFinding[];
+    count: number;
+    /**
+     * Rows per status over the same scope (source, repo, run), ignoring the
+     * status filter and the page. The lifecycle chips above the table count
+     * from this, so they describe the whole set rather than the hundred rows
+     * the window happened to load — which is what "Everything 100 · Closed
+     * 100" was.
+     */
+    countsByStatus: Record<string, number>;
+  }> {
     // Child steps are deliberately absent from the main table: a coordinated
     // fix should read as ONE bug there, and its steps belong in that bug's own
     // drawer rather than as three near-identical rows next to it.
-    const qb = this.createQueryBuilder('f')
-      .where('f.parentFindingId IS NULL')
-      .orderBy('f."createdAt"', 'DESC');
+    const scoped = () => {
+      const qb = this.createQueryBuilder('f').where(
+        'f.parentFindingId IS NULL',
+      );
+      if (filter.source)
+        qb.andWhere('f.source = :source', { source: filter.source });
+      if (filter.repo) qb.andWhere('f.repo = :repo', { repo: filter.repo });
+      if (filter.runId)
+        qb.andWhere('f.runId = :runId', { runId: filter.runId });
+      return qb;
+    };
+
+    const qb = scoped().orderBy('f."createdAt"', 'DESC');
     if (filter.status)
       qb.andWhere('f.status = :status', { status: filter.status });
-    if (filter.source)
-      qb.andWhere('f.source = :source', { source: filter.source });
-    if (filter.repo) qb.andWhere('f.repo = :repo', { repo: filter.repo });
-    if (filter.runId) qb.andWhere('f.runId = :runId', { runId: filter.runId });
 
-    const [items, count] = await qb
-      .take(filter.limit)
-      .skip(filter.offset)
-      .getManyAndCount();
-    return { items, count };
+    const [[items, count], statusRows] = await Promise.all([
+      qb.take(filter.limit).skip(filter.offset).getManyAndCount(),
+      scoped()
+        .select('f.status', 'status')
+        .addSelect('COUNT(*)::int', 'count')
+        .groupBy('f.status')
+        .getRawMany<{ status: string; count: number }>(),
+    ]);
+    const countsByStatus: Record<string, number> = {};
+    for (const row of statusRows)
+      countsByStatus[row.status] = Number(row.count);
+    return { items, count, countsByStatus };
   }
 }

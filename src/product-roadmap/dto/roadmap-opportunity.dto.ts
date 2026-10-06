@@ -22,6 +22,11 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+
+import {
+  BUG_FIX_SESSION_REPOS,
+  BugFixSessionRepo,
+} from 'src/bug-hunter/constants/bug-fix-session.constants';
 import {
   RoadmapBoardGroupBy,
   RoadmapOpportunityEffort,
@@ -468,6 +473,21 @@ export class CreateBugReportDto {
   @ValidateNested()
   @Type(() => ReporterContextDto)
   context?: ReporterContextDto;
+
+  /**
+   * Which codebase the reporter believes the bug is in, when they know. Staff
+   * usually do, and a stated repo beats a guessed one: when set, Bug Hunter
+   * files the finding there and skips its own classification. Consumers are
+   * never asked.
+   */
+  @ApiPropertyOptional({
+    enum: BUG_FIX_SESSION_REPOS,
+    description:
+      'The repo the fix belongs in, if the reporter knows. Skips the repo classifier.',
+  })
+  @IsOptional()
+  @IsIn(BUG_FIX_SESSION_REPOS)
+  repo?: BugFixSessionRepo;
 }
 
 /**
