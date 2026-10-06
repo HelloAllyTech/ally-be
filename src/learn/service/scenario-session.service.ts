@@ -289,7 +289,9 @@ export class ScenarioSessionService {
     // No per-roleplay gate any more: the Skills Demonstrated tab was retired
     // on 2026-08-31, so there is no learner surface left to withhold this
     // from. The data itself lives on because admin analytics reads
-    // `skillCoverage` (skill-growth charts, LearnerSkillPanel).
+    // `skillCoverage` (the ruler-convergence chart AAQ-222, and the course
+    // progress dashboard). Skill growth no longer does — it reads the
+    // helping-skills cuts since 2026-10.
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
     );

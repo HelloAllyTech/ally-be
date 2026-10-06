@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from 'src/learn/enum/scenario-session-status.enum';
 import { StoredVerdictLite } from '../util/foundational-skills-progress.util';
+import {
+  countableSessionPredicate,
+  sessionDurationMsExpr,
+} from '../util/session-eligibility.util';
 import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
 
 export interface FoundationalSkillsCutRow {
@@ -214,6 +222,56 @@ export class FoundationalSkillsAnalyticsRepository {
       tenantId ? [rubricVersion, tenantId] : [rubricVersion],
     );
     return rows.map(toLearnerCutRow);
+  }
+
+  /**
+   * Practice minutes behind each learner's scored cuts (the dose–response
+   * scatter, AAQ-217): the summed duration, net of pauses
+   * (`sessionDurationMsExpr`), of every DISTINCT countable session that appears
+   * in at least one of the learner's scored cuts under `rubricVersion` — the
+   * same cuts, in the same org scope, that their own change is measured on. A
+   * session split across two cuts counts once, whole. Sessions in a cut that
+   * failed scoring, and practice not yet sealed into a cut, are not counted:
+   * x and y describe the same practice.
+   *
+   * `userIds` narrows to the learners the caller will plot. A learner with no
+   * measurable duration is ABSENT from the map (unknown), never 0.
+   */
+  async getPracticeMinutesByLearner(
+    rubricVersion: string,
+    userIds: readonly number[],
+    tenantId?: string,
+  ): Promise<Map<number, number>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await this.dataSource.query(
+      `
+      WITH scored AS (${this.scoredCte(tenantId ? '$3' : undefined)}),
+      sessions AS (
+        SELECT DISTINCT sc.user_id, x.session_id
+          FROM scored sc
+          CROSS JOIN LATERAL unnest(sc.session_ids) AS x(session_id)
+         WHERE sc.user_id = ANY($2::int[])
+      )
+      SELECT se.user_id,
+             SUM(${sessionDurationMsExpr('s', 'd')})::float AS ms
+        FROM sessions se
+        JOIN scenario_sessions s ON s.id = se.session_id
+        LEFT JOIN scenario_session_details d ON d."scenarioSessionId" = s.id
+       WHERE s.status = '${ScenarioSessionStatus.ENDED}'
+         AND s."eventStatus" = '${ScenarioSessionEventStatus.COMPLETED}'
+         AND ${countableSessionPredicate('s')}
+       GROUP BY se.user_id
+      `,
+      tenantId
+        ? [rubricVersion, [...userIds], tenantId]
+        : [rubricVersion, [...userIds]],
+    );
+    const out = new Map<number, number>();
+    for (const r of rows) {
+      if (r.ms === null || r.ms === undefined) continue;
+      out.set(Number(r.user_id), Number(r.ms) / 60000);
+    }
+    return out;
   }
 
   private learnerCutSelect(join: string): string {

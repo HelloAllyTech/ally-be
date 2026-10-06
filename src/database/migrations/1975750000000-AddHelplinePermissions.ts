@@ -50,8 +50,8 @@ const ADMIN_PERMISSIONS = [...SUPERVISOR_PERMISSIONS, 'edit:helpline:team'];
 
 const ALL_PERMISSIONS = ADMIN_PERMISSIONS;
 
-export class AddHelplinePermissions1975710000000 implements MigrationInterface {
-  name = 'AddHelplinePermissions1975710000000';
+export class AddHelplinePermissions1975750000000 implements MigrationInterface {
+  name = 'AddHelplinePermissions1975750000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // `$1::varchar` rather than a bare `$1`: in `SELECT $1` Postgres has no

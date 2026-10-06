@@ -379,6 +379,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `## Phase 5 — Close`,
     `Exactly once, whatever happened, including if you found nothing at all, and always LAST — nothing you do after this call is recorded against the run:`,
     `  curl -sS -X POST "${closeUrl}" -H "Content-Type: application/json" ${auth} -d '{"status":"completed","foundCount":<n>,"autoMergedCount":<n>,"prOpenedCount":<n>,"dismissedCount":<n>}'`,
+    `After the close call, say in one sentence that you are done and STOP: run no further command, not even to "signal completion" or "exit". On some engines every command you run buys the model another turn, and a finished sweep that keeps running is pure cost — the runner stops the engine the moment the run is closed.`,
     `A run left open looks to an admin like a sweep still working. If you hit something that stopped you entirely, close with {"status":"failed",...} instead and report an error stage explaining what. The workflow re-reads this run the moment you exit and fails the job if it is still open, so stopping without closing is not a quiet outcome — it is a red run and an admin asking why.`,
   ]
     .filter(Boolean)

@@ -1,4 +1,4 @@
-import { HELPLINE_SEED_RULES } from 'src/database/migrations/1975720000000-SeedHelplineRiskKeywords';
+import { HELPLINE_SEED_RULES } from 'src/database/migrations/1975760000000-SeedHelplineRiskKeywords';
 import {
   HelplineKeywordMatchType,
   HelplineRiskFlagLevel,

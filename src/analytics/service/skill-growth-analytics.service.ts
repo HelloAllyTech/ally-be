@@ -1,124 +1,136 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import {
-  SkillGrowthCellDto,
+  FHS_CUT_LEARNER_CHARS,
+  FHS_JUDGE_MODEL,
+  FHS_RUBRIC_VERSION,
+} from 'src/foundational-skills/constants/helping-skills-rubric.constants';
+import {
   SkillGrowthLearnerSeriesResponseDto,
+  SkillGrowthLearnerSessionDto,
   SkillGrowthLearnersQueryDto,
   SkillGrowthLearnersResponseDto,
-  SkillGrowthOrdinalDto,
   SkillGrowthQueryDto,
   SkillGrowthResponseDto,
-  SkillTrendThresholdsDto,
+  SkillTrendLearnerRowDto,
 } from '../dto/skill-growth-analytics.dto';
+import { FoundationalSkillsAnalyticsRepository } from '../repository/foundational-skills-analytics.repository';
 // The score floor lives with the quality repository because it is one floor for
 // every judged score on the platform, not a per-chart setting. Importing it is
 // deliberate: a local copy here is how a chart ends up suppressing at a different
 // n than the one beside it.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
+import { SkillGrowthAnalyticsRepository } from '../repository/skill-growth-analytics.repository';
+import { cutNoiseSd } from '../util/foundational-skills-progress.util';
 import {
-  SKILL_GROWTH_DERIVATION,
-  SKILL_GROWTH_EXPERIENCED_MIN_SESSIONS,
-  SKILL_GROWTH_LEARNER_SESSION_CAP,
+  SKILL_GROWTH_EXPERIENCED_MIN_CUTS,
+  SKILL_GROWTH_LEARNER_ROW_CAP,
   SKILL_GROWTH_MAX_ORDINAL,
-  SKILL_GROWTH_PROVENANCE_NOTE,
-  SKILL_TREND_FLAT_BAND,
-  SKILL_TREND_MIN_SESSIONS,
-  SKILL_TREND_WINDOW,
-  SkillGrowthAnalyticsRepository,
-  SkillGrowthCell,
-  SkillGrowthLearnerSession,
-  SkillGrowthOrdinalRow,
-  SkillTrendClass,
-} from '../repository/skill-growth-analytics.repository';
+  SkillGrowthClassification,
+  SkillGrowthLearner,
+  buildSkillGrowthCurve,
+  buildSkillTrendMix,
+  classifySkillGrowthLearner,
+  cutScenarioTitle,
+  skillTrendThresholds,
+  sortSkillGrowthLearners,
+  toSkillGrowthLearners,
+} from '../util/skill-growth.util';
 
-/** Score axis. Fixed so a nine-point wobble cannot fill the chart. */
-const SCORE_DOMAIN: [number, number] = [0, 100];
+/** The rubric's level scale — the axis every cut composite lives on. */
+const SCORE_DOMAIN: [number, number] = [1, 4];
 
-/** An ordinal nobody reached: the axis tick exists, the measurement does not. */
-const EMPTY_CELL: SkillGrowthCell = {
-  median: null,
-  p25: null,
-  p75: null,
-  n: 0,
-};
+/** Quiz/annotation `scorePct` — the knowledge series' own axis. */
+const KNOWLEDGE_SCORE_DOMAIN: [number, number] = [0, 100];
 
 /**
- * The learning curve for the leadership Highlights tab.
+ * What the curve measures (ruler R1), echoed on the card.
  *
- * Thin by design — the repository answers the question in one pass. Three rules
- * live here because each is a place a client could otherwise answer differently:
+ * Constants only, no module-load work beyond string assembly.
+ */
+export const SKILL_GROWTH_DERIVATION =
+  `Learner ruler R1 (foundational helping skills). Each learner's completed roleplay ` +
+  `practice, in the order it ended, is cut into ${FHS_CUT_LEARNER_CHARS.toLocaleString('en')}-character ` +
+  `slices of their OWN speech; every slice is scored by ${FHS_JUDGE_MODEL} against the fixed ` +
+  `foundational helping skills rubric (14 of 15 skills; non-verbal is not visible in a ` +
+  `transcript), a skill only where the slice gave an opportunity for it. The composite is the ` +
+  `mean of the scored skills, 1–4. Ordinal N is the learner's Nth slice, the same amount of ` +
+  `practice for everyone.`;
+
+export const SKILL_GROWTH_PROVENANCE_NOTE =
+  `AI-judged and not yet checked against trained human raters: practice feedback, not a ` +
+  `clinical assessment. Only slices scored under rubric ${FHS_RUBRIC_VERSION} are used — a new ` +
+  `version re-scores every slice rather than mixing rulers. A slice can span several ` +
+  `scenarios. Test organisations excluded. Until October 2026 this chart plotted a different ` +
+  `number — the AI judge's 0–100 score of the AI roleplay character, not of the learner — so ` +
+  `it cannot be compared with earlier screenshots.`;
+
+const provenance = () => ({
+  derivation: SKILL_GROWTH_DERIVATION,
+  note: SKILL_GROWTH_PROVENANCE_NOTE,
+});
+
+/**
+ * Highlights → Skill growth, on the learner ruler.
+ *
+ * Every number here is computed from ONE read: the scored foundational-skills
+ * cuts from `FoundationalSkillsAnalyticsRepository.getAllLearnerCuts`, the
+ * same rows the Helping skills sub-tab is built from. The arithmetic lives in
+ * `util/skill-growth.util.ts`; this service loads, groups and labels. Three
+ * rules live here because each is a place a client could otherwise answer
+ * differently:
  *
  *  - **The sample floor is applied server-side, and `n` survives it.** A cell
- *    below {@link MIN_SCORE_SAMPLE_SIZE} comes back with null percentiles and its
- *    real count, so the surface can say "n = 4 · need 20". Leaving the
- *    suppression to the client means every client re-implements it, and one of
- *    them eventually draws the line anyway.
- *  - **The ordinal axis is completed to `maxOrdinal`, the measurements are not.**
- *    An ordinal nobody has reached is emitted with `n: 0` and null percentiles.
- *    This is not gap-filling an average with zero — a count of zero sessions is a
- *    fact, and the percentiles stay null precisely because a median of no
- *    observations is not a median of zero. It buys the chart a stable x-axis that
- *    does not change length as the platform grows.
- *  - **"Where does the line stop being worth reading" is computed once.** The
- *    headline pairs ordinal 1 against the LAST ordinal that clears the floor, so
- *    the claim on the card is bounded by the data rather than by whichever point
- *    the axis happens to end on.
+ *    below {@link MIN_SCORE_SAMPLE_SIZE} comes back with null percentiles and
+ *    its real count, so the surface can say "n = 4 · need 20".
+ *  - **The noise estimate is taken over the population being classified.**
+ *    `cutNoiseSd` of the learners in scope, exactly as `computeProgress` does
+ *    for the Helping skills tab, so an org-filtered trend mix here and there
+ *    classify the same learners the same way.
+ *  - **The drill-down is platform-wide and classifies against the
+ *    platform-wide noise**, which is what the unfiltered list shows. It reads
+ *    every scored cut for that, as the Helping skills tab does on every
+ *    request — fine at today's hundreds of cuts.
  */
 @Injectable()
 export class SkillGrowthAnalyticsService {
-  constructor(private readonly repository: SkillGrowthAnalyticsRepository) {}
+  constructor(
+    private readonly repository: SkillGrowthAnalyticsRepository,
+    private readonly cuts: FoundationalSkillsAnalyticsRepository,
+  ) {}
 
   async getSkillGrowth(
     query: SkillGrowthQueryDto,
   ): Promise<SkillGrowthResponseDto> {
     const tenantId = query.tenantId?.trim() || undefined;
+    const learners = await this.loadLearners(tenantId);
+    const noise = cutNoiseSd(learners);
 
-    const [distribution, trendMix] = await Promise.all([
-      this.repository.getOrdinalDistribution(tenantId),
-      this.repository.getTrendMix(tenantId),
-    ]);
-
-    const byOrdinal = new Map<number, SkillGrowthOrdinalRow>(
-      distribution.ordinals.map((r) => [r.ordinal, r]),
+    const curve = buildSkillGrowthCurve(learners, MIN_SCORE_SAMPLE_SIZE);
+    const trendMix = buildSkillTrendMix(
+      learners.map((l) => classifySkillGrowthLearner(l, noise)),
     );
 
-    const ordinals: SkillGrowthOrdinalDto[] = [];
-    for (let ordinal = 1; ordinal <= SKILL_GROWTH_MAX_ORDINAL; ordinal += 1) {
-      const row = byOrdinal.get(ordinal);
-      ordinals.push({
-        ordinal,
-        all: this.applyFloor(row?.all ?? EMPTY_CELL),
-        experienced: this.applyFloor(row?.experienced ?? EMPTY_CELL),
-      });
-    }
-
-    // The last ordinal whose "all" sample clears the floor — read off the
-    // suppressed cells so the summary and the chart can never disagree about
-    // where the credible part of the line ends.
-    const comparable = ordinals.filter((o) => o.all.median !== null);
-    const last = comparable.length ? comparable[comparable.length - 1] : null;
-
     return {
-      ordinals,
+      ordinals: curve.ordinals,
       maxOrdinal: SKILL_GROWTH_MAX_ORDINAL,
-      experiencedMinSessions: SKILL_GROWTH_EXPERIENCED_MIN_SESSIONS,
+      experiencedMinSessions: SKILL_GROWTH_EXPERIENCED_MIN_CUTS,
       minSampleSize: MIN_SCORE_SAMPLE_SIZE,
       scoreDomain: SCORE_DOMAIN,
-      provenance: {
-        derivation: SKILL_GROWTH_DERIVATION,
-        note: SKILL_GROWTH_PROVENANCE_NOTE,
-      },
+      rubricVersion: FHS_RUBRIC_VERSION,
+      cutSizeLearnerChars: FHS_CUT_LEARNER_CHARS,
+      provenance: provenance(),
       summary: {
-        learners: distribution.learners,
-        experiencedLearners: distribution.experiencedLearners,
-        evaluatedSessions: distribution.evaluatedSessions,
-        firstOrdinalMedian: ordinals[0]?.all.median ?? null,
-        lastComparableOrdinal: last?.ordinal ?? null,
-        lastComparableMedian: last?.all.median ?? null,
+        learners: curve.learners,
+        experiencedLearners: curve.experiencedLearners,
+        evaluatedSessions: curve.scoredCuts,
+        firstOrdinalMedian: curve.firstOrdinalMedian,
+        lastComparableOrdinal: curve.lastComparableOrdinal,
+        lastComparableMedian: curve.lastComparableMedian,
       },
-      trendMix: { ...trendMix, thresholds: this.thresholds() },
-      // The sessions carry a tenant, so unlike AI cost or org counts there is
-      // nothing here that has to stay platform-wide under a filter.
+      trendMix: { ...trendMix, thresholds: skillTrendThresholds(noise) },
+      // Every cut carries a tenant, so nothing here stays platform-wide
+      // under a filter — the noise estimate included.
       scoping: { tenantId: tenantId ?? null, unscopedSections: [] },
       computedAt: new Date().toISOString(),
     };
@@ -128,41 +140,64 @@ export class SkillGrowthAnalyticsService {
   async getLearnerTrends(
     query: SkillGrowthLearnersQueryDto,
   ): Promise<SkillGrowthLearnersResponseDto> {
+    const tenantId = query.tenantId?.trim() || undefined;
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
-    const page = await this.repository.getLearnerTrendPage({
-      tenantId: query.tenantId?.trim() || undefined,
-      limit,
-      offset,
-      sort: query.sort ?? 'delta',
-      descending: (query.order ?? 'desc') === 'desc',
-    });
+
+    const learners = await this.loadLearners(tenantId);
+    const noise = cutNoiseSd(learners);
+    const sorted = sortSkillGrowthLearners(
+      learners.map((learner) => ({
+        learner,
+        classification: classifySkillGrowthLearner(learner, noise),
+      })),
+      query.sort ?? 'delta',
+      (query.order ?? 'desc') === 'desc',
+    );
+    const page = sorted.slice(offset, offset + limit);
+
+    const identities = new Map(
+      (
+        await this.repository.getLearnerIdentities(
+          page.map((r) => r.learner.userId),
+        )
+      ).map((i) => [i.id, i]),
+    );
+
+    const rows: SkillTrendLearnerRowDto[] = page.map(
+      ({ learner, classification }) => {
+        const identity = identities.get(learner.userId);
+        return {
+          learnerId: learner.userId,
+          name: identity?.name ?? learner.name,
+          email: identity?.email ?? null,
+          tenantId: identity?.tenantId ?? learner.tenantId,
+          ...this.trendFields(classification),
+          lastSessionAt: classification.lastCutAt?.toISOString() ?? null,
+        };
+      },
+    );
 
     return {
-      rows: page.rows,
-      total: page.total,
+      rows,
+      total: sorted.length,
       limit,
       offset,
-      thresholds: this.thresholds(),
-      provenance: {
-        derivation: SKILL_GROWTH_DERIVATION,
-        note: SKILL_GROWTH_PROVENANCE_NOTE,
-      },
+      thresholds: skillTrendThresholds(noise),
+      rubricVersion: FHS_RUBRIC_VERSION,
+      provenance: provenance(),
+      scoping: { tenantId: tenantId ?? null, unscopedSections: [] },
       computedAt: new Date().toISOString(),
     };
   }
 
   /**
-   * One learner's full timeline: roleplay and knowledge series side by side.
+   * One learner's full timeline: their scored cuts and their knowledge
+   * attempts, side by side.
    *
-   * 404s on an unknown user id, but an existing learner with NO evaluated
-   * sessions is a valid answer with empty series — a drill-down reached from
-   * the list can race an admin deleting sessions, and "this learner has no
-   * judged sessions" is information where an error would read as a bug.
-   *
-   * The trend classification is recomputed here from the same constants the
-   * list used, so the header a drill-down shows can never disagree with the
-   * row that was clicked.
+   * 404s on an unknown user id, but an existing learner with NO scored cuts
+   * is a valid answer with empty series — "no scored practice yet" is
+   * information where an error would read as a bug.
    */
   async getLearnerSeries(
     learnerId: number,
@@ -172,85 +207,63 @@ export class SkillGrowthAnalyticsService {
       throw new NotFoundException(`No user with id ${learnerId}`);
     }
 
-    const [sessions, knowledgeAttempts] = await Promise.all([
-      this.repository.getLearnerSessions(learnerId),
+    const [learners, knowledgeAttempts] = await Promise.all([
+      this.loadLearners(undefined),
       this.repository.getLearnerKnowledgeAttempts(learnerId),
     ]);
+    const noise = cutNoiseSd(learners);
+    const learner: SkillGrowthLearner = learners.find(
+      (l) => l.userId === learnerId,
+    ) ?? { userId: learnerId, name: identity.name, tenantId: null, cuts: [] };
+
+    const shown = learner.cuts.slice(0, SKILL_GROWTH_LEARNER_ROW_CAP);
+    const scenarios = await this.cuts.getSessionScenarios([
+      ...new Set(shown.flatMap((c) => c.sessionIds)),
+    ]);
+    const sessions: SkillGrowthLearnerSessionDto[] = shown.map((c) => ({
+      ordinal: c.cut,
+      occurredAt: c.closedAt.toISOString(),
+      scenarioTitle: cutScenarioTitle(c.sessionIds, scenarios),
+      compositeScore: Math.round(c.score * 100) / 100,
+      skillCoverage: null,
+      skillLevels: c.levels,
+      hasUnhelpfulBehaviour: c.unhelpful,
+    }));
 
     return {
-      learner: { ...identity, ...this.classify(sessions) },
+      learner: {
+        ...identity,
+        ...this.trendFields(classifySkillGrowthLearner(learner, noise)),
+      },
       sessions,
       knowledgeAttempts,
       truncated:
-        sessions.length >= SKILL_GROWTH_LEARNER_SESSION_CAP ||
-        knowledgeAttempts.length >= SKILL_GROWTH_LEARNER_SESSION_CAP,
-      thresholds: this.thresholds(),
+        learner.cuts.length > SKILL_GROWTH_LEARNER_ROW_CAP ||
+        knowledgeAttempts.length >= SKILL_GROWTH_LEARNER_ROW_CAP,
+      thresholds: skillTrendThresholds(noise),
       scoreDomain: SCORE_DOMAIN,
-      provenance: {
-        derivation: SKILL_GROWTH_DERIVATION,
-        note: SKILL_GROWTH_PROVENANCE_NOTE,
-      },
+      knowledgeScoreDomain: KNOWLEDGE_SCORE_DOMAIN,
+      rubricVersion: FHS_RUBRIC_VERSION,
+      provenance: provenance(),
       computedAt: new Date().toISOString(),
     };
   }
 
-  /**
-   * The same first-window/last-window classification the SQL applies, in JS —
-   * for the one place that already holds the sessions and would otherwise run
-   * a second aggregate query to learn what it can compute from them.
-   */
-  private classify(sessions: SkillGrowthLearnerSession[]): {
-    evaluatedSessions: number;
-    firstWindowMean: number | null;
-    lastWindowMean: number | null;
-    delta: number | null;
-    trend: SkillTrendClass;
-  } {
-    const evaluatedSessions = sessions.length;
-    if (evaluatedSessions < SKILL_TREND_MIN_SESSIONS) {
-      return {
-        evaluatedSessions,
-        firstWindowMean: null,
-        lastWindowMean: null,
-        delta: null,
-        trend: 'insufficient',
-      };
-    }
-    const mean = (slice: SkillGrowthLearnerSession[]): number =>
-      Math.round(
-        (slice.reduce((sum, s) => sum + s.compositeScore, 0) / slice.length) *
-          10,
-      ) / 10;
-    const firstWindowMean = mean(sessions.slice(0, SKILL_TREND_WINDOW));
-    const lastWindowMean = mean(sessions.slice(-SKILL_TREND_WINDOW));
-    const delta = Math.round((lastWindowMean - firstWindowMean) * 10) / 10;
-    const trend: SkillTrendClass =
-      delta > SKILL_TREND_FLAT_BAND
-        ? 'improving'
-        : delta < -SKILL_TREND_FLAT_BAND
-          ? 'declining'
-          : 'flat';
-    return { evaluatedSessions, firstWindowMean, lastWindowMean, delta, trend };
+  /** The scored cuts in scope, folded one series per learner. */
+  private async loadLearners(tenantId?: string): Promise<SkillGrowthLearner[]> {
+    return toSkillGrowthLearners(
+      await this.cuts.getAllLearnerCuts(FHS_RUBRIC_VERSION, tenantId),
+    );
   }
 
-  private thresholds(): SkillTrendThresholdsDto {
+  private trendFields(c: SkillGrowthClassification) {
     return {
-      minSessions: SKILL_TREND_MIN_SESSIONS,
-      window: SKILL_TREND_WINDOW,
-      flatBand: SKILL_TREND_FLAT_BAND,
+      evaluatedSessions: c.scoredCuts,
+      firstWindowMean: c.firstWindowMean,
+      lastWindowMean: c.lastWindowMean,
+      delta: c.delta,
+      band: c.band,
+      trend: c.trend,
     };
-  }
-
-  /**
-   * Drop the percentiles of a thin cell; never drop its count.
-   *
-   * The count is what turns a blank cell from an apparent bug into a stated
-   * limitation, so it is the one field that always survives.
-   */
-  private applyFloor(cell: SkillGrowthCell): SkillGrowthCellDto {
-    if (cell.n < MIN_SCORE_SAMPLE_SIZE) {
-      return { median: null, p25: null, p75: null, n: cell.n };
-    }
-    return { median: cell.median, p25: cell.p25, p75: cell.p75, n: cell.n };
   }
 }

@@ -3,7 +3,7 @@
  *
  * The contract every surface builds against is `docs/text-helpline.md`; the
  * values here are its §4 enums verbatim. Each enum-backed column has a CHECK
- * constraint in `1975700000000-CreateTextHelpline.ts`, and
+ * constraint in `1975740000000-CreateTextHelpline.ts`, and
  * `check-constraints-cover-enums.spec.ts` fails if the two drift.
  */
 

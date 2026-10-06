@@ -20,8 +20,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * with `now()` across replicas, and a zone-less column would make that depend
  * on each container's TZ.
  */
-export class CreateTextHelpline1975700000000 implements MigrationInterface {
-  name = 'CreateTextHelpline1975700000000';
+export class CreateTextHelpline1975740000000 implements MigrationInterface {
+  name = 'CreateTextHelpline1975740000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

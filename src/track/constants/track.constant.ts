@@ -4,6 +4,14 @@ export const TRACK_REQUIRED_FIELDS_FOR_PUBLISH = [
   'coverImageUrl',
 ];
 
+/**
+ * Competencies one course may be tagged with (`tracks.competencyIds`). The
+ * seeded library is the 15 foundational helping skills, so this admits a course
+ * that claims every one of them and nothing past that. A course that claims all
+ * fifteen tells Analytics → Course impact nothing it could not already assume.
+ */
+export const TRACK_MAX_COMPETENCIES = 15;
+
 export const TRACK_MAX_SECTIONS = 20;
 export const TRACK_MAX_ITEMS_PER_SECTION = 30;
 export const TRACK_MAX_QUIZ_QUESTIONS = 50;
@@ -117,8 +125,7 @@ export const TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS = 20_000;
  * Evaluated ROLEPLAY sessions a skillCoverage category needs, within one
  * course, before its average is trusted enough to classify. One session is
  * one LLM judge's read of one conversation; the spread between a learner's
- * adjacent sessions is routinely tens of points (same reasoning as
- * SKILL_TREND_WINDOW in skill-growth-analytics.repository.ts). Below this,
+ * adjacent sessions is routinely tens of points. Below this,
  * the category reads as `insufficient_data` regardless of its average.
  */
 export const TRACK_PROGRESS_MIN_SKILL_SAMPLE = 2;

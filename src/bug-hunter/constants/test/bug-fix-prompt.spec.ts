@@ -213,6 +213,13 @@ describe('buildFixSessionPrompt', () => {
     expect(p).toContain('/runs/run-1/phases');
   });
 
+  it('tells the agent to stop after closing the run and run nothing further', () => {
+    const p = build({ repo: 'ally-be' }, 'ally-be');
+    const close = p.indexOf('10. Finally');
+    const stop = p.indexOf('run no further command');
+    expect(stop).toBeGreaterThan(close);
+  });
+
   it('reports which notebook entries it used before writing a lesson, even when none did (OPP-0752)', () => {
     const p = build({ repo: 'ally-be' }, 'ally-be');
     const feedback = p.indexOf('pipeline/memory/feedback');

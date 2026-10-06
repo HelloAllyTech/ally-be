@@ -675,6 +675,23 @@ than across languages. Scenario mix changes which skills get an opportunity (hen
 opportunity gating). With about 90 active learners, only the first few cuts clear the n=20
 floor.
 
+**Built on the measure (2026-10, `docs/effectiveness-analytics-plan.md` §13):**
+- **Feedback → skill mapping** (`FeedbackSkillMappingService`, AI task
+  `feedback-improvement-skill-mapping`, off unless `FEEDBACK_SKILL_MAPPING_SCHEDULE=on`): files
+  each "area of growth" in a session debrief under one rubric skill or none, so
+  `GET /v1/analytics/foundational-skills/feedback-uptake` (AAQ-221) can ask whether a named skill
+  then moved, against the same learner's unnamed skills. Stores skill keys and positions, never
+  the improvement text.
+- **Self-efficacy instrument** (`learner_self_assessments`, `GET`/`POST /v1/self-assessment`):
+  one 0–10 confidence item per rubric skill, asked at onboarding, every 3 scored cuts and on
+  course completion. Always read beside the judge (AAQ-230/231), never alone — learners are poor,
+  often over-confident self-assessors. No learner-facing prompt ships yet.
+- **Human ratings of the judge** (`fhs_human_ratings`): people tick behaviour codes on a
+  quarterly 30-cut sample stratified by composite tercile × language
+  (`GET /v1/foundational-skills/human-ratings/sample`); levels are derived with `deriveLevel`,
+  never entered. `GET /v1/analytics/foundational-skills/judge-agreement` (AAQ-223) reports
+  Cohen's κ judge-vs-human and human-vs-human. No rating UI ships yet.
+
 ---
 
 ## 9. Mapping to the rest of the codebase

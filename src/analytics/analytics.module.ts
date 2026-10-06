@@ -45,6 +45,32 @@ import { FoundationalSkillsBenchmarkAnalyticsService } from './service/foundatio
 import { FoundationalSkillsBenchmarkAnalyticsRepository } from './repository/foundational-skills-benchmark.repository';
 import { CourseImpactAnalyticsService } from './service/course-impact-analytics.service';
 import { CourseImpactAnalyticsRepository } from './repository/course-impact-analytics.repository';
+import { FoundationalSkillsTransferAnalyticsService } from './service/foundational-skills-transfer.service';
+import { FoundationalSkillsTransferRepository } from './repository/foundational-skills-transfer.repository';
+import { SelfEfficacyAnalyticsService } from './service/self-efficacy-analytics.service';
+import { SelfEfficacyAnalyticsRepository } from './repository/self-efficacy-analytics.repository';
+import { JudgeAgreementAnalyticsService } from './service/judge-agreement-analytics.service';
+import { JudgeAgreementAnalyticsRepository } from './repository/judge-agreement-analytics.repository';
+import { FeedbackUptakeAnalyticsService } from './service/feedback-uptake-analytics.service';
+import { FeedbackUptakeAnalyticsRepository } from './repository/feedback-uptake-analytics.repository';
+import { EffectivenessOrgsAnalyticsService } from './service/effectiveness-orgs-analytics.service';
+import { EffectivenessOrgsAnalyticsRepository } from './repository/effectiveness-orgs-analytics.repository';
+import { MeasurementConvergenceAnalyticsService } from './service/measurement-convergence-analytics.service';
+import { MeasurementConvergenceAnalyticsRepository } from './repository/measurement-convergence-analytics.repository';
+import { ScenarioCalibrationAnalyticsService } from './service/scenario-calibration-analytics.service';
+import { ScenarioCalibrationAnalyticsRepository } from './repository/scenario-calibration-analytics.repository';
+import { CourseProgressAnalyticsService } from './service/course-progress-analytics.service';
+import { CourseProgressAnalyticsRepository } from './repository/course-progress-analytics.repository';
+import { FoundationalSkillsEffectivenessService } from './service/foundational-skills-effectiveness.service';
+import { FoundationalSkillsEffectivenessRepository } from './repository/foundational-skills-effectiveness.repository';
+import { CurriculumAnalyticsService } from './service/curriculum-analytics.service';
+import { CurriculumAnalyticsRepository } from './repository/curriculum-analytics.repository';
+import { ScenarioEffectivenessAnalyticsService } from './service/scenario-effectiveness-analytics.service';
+import { ScenarioEffectivenessAnalyticsRepository } from './repository/scenario-effectiveness-analytics.repository';
+import { PracticeQualityAnalyticsService } from './service/practice-quality-analytics.service';
+import { PracticeQualityAnalyticsRepository } from './repository/practice-quality-analytics.repository';
+import { EffectivenessAnalyticsService } from './service/effectiveness-analytics.service';
+import { EffectivenessAnalyticsRepository } from './repository/effectiveness-analytics.repository';
 import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
 import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
 import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
@@ -213,6 +239,32 @@ import { TenantModule } from 'src/tenant/tenant.module';
     FoundationalSkillsBenchmarkAnalyticsRepository,
     CourseImpactAnalyticsService,
     CourseImpactAnalyticsRepository,
+    FoundationalSkillsTransferAnalyticsService,
+    FoundationalSkillsTransferRepository,
+    SelfEfficacyAnalyticsService,
+    SelfEfficacyAnalyticsRepository,
+    JudgeAgreementAnalyticsService,
+    JudgeAgreementAnalyticsRepository,
+    FeedbackUptakeAnalyticsService,
+    FeedbackUptakeAnalyticsRepository,
+    EffectivenessOrgsAnalyticsService,
+    EffectivenessOrgsAnalyticsRepository,
+    MeasurementConvergenceAnalyticsService,
+    MeasurementConvergenceAnalyticsRepository,
+    ScenarioCalibrationAnalyticsService,
+    ScenarioCalibrationAnalyticsRepository,
+    CourseProgressAnalyticsService,
+    CourseProgressAnalyticsRepository,
+    FoundationalSkillsEffectivenessService,
+    FoundationalSkillsEffectivenessRepository,
+    CurriculumAnalyticsService,
+    CurriculumAnalyticsRepository,
+    ScenarioEffectivenessAnalyticsService,
+    ScenarioEffectivenessAnalyticsRepository,
+    PracticeQualityAnalyticsService,
+    PracticeQualityAnalyticsRepository,
+    EffectivenessAnalyticsService,
+    EffectivenessAnalyticsRepository,
     QualityDistributionAnalyticsService,
     QualityDistributionAnalyticsRepository,
     CompetencyMapAnalyticsService,

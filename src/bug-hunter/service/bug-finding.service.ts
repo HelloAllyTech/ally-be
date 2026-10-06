@@ -150,9 +150,11 @@ export class BugFindingService {
     return finding;
   }
 
-  list(
-    filter: ListBugFindingsFilter,
-  ): Promise<{ items: BugFinding[]; count: number }> {
+  list(filter: ListBugFindingsFilter): Promise<{
+    items: BugFinding[];
+    count: number;
+    countsByStatus: Record<string, number>;
+  }> {
     return this.findingRepository.listPaginated(filter);
   }
 

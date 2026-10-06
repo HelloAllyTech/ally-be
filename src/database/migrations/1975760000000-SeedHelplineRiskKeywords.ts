@@ -169,8 +169,8 @@ export const HELPLINE_SEED_RULES: SeedRule[] = [
   ]),
 ];
 
-export class SeedHelplineRiskKeywords1975720000000 implements MigrationInterface {
-  name = 'SeedHelplineRiskKeywords1975720000000';
+export class SeedHelplineRiskKeywords1975760000000 implements MigrationInterface {
+  name = 'SeedHelplineRiskKeywords1975760000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const rule of HELPLINE_SEED_RULES) {

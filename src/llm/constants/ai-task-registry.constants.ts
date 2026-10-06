@@ -1346,6 +1346,36 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'FHS_JUDGE_MODEL (src/foundational-skills/constants/helping-skills-rubric.constants.ts) — pinned, shared with foundational-skills-judge',
   },
   {
+    id: 'feedback-improvement-skill-mapping',
+    task: LlmTask.FEEDBACK_IMPROVEMENT_SKILL_MAPPING,
+    runtime: LlmRuntime.ALLY_BE,
+    // Pinned like the FHS judges: the call names FEEDBACK_SKILL_MAPPER_MODEL,
+    // the tier is only the resolver's floor, and neverFallback keeps a
+    // substitute model from filing half the history under different skills.
+    tier: LlmModelTier.FAST,
+    neverFallback: true,
+    trigger:
+      "Scheduled: a learner's completed roleplay session has a debrief listing areas of growth",
+    detail:
+      'Files each improvement the debrief told the learner to work on under ONE of the 14 ' +
+      'foundational helping skills, or none, for the Helping skills "named improvements that ' +
+      'were acted on" chart (AAQ-221). One call per session, all its improvements batched; ' +
+      'temperature 0, JSON mode; stores skill keys by position, never the debrief text. Only ' +
+      'settled, countable sessions outside test orgs, of learners who already have a scored ' +
+      'helping-skills cut (the only learners the chart can use), oldest first. Every 30 min, ' +
+      'at most 20 sessions per tick (960 a day while a backlog clears); failures retry hourly ' +
+      'up to 3 attempts; one call per session per mapper version. OFF unless ' +
+      'FEEDBACK_SKILL_MAPPING_SCHEDULE=on. A cheap non-reasoning model because this is a short ' +
+      'closed-set classification, and pinned because the mapping is stored and compared over ' +
+      'time. About 3,000 prompt tokens (2,700 of them the fixed rubric, so a cacheable prefix) ' +
+      'and under 100 completion tokens: roughly $0.0005 a call at list price.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy:
+      'FEEDBACK_SKILL_MAPPER_MODEL (src/foundational-skills/constants/feedback-skill-mapper.constants.ts) — pinned; changing it is a FEEDBACK_SKILL_MAPPER_VERSION bump',
+  },
+  {
     id: 'mobile-release-whats-new',
     task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
     runtime: LlmRuntime.ALLY_BE,

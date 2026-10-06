@@ -728,6 +728,158 @@ export class FhsProgressLearnerDto {
   @ApiProperty({ type: [FhsCoachingFlagDto] }) flags!: FhsCoachingFlagDto[];
 }
 
+// ── Dose–response (EFF-04, AAQ-217) ──────────────────────────────────────────
+// Additive keys on GET foundational-skills/progress. Read by the Highlights →
+// Effectiveness sub-tab; nothing above changes meaning.
+
+export class FhsDoseResponsePointDto {
+  @ApiProperty({ description: 'users.id. No name travels with the scatter.' })
+  learnerId!: number;
+
+  @ApiProperty({
+    description:
+      'Scored cuts this learner has under the pinned rubric, in the org scope ' +
+      'of the request — x of the `fit` line.',
+  })
+  cuts!: number;
+
+  @ApiProperty({
+    description:
+      'Minutes of practice behind those cuts: the summed duration, net of ' +
+      'pauses, of every distinct countable session that appears in at least ' +
+      'one of the learner’s scored cuts (a session split across two cuts ' +
+      'counts once). x of the `minutesFit` line. Null when no session has a ' +
+      'measurable duration — unknown, never 0.',
+    nullable: true,
+    type: Number,
+  })
+  practiceMinutes!: number | null;
+
+  @ApiProperty({
+    description:
+      'The learner’s own change: mean composite (1–4) of the last half of ' +
+      'their scored cuts minus the first half — exactly the quantity the ' +
+      'Helping skills trend (AAQ-171) classifies. y of both lines. 2 dp.',
+  })
+  change!: number;
+
+  @ApiProperty({
+    description:
+      'Their AAQ-171 class against their own noise band. Every point is ' +
+      'classified: a learner too early to classify is not plotted.',
+    enum: ['improving', 'steady', 'declining'],
+  })
+  trend!: string;
+}
+
+export class FhsDoseResponseFitDto {
+  @ApiProperty({
+    description:
+      '`cuts` = change per scored cut; `practiceHours` = change per hour of ' +
+      'practice (minutes ÷ 60).',
+    enum: ['cuts', 'practiceHours'],
+  })
+  x!: string;
+
+  @ApiProperty({ description: 'Learners in the fit' })
+  n!: number;
+
+  @ApiProperty({
+    description:
+      'Least-squares slope of `change` on x: the change in own composite ' +
+      'change (1–4 points) associated with one more unit of x. 3 dp.',
+  })
+  slope!: number;
+
+  @ApiProperty({
+    description:
+      '95% percentile bootstrap CI of the slope, resampling LEARNERS with ' +
+      'replacement (4,000 resamples, seeded — the same data always draws the ' +
+      'same interval). Null when x barely varies across resamples. 3 dp.',
+    nullable: true,
+    type: [Number],
+    example: [-0.012, 0.031],
+  })
+  slopeCi!: [number, number] | null;
+
+  @ApiProperty({ description: 'Intercept of the line at x = 0. 2 dp.' })
+  intercept!: number;
+
+  @ApiProperty({
+    description:
+      'True only when `slopeCi` excludes zero. False means "no detectable ' +
+      'association", never "no effect".',
+  })
+  detectable!: boolean;
+
+  @ApiProperty({ description: 'Smallest x among the fitted learners' })
+  xMin!: number;
+
+  @ApiProperty({ description: 'Largest x among the fitted learners' })
+  xMax!: number;
+}
+
+export class FhsDoseResponseDto {
+  @ApiProperty({
+    description:
+      'Classified learners the scatter and its fits need (`DOSE_RESPONSE_MIN_LEARNERS`). ' +
+      'Echoed so the card can say "n = 12 of 40 needed" without a second copy.',
+    example: 40,
+  })
+  minLearners!: number;
+
+  @ApiProperty({
+    description:
+      'Learners whose own trend is classifiable (at least `thresholds.trendMinCuts` ' +
+      'scored cuts) — the population of the scatter. Always present.',
+  })
+  classifiedLearners!: number;
+
+  @ApiProperty({
+    description:
+      '`classifiedLearners >= minLearners`. When false, `learnersScatter`, ' +
+      '`fit` and `minutesFit` are null: show the "not yet measurable" state, ' +
+      'not an empty chart.',
+  })
+  measurable!: boolean;
+
+  @ApiProperty({
+    description:
+      'Of the plotted learners, those with measurable practice minutes (the ' +
+      '`minutesFit` population). Null when not measurable (minutes are not ' +
+      'read below the gate).',
+    nullable: true,
+    type: Number,
+  })
+  learnersWithMinutes!: number | null;
+
+  @ApiProperty({
+    description:
+      'Change on scored cuts, over every plotted learner. Null when not ' +
+      'measurable, or when every learner has the same number of cuts.',
+    nullable: true,
+    type: () => FhsDoseResponseFitDto,
+  })
+  fit!: FhsDoseResponseFitDto | null;
+
+  @ApiProperty({
+    description:
+      'Change on practice hours, over the learners with minutes; null when ' +
+      'not measurable or fewer than `minLearners` have minutes.',
+    nullable: true,
+    type: () => FhsDoseResponseFitDto,
+  })
+  minutesFit!: FhsDoseResponseFitDto | null;
+
+  @ApiProperty({
+    description:
+      'Ruler R1 and the caveat for the card: observational — more practice is ' +
+      'self-selected, and people who improve may be the ones who keep going.',
+    type: () => FoundationalSkillsProvenanceDto,
+  })
+  provenance!: FoundationalSkillsProvenanceDto;
+}
+
 export class FoundationalSkillsProgressResponseDto {
   @ApiProperty() rubricVersion!: string;
   @ApiProperty() cutSizeLearnerChars!: number;
@@ -759,6 +911,30 @@ export class FoundationalSkillsProgressResponseDto {
   @ApiProperty({ type: [FhsProgressLearnerDto] })
   learners!: FhsProgressLearnerDto[];
   @ApiProperty() learnersTruncated!: boolean;
+
+  @ApiProperty({
+    description:
+      'Dose–response scatter (AAQ-217): one point per CLASSIFIED learner — ' +
+      'every learner in scope with at least `thresholds.trendMinCuts` scored ' +
+      'cuts, not only the panel — with their scored cuts, practice minutes and ' +
+      'own first-half → last-half change. Ids only, no names; sorted by own ' +
+      'change. Null below `doseResponse.minLearners` classified learners: a ' +
+      'scatter that small is read by eye into a trend it cannot support. No ' +
+      'banding — AAQ-182 was retired because its bands fell below the floor.',
+    nullable: true,
+    type: [FhsDoseResponsePointDto],
+  })
+  learnersScatter!: FhsDoseResponsePointDto[] | null;
+
+  @ApiProperty({
+    description:
+      'The gate, the counts and the fitted lines behind `learnersScatter`. ' +
+      'Observational: practice amount is chosen by the learner, so a slope is ' +
+      'an association, never an effect of practice.',
+    type: () => FhsDoseResponseDto,
+  })
+  doseResponse!: FhsDoseResponseDto;
+
   @ApiProperty({ type: FoundationalSkillsProvenanceDto })
   provenance!: FoundationalSkillsProvenanceDto;
   @ApiProperty() computedAt!: string;

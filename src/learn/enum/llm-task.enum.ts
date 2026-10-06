@@ -170,6 +170,13 @@ export enum LlmTask {
   HELPLINE_RISK_CLASSIFY = 'helpline_risk_classify',
   HELPLINE_COPILOT_TURN = 'helpline_copilot_turn',
   HELPLINE_QA_JUDGE = 'helpline_qa_judge',
+  // Feedback → skill mapping (src/foundational-skills): one call per completed
+  // session whose debrief names areas of growth, filing each under one
+  // foundational helping skill (or none) for the Helping skills "named
+  // improvements" chart. Scheduled, off unless FEEDBACK_SKILL_MAPPING_SCHEDULE
+  // is on. Analytics spend like the FHS judges: tagged to the session, absent
+  // from TASK_AREA and SESSION_COST_COMPONENT_BY_TASK.
+  FEEDBACK_IMPROVEMENT_SKILL_MAPPING = 'feedback_improvement_skill_mapping',
   // Mobile Releases admin page (src/mobile-releases): one call per
   // ios-whats-new-suggestion request, turning raw ally-mobile commit
   // subjects since the last release into a draft App Store "What's New"

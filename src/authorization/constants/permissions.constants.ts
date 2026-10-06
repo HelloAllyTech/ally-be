@@ -668,7 +668,7 @@ const ADMIN_PERMISSIONS = [
 
   // Text helpline: a tenant ADMIN supervises their own org's helpline and is
   // the one who grants LISTENER / HELPLINE_SUPERVISOR from Helpline → Team.
-  // Written to `group_permissions` by 1975710000000-AddHelplinePermissions.
+  // Written to `group_permissions` by 1975750000000-AddHelplinePermissions.
   ...HELPLINE_SUPERVISOR_PERMISSIONS,
   PERMISSIONS.EDIT_HELPLINE_TEAM,
 

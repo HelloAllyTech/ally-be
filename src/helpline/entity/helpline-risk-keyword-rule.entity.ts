@@ -12,7 +12,7 @@ import {
 
 /**
  * A keyword risk rule. `tenant_id` NULL = platform default (seeded by
- * 1975720000000-SeedHelplineRiskKeywords); an org may add its own. Matched by
+ * 1975760000000-SeedHelplineRiskKeywords); an org may add its own. Matched by
  * `HelplineRiskKeywordService` after Unicode-aware normalisation.
  */
 @Entity('helpline_risk_keyword_rules')
