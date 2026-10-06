@@ -12,6 +12,7 @@ import { PreferenceValue } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
 import { HELPLINE_TIMINGS } from '../constants/helpline.constants';
 import { HELPLINE_DEFAULT_SETTINGS } from '../constants/helpline-settings.defaults';
+import { HelplinePresenceService } from './helpline-presence.service';
 import {
   AdminSettingsDto,
   HelplineSettings,
@@ -53,6 +54,7 @@ export class HelplineSettingsService {
     private readonly preferences: Repository<Preference>,
     private readonly tenantFeatureService: TenantFeatureService,
     private readonly redisService: RedisService,
+    private readonly presence: HelplinePresenceService,
   ) {}
 
   get defaults(): HelplineSettings {
@@ -132,6 +134,10 @@ export class HelplineSettingsService {
       });
     }
     this.cache.delete(tenant.id);
+    // The public status is cached 10 s and reads both the switch and these
+    // settings: without this, a talker page keeps saying "unavailable" for up
+    // to 10 s after the org is switched on (or "open" after it is switched off).
+    await this.presence.invalidateStatus(tenant.id).catch(() => undefined);
     this.logger.info(
       `Helpline settings updated for tenant ${tenant.id}` +
         (typeof update.enabled === 'boolean'
