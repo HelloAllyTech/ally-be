@@ -15,7 +15,11 @@ export class HelplineTalker extends HelplineTenantScopedEntity {
   @Column({ type: 'varchar', length: 16, default: HelplineChannel.TEXT_WEB })
   channel!: HelplineChannel;
 
-  @Column({ type: 'varchar', length: 40, name: 'display_name' })
+  /**
+   * Encrypted at rest (`HelplineContentCipher`); ≤ 40 characters of plaintext,
+   * enforced on write. Retention resets it to the plaintext 'Anonymous'.
+   */
+  @Column({ type: 'text', name: 'display_name' })
   displayName!: string;
 
   @Column({ type: 'varchar', length: 8 })

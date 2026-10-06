@@ -1,3 +1,4 @@
+import { testCipher } from './helpline-test-cipher';
 import {
   HelplineMessageType,
   HelplineSenderRole,
@@ -121,6 +122,7 @@ describe('helpline summaries', () => {
         deps.views as never,
         deps.realtime as never,
         deps.ai as never,
+        testCipher(),
       );
       return { service, ...deps };
     };
@@ -143,13 +145,14 @@ describe('helpline summaries', () => {
       const [sql, params] = summaries.query.mock.calls[0];
       expect(sql).toContain(`"helpline_chat_summaries"."edited_by" IS NULL`);
       expect(sql).toContain(`"erased_at" IS NOT NULL`);
-      expect(params).toEqual([
-        't-1',
-        'c-1',
-        'FINAL',
-        JSON.stringify({ risk: 'none' }),
-        2,
-      ]);
+      expect(params).toEqual(['t-1', 'c-1', 'FINAL', expect.any(String), 2]);
+      // Stored encrypted: `{ enc }` whose ciphertext decrypts to the fields.
+      const stored = JSON.parse(params[3]);
+      expect(Object.keys(stored)).toEqual(['enc']);
+      expect(params[3]).not.toContain('none');
+      expect(await testCipher().decryptFields(stored)).toEqual({
+        risk: 'none',
+      });
       expect(realtime.emit).toHaveBeenCalledWith(
         'staff:c-1',
         'SUMMARY_UPDATED',

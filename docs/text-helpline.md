@@ -158,6 +158,20 @@ evidence line ids), `composite_score real`, `has_unhelpful_behaviour bool`, `jud
 Org settings live in Preference rows (no table): `TEXT_HELPLINE_ENABLED` (`{enabled}`) and
 `TEXT_HELPLINE_SETTINGS` (jsonb, §8). Presence lives in Redis (§6.4).
 
+**PHI at rest is encrypted** (second pass): `helpline_messages.content` (every type) and
+`metadata.suggestions[].text`, `helpline_chat_summaries.fields` (stored `{ "enc": "<ciphertext of the
+JSON object>" }`), `helpline_talker_feedback.comment`, `helpline_risk_flags.outcome_note` and
+`helpline_talkers.display_name`. AES-256-GCM via `CryptoService` and `PHI_DATA_ENCRYPTION_KEY` (the
+Scribe transcript key), wrapped by `HelplineContentCipher`; values are `hlenc:v1:<base64>`. Encrypt on
+write, decrypt in the read paths — `HelplineMessageRepository` does both for messages, so services,
+serialisers, the lobby preview, LLM context and risk-signal offsets (which index the **plaintext**)
+never see ciphertext. The keyword screen runs on the plaintext before the row is written. `[erased]`
+stays plaintext and short-circuits decryption; an unprefixed value is legacy plaintext and is read as
+is; a prefixed value that will not decrypt reads as `[unreadable]` (never a throw). A missing key
+fails the write — content is never stored in the clear. Migration `1975800000000` widens
+`display_name`, `outcome_note` and `comment` to `text`; their plaintext limits (40 / 500 / 1,000) are
+enforced on write. No API shape changes: every DTO carries plaintext.
+
 `DATA_SCHEMA.md` gets a "Text helpline" domain section.
 
 ---

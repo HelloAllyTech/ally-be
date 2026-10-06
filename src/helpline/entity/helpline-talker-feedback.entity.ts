@@ -14,7 +14,7 @@ export class HelplineTalkerFeedback extends HelplineTenantScopedEntity {
   @Column({ type: 'smallint' })
   rating!: number;
 
-  /** Blanked by retention. */
-  @Column({ type: 'varchar', length: 1000, nullable: true })
+  /** Encrypted at rest; ≤ 1,000 characters of plaintext. Blanked by retention. */
+  @Column({ type: 'text', nullable: true })
   comment!: string | null;
 }

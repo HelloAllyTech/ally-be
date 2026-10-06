@@ -25,6 +25,7 @@ import {
 import { toGuestMessageDtos } from '../util/helpline-serializers';
 import { HelplineChatLifecycleService } from './helpline-chat-lifecycle.service';
 import { HelplineChatViewService } from './helpline-chat-view.service';
+import { HelplineContentCipher } from './helpline-content-cipher.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplineGuestTokenService } from './helpline-guest-token.service';
 import { HelplineNotifyService } from './helpline-notify.service';
@@ -60,6 +61,7 @@ export class HelplineGuestService {
     private readonly presence: HelplinePresenceService,
     private readonly realtime: HelplineRealtimeService,
     private readonly notify: HelplineNotifyService,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   async getChat(
@@ -183,7 +185,8 @@ export class HelplineGuestService {
         tenantId: chat.tenantId,
         chatId: chat.id,
         rating: rating as number,
-        comment: chat.erasedAt ? null : text,
+        // Encrypted at rest; never stored for an erased chat.
+        comment: chat.erasedAt ? null : await this.cipher.encryptNullable(text),
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;

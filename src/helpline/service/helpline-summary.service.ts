@@ -20,6 +20,7 @@ import { HelplineMessageRepository } from '../repository/helpline-message.reposi
 import { HelplineSummaryField, SummaryDto } from '../type/helpline.types';
 import { badRequest, chatEnded, returningRows } from '../util/helpline-errors';
 import { HelplineChatViewService } from './helpline-chat-view.service';
+import { HelplineContentCipher } from './helpline-content-cipher.service';
 import { HelplineRealtimeService } from './helpline-realtime.service';
 import { HelplineSettingsService } from './helpline-settings.service';
 import { HelplineTenantService } from './helpline-tenant.service';
@@ -91,6 +92,7 @@ export class HelplineSummaryService {
     private readonly views: HelplineChatViewService,
     private readonly realtime: HelplineRealtimeService,
     private readonly aiService: AiService,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   /** Fire-and-forget from endChat. Never throws. */
@@ -175,6 +177,9 @@ export class HelplineSummaryService {
    * slow generation cannot race them:
    *  - never over a listener's edit (`edited_by IS NULL` on conflict);
    *  - never into an erased chat (the NOT EXISTS on `erased_at`).
+   *
+   * `fields` arrive in plaintext and are stored encrypted (`{ enc }`); the
+   * returned row still holds the stored form — read it through `summaryDto`.
    */
   async upsertGenerated(
     tenantId: string,
@@ -197,7 +202,13 @@ export class HelplineSummaryService {
        WHERE "helpline_chat_summaries"."edited_by" IS NULL
          AND "helpline_chat_summaries"."tenant_id" = $1::varchar
       RETURNING "id"`,
-      [tenantId, chatId, kind, JSON.stringify(fields), throughMessageId],
+      [
+        tenantId,
+        chatId,
+        kind,
+        JSON.stringify(await this.cipher.encryptFields(fields)),
+        throughMessageId,
+      ],
     );
     const id = returningRows<{ id: string }>(result)[0]?.id;
     if (!id) return null;
@@ -222,10 +233,14 @@ export class HelplineSummaryService {
     const throughMessageId =
       existing?.throughMessageId ||
       (await this.messages.maxId(chat.tenantId, chat.id));
+    const stored = (await this.cipher.encryptFields(clean)) as Record<
+      string,
+      string
+    >;
     const row = await this.summaries.save(
       existing
         ? Object.assign(existing, {
-            fields: clean,
+            fields: stored,
             editedBy: userId,
             version: existing.version + 1,
             throughMessageId,
@@ -234,7 +249,7 @@ export class HelplineSummaryService {
             tenantId: chat.tenantId,
             chatId: chat.id,
             kind: HelplineSummaryKind.FINAL,
-            fields: clean,
+            fields: stored,
             editedBy: userId,
             version: 1,
             throughMessageId,

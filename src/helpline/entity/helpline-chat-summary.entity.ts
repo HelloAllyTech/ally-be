@@ -15,7 +15,11 @@ export class HelplineChatSummary extends HelplineTenantScopedEntity {
   @Column({ type: 'varchar', length: 16 })
   kind!: HelplineSummaryKind;
 
-  /** `{ [summaryField.key]: string }`. Blanked to `{}` by retention. */
+  /**
+   * At rest `{ "enc": "<ciphertext of the JSON object>" }`
+   * (`HelplineContentCipher.encryptFields`); decrypted to
+   * `{ [summaryField.key]: string }` on read. Blanked to `{}` by retention.
+   */
   @Column({ type: 'jsonb', default: () => "'{}'" })
   fields!: Record<string, string>;
 

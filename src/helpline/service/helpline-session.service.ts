@@ -30,6 +30,7 @@ import { isWithinHours } from '../util/helpline-hours';
 import { toGuestMessageDtos } from '../util/helpline-serializers';
 import { estimateWaitMinutes } from '../util/helpline-wait-estimate';
 import { HelplineChatViewService } from './helpline-chat-view.service';
+import { HelplineContentCipher } from './helpline-content-cipher.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplineGuestTokenService } from './helpline-guest-token.service';
 import {
@@ -102,6 +103,7 @@ export class HelplineSessionService {
     private readonly views: HelplineChatViewService,
     private readonly messageService: HelplineMessageService,
     private readonly queue: HelplineQueueService,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   /** Unknown code and disabled org look identical: `{ enabled: false }`. */
@@ -225,6 +227,8 @@ export class HelplineSessionService {
         .trim()
         .slice(0, HELPLINE_LIMITS.DISPLAY_NAME_MAX_CHARS) ||
       HELPLINE_LIMITS.DEFAULT_DISPLAY_NAME;
+    // Encrypted at rest; everything below this point uses the plaintext.
+    const storedDisplayName = await this.cipher.encrypt(displayName);
 
     const { talker, chat } = await this.dataSource.transaction(
       async (manager) => {
@@ -233,7 +237,7 @@ export class HelplineSessionService {
           manager.create(HelplineTalker, {
             tenantId: tenant.id,
             channel: HelplineChannel.TEXT_WEB,
-            displayName,
+            displayName: storedDisplayName,
             language,
             consentVersion: HELPLINE_CONSENT_VERSION,
             consentAcceptedAt: now,
@@ -258,6 +262,7 @@ export class HelplineSessionService {
         return { talker, chat };
       },
     );
+    talker.displayName = displayName;
 
     await this.events.record(
       tenant.id,

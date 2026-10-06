@@ -35,6 +35,11 @@ export class HelplineMessage extends HelplineTenantScopedEntity {
   @Column({ type: 'varchar', length: 40, name: 'system_kind', nullable: true })
   systemKind!: string | null;
 
+  /**
+   * Encrypted at rest for every type (`HelplineMessageRepository` encrypts on
+   * insert and decrypts on every read). The retention marker `[erased]` is
+   * stored plaintext.
+   */
   @Column({ type: 'text' })
   content!: string;
 

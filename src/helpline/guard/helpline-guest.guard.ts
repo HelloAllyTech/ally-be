@@ -9,6 +9,10 @@ import { Repository } from 'typeorm';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { HelplineTalker } from '../entity/helpline-talker.entity';
 import { HelplineChatRepository } from '../repository/helpline-chat.repository';
+import {
+  HelplineContentCipher,
+  decryptTalker,
+} from '../service/helpline-content-cipher.service';
 import { HelplineGuestTokenService } from '../service/helpline-guest-token.service';
 import { GuestContext } from '../service/helpline-guest.service';
 import { HelplineGuestIdentity } from '../type/helpline.types';
@@ -35,6 +39,7 @@ export class HelplineGuestGuard implements CanActivate {
     @InjectRepository(HelplineTalker)
     private readonly talkers: Repository<HelplineTalker>,
     private readonly chats: HelplineChatRepository,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,7 +47,12 @@ export class HelplineGuestGuard implements CanActivate {
     const identity = await this.tokens.verify(
       bearerToken(request.headers?.authorization),
     );
-    const resolved = await resolveGuest(identity, this.talkers, this.chats);
+    const resolved = await resolveGuest(
+      identity,
+      this.talkers,
+      this.chats,
+      this.cipher,
+    );
     if (!resolved) throw guestTokenInvalid();
     ExecutionManager.setAuthContext('', identity.tenantId);
     request.helplineGuest = resolved;
@@ -50,11 +60,15 @@ export class HelplineGuestGuard implements CanActivate {
   }
 }
 
-/** Shared with the socket handshake. null = refuse. */
+/**
+ * Shared with the socket handshake. null = refuse. The talker comes back with
+ * its display name decrypted (it is encrypted at rest).
+ */
 export async function resolveGuest(
   identity: HelplineGuestIdentity,
   talkers: Repository<HelplineTalker>,
   chats: HelplineChatRepository,
+  cipher: HelplineContentCipher,
 ): Promise<GuestContext | null> {
   const talker = await talkers.findOne({
     where: { id: identity.talkerId, tenantId: identity.tenantId },
@@ -66,7 +80,7 @@ export async function resolveGuest(
     identity.talkerId,
   );
   if (!chat) return null;
-  return { chat, talker };
+  return { chat, talker: await decryptTalker(cipher, talker) };
 }
 
 export const CurrentGuest = createParamDecorator(

@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { testCipher } from './helpline-test-cipher';
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { HELPLINE_DEFAULT_SETTINGS } from '../../constants/helpline-settings.defaults';
 import { HELPLINE_CONSENT_VERSION } from '../../constants/helpline.constants';
@@ -101,6 +102,7 @@ describe('HelplineSessionService.createSession refusals', () => {
       {} as never,
       {} as never,
       {} as never,
+      testCipher(),
     );
     return { service, ...deps };
   }

@@ -11,6 +11,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { HelplineTalker } from '../entity/helpline-talker.entity';
 import { resolveGuest } from '../guard/helpline-guest.guard';
 import { HelplineChatRepository } from '../repository/helpline-chat.repository';
+import { HelplineContentCipher } from '../service/helpline-content-cipher.service';
 import { HelplineGuestTokenService } from '../service/helpline-guest-token.service';
 import { HelplineTenantService } from '../service/helpline-tenant.service';
 
@@ -70,6 +71,7 @@ export class HelplineSocketAuthService {
     @InjectRepository(HelplineTalker)
     private readonly talkers: Repository<HelplineTalker>,
     private readonly chats: HelplineChatRepository,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   middleware() {
@@ -92,7 +94,12 @@ export class HelplineSocketAuthService {
 
     if (this.tokens.looksLikeGuestToken(token)) {
       const identity = await this.tokens.verify(token);
-      const guest = await resolveGuest(identity, this.talkers, this.chats);
+      const guest = await resolveGuest(
+        identity,
+        this.talkers,
+        this.chats,
+        this.cipher,
+      );
       if (!guest) throw new Error('guest revoked or chat missing');
       return {
         kind: 'talker',

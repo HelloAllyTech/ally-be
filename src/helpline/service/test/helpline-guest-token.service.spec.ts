@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { testCipher } from './helpline-test-cipher';
 import { JwtService } from '@nestjs/jwt';
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { JwtStrategy } from 'src/auth/strategies/jwt.strategy';
@@ -166,7 +167,12 @@ describe('HelplineGuestGuard', () => {
     const talkers = { findOne: jest.fn().mockResolvedValue(talkerRow) };
     const chats = { findForGuest: jest.fn().mockResolvedValue(chatRow) };
     return {
-      guard: new HelplineGuestGuard(tokens, talkers as never, chats as never),
+      guard: new HelplineGuestGuard(
+        tokens,
+        talkers as never,
+        chats as never,
+        testCipher(),
+      ),
       talkers,
       chats,
     };
@@ -230,7 +236,7 @@ describe('HelplineGuestGuard', () => {
     const talkers = { findOne: jest.fn().mockResolvedValue(talker) };
     const chats = { findForGuest: jest.fn().mockResolvedValue(null) };
     await expect(
-      resolveGuest(identity, talkers as never, chats as never),
+      resolveGuest(identity, talkers as never, chats as never, testCipher()),
     ).resolves.toBeNull();
   });
 });

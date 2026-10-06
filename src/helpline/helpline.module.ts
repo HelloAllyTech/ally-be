@@ -29,6 +29,7 @@ import { HelplineChatLifecycleService } from './service/helpline-chat-lifecycle.
 import { HelplineChatViewService } from './service/helpline-chat-view.service';
 import { HelplineClaimService } from './service/helpline-claim.service';
 import { HelplineConnectionService } from './service/helpline-connection.service';
+import { HelplineContentCipher } from './service/helpline-content-cipher.service';
 import { HelplineCopilotService } from './service/helpline-copilot.service';
 import { HelplineEventService } from './service/helpline-event.service';
 import { HelplineGuestTokenService } from './service/helpline-guest-token.service';
@@ -90,6 +91,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineAdminController,
   ],
   providers: [
+    HelplineContentCipher,
     HelplineChatRepository,
     HelplineMessageRepository,
     HelplineTenantService,

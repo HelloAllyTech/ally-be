@@ -22,6 +22,7 @@ import { RiskFlagDto } from '../type/helpline.types';
 import { helplineAudit } from '../util/helpline-audit';
 import { badRequest, chatNotFound } from '../util/helpline-errors';
 import { HelplineChatViewService } from './helpline-chat-view.service';
+import { HelplineContentCipher } from './helpline-content-cipher.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplineMessageWriter } from './helpline-message-writer.service';
 import { HelplineQueueService } from './helpline-queue.service';
@@ -49,6 +50,7 @@ export class HelplineRiskService {
     private readonly events: HelplineEventService,
     private readonly queue: HelplineQueueService,
     private readonly realtime: HelplineRealtimeService,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
   /**
@@ -205,7 +207,10 @@ export class HelplineRiskService {
     if (!flag) throw chatNotFound();
 
     flag.outcome = outcome;
-    flag.outcomeNote = chat.erasedAt ? null : trimmed;
+    // Encrypted at rest (free text about a person in distress).
+    flag.outcomeNote = chat.erasedAt
+      ? null
+      : await this.cipher.encryptNullable(trimmed);
     flag.acknowledgedBy = flag.acknowledgedBy ?? userId;
     flag.acknowledgedAt = flag.acknowledgedAt ?? new Date();
     await this.flags.save(flag);

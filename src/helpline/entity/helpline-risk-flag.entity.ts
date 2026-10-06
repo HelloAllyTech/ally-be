@@ -62,12 +62,7 @@ export class HelplineRiskFlag extends HelplineTenantScopedEntity {
   })
   outcome!: HelplineRiskOutcome;
 
-  /** Blanked by retention. */
-  @Column({
-    type: 'varchar',
-    length: 500,
-    name: 'outcome_note',
-    nullable: true,
-  })
+  /** Encrypted at rest; ≤ 500 characters of plaintext. Blanked by retention. */
+  @Column({ type: 'text', name: 'outcome_note', nullable: true })
   outcomeNote!: string | null;
 }

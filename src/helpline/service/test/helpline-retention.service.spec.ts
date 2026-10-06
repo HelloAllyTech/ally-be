@@ -1,4 +1,5 @@
 import { IsNull } from 'typeorm';
+import { testCipher } from './helpline-test-cipher';
 import { HELPLINE_DEFAULT_SETTINGS } from '../../constants/helpline-settings.defaults';
 import {
   HelplineChatEventType,
@@ -139,6 +140,7 @@ describe('HelplineMessageRepository.blankForChats (idempotent SQL)', () => {
     const repo = { query: jest.fn().mockResolvedValue([[], 7]) };
     const changed = await new HelplineMessageRepository(
       repo as never,
+      testCipher(),
     ).blankForChats('t-1', ['c-1']);
     const [sql, params] = repo.query.mock.calls[0];
     expect(changed).toBe(7);
@@ -188,6 +190,7 @@ describe('HelplineGuestService.erase', () => {
       deps.presence as never,
       deps.realtime as never,
       deps.notify as never,
+      testCipher(),
     );
     return { service, chat, talker, ...deps };
   };

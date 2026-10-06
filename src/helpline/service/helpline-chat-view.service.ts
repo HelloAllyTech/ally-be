@@ -27,6 +27,10 @@ import {
   SummaryDto,
 } from '../type/helpline.types';
 import { toStaffMessageDto } from '../util/helpline-serializers';
+import {
+  HelplineContentCipher,
+  decryptTalker,
+} from './helpline-content-cipher.service';
 import { HelplineCopilotService } from './helpline-copilot.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplinePresenceService } from './helpline-presence.service';
@@ -81,13 +85,18 @@ export class HelplineChatViewService {
     private readonly presence: HelplinePresenceService,
     private readonly events: HelplineEventService,
     private readonly copilot: HelplineCopilotService,
+    private readonly cipher: HelplineContentCipher,
   ) {}
 
-  findTalker(
+  /** The talker with `displayName` decrypted (it is encrypted at rest). */
+  async findTalker(
     tenantId: string,
     talkerId: string,
   ): Promise<HelplineTalker | null> {
-    return this.talkers.findOne({ where: { id: talkerId, tenantId } });
+    const talker = await this.talkers.findOne({
+      where: { id: talkerId, tenantId },
+    });
+    return talker ? decryptTalker(this.cipher, talker) : null;
   }
 
   async talkersById(
@@ -99,6 +108,7 @@ export class HelplineChatViewService {
     const rows = await this.talkers.find({
       where: { tenantId, id: In(unique) },
     });
+    await Promise.all(rows.map((t) => decryptTalker(this.cipher, t)));
     return new Map(rows.map((t) => [t.id, t]));
   }
 
@@ -248,8 +258,25 @@ export class HelplineChatViewService {
         .map((f) => f.acknowledgedBy)
         .filter((id): id is number => id != null),
     );
-    return flags.map((flag) =>
+    const readable = await this.decryptNotes(flags);
+    return readable.map((flag) =>
       this.riskFlagDto(flag, byId.get(flag.messageId), ackNames),
+    );
+  }
+
+  /** Copies of the flags with `outcomeNote` decrypted (encrypted at rest). */
+  async decryptNotes(flags: HelplineRiskFlag[]): Promise<HelplineRiskFlag[]> {
+    return Promise.all(
+      flags.map(async (flag) =>
+        flag.outcomeNote == null
+          ? flag
+          : Object.assign(Object.create(Object.getPrototypeOf(flag)), flag, {
+              outcomeNote: await this.cipher.decrypt(
+                flag.outcomeNote,
+                'helpline_risk_flags.outcome_note',
+              ),
+            }),
+      ),
     );
   }
 
@@ -287,7 +314,7 @@ export class HelplineChatViewService {
         : null;
     return {
       kind: row.kind,
-      fields: row.fields ?? {},
+      fields: await this.cipher.decryptFields(row.fields),
       throughMessageId: row.throughMessageId,
       editedByName,
       version: row.version,

@@ -1,3 +1,4 @@
+import { testCipher } from '../../service/test/helpline-test-cipher';
 import {
   HelplineChatStatus,
   HelplineRiskFlagLevel,
@@ -157,10 +158,22 @@ const messageMethods: [
     (r) => r.findByClientMessageId(TENANT, CHAT_ID, 'c'),
   ],
   ['findById', (r) => r.findById(TENANT, CHAT_ID, 1)],
+  ['findByIds', (r) => r.findByIds(TENANT, [1, 2])],
   ['insert', (r) => r.insert({ tenantId: TENANT, chatId: CHAT_ID })],
   ['listForChat', (r) => r.listForChat(TENANT, CHAT_ID, 0)],
   ['listTalkerVisible', (r) => r.listTalkerVisible(TENANT, CHAT_ID, 0)],
   ['listTextTurns', (r) => r.listTextTurns(TENANT, CHAT_ID)],
+  ['recentTextTurns', (r) => r.recentTextTurns(TENANT, CHAT_ID, 12)],
+  ['latestOfType', (r) => r.latestOfType(TENANT, CHAT_ID, 'STAGE' as never)],
+  [
+    'markSuggestionAccepted',
+    (r) => r.markSuggestionAccepted(TENANT, CHAT_ID, 5, 0),
+  ],
+  [
+    'setCopilotFeedback',
+    (r) =>
+      r.setCopilotFeedback(TENANT, CHAT_ID, 5, 'NUDGE' as never, null, 'UP'),
+  ],
   ['firstTalkerTexts', (r) => r.firstTalkerTexts(TENANT, [CHAT_ID])],
   ['maxId', (r) => r.maxId(TENANT, CHAT_ID)],
   ['blankForChats', (r) => r.blankForChats(TENANT, [CHAT_ID])],
@@ -216,7 +229,9 @@ describe('helpline tenant isolation', () => {
       '%s scopes every query to the tenant',
       async (_, invoke) => {
         const { repo, calls, qbCalls } = recordingRepo();
-        await invoke(new HelplineMessageRepository(repo as never));
+        await invoke(
+          new HelplineMessageRepository(repo as never, testCipher()),
+        );
         const queries = calls.filter((c) => c.method !== 'create');
         expect(queries.length).toBeGreaterThan(0);
         for (const call of queries)
@@ -237,7 +252,7 @@ describe('helpline tenant isolation', () => {
     it('refuses to insert a row without a tenant', async () => {
       const { repo } = recordingRepo();
       await expect(
-        new HelplineMessageRepository(repo as never).insert({
+        new HelplineMessageRepository(repo as never, testCipher()).insert({
           chatId: CHAT_ID,
         }),
       ).rejects.toThrow(/tenant_id/);
