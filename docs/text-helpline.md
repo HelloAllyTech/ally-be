@@ -133,7 +133,10 @@ body**, never the text), `resources_sent bool default false`, `acknowledged_by i
 **`helpline_risk_keyword_rules`** — `tenant_id null` (NULL = platform default), `phrase`,
 `language`, `match_type` (`CONTAINS`|`WORD`), `level` (`ELEVATED`|`HIGH`), `enabled bool`.
 Seeded with platform defaults (en, hi Devanagari + romanised, mr, ta, kn). Matching normalises
-case, whitespace and Unicode (NFC; keep `\p{M}` marks — Indic vowel signs are Marks).
+case, whitespace and Unicode (NFKC — a superset of NFC that also folds full-width forms and composes
+decomposed Tamil/Kannada vowel signs; keep `\p{M}` marks — Indic vowel signs are Marks; drop the
+Devanagari nukta and ZWJ/ZWNJ so "ख़ुदकुशी" and "खुदकुशी" are one rule). A hit's offsets are mapped
+back to the original body; when normalisation changed a word's length the offsets cover the whole word.
 
 **`helpline_chat_events`** — `chat_id`, `type` (`ENQUEUED`, `CLAIMED`, `TALKER_DISCONNECTED`,
 `TALKER_RECONNECTED`, `LISTENER_DISCONNECTED`, `LISTENER_RECONNECTED`, `TRANSFER_REQUESTED`,
@@ -195,7 +198,9 @@ body: { displayName?: string /* ≤40, default "Anonymous" */; language: string;
 errors: 403 HELPLINE_DISABLED · 409 HELPLINE_CLOSED · 503 HELPLINE_QUEUE_FULL · 400 HELPLINE_CONSENT_OUTDATED · 403 HELPLINE_TALKER_BLOCKED
 ```
 Creates talker + chat(WAITING) + `ENQUEUED` event, risk-screens `firstMessage` if present, emits
-`QUEUE_UPDATED`. No row exists before consent is accepted.
+`QUEUE_UPDATED`. No row exists before consent is accepted. A `language` the org does not offer falls
+back to `en` (or the first offered language) rather than refusing; a `firstMessage` over 2,000 chars
+is a 400.
 
 ### 5.2 Guest (guest JWT, `Authorization: Bearer <guestToken>`) — `HelplineGuestController`
 
@@ -205,7 +210,7 @@ Creates talker + chat(WAITING) + `ENQUEUED` event, risk-screens `firstMessage` i
 | `POST /v1/helpline/guest/refresh` | — | `{ guestToken, expiresAt }` (allowed until 24 h after end) |
 | `POST /v1/helpline/guest/end` | — | `{ chat }` (WAITING → `TALKER_LEFT_QUEUE`, ACTIVE → `TALKER_ENDED`) |
 | `POST /v1/helpline/guest/erase` | — | `204`; blanks bodies now, ends chat if open, revokes token |
-| `POST /v1/helpline/guest/feedback` | `{ rating: 1..5; comment?: string }` | `204` (once per chat) |
+| `POST /v1/helpline/guest/feedback` | `{ rating: 1..5; comment?: string }` | `204` (once per chat; a repeat also answers `204` and keeps the first) |
 
 Guest token: HS256, secret `HELPLINE_GUEST_JWT_SECRET` or, if unset, `HMAC-SHA256(accessTokenSecret,
 'helpline-guest-v1')` — **never** the user access secret itself, so `JwtStrategy` cannot accept it.
@@ -238,6 +243,8 @@ interface GuestMessageDto {
   createdAt: string;
 }
 type GuestSystemKind = 'ACCEPTED' | 'RESOURCES' | 'CLOSING' | 'TRANSFERRING' | 'LISTENER_RECONNECTING' | 'LISTENER_BACK' | 'ENDED';
+// A listener/supervisor end writes CLOSING (the org's closingMessage in the talker's language, en fallback);
+// every other end except erasure writes ENDED with params.endedReason.
 ```
 
 ### 5.3 Listener / supervisor (user JWT) — `HelplineController`
@@ -269,7 +276,7 @@ All require `@RequireHelplineEnabled()`. Permission per row.
 | `GET /v1/helpline/qa?listenerId=&page=` | `view:helpline:qa` | — | `{ items: QaListItemDto[]; total }` |
 | `GET /v1/helpline/qa/mine` | `view:helpline:lobby` | — | `{ items: QaListItemDto[] }` (own only) |
 | `GET /v1/helpline/qa/:chatId` | own, or `view:helpline:qa` | — | `QaDetailDto` |
-| `GET /v1/helpline/team` | `edit:helpline:team` | — | `{ items: TeamMemberDto[] }` (users of caller's tenant) |
+| `GET /v1/helpline/team?search=` | `edit:helpline:team` | `search?` (name/email contains; additive) | `{ items: TeamMemberDto[] }` (ACTIVE users of caller's tenant, helpline members first, ≤ 1000; Ally platform staff are never listed or editable) |
 | `PUT /v1/helpline/team/:userId` | `edit:helpline:team` | `{ listener: boolean; supervisor: boolean }` | `TeamMemberDto` (only these two groups; busts permission cache) |
 
 ### 5.4 Admin console (platform admin) — `HelplineAdminController`
@@ -282,7 +289,10 @@ All require `@RequireHelplineEnabled()`. Permission per row.
 ```ts
 interface AdminSettingsDto { tenantId: string; tenantCode: string; enabled: boolean; settings: HelplineSettings; defaults: HelplineSettings; publicPath: string /* "/talk/<code>" */ }
 ```
-Turning `enabled` off refuses new sessions; open chats finish normally.
+Turning `enabled` off refuses new sessions; open chats are not force-ended. Invariant 4 still holds:
+listener HTTP routes and new staff socket handshakes answer `HELPLINE_DISABLED` from that moment, so
+an open chat continues over already-connected sockets and then ends through the talker or the
+lifecycle sweep (idle / wait limits). Re-enabling restores the listener routes.
 
 ### 5.5 Staff DTOs
 
@@ -415,7 +425,7 @@ Client → server (all acks are `{ ok: true, ... } | { ok: false, error: string 
 
 | Event | Who | Payload | Ack |
 |---|---|---|---|
-| `SEND_MESSAGE` | talker; listener of record; supervisor after take-over | `{ chatId, clientMessageId, content, suggestion?: { messageId, index } }` | `{ ok, message }` (guest or staff DTO). Errors: `rate_limited`, `too_long`, `empty`, `chat_ended`, `not_allowed` |
+| `SEND_MESSAGE` | talker; listener of record; supervisor after take-over | `{ chatId, clientMessageId, content, suggestion?: { messageId, index } }` | `{ ok, message }` (guest or staff DTO). Errors: `rate_limited`, `too_long`, `empty`, `chat_ended`, `not_allowed`, plus `invalid` (clientMessageId not a uuid) and `not_found` (staff: no access) |
 | `USER_TYPING` / `USER_STOPPED_TYPING` | talker, listener | `{ chatId }` | — (client throttles to 1 per 2 s; never persisted) |
 | `SYNC_SINCE` | both | `{ chatId, afterId }` | `{ ok, messages }` |
 | `JOIN_CHAT` | staff | `{ chatId }` | `{ ok, access: 'LISTENER' \| 'READ_ONLY' }` (monitoring supervisor or previous listener) |
@@ -424,6 +434,8 @@ Client → server (all acks are `{ ok: true, ... } | { ok: false, error: string 
 | `HEARTBEAT` | both, every 15 s | `{}` | `{ ok }` |
 
 Rate limit (per socket, in memory): 1 msg/s sustained, burst 5; content ≤ 2,000 chars after trim.
+Any handler error acks `{ ok: false, error: 'internal_error' }` (never a crash). A resend with a known
+`clientMessageId` acks the stored message and emits nothing.
 
 Server → client:
 
@@ -433,7 +445,7 @@ Server → client:
 | `USER_TYPING`, `USER_STOPPED_TYPING` | the other side | `{ chatId, role: 'TALKER' \| 'LISTENER' }` |
 | `QUEUE_POSITION` | talker | `{ chatId, position }` |
 | `CHAT_ACCEPTED` | talker | `{ chat: GuestChatDto }` |
-| `CHAT_UPDATED` | talker (guest DTO) / staff (`StaffChatDto`) | `{ chat }` |
+| `CHAT_UPDATED` | talker (guest DTO) / staff (`StaffChatDto`) | `{ chat }` — `myAccess` is per viewer: the listener of record gets `LISTENER` on `user:{id}`, the rest of `staff:{chatId}` gets `READ_ONLY` |
 | `CHAT_ENDED` | both | `{ chatId, endedReason }` |
 | `QUEUE_UPDATED` | lobby | `{ waiting: LobbyEntryDto[]; counts }` |
 | `PRESENCE_UPDATED` | user | `{ presence, activeChatCount }` |
@@ -447,6 +459,7 @@ Server → client:
 | `WHISPER` | staff | `{ chatId, message }` (type WHISPER; **never** the talker room) |
 | `TRANSFER_REQUESTED` / `TRANSFERRED` | staff + lobby | `{ chatId, toListenerId? }` |
 | `ALERT` | supervisors / user | `{ type: 'RISK_HIGH' \| 'LISTENER_DISCONNECTED' \| 'TRANSFER_REQUESTED' \| 'HIGH_RISK_WAITING'; chatId; level?; at }` |
+| `RISK_FLAG_UPDATED` | staff | `{ chatId, flag: RiskFlagDto }` — additive: a flag was acknowledged (clears a banner without re-alerting) |
 | `ERROR` | either | `{ code, message }` |
 
 ### 6.4 Presence and connection liveness (Redis)
@@ -567,6 +580,8 @@ logged to `phi_logger` only.
 ```py
 class HelplineTurnRequest: messages: list[{role: 'talker'|'listener', content: str}]  # last ≤12, oldest first
                            rolling_summary: str = ""; language: str = 'en'; include_nudge: bool = False; prompts: dict | None
+                           risk_level: Literal['NONE','ELEVATED','HIGH'] = 'NONE'        # the chat's current risk_level
+                           risk_subject: Literal['SELF','OTHER','UNCLEAR',''] = ''       # subject of the latest classifier flag, '' if none
 class HelplineTurnResponse: stage: Literal['Engage','Understand','Support','Close'] | ""; nudge: str = ""  # ≤240 chars, "" when not requested
                             suggestions: list[{text: str, skill_key: str}]   # 2-3, in `language`, each ≤300 chars
                             failed: bool = False; provider: str = ""; model: str = ""
@@ -577,9 +592,16 @@ goals, hope, coping, psychoeducation, feedback, verbal`. Prompt `app/prompts/hel
 normalise → invite reflection; never "I know how you feel". A post-generation filter drops any
 suggestion that promises unconditional confidentiality, diagnoses, or mentions medication/dosage.
 
+Default models (overridable per prompt row, like every ally-ai call): `/helpline/turn` →
+`gpt-4.1-mini`; `/helpline/risk` → `gpt-4o-mini` (the ally-ai pinned default).
+
 ### 9.2 ally-be orchestration (`HelplineCopilotService`)
 On each persisted talker TEXT message, off the socket path:
-1. **Keyword screen** (sync, tenant + global rules for the chat language + English) → HIGH/ELEVATED.
+1. **Keyword screen** (sync, tenant + global rules of **every** language → HIGH/ELEVATED). Every
+   language, not just the chat's + English: a talker who picks English and writes Devanagari or
+   Hinglish would otherwise be screened against nothing, and rules cannot match across scripts.
+   Built in Phase 1 (`HelplineRiskService.screenTalkerMessage`); HIGH-only side effects (§9.3 alerts,
+   auto-resources) plug into `HelplineRiskService.onHighRisk(chat, flag)`.
 2. **Risk classifier** (`POST /helpline/risk`, timeout 3 s, no retry) if `copilot.riskClassifier`:
    `is_crisis && confidence ≥ riskHighConfidence` → HIGH; `is_crisis` below → ELEVATED; `failed` → no
    flag, logged.
@@ -631,6 +653,9 @@ New `LlmTask`: `HELPLINE_RISK_CLASSIFY = 'helpline_risk_classify'`, `HELPLINE_CO
 - **Retention**: hourly, batches of 500, per tenant `retentionDays`: blanks `helpline_messages.content`
   (all types) to `'[erased]'`, `helpline_talker_feedback.comment`, `helpline_chat_summaries.fields`,
   `helpline_risk_flags.outcome_note`, `helpline_talkers.display_name → 'Anonymous'`; sets `erased_at`.
+  Also drops suggestion text from `helpline_messages.metadata.suggestions`, nulls
+  `helpline_talkers.user_agent`, and nulls `ip_hash` unless the talker is blocked (the hash exists for
+  the block window). Retention selects chats **ended** before the cutoff, so a chat is blanked whole.
   Keeps counts, levels, scores, timings. **Erasure** does the same for one chat immediately. Logged
   with counts only.
 - **Audit events**: `HELPLINE_SESSION_CREATED`, `HELPLINE_CHAT_CLAIMED`, `HELPLINE_RISK_FLAGGED`,
