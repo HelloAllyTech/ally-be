@@ -38,6 +38,7 @@ import {
   HelplineTenantParam,
   RequireHelplineEnabled,
   RequireHelplineEnabledForChat,
+  RequireHelplineEnabledOrContinuing,
 } from '../guard/helpline-enabled.guard';
 import { HelplineClaimService } from '../service/helpline-claim.service';
 import { HelplineListenerService } from '../service/helpline-listener.service';
@@ -115,7 +116,7 @@ export class HelplineController {
     };
   }
 
-  @RequireHelplineEnabled()
+  @RequireHelplineEnabledOrContinuing()
   @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_LOBBY])
   @Get('me')
   me(

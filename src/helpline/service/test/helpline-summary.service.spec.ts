@@ -139,9 +139,17 @@ describe('helpline summaries', () => {
       expect(keys).toEqual(
         HELPLINE_DEFAULT_SETTINGS.summaryFields.map((f) => f.key),
       );
+      const riskField = HELPLINE_DEFAULT_SETTINGS.summaryFields.find(
+        (f) => f.key === 'risk',
+      )!;
       expect(descriptions.risk).toBe(
-        'Risk: Any risk discussed, and what was agreed',
+        `${riskField.label}: ${riskField.description}`,
       );
+      // The defaults tell the model to say so rather than invent: a live
+      // walk-through got a made-up "next step" and a warning sign listed as
+      // a support.
+      expect(descriptions.next_step).toContain('None agreed');
+      expect(descriptions.supports).toContain('Warning signs are not supports');
       const [sql, params] = summaries.query.mock.calls[0];
       expect(sql).toContain(`"helpline_chat_summaries"."edited_by" IS NULL`);
       expect(sql).toContain(`"erased_at" IS NOT NULL`);

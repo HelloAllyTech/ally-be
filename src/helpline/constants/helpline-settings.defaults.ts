@@ -59,27 +59,32 @@ export const HELPLINE_DEFAULT_SETTINGS: HelplineSettings = {
     {
       key: 'presenting_concern',
       label: 'Presenting concern',
-      description: 'What they came to talk about',
+      description:
+        "What they came to talk about, in their words. Write 'Not discussed' if it wasn't.",
     },
     {
       key: 'feelings',
       label: 'Feelings',
-      description: 'How they are feeling',
+      description:
+        "How they said they are feeling. Write 'Not discussed' if they didn't say.",
     },
     {
       key: 'risk',
       label: 'Risk',
-      description: 'Any risk discussed, and what was agreed',
+      description:
+        "Any risk they disclosed (thoughts, plan, means) and what was agreed about safety. Write 'None disclosed' if there was none.",
     },
     {
       key: 'supports',
       label: 'Supports',
-      description: 'What they have tried and who supports them',
+      description:
+        "What they have tried and the people who support them, as they described them. Warning signs are not supports. Write 'Not discussed' if it wasn't.",
     },
     {
       key: 'next_step',
       label: 'Next step',
-      description: 'Agreed next step',
+      description:
+        "A next step the talker actually agreed to in the chat. Write 'None agreed' if there wasn't one — never suggest one.",
     },
   ],
 };

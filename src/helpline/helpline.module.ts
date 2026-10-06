@@ -26,6 +26,7 @@ import { HelplineSocketAuthService } from './gateway/helpline-socket-auth.servic
 import {
   HelplineChatScopedGuard,
   HelplineEnabledGuard,
+  HelplineEnabledOrContinuingGuard,
 } from './guard/helpline-enabled.guard';
 import { HelplineGuestGuard } from './guard/helpline-guest.guard';
 import { HelplineChatRepository } from './repository/helpline-chat.repository';
@@ -142,6 +143,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     HelplineAdminService,
     HelplineEnabledGuard,
     HelplineChatScopedGuard,
+    HelplineEnabledOrContinuingGuard,
     HelplineGuestGuard,
     HelplineSocketAuthService,
     HelplineChatGateway,

@@ -9,6 +9,7 @@ import { CustomThrottlerGuard } from 'src/rate-limit/guard/custom-throttler.guar
 import {
   HelplineChatScopedGuard,
   HelplineEnabledGuard,
+  HelplineEnabledOrContinuingGuard,
 } from '../../guard/helpline-enabled.guard';
 import { HelplineGuestGuard } from '../../guard/helpline-guest.guard';
 import { HelplineAdminController } from '../helpline-admin.controller';
@@ -81,7 +82,9 @@ describe('helpline controller guards', () => {
         const gate = guards.indexOf(
           CHAT_SCOPED_ROUTES.includes(name)
             ? HelplineChatScopedGuard
-            : HelplineEnabledGuard,
+            : name === 'me'
+              ? HelplineEnabledOrContinuingGuard
+              : HelplineEnabledGuard,
         );
         expect(jwt).toBeGreaterThanOrEqual(0);
         expect(perms).toBeGreaterThan(jwt);
@@ -96,6 +99,22 @@ describe('helpline controller guards', () => {
         ).toBe(true);
       },
     );
+
+    it('only `me` uses the enabled-or-continuing gate', () => {
+      const using = handlers(HelplineController)
+        .filter(([, handler]) =>
+          guardsOf(handler as object).includes(
+            HelplineEnabledOrContinuingGuard,
+          ),
+        )
+        .map(([name]) => name);
+      expect(using).toEqual(['me']);
+      expect(
+        guardsOf(HelplineController.prototype.me).filter(
+          (g) => g === HelplineEnabledGuard,
+        ),
+      ).toEqual([]);
+    });
 
     it('`enabled` is authenticated-only and never gated (it IS the nav gate)', () => {
       const guards = guardsOf(HelplineController.prototype.enabled);

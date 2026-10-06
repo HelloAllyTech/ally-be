@@ -7,6 +7,7 @@ import { HelplineSocketAuthService } from '../../gateway/helpline-socket-auth.se
 import {
   HELPLINE_DISABLED_GRACE_MS,
   HelplineChatScopedGuard,
+  HelplineEnabledOrContinuingGuard,
   listenerMayContinue,
 } from '../helpline-enabled.guard';
 
@@ -310,5 +311,56 @@ describe('gateway while disabled', () => {
         status: 'AWAY',
       }),
     ).resolves.toEqual({ ok: true, presence: 'AWAY' });
+  });
+});
+
+describe('HelplineEnabledOrContinuingGuard (GET me)', () => {
+  const build = (enabled: boolean, activeChats: unknown[]) => {
+    const chats = {
+      listActiveForListener: jest.fn().mockResolvedValue(activeChats),
+    };
+    const guard = new HelplineEnabledOrContinuingGuard(
+      { isEnabledForTenant: jest.fn().mockResolvedValue(enabled) } as never,
+      { resolve: jest.fn().mockResolvedValue(TENANT) } as never,
+      chats as never,
+    );
+    const run = (userId: number) => {
+      const request: Record<string, unknown> = {
+        user: { id: userId, tenantId: 'acme' },
+      };
+      return {
+        request,
+        result: guard.canActivate({
+          switchToHttp: () => ({ getRequest: () => request }),
+        } as never),
+      };
+    };
+    return { run, chats };
+  };
+
+  it('enabled: passes without looking at chats', async () => {
+    const { run, chats } = build(true, []);
+    const { request, result } = run(SUPERVISOR);
+    await expect(result).resolves.toBe(true);
+    expect(request.helplineTenant).toBe(TENANT);
+    expect(chats.listActiveForListener).not.toHaveBeenCalled();
+  });
+
+  it('disabled: a listener still holding an ACTIVE chat passes, tenant-scoped', async () => {
+    const { run, chats } = build(false, [chat()]);
+    const { request, result } = run(LISTENER);
+    await expect(result).resolves.toBe(true);
+    expect(chats.listActiveForListener).toHaveBeenCalledWith(
+      TENANT.id,
+      LISTENER,
+    );
+    expect(request.helplineTenant).toBe(TENANT);
+  });
+
+  it('disabled: anyone without an active chat gets HELPLINE_DISABLED', async () => {
+    const { run } = build(false, []);
+    expect(await errorCode(run(SUPERVISOR).result)).toBe(
+      ErrorCode.HELPLINE_DISABLED,
+    );
   });
 });

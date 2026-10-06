@@ -146,6 +146,40 @@ export class HelplineChatScopedGuard implements CanActivate {
   }
 }
 
+/**
+ * For `GET me` only: exactly HelplineEnabledGuard while the helpline is on.
+ * While it is OFF, a listener who is still the listener of record of an
+ * ACTIVE chat passes, so the chat view keeps the org's escalation checklist,
+ * support contact and summary fields for the conversation they are finishing.
+ * Profile and presence writes stay on the plain gate (going Available is new
+ * work).
+ */
+@Injectable()
+export class HelplineEnabledOrContinuingGuard implements CanActivate {
+  constructor(
+    private readonly tenantFeatureService: TenantFeatureService,
+    private readonly tenantService: HelplineTenantService,
+    private readonly chats: HelplineChatRepository,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const user = requireUser(request);
+    const enabled = await this.tenantFeatureService.isEnabledForTenant(
+      PreferenceName.TEXT_HELPLINE_ENABLED,
+      user.tenantId,
+    );
+    const tenant = await this.tenantService.resolve(user.tenantId);
+    if (!tenant) throw helplineDisabled();
+    if (!enabled) {
+      const active = await this.chats.listActiveForListener(tenant.id, user.id);
+      if (active.length === 0) throw helplineDisabled();
+    }
+    request.helplineTenant = tenant;
+    return true;
+  }
+}
+
 /** Place ABOVE `@AuthPermissions(...)` (see HelplineEnabledGuard). */
 export const RequireHelplineEnabled = () =>
   applyDecorators(UseGuards(HelplineEnabledGuard));
@@ -156,6 +190,10 @@ export const RequireHelplineEnabled = () =>
  */
 export const RequireHelplineEnabledForChat = () =>
   applyDecorators(UseGuards(HelplineChatScopedGuard));
+
+/** For `GET me` (see HelplineEnabledOrContinuingGuard). Place ABOVE `@AuthPermissions(...)`. */
+export const RequireHelplineEnabledOrContinuing = () =>
+  applyDecorators(UseGuards(HelplineEnabledOrContinuingGuard));
 
 /** The tenant HelplineEnabledGuard resolved for this request. */
 export const HelplineTenantParam = createParamDecorator(
