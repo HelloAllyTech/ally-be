@@ -112,10 +112,8 @@ export class TrackProgressDashboardRepository {
    * skillCoverage survives as data, not as trust: entries are whatever
    * ally-ai wrote (two label generations exist across the platform's
    * history), so anything that is not a {category, percentage} pair is
-   * dropped rather than guessed at. Duplicated from
-   * SkillGrowthAnalyticsRepository.parseSkillCoverage rather than
-   * cross-imported from analytics/ — same reasoning that repository gives
-   * for not sharing its CTEs across files.
+   * dropped rather than guessed at. (Skill growth used to carry a copy of
+   * this parser; it now reads the helping-skills cuts instead.)
    */
   private parseSkillCoverage(
     value: unknown,

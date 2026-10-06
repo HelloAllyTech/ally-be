@@ -11,6 +11,7 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { Competency } from 'src/learn/entity/competency.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { Track } from '../entity/track.entity';
@@ -52,6 +53,10 @@ import {
   validateTrackStructure,
 } from './track-structure.validator';
 import { sanitizeDeep } from '../util/sanitize-structure.util';
+import {
+  normaliseTrackCompetencyIds,
+  resolveTrackCompetencyIds,
+} from '../util/track-competency.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackTranslationService } from './track-translation.service';
 
@@ -112,6 +117,10 @@ export class TrackService {
       );
     }
     const userId = this.getUserId();
+    const competencyIds = await this.resolveCompetencyIds(
+      createTrackDto.competencyIds,
+      null,
+    );
 
     const track = await this.trackRepository.save({
       title: createTrackDto.title,
@@ -120,6 +129,7 @@ export class TrackService {
       isGlobal: createTrackDto.isGlobal ?? false,
       status,
       estimatedDurationMinutes: createTrackDto.estimatedDurationMinutes,
+      competencyIds,
       ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
     });
 
@@ -184,6 +194,15 @@ export class TrackService {
     if ('description' in updateTrackDto) {
       updatePayload.description = this.sanitizeDescription(
         updateTrackDto.description,
+      );
+    }
+
+    // Absent key = leave the tag alone (the list page's publish/unpublish
+    // toggle sends only status and title); null or [] = clear it.
+    if (updateTrackDto.competencyIds !== undefined) {
+      updatePayload.competencyIds = await this.resolveCompetencyIds(
+        updateTrackDto.competencyIds,
+        track.competencyIds,
       );
     }
 
@@ -408,6 +427,10 @@ export class TrackService {
         totalItems: source.totalItems,
         estimatedDurationMinutes: source.estimatedDurationMinutes,
         translations: source.translations,
+        // The copy teaches what the original teaches until its author says
+        // otherwise; dropping the tag would silently switch the copy's Course
+        // impact reading to the derived roleplay set.
+        competencyIds: normaliseTrackCompetencyIds(source.competencyIds),
         ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
       });
 
@@ -544,6 +567,36 @@ export class TrackService {
     }
   }
 
+  /**
+   * Validates and normalises a requested course competency tag. New ids must
+   * be existing shared competencies (custom ones are private and never read by
+   * Course impact); ids the course already carries are kept, or dropped once
+   * their competency is deleted — see resolveTrackCompetencyIds. One lookup for
+   * the whole selection rather than one per id.
+   */
+  private async resolveCompetencyIds(
+    requested: string[] | null | undefined,
+    stored: string[] | null | undefined,
+  ): Promise<string[] | null> {
+    const ids = normaliseTrackCompetencyIds(requested);
+    if (!ids) return null;
+    const found = await this.dataSource.getRepository(Competency).find({
+      where: { id: In(ids) },
+      select: { id: true, isCustom: true },
+    });
+    const resolved = resolveTrackCompetencyIds({
+      requested: ids,
+      stored,
+      found,
+    });
+    if (resolved.rejected.length > 0) {
+      throw new BadRequestException(
+        `Invalid competency IDs (a course can only be tagged with existing, shared competencies): ${resolved.rejected.join(', ')}`,
+      );
+    }
+    return resolved.ids;
+  }
+
   /** Strips characters Postgres rejects in text/jsonb (NUL bytes, lone surrogates) from free text. */
   private sanitizeStructure(sections: UpsertTrackSectionDto[]): void {
     for (const section of sections) {
@@ -664,6 +717,7 @@ export class TrackService {
       description: track.description,
       coverImageUrl: track.coverImageUrl,
       status: track.status,
+      competencyIds: track.competencyIds ?? null,
     };
   }
 

@@ -225,6 +225,126 @@ export class QualityDistributionSummaryDto {
   taggedLowRatings!: number;
 }
 
+// ── Satisfaction by practice ordinal (EFF-70, AAQ-229) ──────────────────────
+// Additive block, read by Highlights → Quality & sentiment. ALL-TIME whatever
+// `range`/`from`/`to` say: the x-axis is the learner's own Nth rated session.
+
+export class SatisfactionOrdinalProvenanceDto {
+  @ApiProperty() derivation!: string;
+  @ApiProperty() note!: string;
+}
+
+/** Ratings at one ordinal, for one population. */
+export class SatisfactionOrdinalCellDto {
+  @ApiProperty({
+    description:
+      'Ratings at this ordinal — one per learner, since each learner has one ' +
+      'Nth rated session. Always present.',
+  })
+  ratings!: number;
+
+  @ApiProperty({
+    description: 'Mean 1-5 rating, 2 dp. Null below `minSampleSize` ratings.',
+    nullable: true,
+    type: Number,
+  })
+  avgRating!: number | null;
+
+  @ApiProperty({
+    description:
+      'Share of ratings that are 4 or 5 (%), 1 dp — the top-2-box reading the ' +
+      'satisfaction bars use. Null below `minSampleSize` ratings.',
+    nullable: true,
+    type: Number,
+  })
+  highSharePct!: number | null;
+}
+
+export class SatisfactionOrdinalPointDto {
+  @ApiProperty({
+    description:
+      "The learner's Nth RATED session, ordered by session start (1 = the " +
+      'first session they rated). Sessions they did not rate are not counted, ' +
+      'so ordinal 3 is the third rating, not the third session.',
+  })
+  ordinal!: number;
+
+  @ApiProperty({
+    description: 'Every learner who reached this ordinal',
+    type: () => SatisfactionOrdinalCellDto,
+  })
+  all!: SatisfactionOrdinalCellDto;
+
+  @ApiProperty({
+    description:
+      'Only learners with at least `experiencedMinRatings` rated sessions in ' +
+      'total — a fixed panel through ordinal `experiencedMinRatings`. The ' +
+      'survivorship control: learners who keep rating may be the satisfied ' +
+      'ones, so if only `all` rises, what moved is who is still answering.',
+    type: () => SatisfactionOrdinalCellDto,
+  })
+  experienced!: SatisfactionOrdinalCellDto;
+}
+
+export class SatisfactionByOrdinalDto {
+  @ApiProperty({
+    description:
+      'Always `all`: this block ignores the endpoint window. Say "all time" on ' +
+      'the card.',
+    enum: ['all'],
+  })
+  window!: 'all';
+
+  @ApiProperty({ description: 'Last ordinal on the axis', example: 12 })
+  maxOrdinal!: number;
+
+  @ApiProperty({
+    description:
+      'Rated sessions a learner needs to be in the `experienced` panel',
+    example: 6,
+  })
+  experiencedMinRatings!: number;
+
+  @ApiProperty({
+    description:
+      'Ratings a mean or share is stated from (`MIN_SCORE_SAMPLE_SIZE`).',
+  })
+  minSampleSize!: number;
+
+  @ApiProperty({
+    description: 'Learners with at least one rated session (ordinal 1’s n)',
+  })
+  ratedLearners!: number;
+
+  @ApiProperty({
+    description: 'Of those, learners in the `experienced` panel',
+  })
+  experiencedLearners!: number;
+
+  @ApiProperty({
+    description:
+      'Ordinals 1..maxOrdinal, contiguous: an ordinal nobody reached carries ' +
+      'zero counts and null values, never a zero rating.',
+    type: [SatisfactionOrdinalPointDto],
+  })
+  points!: SatisfactionOrdinalPointDto[];
+
+  @ApiProperty({
+    description:
+      'Ratings at ordinals past `maxOrdinal` — counted so the total reconciles, ' +
+      'not plotted.',
+  })
+  ratingsBeyondLastOrdinal!: number;
+
+  @ApiProperty({
+    description:
+      'Source line: ruler R6 (post-session rating), how ordinals are counted, ' +
+      'and the caveat (self-report, sparse, survivorship).',
+    type: () => SatisfactionOrdinalProvenanceDto,
+  })
+  provenance!: SatisfactionOrdinalProvenanceDto;
+}
+
 /**
  * Distribution-aware roleplay quality and learner satisfaction.
  *
@@ -272,6 +392,16 @@ export class QualityDistributionResponseDto {
 
   @ApiProperty({ type: QualityDistributionSummaryDto })
   summary!: QualityDistributionSummaryDto;
+
+  @ApiProperty({
+    description:
+      'Satisfaction by the learner’s Nth rated session (AAQ-229): mean rating ' +
+      'and share rated 4-5 at ordinals 1..12, all-comers and a fixed ' +
+      'experienced panel. ALL-TIME regardless of this endpoint’s window, and ' +
+      'scoped by the session’s tenant. Floored at `minSampleSize` ratings.',
+    type: () => SatisfactionByOrdinalDto,
+  })
+  byOrdinal!: SatisfactionByOrdinalDto;
 
   @ApiProperty({
     description:

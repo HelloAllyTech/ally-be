@@ -106,6 +106,21 @@ export interface LowRatingTagRow {
 }
 
 /**
+ * Ratings at one practice ordinal, split by panel membership. `ordinal` is
+ * 1..maxOrdinal, or maxOrdinal + 1 for the pooled tail.
+ */
+export interface RatingOrdinalRow {
+  ordinal: number;
+  /** The learner has at least `experiencedMin` rated sessions in total. */
+  experienced: boolean;
+  ratings: number;
+  /** Sum of the raw 1-5 ratings — the mean's numerator. */
+  ratingSum: number;
+  /** Ratings of SATISFACTION_HIGH_MIN_RATING (4) or more. */
+  high: number;
+}
+
+/**
  * Tag counts plus the denominator they are a breakdown OF.
  *
  * A tag pareto without its own denominator is unreadable: "unrealistic persona
@@ -559,6 +574,92 @@ export class QualityDistributionAnalyticsRepository {
       })),
       taggedResponses: rows.length ? Number(first.taggedResponses) || 0 : 0,
     };
+  }
+
+  /**
+   * Ratings by the learner's Nth RATED session — satisfaction by practice
+   * ordinal (EFF-70, AAQ-229). ALL-TIME whatever window the rest of the
+   * endpoint uses: "the learner's 5th rated session" is not a calendar
+   * question, and a window would renumber everyone who started before it.
+   *
+   * - One rating per session: when a session was rated more than once, the
+   *   LATEST answer counts (by feedback `createdAt`, ties by id).
+   * - Ordinal = the session's rank among that learner's rated sessions by
+   *   session start (`COALESCE(startedAt, createdAt)`, ties by id), so "1" is
+   *   the first session they rated, whenever they rated it.
+   * - Sessions of preview or seed rooms are out (`countableSessionPredicate`);
+   *   status is not filtered, matching the endpoint's satisfaction series (a
+   *   rating on a session whose post-processing did not finish is still a
+   *   rating). Test orgs are excluded, and an org filter narrows, by the
+   *   SESSION's tenant.
+   * - `experienced` splits the rows by whether the learner has at least
+   *   `experiencedMin` rated sessions in total — the fixed-panel survivorship
+   *   control.
+   *
+   * Ordinals past `maxOrdinal` are pooled into `maxOrdinal + 1` so the tail is
+   * counted, not dropped. Counts and sums only; the service derives every
+   * mean and share once.
+   */
+  async getRatingsByOrdinal(
+    maxOrdinal: number,
+    experiencedMin: number,
+    tenantId?: string,
+  ): Promise<RatingOrdinalRow[]> {
+    const params: unknown[] = [
+      maxOrdinal,
+      experiencedMin,
+      SATISFACTION_HIGH_MIN_RATING,
+    ];
+    let tenantPredicate = '';
+    if (tenantId) {
+      params.push(tenantId);
+      tenantPredicate = `AND ${scopeToTenant('s."tenant_id"', `$${params.length}`)}`;
+    }
+
+    const rows = await this.dataSource.query(
+      `
+      WITH rated AS (
+        SELECT DISTINCT ON (f."scenarioSessionId")
+               f."scenarioSessionId"                    AS session_id,
+               f."rating"                               AS rating,
+               s."counselorId"                          AS user_id,
+               COALESCE(s."startedAt", s."createdAt")   AS started_at
+          FROM scenario_session_feedbacks f
+          JOIN scenario_sessions s ON s.id = f."scenarioSessionId"
+         WHERE f."rating" IS NOT NULL
+           AND s."counselorId" IS NOT NULL
+           AND ${countableSessionPredicate('s')}
+           AND ${excludeTestTenants('s."tenant_id"')}
+           ${tenantPredicate}
+         ORDER BY f."scenarioSessionId", f."createdAt" DESC, f.id DESC
+      ),
+      ordered AS (
+        SELECT rating,
+               ROW_NUMBER() OVER (
+                 PARTITION BY user_id ORDER BY started_at, session_id
+               ) AS ordinal,
+               COUNT(*) OVER (PARTITION BY user_id) AS rated_sessions
+          FROM rated
+      )
+      SELECT LEAST(ordinal, $1::int + 1)::int             AS "ordinal",
+             (rated_sessions >= $2::int)                  AS "experienced",
+             COUNT(*)::int                                AS "ratings",
+             COALESCE(SUM(rating), 0)::float              AS "ratingSum",
+             COUNT(*) FILTER (WHERE rating >= $3::int)::int AS "high"
+        FROM ordered
+       GROUP BY 1, 2
+       ORDER BY 1, 2
+      `,
+      params,
+    );
+
+    return (rows as Record<string, unknown>[]).map((r) => ({
+      ordinal: Number(r.ordinal) || 0,
+      experienced: r.experienced === true,
+      ratings: Number(r.ratings) || 0,
+      ratingSum: Number(r.ratingSum) || 0,
+      high: Number(r.high) || 0,
+    }));
   }
 
   /**

@@ -7,6 +7,8 @@ import {
   QualifiedSessionsResponseDto,
   StickinessQueryDto,
   StickinessResponseDto,
+  StickinessSpacingBandDto,
+  StickinessSpacingDto,
   StickinessStepDto,
 } from '../dto/practice-depth-analytics.dto';
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
@@ -16,12 +18,16 @@ import {
   PracticeDepthAnalyticsRepository,
   QUALIFYING_MINUTES,
   STICKINESS_STEPS,
+  SessionGapRow,
 } from '../repository/practice-depth-analytics.repository';
+// One floor for every stated share of observations — see SkillGrowthAnalyticsService.
+import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
 import {
   describeWindow,
   generateBucketLabels,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /**
  * Bucket granularity per range for the qualifying-session trend.
@@ -59,12 +65,19 @@ export class PracticeDepthAnalyticsService {
    *  - **The tail is aggregated, never dropped.** Learners past the last rung are
    *    counted in `beyondLastStep`, so the funnel still reconciles with the
    *    population instead of quietly losing the deepest users.
+   *
+   * `spacing` (AAQ-224) rides on the same response: how far apart a learner's
+   * countable sessions are, all-time, over the same learners — see
+   * {@link buildPracticeSpacing}.
    */
   async getStickiness(
     query: StickinessQueryDto,
   ): Promise<StickinessResponseDto> {
     const tenantId = query.tenantId?.trim() || undefined;
-    const histogram = await this.repo.getActiveDayHistogram(tenantId);
+    const [histogram, gapRows] = await Promise.all([
+      withReportingQuerySlot(() => this.repo.getActiveDayHistogram(tenantId)),
+      withReportingQuerySlot(() => this.repo.getSessionGaps(tenantId)),
+    ]);
 
     const steps = buildSteps(histogram);
     const totalLearners = steps[0]?.learners ?? 0;
@@ -75,6 +88,7 @@ export class PracticeDepthAnalyticsService {
       beyondLastStep: countAtLeast(histogram, STICKINESS_STEPS + 1),
       medianActiveDays: medianActiveDays(histogram, totalLearners),
       minPopulation: MIN_STICKINESS_POPULATION,
+      spacing: buildPracticeSpacing(gapRows),
       // Both the population (users) and the activity (user_daily_scores) carry a
       // tenant, so nothing here stays platform-wide under a tenant filter.
       scoping: { tenantId: tenantId ?? null, unscopedSections: [] },
@@ -243,4 +257,127 @@ function medianActiveDays(
     if (seen >= midpoint) return row.activeDays;
   }
   return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Practice spacing (EFF-51, AAQ-224)                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Gap bands, in whole days between consecutive session starts.
+ *
+ * The edges follow how practice is planned rather than an even split: same or
+ * next day (massed), within the week, one to two weeks, two to four weeks, and
+ * a month or more (a break). `minDays`/`maxDays` are inclusive; the last band
+ * is open.
+ */
+export const SPACING_BANDS: readonly {
+  band: string;
+  label: string;
+  minDays: number;
+  maxDays: number | null;
+}[] = [
+  { band: '0-1', label: '0–1 days', minDays: 0, maxDays: 1 },
+  { band: '2-6', label: '2–6 days', minDays: 2, maxDays: 6 },
+  { band: '7-13', label: '7–13 days', minDays: 7, maxDays: 13 },
+  { band: '14-29', label: '14–29 days', minDays: 14, maxDays: 29 },
+  { band: '30+', label: '30+ days', minDays: 30, maxDays: null },
+];
+
+/** A learner whose median gap is at most this many days "comes back weekly". */
+export const SPACING_TARGET_DAYS = 7;
+
+const inBand = (gap: number, b: (typeof SPACING_BANDS)[number]) =>
+  gap >= b.minDays && (b.maxDays === null || gap <= b.maxDays);
+
+/** Median of a non-empty list; the mean of the middle two for an even count. */
+function medianOf(xs: readonly number[]): number {
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * The spacing block, from each learner's gaps.
+ *
+ * Two readings, deliberately different in what they count:
+ *
+ *  - **The histogram counts gaps.** Its question is "what does the platform's
+ *    practice rhythm look like", and a learner with 40 sessions really did
+ *    produce 39 gaps. Shares are withheld below {@link MIN_SCORE_SAMPLE_SIZE}
+ *    gaps in total; the counts stay.
+ *  - **The KPI counts people.** "Share of active learners whose median gap is
+ *    within a week" gives every learner one vote, so the heaviest practisers
+ *    cannot carry it. It is a share of PEOPLE, so it takes the privacy floor
+ *    ({@link MIN_STICKINESS_POPULATION}), as the funnel's shares do.
+ *
+ * A zero denominator is null, never 0%.
+ */
+export function buildPracticeSpacing(
+  rows: readonly SessionGapRow[],
+  opts: { gapFloor?: number; learnerFloor?: number } = {},
+): StickinessSpacingDto {
+  const gapFloor = opts.gapFloor ?? MIN_SCORE_SAMPLE_SIZE;
+  const learnerFloor = opts.learnerFloor ?? MIN_STICKINESS_POPULATION;
+  const withSessions = rows.filter((r) => r.sessions > 0);
+  const active = withSessions.filter((r) => r.gaps.length > 0);
+  const totalGaps = active.reduce((sum, r) => sum + r.gaps.length, 0);
+
+  const bands: StickinessSpacingBandDto[] = SPACING_BANDS.map((b) => {
+    let gaps = 0;
+    let learners = 0;
+    for (const r of active) {
+      const n = r.gaps.filter((g) => inBand(g, b)).length;
+      gaps += n;
+      if (n > 0) learners += 1;
+    }
+    return {
+      band: b.band,
+      label: b.label,
+      minDays: b.minDays,
+      maxDays: b.maxDays,
+      gaps,
+      sharePct:
+        totalGaps >= gapFloor && totalGaps > 0
+          ? Math.round((gaps / totalGaps) * 1000) / 10
+          : null,
+      learners,
+    };
+  });
+
+  const medians = active.map((r) => medianOf(r.gaps));
+  const withinTarget = medians.filter((m) => m <= SPACING_TARGET_DAYS).length;
+  const enoughLearners = active.length >= learnerFloor && active.length > 0;
+
+  return {
+    window: 'all',
+    bands,
+    totalGaps,
+    minGapSample: gapFloor,
+    learnersWithSessions: withSessions.length,
+    activeLearners: active.length,
+    targetDays: SPACING_TARGET_DAYS,
+    learnersWithinTarget: withinTarget,
+    withinTargetPct: enoughLearners
+      ? Math.round((withinTarget / active.length) * 1000) / 10
+      : null,
+    medianGapDays: enoughLearners
+      ? Math.round(medianOf(medians) * 10) / 10
+      : null,
+    minLearners: learnerFloor,
+    provenance: {
+      derivation:
+        'Every countable roleplay session (ended, completed, not a preview or seed room) of ' +
+        'every learner, ordered by start. A gap is the whole days from one session start to ' +
+        'the next (0 = within 24 hours), banded 0–1 / 2–6 / 7–13 / 14–29 / 30+. The KPI gives ' +
+        `each learner with 2+ sessions one vote: is their median gap ${SPACING_TARGET_DAYS} days or ` +
+        'less? All time; learners as in the funnel; test organisations excluded.',
+      note:
+        'Spacing is chosen by the learner, so this describes practice rhythm; it does not ' +
+        'show that spaced practice works better here. Back-to-back sessions in one sitting ' +
+        'count as 0-day gaps. Heavy practisers contribute more gaps to the bars — the KPI is ' +
+        `per learner for that reason. Shares are withheld below ${gapFloor} gaps and the KPI ` +
+        `below ${learnerFloor} active learners.`,
+    },
+  };
 }

@@ -7,6 +7,10 @@ import {
 import { LearnerUsageStatus } from '../dto/tenant-analytics.dto';
 import { resolveSqlBucket, startOfUtcDay } from '../util/analytics-window.util';
 import { sessionDurationMsExpr } from '../util/session-eligibility.util';
+import {
+  enrollmentDaysToCompleteSql,
+  enrollmentReachedHalfSql,
+} from '../util/course-progress-sql.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
 
 export interface BucketCountRow {
@@ -956,15 +960,14 @@ export class TenantAnalyticsRepository {
           e."trackId",
           COUNT(*)::int AS started,
           COUNT(*) FILTER (
-            WHERE c."totalItems" > 0
-              AND e."completedItems"::float / c."totalItems" >= 0.5
+            WHERE ${enrollmentReachedHalfSql('e', 'c."totalItems"')}
           )::int AS "atLeast50",
           COUNT(*) FILTER (WHERE e."completedAt" IS NOT NULL)::int AS completed100,
           AVG(
-            EXTRACT(EPOCH FROM (e."completedAt" - e."startedAt")) / 86400.0
+            ${enrollmentDaysToCompleteSql('e')}
           ) FILTER (WHERE e."completedAt" IS NOT NULL) AS "avgCompletionDays",
           percentile_cont(0.5) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (e."completedAt" - e."startedAt")) / 86400.0
+            ORDER BY ${enrollmentDaysToCompleteSql('e')}
           ) FILTER (WHERE e."completedAt" IS NOT NULL) AS "medianCompletionDays",
           COUNT(*) FILTER (
             WHERE e."completedAt" IS NULL

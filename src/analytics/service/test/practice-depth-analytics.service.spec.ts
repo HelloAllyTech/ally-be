@@ -26,6 +26,7 @@ describe('PracticeDepthAnalyticsService', () => {
           provide: PracticeDepthAnalyticsRepository,
           useValue: {
             getActiveDayHistogram: jest.fn().mockResolvedValue(histogram),
+            getSessionGaps: jest.fn().mockResolvedValue([]),
             getQualifiedSessionsByBucket: jest
               .fn()
               .mockResolvedValue(sessionRows),

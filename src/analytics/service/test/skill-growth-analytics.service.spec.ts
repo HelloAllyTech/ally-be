@@ -1,84 +1,77 @@
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { SkillGrowthAnalyticsService } from '../skill-growth-analytics.service';
-import { MIN_SCORE_SAMPLE_SIZE } from '../../repository/quality-distribution-analytics.repository';
+import { FHS_RUBRIC_VERSION } from 'src/foundational-skills/constants/helping-skills-rubric.constants';
 import {
   SKILL_GROWTH_DERIVATION,
-  SKILL_GROWTH_EXPERIENCED_MIN_SESSIONS,
-  SKILL_GROWTH_LEARNER_SESSION_CAP,
-  SKILL_GROWTH_MAX_ORDINAL,
   SKILL_GROWTH_PROVENANCE_NOTE,
-  SKILL_TREND_FLAT_BAND,
-  SKILL_TREND_MIN_SESSIONS,
-  SKILL_TREND_WINDOW,
-  SkillGrowthAnalyticsRepository,
-  SkillGrowthDistribution,
-  SkillGrowthLearnerSession,
-  SkillGrowthOrdinalRow,
-  SkillTrendMix,
-} from '../../repository/skill-growth-analytics.repository';
+  SkillGrowthAnalyticsService,
+} from '../skill-growth-analytics.service';
+import {
+  FoundationalSkillsAnalyticsRepository,
+  FoundationalSkillsLearnerCutRow,
+} from '../../repository/foundational-skills-analytics.repository';
+import { MIN_SCORE_SAMPLE_SIZE } from '../../repository/quality-distribution-analytics.repository';
+import { SkillGrowthAnalyticsRepository } from '../../repository/skill-growth-analytics.repository';
+import {
+  FHS_PROGRESS_THRESHOLDS,
+  cutNoiseSd,
+} from '../../util/foundational-skills-progress.util';
+import {
+  SKILL_GROWTH_EXPERIENCED_MIN_CUTS,
+  SKILL_GROWTH_LEARNER_ROW_CAP,
+  SKILL_GROWTH_MAX_ORDINAL,
+  classifySkillGrowthLearner,
+  toSkillGrowthLearners,
+} from '../../util/skill-growth.util';
 
-/** A cell with `n` at or above the floor, so its score survives suppression. */
-const thickCell = (median: number, n = MIN_SCORE_SAMPLE_SIZE) => ({
-  median,
-  p25: median - 8,
-  p75: median + 8,
-  n,
+const row = (
+  userId: number,
+  cut: number,
+  score: number,
+  extra: Partial<FoundationalSkillsLearnerCutRow> = {},
+): FoundationalSkillsLearnerCutRow => ({
+  userId,
+  name: `Learner ${userId}`,
+  tenantId: 'org-a',
+  cut,
+  closedAt: new Date(Date.UTC(2026, 7, cut, 9)),
+  score,
+  unhelpful: false,
+  levels: { empathy: 2 },
+  verdicts: [],
+  sessionIds: [`s-${userId}-${cut}`],
+  ...extra,
 });
 
-const ordinalRow = (
-  ordinal: number,
-  all: SkillGrowthOrdinalRow['all'],
-  experienced: SkillGrowthOrdinalRow['experienced'] = all,
-): SkillGrowthOrdinalRow => ({ ordinal, all, experienced });
-
-const emptyDistribution: SkillGrowthDistribution = {
-  ordinals: [],
-  learners: 0,
-  experiencedLearners: 0,
-  evaluatedSessions: 0,
-};
-
-const emptyTrendMix: SkillTrendMix = {
-  classifiedLearners: 0,
-  insufficientLearners: 0,
-  improving: 0,
-  flat: 0,
-  declining: 0,
-  months: [],
-};
-
-/** A learner session with only the fields classification reads. */
-const sessionAt = (ordinal: number, compositeScore: number) => ({
-  ordinal,
-  occurredAt: `2026-0${Math.min(ordinal, 9)}-01T00:00:00.000Z`,
-  scenarioTitle: 'De-escalation basics',
-  compositeScore,
-  skillCoverage: null,
-});
+/** `MIN_SCORE_SAMPLE_SIZE` learners with three cuts, so ordinals 1–3 clear the floor. */
+const thickPopulation = (): FoundationalSkillsLearnerCutRow[] =>
+  Array.from({ length: MIN_SCORE_SAMPLE_SIZE }, (_, i) => i + 1).flatMap(
+    (u) => [row(u, 1, 2), row(u, 2, 2.25), row(u, 3, 2.5)],
+  );
 
 describe('SkillGrowthAnalyticsService', () => {
   let service: SkillGrowthAnalyticsService;
   let repository: jest.Mocked<SkillGrowthAnalyticsRepository>;
+  let cuts: jest.Mocked<FoundationalSkillsAnalyticsRepository>;
 
-  const setup = async (
-    distribution: SkillGrowthDistribution = emptyDistribution,
-    trendMix: SkillTrendMix = emptyTrendMix,
-  ) => {
+  const setup = async (rows: FoundationalSkillsLearnerCutRow[] = []) => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SkillGrowthAnalyticsService,
         {
           provide: SkillGrowthAnalyticsRepository,
           useValue: {
-            getOrdinalDistribution: jest.fn().mockResolvedValue(distribution),
-            getTrendMix: jest.fn().mockResolvedValue(trendMix),
-            getLearnerTrendPage: jest
-              .fn()
-              .mockResolvedValue({ rows: [], total: 0 }),
             getLearnerIdentity: jest.fn().mockResolvedValue(null),
-            getLearnerSessions: jest.fn().mockResolvedValue([]),
+            getLearnerIdentities: jest.fn().mockResolvedValue([]),
             getLearnerKnowledgeAttempts: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: FoundationalSkillsAnalyticsRepository,
+          useValue: {
+            getAllLearnerCuts: jest.fn().mockResolvedValue(rows),
+            getSessionScenarios: jest.fn().mockResolvedValue(new Map()),
           },
         },
       ],
@@ -86,214 +79,193 @@ describe('SkillGrowthAnalyticsService', () => {
 
     service = module.get(SkillGrowthAnalyticsService);
     repository = module.get(SkillGrowthAnalyticsRepository);
+    cuts = module.get(FoundationalSkillsAnalyticsRepository);
   };
 
   afterEach(() => jest.clearAllMocks());
 
-  it('echoes the axis bounds, the floors and the provenance caveat', async () => {
-    await setup();
+  describe('getSkillGrowth', () => {
+    it('reads the pinned learner ruler and says so on the card', async () => {
+      await setup();
 
-    const result = await service.getSkillGrowth({});
+      const result = await service.getSkillGrowth({});
 
-    expect(result.maxOrdinal).toBe(SKILL_GROWTH_MAX_ORDINAL);
-    expect(result.experiencedMinSessions).toBe(
-      SKILL_GROWTH_EXPERIENCED_MIN_SESSIONS,
-    );
-    expect(result.minSampleSize).toBe(MIN_SCORE_SAMPLE_SIZE);
-    expect(result.scoreDomain).toEqual([0, 100]);
-    expect(result.provenance).toEqual({
-      derivation: SKILL_GROWTH_DERIVATION,
-      note: SKILL_GROWTH_PROVENANCE_NOTE,
-    });
-    // The caveat has to name the missing control, or the chart implies one.
-    expect(result.provenance.note).toMatch(/does NOT pin a judge version/);
-    expect(result.scoping).toEqual({ tenantId: null, unscopedSections: [] });
-  });
-
-  it('completes the ordinal axis to maxOrdinal without inventing measurements', async () => {
-    await setup({
-      ...emptyDistribution,
-      ordinals: [ordinalRow(1, thickCell(60)), ordinalRow(2, thickCell(64))],
-      learners: 40,
-      evaluatedSessions: 60,
-    });
-
-    const result = await service.getSkillGrowth({});
-
-    expect(result.ordinals).toHaveLength(SKILL_GROWTH_MAX_ORDINAL);
-    expect(result.ordinals.map((o) => o.ordinal)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-    ]);
-    // An ordinal nobody reached: the tick exists (n is a real zero), the score
-    // does not (a median of no observations is not a median of zero).
-    const untouched = result.ordinals[5];
-    expect(untouched.all).toEqual({ median: null, p25: null, p75: null, n: 0 });
-    expect(untouched.experienced.n).toBe(0);
-  });
-
-  it('suppresses a below-floor cell but keeps its n so the panel can explain itself', async () => {
-    await setup({
-      ...emptyDistribution,
-      ordinals: [
-        ordinalRow(1, thickCell(58, 120)),
-        // 4 sessions: nowhere near enough to state a median from.
-        ordinalRow(2, thickCell(91, 4)),
-      ],
-      learners: 120,
-      evaluatedSessions: 124,
+      expect(cuts.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        undefined,
+      );
+      expect(result.scoreDomain).toEqual([1, 4]);
+      expect(result.rubricVersion).toBe(FHS_RUBRIC_VERSION);
+      expect(result.cutSizeLearnerChars).toBe(5000);
+      expect(result.maxOrdinal).toBe(SKILL_GROWTH_MAX_ORDINAL);
+      expect(result.experiencedMinSessions).toBe(
+        SKILL_GROWTH_EXPERIENCED_MIN_CUTS,
+      );
+      expect(result.minSampleSize).toBe(MIN_SCORE_SAMPLE_SIZE);
+      expect(result.provenance).toEqual({
+        derivation: SKILL_GROWTH_DERIVATION,
+        note: SKILL_GROWTH_PROVENANCE_NOTE,
+      });
+      expect(result.provenance.derivation).toMatch(/OWN speech/);
+      expect(result.provenance.derivation).toMatch(/5,000-character/);
+      expect(result.provenance.note).toMatch(/human raters/);
+      expect(result.provenance.note).toContain(FHS_RUBRIC_VERSION);
+      // Anyone comparing screenshots has to be told the series changed.
+      expect(result.provenance.note).toMatch(/Until October 2026/);
+      expect(result.provenance.note).toMatch(/AI roleplay character/);
+      expect(result.scoping).toEqual({ tenantId: null, unscopedSections: [] });
     });
 
-    const result = await service.getSkillGrowth({});
+    it('passes a trimmed tenant through to the cut read, and a blank one as none', async () => {
+      await setup();
 
-    const thin = result.ordinals[1];
-    expect(thin.all.median).toBeNull();
-    expect(thin.all.p25).toBeNull();
-    expect(thin.all.p75).toBeNull();
-    // The count survives — this is what turns a blank cell into a stated limit.
-    expect(thin.all.n).toBe(4);
-  });
+      const scoped = await service.getSkillGrowth({ tenantId: '  ally  ' });
+      expect(cuts.getAllLearnerCuts).toHaveBeenLastCalledWith(
+        FHS_RUBRIC_VERSION,
+        'ally',
+      );
+      expect(scoped.scoping).toEqual({
+        tenantId: 'ally',
+        unscopedSections: [],
+      });
 
-  it('suppresses the two variants independently, from the same rows', async () => {
-    // The "all" cell clears the floor; the experienced subset of the SAME rows
-    // does not. Both must be judged on their own n.
-    await setup({
-      ...emptyDistribution,
-      ordinals: [
-        ordinalRow(1, thickCell(61, 80), thickCell(66, MIN_SCORE_SAMPLE_SIZE)),
-        ordinalRow(2, thickCell(65, 50), thickCell(71, 9)),
-      ],
-      learners: 80,
-      experiencedLearners: 9,
-      evaluatedSessions: 130,
+      await service.getSkillGrowth({ tenantId: '   ' });
+      expect(cuts.getAllLearnerCuts).toHaveBeenLastCalledWith(
+        FHS_RUBRIC_VERSION,
+        undefined,
+      );
     });
 
-    const result = await service.getSkillGrowth({});
+    it('draws the curve by cut index with the floor applied and n kept', async () => {
+      // A 21st learner reaches cut 4 alone: the tick is there, the median is not.
+      await setup([...thickPopulation(), row(99, 4, 3.5)]);
 
-    expect(result.ordinals[0].experienced.median).toBe(66);
-    expect(result.ordinals[1].all.median).toBe(65);
-    expect(result.ordinals[1].experienced.median).toBeNull();
-    expect(result.ordinals[1].experienced.n).toBe(9);
-  });
+      const result = await service.getSkillGrowth({});
 
-  it('reads the headline off the last ordinal that clears the floor', async () => {
-    await setup({
-      ...emptyDistribution,
-      ordinals: [
-        ordinalRow(1, thickCell(55, 300)),
-        ordinalRow(2, thickCell(62, 180)),
-        ordinalRow(3, thickCell(69, 40)),
-        // Below the floor: must not become the headline even though it is the
-        // most flattering point on the chart.
-        ordinalRow(4, thickCell(97, 6)),
-      ],
-      learners: 300,
-      experiencedLearners: 25,
-      evaluatedSessions: 526,
+      expect(result.ordinals).toHaveLength(SKILL_GROWTH_MAX_ORDINAL);
+      expect(result.ordinals[0].all).toEqual({
+        median: 2,
+        p25: 2,
+        p75: 2,
+        n: MIN_SCORE_SAMPLE_SIZE,
+      });
+      expect(result.ordinals[2].all.median).toBe(2.5);
+      expect(result.ordinals[3].all).toEqual({
+        median: null,
+        p25: null,
+        p75: null,
+        n: 1,
+      });
+      expect(result.summary).toEqual({
+        learners: MIN_SCORE_SAMPLE_SIZE + 1,
+        experiencedLearners: 0,
+        evaluatedSessions: MIN_SCORE_SAMPLE_SIZE * 3 + 1,
+        firstOrdinalMedian: 2,
+        lastComparableOrdinal: 3,
+        lastComparableMedian: 2.5,
+      });
     });
 
-    const result = await service.getSkillGrowth({});
+    it('classifies the trend mix with the noise of the population in scope', async () => {
+      const rows = [
+        ...[2, 2, 3, 3].map((s, i) => row(1, i + 1, s)),
+        ...[3, 3, 2, 2].map((s, i) => row(2, i + 1, s)),
+        ...[2.4, 2.5, 2.5, 2.4].map((s, i) => row(3, i + 1, s)),
+        row(4, 1, 2),
+      ];
+      await setup(rows);
 
-    expect(result.summary.firstOrdinalMedian).toBe(55);
-    expect(result.summary.lastComparableOrdinal).toBe(3);
-    expect(result.summary.lastComparableMedian).toBe(69);
-    expect(result.summary.learners).toBe(300);
-    expect(result.summary.experiencedLearners).toBe(25);
-    expect(result.summary.evaluatedSessions).toBe(526);
-  });
+      const result = await service.getSkillGrowth({});
+      const noise = cutNoiseSd(toSkillGrowthLearners(rows));
 
-  it('returns a null headline when even the first ordinal is below the floor', async () => {
-    await setup({
-      ...emptyDistribution,
-      ordinals: [ordinalRow(1, thickCell(72, 3))],
-      learners: 3,
-      evaluatedSessions: 3,
-    });
-
-    const result = await service.getSkillGrowth({});
-
-    expect(result.summary.firstOrdinalMedian).toBeNull();
-    expect(result.summary.lastComparableOrdinal).toBeNull();
-    expect(result.summary.lastComparableMedian).toBeNull();
-  });
-
-  it('passes a trimmed tenant filter through and echoes it in the scoping', async () => {
-    await setup();
-
-    const result = await service.getSkillGrowth({ tenantId: '  ally  ' });
-
-    expect(repository.getOrdinalDistribution).toHaveBeenCalledWith('ally');
-    expect(result.scoping).toEqual({ tenantId: 'ally', unscopedSections: [] });
-  });
-
-  it('treats a blank tenant filter as no filter', async () => {
-    await setup();
-
-    await service.getSkillGrowth({ tenantId: '   ' });
-
-    expect(repository.getOrdinalDistribution).toHaveBeenCalledWith(undefined);
-    expect(repository.getTrendMix).toHaveBeenCalledWith(undefined);
-  });
-
-  it('attaches the trend mix with the thresholds it was classified under', async () => {
-    await setup(emptyDistribution, {
-      classifiedLearners: 10,
-      insufficientLearners: 30,
-      improving: 6,
-      flat: 3,
-      declining: 1,
-      months: [{ month: '2026-07', improving: 6, flat: 3, declining: 1 }],
-    });
-
-    const result = await service.getSkillGrowth({});
-
-    expect(result.trendMix.improving).toBe(6);
-    expect(result.trendMix.insufficientLearners).toBe(30);
-    expect(result.trendMix.months).toHaveLength(1);
-    // The knobs travel with the numbers, so no client re-invents them.
-    expect(result.trendMix.thresholds).toEqual({
-      minSessions: SKILL_TREND_MIN_SESSIONS,
-      window: SKILL_TREND_WINDOW,
-      flatBand: SKILL_TREND_FLAT_BAND,
+      expect(result.trendMix.thresholds.cutNoiseSd).toBe(
+        Math.round((noise as number) * 1000) / 1000,
+      );
+      expect(result.trendMix.thresholds.minSessions).toBe(
+        FHS_PROGRESS_THRESHOLDS.trendMinCuts,
+      );
+      const expected = toSkillGrowthLearners(rows).map(
+        (l) => classifySkillGrowthLearner(l, noise).trend,
+      );
+      const count = (t: string) => expected.filter((x) => x === t).length;
+      expect(result.trendMix.improving).toBe(count('improving'));
+      expect(result.trendMix.flat).toBe(count('flat'));
+      expect(result.trendMix.declining).toBe(count('declining'));
+      expect(result.trendMix.insufficientLearners).toBe(count('insufficient'));
+      expect(result.trendMix.insufficientLearners).toBeGreaterThanOrEqual(1);
     });
   });
 
   describe('getLearnerTrends', () => {
-    it('defaults to the biggest movers first and echoes the page shape', async () => {
-      await setup();
+    const rows = [
+      ...[2, 2, 3, 3].map((s, i) => row(1, i + 1, s)),
+      ...[3, 3, 2, 2].map((s, i) => row(2, i + 1, s)),
+      row(3, 1, 2),
+      row(3, 2, 2.1),
+    ];
 
-      const result = await service.getLearnerTrends({});
+    it('sorts by own change, pages in memory, and looks up only the page', async () => {
+      await setup(rows);
+      repository.getLearnerIdentities.mockResolvedValue([
+        { id: 1, name: 'Asha', email: 'asha@example.com', tenantId: 'org-a' },
+      ]);
 
-      expect(repository.getLearnerTrendPage).toHaveBeenCalledWith({
-        tenantId: undefined,
-        limit: 20,
-        offset: 0,
-        sort: 'delta',
-        descending: true,
+      const result = await service.getLearnerTrends({ limit: 1 });
+
+      expect(result.total).toBe(3);
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toMatchObject({
+        learnerId: 1,
+        name: 'Asha',
+        email: 'asha@example.com',
+        tenantId: 'org-a',
+        evaluatedSessions: 4,
+        firstWindowMean: 2,
+        lastWindowMean: 3,
+        delta: 1,
       });
-      expect(result.limit).toBe(20);
-      expect(result.offset).toBe(0);
-      expect(result.thresholds.minSessions).toBe(SKILL_TREND_MIN_SESSIONS);
-      expect(result.provenance.note).toBe(SKILL_GROWTH_PROVENANCE_NOTE);
+      expect(result.rows[0].band).not.toBeNull();
+      expect(result.rows[0].lastSessionAt).toBe(rows[3].closedAt.toISOString());
+      expect(repository.getLearnerIdentities).toHaveBeenCalledWith([1]);
+      expect(result.rubricVersion).toBe(FHS_RUBRIC_VERSION);
+      expect(result.scoping).toEqual({ tenantId: null, unscopedSections: [] });
     });
 
-    it('passes paging, sort and tenant through untranslated', async () => {
-      await setup();
+    it('lists unclassified learners last with null means', async () => {
+      await setup(rows);
 
-      await service.getLearnerTrends({
+      const result = await service.getLearnerTrends({});
+      const last = result.rows[result.rows.length - 1];
+
+      expect(result.rows.map((r) => r.learnerId)).toEqual([1, 2, 3]);
+      expect(last).toMatchObject({
+        learnerId: 3,
+        trend: 'insufficient',
+        firstWindowMean: null,
+        delta: null,
+        band: null,
+        email: null,
+        // No users row: falls back to the cut's name and tenant.
+        name: 'Learner 3',
+        tenantId: 'org-a',
+      });
+    });
+
+    it('passes the tenant to the cut read and sorts ascending on request', async () => {
+      await setup(rows);
+
+      const result = await service.getLearnerTrends({
         tenantId: ' ally ',
-        limit: 50,
-        offset: 100,
-        sort: 'lastSessionAt',
+        sort: 'delta',
         order: 'asc',
       });
 
-      expect(repository.getLearnerTrendPage).toHaveBeenCalledWith({
-        tenantId: 'ally',
-        limit: 50,
-        offset: 100,
-        sort: 'lastSessionAt',
-        descending: false,
-      });
+      expect(cuts.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        'ally',
+      );
+      expect(result.rows.map((r) => r.learnerId)).toEqual([2, 1, 3]);
+      expect(result.scoping.tenantId).toBe('ally');
     });
   });
 
@@ -302,78 +274,127 @@ describe('SkillGrowthAnalyticsService', () => {
       id: 7,
       name: 'Asha',
       email: 'asha@example.com',
-      tenantId: 'ally',
+      tenantId: 'org-a',
     };
 
     it('404s on an unknown user id', async () => {
       await setup();
 
-      await expect(service.getLearnerSeries(999)).rejects.toThrow(
-        'No user with id 999',
+      await expect(service.getLearnerSeries(999)).rejects.toBeInstanceOf(
+        NotFoundException,
       );
     });
 
-    it('returns empty series for a learner with no evaluated sessions', async () => {
-      await setup();
+    it('returns empty series for a learner with no scored cuts', async () => {
+      await setup([row(1, 1, 2)]);
       repository.getLearnerIdentity.mockResolvedValue(identity);
 
       const result = await service.getLearnerSeries(7);
 
       expect(result.sessions).toEqual([]);
-      expect(result.knowledgeAttempts).toEqual([]);
-      expect(result.learner.trend).toBe('insufficient');
-      expect(result.learner.delta).toBeNull();
+      expect(result.learner).toMatchObject({
+        id: 7,
+        evaluatedSessions: 0,
+        trend: 'insufficient',
+        delta: null,
+      });
       expect(result.truncated).toBe(false);
+      expect(result.scoreDomain).toEqual([1, 4]);
+      expect(result.knowledgeScoreDomain).toEqual([0, 100]);
     });
 
-    it('classifies the learner from the same windows the list uses', async () => {
-      await setup();
+    it('returns one entry per scored cut, platform-wide, with the cut context', async () => {
+      const mine = [
+        row(7, 1, 2.333, {
+          sessionIds: ['a', 'b'],
+          levels: { empathy: 2, rapport: 3 },
+          unhelpful: true,
+        }),
+        // Cut 2 failed scoring: the gap shows as a missing ordinal.
+        row(7, 3, 3, { sessionIds: ['c'], tenantId: 'org-b' }),
+      ];
+      await setup([row(1, 1, 2), row(1, 2, 2.5), ...mine]);
       repository.getLearnerIdentity.mockResolvedValue(identity);
-      // First window mean (40+50)/2 = 45; last window (70+80)/2 = 75; +30.
-      repository.getLearnerSessions.mockResolvedValue([
-        sessionAt(1, 40),
-        sessionAt(2, 50),
-        sessionAt(3, 60),
-        sessionAt(4, 70),
-        sessionAt(5, 80),
-      ]);
-
-      const result = await service.getLearnerSeries(7);
-
-      expect(result.learner.evaluatedSessions).toBe(5);
-      expect(result.learner.firstWindowMean).toBe(45);
-      expect(result.learner.lastWindowMean).toBe(75);
-      expect(result.learner.delta).toBe(30);
-      expect(result.learner.trend).toBe('improving');
-    });
-
-    it('reports a delta inside the flat band as flat, not movement', async () => {
-      await setup();
-      repository.getLearnerIdentity.mockResolvedValue(identity);
-      repository.getLearnerSessions.mockResolvedValue([
-        sessionAt(1, 60),
-        sessionAt(2, 60),
-        sessionAt(3, 60),
-        sessionAt(4, 60 + SKILL_TREND_FLAT_BAND), // +2.5 mean shift: inside the band
-      ]);
-
-      const result = await service.getLearnerSeries(7);
-
-      expect(result.learner.trend).toBe('flat');
-    });
-
-    it('flags a capped series as truncated instead of passing it off as complete', async () => {
-      await setup();
-      repository.getLearnerIdentity.mockResolvedValue(identity);
-      const capped: SkillGrowthLearnerSession[] = Array.from(
-        { length: SKILL_GROWTH_LEARNER_SESSION_CAP },
-        (_, i) => sessionAt(i + 1, 50),
+      cuts.getSessionScenarios.mockResolvedValue(
+        new Map([
+          ['a', { scenarioId: 1, scenarioTitle: 'Grief' }],
+          ['b', { scenarioId: 2, scenarioTitle: 'Exam stress' }],
+          ['c', { scenarioId: 1, scenarioTitle: 'Grief' }],
+        ]),
       );
-      repository.getLearnerSessions.mockResolvedValue(capped);
 
       const result = await service.getLearnerSeries(7);
 
+      // Platform-wide: no tenant on the read, whatever orgs the cuts are in.
+      expect(cuts.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        undefined,
+      );
+      expect(cuts.getSessionScenarios).toHaveBeenCalledWith(['a', 'b', 'c']);
+      expect(result.sessions).toEqual([
+        {
+          ordinal: 1,
+          occurredAt: mine[0].closedAt.toISOString(),
+          scenarioTitle: 'Grief · Exam stress',
+          compositeScore: 2.33,
+          skillCoverage: null,
+          skillLevels: { empathy: 2, rapport: 3 },
+          hasUnhelpfulBehaviour: true,
+        },
+        {
+          ordinal: 3,
+          occurredAt: mine[1].closedAt.toISOString(),
+          scenarioTitle: 'Grief',
+          compositeScore: 3,
+          skillCoverage: null,
+          skillLevels: { empathy: 2 },
+          hasUnhelpfulBehaviour: false,
+        },
+      ]);
+      expect(result.learner.evaluatedSessions).toBe(2);
+      expect(result.rubricVersion).toBe(FHS_RUBRIC_VERSION);
+    });
+
+    it('classifies the learner exactly as the unfiltered list row', async () => {
+      const rows = [
+        ...[2, 2, 2.5, 3, 3].map((s, i) => row(7, i + 1, s)),
+        ...[3, 3, 2, 2].map((s, i) => row(2, i + 1, s)),
+        ...[2.4, 2.5, 2.5, 2.4].map((s, i) => row(3, i + 1, s)),
+      ];
+      await setup(rows);
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+
+      const series = await service.getLearnerSeries(7);
+      const list = await service.getLearnerTrends({});
+      const listed = list.rows.find((r) => r.learnerId === 7);
+
+      expect(series.learner).toMatchObject({
+        evaluatedSessions: listed?.evaluatedSessions,
+        firstWindowMean: listed?.firstWindowMean,
+        lastWindowMean: listed?.lastWindowMean,
+        delta: listed?.delta,
+        band: listed?.band,
+        trend: listed?.trend,
+      });
+      expect(series.thresholds).toEqual(list.thresholds);
+    });
+
+    it('flags a capped timeline as truncated', async () => {
+      await setup(
+        Array.from({ length: SKILL_GROWTH_LEARNER_ROW_CAP + 1 }, (_, i) =>
+          row(7, i + 1, 2),
+        ),
+      );
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+
+      const result = await service.getLearnerSeries(7);
+
+      expect(result.sessions).toHaveLength(SKILL_GROWTH_LEARNER_ROW_CAP);
       expect(result.truncated).toBe(true);
+      // Classified over every cut, not the capped page.
+      expect(result.learner.evaluatedSessions).toBe(
+        SKILL_GROWTH_LEARNER_ROW_CAP + 1,
+      );
     });
   });
 });

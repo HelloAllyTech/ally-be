@@ -30,6 +30,19 @@ import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytic
 import { FoundationalSkillsAnalyticsService } from '../../service/foundational-skills-analytics.service';
 import { FoundationalSkillsBenchmarkAnalyticsService } from '../../service/foundational-skills-benchmark.service';
 import { CourseImpactAnalyticsService } from '../../service/course-impact-analytics.service';
+import { FoundationalSkillsTransferAnalyticsService } from '../../service/foundational-skills-transfer.service';
+import { SelfEfficacyAnalyticsService } from '../../service/self-efficacy-analytics.service';
+import { JudgeAgreementAnalyticsService } from '../../service/judge-agreement-analytics.service';
+import { FeedbackUptakeAnalyticsService } from '../../service/feedback-uptake-analytics.service';
+import { EffectivenessOrgsAnalyticsService } from '../../service/effectiveness-orgs-analytics.service';
+import { MeasurementConvergenceAnalyticsService } from '../../service/measurement-convergence-analytics.service';
+import { ScenarioCalibrationAnalyticsService } from '../../service/scenario-calibration-analytics.service';
+import { CourseProgressAnalyticsService } from '../../service/course-progress-analytics.service';
+import { FoundationalSkillsEffectivenessService } from '../../service/foundational-skills-effectiveness.service';
+import { CurriculumAnalyticsService } from '../../service/curriculum-analytics.service';
+import { ScenarioEffectivenessAnalyticsService } from '../../service/scenario-effectiveness-analytics.service';
+import { PracticeQualityAnalyticsService } from '../../service/practice-quality-analytics.service';
+import { EffectivenessAnalyticsService } from '../../service/effectiveness-analytics.service';
 import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
 import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
@@ -233,6 +246,75 @@ describe('AnalyticsController', () => {
         {
           provide: FoundationalSkillsBenchmarkAnalyticsService,
           useValue: { getBenchmark: jest.fn() },
+        },
+        {
+          provide: EffectivenessAnalyticsService,
+          useValue: { getFunnel: jest.fn(), getProgressSegments: jest.fn() },
+        },
+        {
+          provide: ScenarioEffectivenessAnalyticsService,
+          useValue: {
+            getOpportunityCoverage: jest.fn(),
+            getRepeatImprovement: jest.fn(),
+          },
+        },
+        {
+          provide: PracticeQualityAnalyticsService,
+          useValue: { getPracticeQuality: jest.fn() },
+        },
+        {
+          provide: CurriculumAnalyticsService,
+          useValue: {
+            getCourseFunnel: jest.fn(),
+            getQuizOutcomes: jest.fn(),
+            getRoleplayGates: jest.fn(),
+          },
+        },
+        {
+          provide: FoundationalSkillsEffectivenessService,
+          useValue: {
+            getTimeToCompetence: jest.fn(),
+            getRetention: jest.fn(),
+            getPracticeProgression: jest.fn(),
+          },
+        },
+        {
+          provide: CourseProgressAnalyticsService,
+          useValue: {
+            getProgressCurve: jest.fn(),
+            getKnowledgeVsSkill: jest.fn(),
+          },
+        },
+        {
+          provide: ScenarioCalibrationAnalyticsService,
+          useValue: { getCalibration: jest.fn(), getProgression: jest.fn() },
+        },
+        {
+          provide: EffectivenessOrgsAnalyticsService,
+          useValue: {
+            getOrgScorecard: jest.fn(),
+            getCostPerImprovement: jest.fn(),
+          },
+        },
+        {
+          provide: MeasurementConvergenceAnalyticsService,
+          useValue: { getConvergence: jest.fn() },
+        },
+        {
+          provide: FeedbackUptakeAnalyticsService,
+          useValue: { getFeedbackUptake: jest.fn() },
+        },
+        {
+          provide: SelfEfficacyAnalyticsService,
+          useValue: { getSelfEfficacy: jest.fn() },
+        },
+        {
+          provide: JudgeAgreementAnalyticsService,
+          useValue: { getJudgeAgreement: jest.fn() },
+        },
+        {
+          provide: FoundationalSkillsTransferAnalyticsService,
+          useValue: { getTransfer: jest.fn() },
         },
         {
           provide: CourseImpactAnalyticsService,

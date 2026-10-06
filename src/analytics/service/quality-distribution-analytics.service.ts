@@ -7,11 +7,14 @@ import {
   QualityDistributionQueryDto,
   QualityDistributionResponseDto,
   SatisfactionBucketPointDto,
+  SatisfactionByOrdinalDto,
+  SatisfactionOrdinalCellDto,
 } from '../dto/quality-distribution-analytics.dto';
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import {
   MIN_SCORE_SAMPLE_SIZE,
   QualityDistributionAnalyticsRepository,
+  RatingOrdinalRow,
 } from '../repository/quality-distribution-analytics.repository';
 import {
   describeWindow,
@@ -57,6 +60,19 @@ const defaultBucketFor = (range: AnalyticsRange): AnalyticsBucket =>
   range === '12m' ? 'month' : 'week';
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Last ordinal on the satisfaction-by-ordinal axis (AAQ-229). Twelve, as on
+ * the difficulty-mix chart: past it the per-ordinal n falls below the floor
+ * for any realistic cohort. The tail is counted, not plotted.
+ */
+export const SATISFACTION_MAX_ORDINAL = 12;
+
+/**
+ * Rated sessions a learner needs for the fixed experienced panel — six, the
+ * same depth the skill-growth curve's experienced series uses.
+ */
+export const SATISFACTION_EXPERIENCED_MIN_RATINGS = 6;
 
 @Injectable()
 export class QualityDistributionAnalyticsService {
@@ -107,6 +123,7 @@ export class QualityDistributionAnalyticsService {
       completedRows,
       completedOverall,
       tagResult,
+      ordinalRows,
     ] = await Promise.all([
       withReportingQuerySlot(() =>
         this.repo.getQualityByBucket(start, endExclusive, bucket, tenantId),
@@ -138,6 +155,14 @@ export class QualityDistributionAnalyticsService {
       ),
       withReportingQuerySlot(() =>
         this.repo.getLowRatingTags(start, endExclusive, tenantId),
+      ),
+      // All-time by construction — deliberately NOT given the window.
+      withReportingQuerySlot(() =>
+        this.repo.getRatingsByOrdinal(
+          SATISFACTION_MAX_ORDINAL,
+          SATISFACTION_EXPERIENCED_MIN_RATINGS,
+          tenantId,
+        ),
       ),
     ]);
 
@@ -217,6 +242,7 @@ export class QualityDistributionAnalyticsService {
         ),
         taggedLowRatings: tagResult.taggedResponses,
       },
+      byOrdinal: buildSatisfactionByOrdinal(ordinalRows),
       minSampleSize: MIN_SCORE_SAMPLE_SIZE,
       scoreDomain: SCORE_DOMAIN,
       ratingDomain: RATING_DOMAIN,
@@ -267,4 +293,80 @@ export class QualityDistributionAnalyticsService {
       },
     ];
   }
+}
+
+/**
+ * Satisfaction by the learner's Nth rated session (EFF-70, AAQ-229), from the
+ * per-(ordinal, panel) counts.
+ *
+ * - The axis is contiguous 1..maxOrdinal: an ordinal nobody reached carries
+ *   zero counts and null values (a count has a real zero; a mean does not).
+ * - Mean and top-2-box share are withheld below `floor` ratings per cell;
+ *   the count always travels.
+ * - `all` sums both panel halves; `experienced` is the fixed panel only.
+ * - Rows past maxOrdinal (pooled by the repository) are reported as
+ *   `ratingsBeyondLastOrdinal`, so the total reconciles.
+ */
+export function buildSatisfactionByOrdinal(
+  rows: readonly RatingOrdinalRow[],
+  opts: {
+    maxOrdinal?: number;
+    experiencedMin?: number;
+    floor?: number;
+  } = {},
+): SatisfactionByOrdinalDto {
+  const maxOrdinal = opts.maxOrdinal ?? SATISFACTION_MAX_ORDINAL;
+  const experiencedMin =
+    opts.experiencedMin ?? SATISFACTION_EXPERIENCED_MIN_RATINGS;
+  const floor = opts.floor ?? MIN_SCORE_SAMPLE_SIZE;
+
+  const cell = (
+    rs: readonly RatingOrdinalRow[],
+  ): SatisfactionOrdinalCellDto => {
+    const ratings = rs.reduce((a, r) => a + r.ratings, 0);
+    const sum = rs.reduce((a, r) => a + r.ratingSum, 0);
+    const high = rs.reduce((a, r) => a + r.high, 0);
+    const shown = ratings >= floor && ratings > 0;
+    return {
+      ratings,
+      avgRating: shown ? Math.round((sum / ratings) * 100) / 100 : null,
+      highSharePct: shown ? round1((high / ratings) * 100) : null,
+    };
+  };
+
+  const points = Array.from({ length: maxOrdinal }, (_, i) => {
+    const ordinal = i + 1;
+    const at = rows.filter((r) => r.ordinal === ordinal);
+    return {
+      ordinal,
+      all: cell(at),
+      experienced: cell(at.filter((r) => r.experienced)),
+    };
+  });
+
+  return {
+    window: 'all',
+    maxOrdinal,
+    experiencedMinRatings: experiencedMin,
+    minSampleSize: floor,
+    ratedLearners: points[0]?.all.ratings ?? 0,
+    experiencedLearners: points[0]?.experienced.ratings ?? 0,
+    points,
+    ratingsBeyondLastOrdinal: rows
+      .filter((r) => r.ordinal > maxOrdinal)
+      .reduce((a, r) => a + r.ratings, 0),
+    provenance: {
+      derivation:
+        'R6 — the 1-5 post-session rating (scenario_session_feedbacks.rating), one per session ' +
+        "(the latest if re-rated). Each learner's rated sessions are numbered by session start, " +
+        'so ordinal N is their Nth rating. Per ordinal: mean rating and the share rated 4-5, ' +
+        `withheld below ${floor} ratings. "Experienced" = learners with ${experiencedMin}+ rated ` +
+        'sessions, held fixed. All time; preview and seed rooms and test organisations excluded.',
+      note:
+        'Self-report, and sparse: most sessions are not rated, and who chooses to rate can ' +
+        'change as learners get experienced. Later ordinals hold only learners who kept ' +
+        'practising and rating, so compare the all-comers line with the experienced one before ' +
+        'reading a rise or fall as a change in satisfaction.',
+    },
+  };
 }
