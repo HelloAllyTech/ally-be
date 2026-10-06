@@ -23,6 +23,12 @@ import { LoggerService } from '../../logger/logger.service';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
 import { ENDPOINTS } from '../constants/endpoints.constants';
 import {
+  HelplineRiskRequest,
+  HelplineRiskResponse,
+  HelplineTurnRequest,
+  HelplineTurnResponse,
+} from '../dto/helpline-copilot.dto';
+import {
   CrisisCheckRequest,
   CrisisCheckResponse,
   KnowledgeAnswerRequest,
@@ -197,12 +203,18 @@ export class AiService {
     }
   }
 
+  /**
+   * `options` exists for callers whose history is PHI that must stay out of
+   * debug logs (the text helpline): `redactBody` suppresses the request and
+   * response bodies, `timeoutMs` caps a call made off a user's path.
+   */
   @RetryOnFail(3, 1000)
   async generateSummaryAndTags(
     messages: MessageRequest[],
     mode?: ScribeSessionMode,
     keys?: string[],
     keyDescriptions?: Record<string, string>,
+    options: { redactBody?: boolean; timeoutMs?: number } = {},
   ) {
     const prompts = await this.getPromptOverrides();
     const request: GenerateSummaryRequest = {
@@ -217,12 +229,67 @@ export class AiService {
       response = await this.makeRequest<
         GenerateSummaryResponse,
         GenerateSummaryRequest
-      >(ENDPOINTS.SUMMARY, request, true);
+      >(
+        ENDPOINTS.SUMMARY,
+        request,
+        true,
+        'post',
+        undefined,
+        false,
+        options.timeoutMs,
+        options.redactBody === true,
+      );
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       return;
     }
     return response;
+  }
+
+  /**
+   * Text helpline risk classifier (docs/text-helpline.md §9.2 step 2).
+   *
+   * 3 s and NO retry: it runs on every talker message, off the delivery path,
+   * and the keyword screen has already run — a slow classifier is worth less
+   * than a prompt "unavailable". Throws on transport failure (the caller maps
+   * that to `failed`); ally-ai itself answers 200 with `failed: true` when the
+   * model call fails. redactBody=true: the payload is a person in distress's
+   * own words.
+   */
+  async classifyHelplineRisk(
+    request: HelplineRiskRequest,
+  ): Promise<HelplineRiskResponse> {
+    return this.makeRequest<HelplineRiskResponse, HelplineRiskRequest>(
+      ENDPOINTS.HELPLINE_RISK,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      3_000,
+      true,
+    );
+  }
+
+  /**
+   * Text helpline copilot turn: suggested replies, stage and an optional
+   * nudge for the LISTENER (never shown to a talker). 6 s, no retry — a
+   * suggestion that arrives late is a suggestion for a moment that has
+   * passed. redactBody=true.
+   */
+  async generateHelplineTurn(
+    request: HelplineTurnRequest,
+  ): Promise<HelplineTurnResponse> {
+    return this.makeRequest<HelplineTurnResponse, HelplineTurnRequest>(
+      ENDPOINTS.HELPLINE_TURN,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      6_000,
+      true,
+    );
   }
 
   async generateTagPositivityRatings(tags: string[]) {
@@ -851,9 +918,13 @@ export class AiService {
           `status=${response.status} | elapsedMs=${elapsedMs} | ` +
           `upstreamTraceId=${upstreamTraceId ?? 'none'}`,
       );
+      // A redacted request's response is just as sensitive (a classifier's
+      // verbatim signal, a summary of the conversation): size only.
       this.logger.debug(
         `AI Response BODY | execId=${execId} | endpoint=${endpoint} | ` +
-          `data=${JSON.stringify(response.data)}`,
+          (redactBody
+            ? `data=[redacted — this endpoint carries PII/PHI]`
+            : `data=${JSON.stringify(response.data)}`),
       );
       return response.data;
     } catch (error) {
@@ -865,8 +936,11 @@ export class AiService {
         typeof upstreamBody === 'string'
           ? upstreamBody
           : JSON.stringify(upstreamBody);
-      const upstreamDetail = (upstreamBody as { detail?: unknown } | undefined)
-        ?.detail;
+      // An upstream validation error (FastAPI 422) echoes the offending input,
+      // so for a redacted request its body and detail are redacted too.
+      const upstreamDetail = redactBody
+        ? '[redacted]'
+        : (upstreamBody as { detail?: unknown } | undefined)?.detail;
       const upstreamTraceId =
         axiosErr.response?.headers?.['x-trace-id'] ??
         axiosErr.response?.headers?.['X-Trace-ID'];
@@ -892,7 +966,7 @@ export class AiService {
           `upstreamStatus=${upstreamStatus} | ` +
           `upstreamTraceId=${upstreamTraceId ?? 'none'} | ` +
           `upstreamDetail=${JSON.stringify(upstreamDetail)} | ` +
-          `upstreamBody=${upstreamBodyStr} | ` +
+          `upstreamBody=${redactBody ? '[redacted]' : upstreamBodyStr} | ` +
           `dataSize=${dataSize}B | requestData=${requestDataForLog}`,
         error.stack,
       );

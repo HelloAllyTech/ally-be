@@ -10,6 +10,7 @@ import { HelplineChat } from '../entity/helpline-chat.entity';
 import { HelplineMessage } from '../entity/helpline-message.entity';
 import { HelplineChatRepository } from '../repository/helpline-chat.repository';
 import { HelplineMessageRepository } from '../repository/helpline-message.repository';
+import { normalisedEditDistance } from '../util/helpline-copilot.util';
 import { editDistance } from '../util/helpline-serializers';
 import { isUniqueViolation } from '../util/helpline-errors';
 import { HelplineCopilotService } from './helpline-copilot.service';
@@ -242,7 +243,12 @@ export class HelplineMessageService {
       fromSuggestion: {
         messageId,
         index,
-        editedDistance: editDistance(item.text, content),
+        // 0 = sent as suggested … 1 = rewritten (contract §5.5).
+        editedDistance: normalisedEditDistance(
+          item.text,
+          content,
+          editDistance,
+        ),
       },
     };
   }

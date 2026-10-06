@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   HELPLINE_LIMITS,
@@ -11,6 +11,7 @@ import {
   HelplineRiskFlagLevel,
   HelplineRiskOutcome,
   HelplineRiskSource,
+  HelplineRiskSubject,
   HelplineRooms,
   HelplineServerEvents,
 } from '../constants/helpline.constants';
@@ -112,7 +113,7 @@ export class HelplineRiskService {
     await this.writer.staffOnly(
       chat,
       HelplineMessageType.RISK,
-      HELPLINE_RISK_MESSAGE_COPY[flag.level],
+      HELPLINE_RISK_MESSAGE_COPY[flag.source][flag.level],
       {
         flagId: flag.id,
         level: flag.level,
@@ -179,6 +180,31 @@ export class HelplineRiskService {
   async onHighRisk(chat: HelplineChat, flag: HelplineRiskFlag): Promise<void> {
     void chat;
     void flag;
+  }
+
+  /** Every flag already raised on one message (classifier dedupe). */
+  flagsForMessage(
+    chat: Pick<HelplineChat, 'id' | 'tenantId'>,
+    messageId: number,
+  ): Promise<HelplineRiskFlag[]> {
+    return this.flags.find({
+      where: { tenantId: chat.tenantId, chatId: chat.id, messageId },
+    });
+  }
+
+  /** Subject of the chat's latest flag that has one (the classifier's). */
+  async latestSubject(
+    chat: Pick<HelplineChat, 'id' | 'tenantId'>,
+  ): Promise<HelplineRiskSubject | null> {
+    const flag = await this.flags.findOne({
+      where: {
+        tenantId: chat.tenantId,
+        chatId: chat.id,
+        subject: Not(IsNull()),
+      },
+      order: { createdAt: 'DESC' },
+    });
+    return flag?.subject ?? null;
   }
 
   /** Listener / supervisor marks a flag CONFIRMED or FALSE_POSITIVE (calibration). */

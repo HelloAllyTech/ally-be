@@ -283,7 +283,7 @@ helpline is switched off (§5.4).
 | `PUT /v1/helpline/chats/:id/summary` † | `edit:helpline:summary` | `{ fields: Record<string,string> }` | `SummaryDto` (FINAL, `editedBy`) |
 | `GET /v1/helpline/chats?scope=mine\|all&status=ENDED&page=1&limit=25` | `view:helpline:chat` (`all` needs `view:helpline:monitor`) | — | `{ items: ChatListItemDto[]; total }` |
 | `POST /v1/helpline/chats/:id/risk-flags/:flagId/ack` † | `view:helpline:copilot` | `{ outcome: 'CONFIRMED' \| 'FALSE_POSITIVE'; note?: string }` | `RiskFlagDto` |
-| `POST /v1/helpline/chats/:id/copilot-feedback` † | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204` |
+| `POST /v1/helpline/chats/:id/copilot-feedback` † | `view:helpline:copilot` | `{ messageId: number; index?: number; rating: 'UP' \| 'DOWN' }` | `204`. SUGGESTION: `index` required (400 otherwise) → `metadata.feedback[index]`; NUDGE → `metadata.feedback`; latest rating wins; any other row → 404 |
 | `POST /v1/helpline/chats/:id/transfer` | `edit:helpline:transfer` **or** listener of record with `edit:helpline:end` | `{ targetListenerId?: number }` | `ChatDetailDto` |
 | `POST /v1/helpline/chats/:id/assign` | `edit:helpline:transfer` | `{ listenerId: number }` | `ChatDetailDto` (WAITING or transfer-pending → that listener) |
 | `POST /v1/helpline/chats/:id/take-over` | `edit:helpline:transfer` | — | `ChatDetailDto` |
@@ -407,7 +407,7 @@ interface StaffMessageDto {
   // SUGGESTION: { suggestions: { index: number; text: string; skillKey: string }[]; accepted?: number[]; feedback?: Record<number,'UP'|'DOWN'> }
   // NUDGE: { skillKey?: string; feedback?: 'UP'|'DOWN' }   STAGE: { stage: string }
   // RISK: { flagId: string; level; source; confidence; subject }
-  // TEXT from listener: { fromSuggestion?: { messageId: number; index: number; editedDistance: number } }
+  // TEXT from listener: { fromSuggestion?: { messageId: number; index: number; editedDistance: number /* 0…1 */ } }
   createdAt: string; erased: boolean;
 }
 interface RiskFlagDto {
@@ -485,7 +485,7 @@ Server → client:
 | `PRESENCE_UPDATED` | user | `{ presence, activeChatCount }` |
 | `PARTICIPANT_STATUS` | staff | `{ chatId, role: 'TALKER' \| 'LISTENER', connected: boolean }` |
 | `RISK_FLAGGED` | staff | `{ chatId, flag: RiskFlagDto }` (carries live `signal`) |
-| `SUGGESTIONS` | staff | `{ chatId, message: StaffMessageDto }` (type SUGGESTION) |
+| `SUGGESTIONS` | staff | `{ chatId, message: StaffMessageDto }` (type SUGGESTION). SUGGESTION, NUDGE and WHISPER rows go out **only** on their own event, never also as `MESSAGE_RECEIVED`; `GET messages` / `SYNC_SINCE` return them with every other type |
 | `NUDGE` | staff | `{ chatId, message }` |
 | `STAGE` | staff | `{ chatId, stage }` |
 | `COPILOT_STATUS` | staff | `{ chatId, status: 'OK' \| 'UNAVAILABLE' \| 'OFF' }` |
@@ -637,15 +637,51 @@ On each persisted talker TEXT message, off the socket path:
    Built in Phase 1 (`HelplineRiskService.screenTalkerMessage`); HIGH-only side effects (§9.3 alerts,
    auto-resources) plug into `HelplineRiskService.onHighRisk(chat, flag)`.
 2. **Risk classifier** (`POST /helpline/risk`, timeout 3 s, no retry) if `copilot.riskClassifier`:
-   `is_crisis && confidence ≥ riskHighConfidence` → HIGH; `is_crisis` below → ELEVATED; `failed` → no
-   flag, logged.
-3. **Copilot turn**, debounced 2.5 s after the talker's latest message (skip if a newer talker message
-   arrived), timeout 6 s, if `copilot.suggestions || copilot.nudges`. `include_nudge` only when nudges on,
-   `nudge_count < 10`, ≥ 2 talker turns since the last nudge, and not the first talker turn. If
-   `hl:typing:{chatId}:listener` is live, hold the emit up to 4 s, then emit anyway.
-4. **Rolling summary** every `rollingSummaryEveryTurns` talker turns (async, existing `/summary/note`
-   with the org's `summaryFields` as `keys`/`key_descriptions`); **HANDOFF** on transfer; **FINAL** on end.
-A failure emits `COPILOT_STATUS UNAVAILABLE` and nothing else.
+   `is_crisis && confidence ≥ riskHighConfidence` → HIGH; `is_crisis` below → ELEVATED; `failed` (or
+   unreachable) → no flag + `COPILOT_STATUS UNAVAILABLE`. Request: the message, the last 4 earlier TEXT
+   turns (`talker`/`listener`, decrypted), the chat language and prompt overrides. The flag goes through
+   `HelplineRiskService.raiseFlag` — the keyword path — with `source: CLASSIFIER`, `confidence`,
+   `subject`, and the offsets of the verbatim `signal` in the plaintext body (null when the model
+   paraphrased). **Dedupe:** never a second CLASSIFIER flag for one message, and nothing when the
+   keyword screen already flagged it at the same or a higher level (a classifier HIGH over a keyword
+   ELEVATED is recorded). Runs in the waiting room too.
+3. **Copilot turn** (`POST /helpline/turn`, timeout 6 s, no retry) if `copilot.suggestions ||
+   copilot.nudges`, **ACTIVE chats only**. Debounced 2.5 s per talker burst: the talker's latest TEXT id
+   is stored at `hl:copilot:latest:{chatId}` and a timer that fires on any replica skips itself when a
+   newer id is there. The turn waits for that message's classifier result so a fresh flag shapes it.
+   Request: last 12 TEXT turns, the latest ROLLING summary (`Label: value` lines), language,
+   `include_nudge`, `risk_level` (chat), `risk_subject` (latest flag with a subject, else `''`).
+   `include_nudge` only when nudges are on, `nudge_count < 10`, `talker_turns_since_nudge ≥ 2` and not
+   the first talker turn. Results, if `hl:typing:{chatId}:listener` is live, are held up to 4 s first,
+   and dropped if a newer talker message arrived meanwhile:
+   - suggestions (when `copilot.suggestions` and the list is non-empty — an empty list writes nothing):
+     ONE staff-only `SUGGESTION` row, `senderRole: COPILOT`, `content: 'Suggested replies'`,
+     `metadata.suggestions: [{ index, text (≤ 300), skillKey }]` (unknown keys → `''`), parent = the talker
+     message → `SUGGESTIONS { chatId, message }`;
+   - a nudge, only when requested: staff-only `NUDGE` row (≤ 240 chars, parent = the talker message),
+     `nudge_count + 1`, `talker_turns_since_nudge = 0` → `NUDGE { chatId, message }`;
+   - the stage, only when it differs from the newest `STAGE` row: staff-only `STAGE` row
+     (`metadata { stage }`) → `STAGE { chatId, stage }`;
+   - then `COPILOT_STATUS OK` if the previous status was not OK.
+   **Also one turn when a listener claims** a chat the talker has already written in (first claim or
+   transfer claim), for the latest talker message — the first reply is the hardest.
+4. **Rolling summary** every `rollingSummaryEveryTurns` talker turns (turns 4, 8, 12 … by default; also
+   while WAITING), **HANDOFF** on a transfer request, **FINAL** on end — all the existing `/summary/note`
+   with the org's `summaryFields` as `keys`/`key_descriptions`, request body redacted from logs, each
+   followed by `SUMMARY_UPDATED`.
+5. **Accepted suggestions:** a listener TEXT sent with `suggestion: { messageId, index }` carries
+   `metadata.fromSuggestion { messageId, index, editedDistance }` (`editedDistance` = Levenshtein ÷ the
+   longer length, 0 = sent as suggested … 1 = rewritten, two decimals), and the SUGGESTION row gets
+   `index` added to `metadata.accepted` (a set) off the send path.
+6. **Prompt overrides** for `ally_ai_helpline_risk_classify` / `ally_ai_helpline_copilot_turn` are read
+   from the `prompts` table (cached 60 s) and sent keyed by full code. The prompt *text* is sent only when
+   the row's dashboard override is on — otherwise the row holds a seeded copy that can be older than
+   ally-ai's file; provider / model / temperature are sent whenever set.
+
+A failure emits `COPILOT_STATUS UNAVAILABLE` and nothing else (no partial output). `ChatDetailDto.copilot`:
+`status` = `OFF` when suggestions, nudges and the classifier are all off, else the last outcome
+(`OK` until something fails); `stage` = the newest `STAGE` row's stage. Delivery never waits for any of
+this — the send path only calls the hooks, which return synchronously.
 
 ### 9.3 Risk protocol
 ```

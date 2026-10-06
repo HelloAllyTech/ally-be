@@ -97,21 +97,46 @@ export class HelplineSummaryService {
 
   /** Fire-and-forget from endChat. Never throws. */
   scheduleFinal(chat: HelplineChat): void {
-    void this.generateFinal(chat.tenantId, chat.id).catch((error) =>
+    this.schedule(chat, HelplineSummaryKind.FINAL);
+  }
+
+  /** Fire-and-forget every N talker turns (contract §9.2 step 4). Never throws. */
+  scheduleRolling(chat: Pick<HelplineChat, 'id' | 'tenantId'>): void {
+    this.schedule(chat, HelplineSummaryKind.ROLLING);
+  }
+
+  /** Fire-and-forget on a transfer request, for the next listener. Never throws. */
+  scheduleHandoff(chat: Pick<HelplineChat, 'id' | 'tenantId'>): void {
+    this.schedule(chat, HelplineSummaryKind.HANDOFF);
+  }
+
+  private schedule(
+    chat: Pick<HelplineChat, 'id' | 'tenantId'>,
+    kind: HelplineSummaryKind,
+  ): void {
+    void this.generate(chat.tenantId, chat.id, kind).catch((error) =>
       this.logger.error(
-        `FINAL summary failed for chat ${chat.id}: ${(error as Error).message}`,
+        `${kind} summary failed for chat ${chat.id}: ${(error as Error).message}`,
       ),
     );
   }
 
+  /** Kept for callers and specs that name the FINAL summary. */
+  generateFinal(tenantId: string, chatId: string): Promise<SummaryDto | null> {
+    return this.generate(tenantId, chatId, HelplineSummaryKind.FINAL);
+  }
+
   /**
-   * Generate and store the FINAL summary. On any failure there is simply no
-   * row — the listener sees an empty, editable form, which is the designed
-   * fallback (contract §11).
+   * Generate and store one model-written summary (ROLLING, HANDOFF or FINAL)
+   * from the chat's TEXT turns so far. On any failure there is simply no new
+   * row — the listener sees the previous version or an empty, editable form,
+   * which is the designed fallback (contract §11). The request carries the
+   * conversation, so it is redacted from the AI service's logs.
    */
-  async generateFinal(
+  async generate(
     tenantId: string,
     chatId: string,
+    kind: HelplineSummaryKind,
   ): Promise<SummaryDto | null> {
     const chat = await this.chats.findById(tenantId, chatId);
     if (!chat || chat.erasedAt) return null;
@@ -130,6 +155,10 @@ export class HelplineSummaryService {
         f.description ? `${f.label}: ${f.description}` : f.label,
       ]),
     );
+    const timeoutMs =
+      kind === HelplineSummaryKind.FINAL
+        ? HELPLINE_TIMINGS.SUMMARY_TIMEOUT_MS
+        : HELPLINE_TIMINGS.ROLLING_SUMMARY_TIMEOUT_MS;
 
     let response: unknown;
     try {
@@ -139,18 +168,19 @@ export class HelplineSummaryService {
           undefined,
           keys,
           descriptions,
+          { redactBody: true, timeoutMs },
         ),
-        HELPLINE_TIMINGS.SUMMARY_TIMEOUT_MS,
+        timeoutMs,
       );
     } catch (error) {
       this.logger.warn(
-        `FINAL summary call failed for chat ${chatId}: ${(error as Error).message}`,
+        `${kind} summary call failed for chat ${chatId}: ${(error as Error).message}`,
       );
       return null;
     }
     const fields = coerceSummaryFields(response, settings.summaryFields);
     if (!fields) {
-      this.logger.warn(`FINAL summary for chat ${chatId} came back empty`);
+      this.logger.warn(`${kind} summary for chat ${chatId} came back empty`);
       return null;
     }
 
@@ -158,7 +188,7 @@ export class HelplineSummaryService {
     const written = await this.upsertGenerated(
       tenantId,
       chatId,
-      HelplineSummaryKind.FINAL,
+      kind,
       fields,
       throughMessageId,
     );
@@ -170,6 +200,18 @@ export class HelplineSummaryService {
       { chatId, summary: dto },
     );
     return dto;
+  }
+
+  /** The decrypted fields of one stored summary, or null. */
+  async readFields(
+    tenantId: string,
+    chatId: string,
+    kind: HelplineSummaryKind,
+  ): Promise<Record<string, string> | null> {
+    const row = await this.summaries.findOne({
+      where: { tenantId, chatId, kind },
+    });
+    return row ? this.cipher.decryptFields(row.fields) : null;
   }
 
   /**

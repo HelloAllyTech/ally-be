@@ -143,3 +143,110 @@ describe('HelplineListenerService access rule', () => {
     expect(views.chatDetail).toHaveBeenCalled();
   });
 });
+
+describe('HelplineListenerService.copilotFeedback', () => {
+  const build = (row: unknown) => {
+    const messages = {
+      findById: jest.fn().mockResolvedValue(row),
+      setCopilotFeedback: jest.fn().mockResolvedValue(true),
+    };
+    const service = new HelplineListenerService(
+      {
+        findById: jest.fn().mockResolvedValue({
+          id: CHAT_ID,
+          tenantId: TENANT.id,
+          listenerId: 7,
+          previousListenerIds: [],
+        }),
+      } as never,
+      messages as never,
+      {
+        getUserPermissions: jest
+          .fn()
+          .mockResolvedValue([PERMISSIONS.VIEW_HELPLINE_COPILOT]),
+      } as never,
+      ...([{}, {}, {}, {}, {}, {}, {}, {}, {}, {}] as [
+        never,
+        never,
+        never,
+        never,
+        never,
+        never,
+        never,
+        never,
+        never,
+        never,
+      ]),
+    );
+    return { service, messages };
+  };
+  const user = { id: 7, tenantId: TENANT.id };
+  const suggestion = {
+    id: 12,
+    type: 'SUGGESTION',
+    metadata: { suggestions: [{ index: 0 }, { index: 1 }] },
+  };
+
+  it('stores a SUGGESTION rating under its index', async () => {
+    const { service, messages } = build(suggestion);
+    await service.copilotFeedback(TENANT, CHAT_ID, user, {
+      messageId: 12,
+      index: 1,
+      rating: 'DOWN',
+    });
+    expect(messages.setCopilotFeedback).toHaveBeenCalledWith(
+      TENANT.id,
+      CHAT_ID,
+      12,
+      'SUGGESTION',
+      1,
+      'DOWN',
+    );
+  });
+
+  it('a SUGGESTION needs a real index (400)', async () => {
+    const { service } = build(suggestion);
+    await expect(
+      service.copilotFeedback(TENANT, CHAT_ID, user, {
+        messageId: 12,
+        index: 5,
+        rating: 'UP',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('a NUDGE rating ignores the index', async () => {
+    const { service, messages } = build({
+      id: 13,
+      type: 'NUDGE',
+      metadata: {},
+    });
+    await service.copilotFeedback(TENANT, CHAT_ID, user, {
+      messageId: 13,
+      rating: 'UP',
+    });
+    expect(messages.setCopilotFeedback).toHaveBeenCalledWith(
+      TENANT.id,
+      CHAT_ID,
+      13,
+      'NUDGE',
+      null,
+      'UP',
+    );
+  });
+
+  it('any other row is a 404 — a talker message cannot be rated', async () => {
+    const { service, messages } = build({
+      id: 14,
+      type: 'TEXT',
+      metadata: null,
+    });
+    await expect(
+      service.copilotFeedback(TENANT, CHAT_ID, user, {
+        messageId: 14,
+        rating: 'UP',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(messages.setCopilotFeedback).not.toHaveBeenCalled();
+  });
+});

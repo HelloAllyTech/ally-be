@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiModule } from '../ai/ai.module';
 import { BrokerModule } from '../message-broker/broker.module';
+import { PromptModule } from '../prompt/prompt.module';
 import { Preference } from '../settings/entity/preference.entity';
 import { HelplineAdminController } from './controller/helpline-admin.controller';
 import { HelplineGuestController } from './controller/helpline-guest.controller';
@@ -86,6 +87,7 @@ import { HelplineTenantService } from './service/helpline-tenant.service';
     JwtModule.register({}),
     BrokerModule,
     AiModule,
+    PromptModule,
   ],
   controllers: [
     HelplinePublicController,

@@ -260,7 +260,8 @@ describe('HelplineMessageService', () => {
       expect(messages.insert).toHaveBeenLastCalledWith(
         expect.objectContaining({
           metadata: {
-            fromSuggestion: { messageId: 5, index: 1, editedDistance: 3 },
+            // 3 edits over the longer text's 20 characters, normalised.
+            fromSuggestion: { messageId: 5, index: 1, editedDistance: 0.15 },
           },
         }),
       );

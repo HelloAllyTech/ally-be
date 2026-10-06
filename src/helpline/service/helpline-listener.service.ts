@@ -7,6 +7,7 @@ import {
   HelplineAccess,
   HelplineChatStatus,
   HelplineEndedReason,
+  HelplineMessageType,
   HelplinePresence,
   HelplineRiskOutcome,
 } from '../constants/helpline.constants';
@@ -302,6 +303,53 @@ export class HelplineListenerService {
   ): Promise<RiskFlagDto> {
     const { chat } = await this.loadChat(tenant, chatId, user);
     return this.risk.acknowledge(chat, flagId, user.id, outcome, note);
+  }
+
+  /**
+   * Thumbs on a copilot suggestion or nudge (contract §5.3). Stored in that
+   * row's metadata (`feedback[index]` / `feedback`); the latest rating wins.
+   * Never touches the talker side.
+   */
+  async copilotFeedback(
+    tenant: HelplineTenant,
+    chatId: string,
+    user: HelplineStaffUser,
+    body: { messageId: number; index?: number; rating: 'UP' | 'DOWN' },
+  ): Promise<void> {
+    const { chat } = await this.loadChat(tenant, chatId, user);
+    if (body.rating !== 'UP' && body.rating !== 'DOWN') {
+      throw badRequest('rating must be UP or DOWN');
+    }
+    const row = await this.messages.findById(
+      tenant.id,
+      chat.id,
+      Number(body.messageId),
+    );
+    if (
+      !row ||
+      (row.type !== HelplineMessageType.SUGGESTION &&
+        row.type !== HelplineMessageType.NUDGE)
+    ) {
+      throw chatNotFound();
+    }
+    let index: number | null = null;
+    if (row.type === HelplineMessageType.SUGGESTION) {
+      const items = Array.isArray(row.metadata?.suggestions)
+        ? (row.metadata.suggestions as { index?: number }[])
+        : [];
+      index = Number(body.index);
+      if (!Number.isInteger(index) || !items.some((i) => i.index === index)) {
+        throw badRequest('index must name one of the suggestions');
+      }
+    }
+    await this.messages.setCopilotFeedback(
+      tenant.id,
+      chat.id,
+      row.id,
+      row.type,
+      index,
+      body.rating,
+    );
   }
 
   /** Reading an ENDED transcript is a HIPAA access event. */

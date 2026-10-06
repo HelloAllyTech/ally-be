@@ -88,9 +88,14 @@ export class HelplineMessageWriter {
     return message;
   }
 
-  /** A staff-only row (RISK, and in the second pass SUGGESTION/NUDGE/STAGE/WHISPER). */
+  /**
+   * A staff-only row: RISK, SUGGESTION, NUDGE, STAGE, WHISPER, or a staff-only
+   * SYSTEM kind. `emit: false` persists without the MESSAGE_RECEIVED emit, for
+   * rows that go out on their own event instead (SUGGESTIONS, NUDGE, STAGE,
+   * WHISPER — contract §6.3), so a client never gets the same row twice.
+   */
   async staffOnly(
-    chat: HelplineChat,
+    chat: Pick<HelplineChat, 'id' | 'tenantId'>,
     type: Exclude<HelplineMessageType, HelplineMessageType.TEXT>,
     content: string,
     metadata: Record<string, unknown> | null,
@@ -98,6 +103,8 @@ export class HelplineMessageWriter {
       senderRole?: HelplineSenderRole;
       senderUserId?: number | null;
       parentMessageId?: number | null;
+      systemKind?: string | null;
+      emit?: boolean;
     } = {},
   ): Promise<HelplineMessage> {
     const message = await this.messages.insert({
@@ -106,13 +113,13 @@ export class HelplineMessageWriter {
       senderRole: options.senderRole ?? HelplineSenderRole.SYSTEM,
       senderUserId: options.senderUserId ?? null,
       type,
-      systemKind: null,
+      systemKind: options.systemKind ?? null,
       content,
       parentMessageId: options.parentMessageId ?? null,
       visibleToTalker: false,
       metadata,
     });
-    await this.emit(chat, message);
+    if (options.emit !== false) await this.emit(chat, message);
     return message;
   }
 }

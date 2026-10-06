@@ -149,6 +149,17 @@ export class HelplineChatRepository {
     return Number(returningRows<{ count: number }>(result)[0]?.count ?? 0);
   }
 
+  /** A nudge was shown: count it and restart the talker-turn spacing. */
+  async recordNudge(tenantId: string, chatId: string): Promise<void> {
+    await this.repo.query(
+      `UPDATE "helpline_chats"
+          SET "nudge_count" = "nudge_count" + 1,
+              "talker_turns_since_nudge" = 0, "updated_at" = now()
+        WHERE "id" = $1 AND "tenant_id" = $2`,
+      [chatId, tenantId],
+    );
+  }
+
   async recordListenerMessage(tenantId: string, chatId: string): Promise<void> {
     await this.repo.query(
       `UPDATE "helpline_chats"

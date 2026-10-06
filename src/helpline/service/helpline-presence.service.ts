@@ -256,6 +256,78 @@ export class HelplinePresenceService implements OnModuleDestroy {
     return (await this.redis.del(this.key('flag', chatId, name))) > 0;
   }
 
+  // ── Copilot state ────────────────────────────────────────────────────────
+  // `hl:copilot:latest:{chatId}` — id of the talker's latest TEXT, the debounce
+  // token every replica compares against before running a copilot turn.
+  // `hl:copilot:status:{chatId}` — OK | UNAVAILABLE, the last copilot outcome.
+
+  async setCopilotLatest(chatId: string, messageId: number): Promise<void> {
+    await this.redis.set(
+      this.key('copilot', 'latest', chatId),
+      String(messageId),
+      'EX',
+      HELPLINE_TIMINGS.FLAG_TTL_SECONDS,
+    );
+  }
+
+  async getCopilotLatest(chatId: string): Promise<number | null> {
+    const raw = await this.redis.get(this.key('copilot', 'latest', chatId));
+    const value = raw == null ? NaN : Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  /** Returns the previous value, so callers can emit only on a change. */
+  async swapCopilotStatus(
+    chatId: string,
+    status: 'OK' | 'UNAVAILABLE',
+  ): Promise<string | null> {
+    const key = this.key('copilot', 'status', chatId);
+    const previous = await this.redis.get(key);
+    await this.redis.set(key, status, 'EX', HELPLINE_TIMINGS.FLAG_TTL_SECONDS);
+    return previous;
+  }
+
+  async getCopilotStatus(chatId: string): Promise<string | null> {
+    return this.redis.get(this.key('copilot', 'status', chatId));
+  }
+
+  async clearCopilotState(chatId: string): Promise<void> {
+    await this.redis.del(
+      this.key('copilot', 'latest', chatId),
+      this.key('copilot', 'status', chatId),
+    );
+  }
+
+  // ── Time-boxed once-markers (alert dedupe) ───────────────────────────────
+
+  /**
+   * `SET NX EX`: true for the one caller that claims `name` for `ttlSeconds`
+   * (across replicas). The stored value can be read back with `onceValue`.
+   */
+  async claimWindow(
+    name: string,
+    ttlSeconds: number,
+    value = '1',
+  ): Promise<boolean> {
+    const result = await this.redis.set(
+      this.key('once', name),
+      value,
+      'EX',
+      ttlSeconds,
+      'NX',
+    );
+    return result === 'OK';
+  }
+
+  /** Overwrite a claimed window's value, keeping its expiry. */
+  async setWindowValue(name: string, value: string): Promise<void> {
+    await this.redis.set(this.key('once', name), value, 'KEEPTTL');
+  }
+
+  async windowValue(name: string): Promise<string | null> {
+    return this.redis.get(this.key('once', name));
+  }
+
   // ── Public status cache ──────────────────────────────────────────────────
 
   async getCachedStatus<T>(tenantId: string): Promise<T | null> {

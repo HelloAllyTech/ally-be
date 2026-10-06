@@ -668,7 +668,8 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     detail:
       'One call per talker burst, not per message: debounced 2.5 s after the ' +
       "talker's latest message (a newer message cancels the pending call on every " +
-      'replica), ACTIVE chats only. Input is the last 12 text turns, the rolling ' +
+      'replica), ACTIVE chats only — plus one when a listener claims a chat the ' +
+      'talker has already written in. Input is the last 12 text turns, the rolling ' +
       "summary and the chat's risk level. Returns 2–3 suggested replies for the " +
       'listener (never sent to the talker), the conversation stage and — at most 10 ' +
       'times per chat, never on the first talker turn or two talker turns running — a ' +

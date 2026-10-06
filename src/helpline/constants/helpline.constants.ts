@@ -120,6 +120,8 @@ export enum HelplineStaffSystemKind {
   TAKEN_OVER = 'TAKEN_OVER',
   TRANSFERRED = 'TRANSFERRED',
   ASSIGNED = 'ASSIGNED',
+  /** The listener pressed "Alert supervisor"; content = their optional note. */
+  SUPERVISOR_REQUESTED = 'SUPERVISOR_REQUESTED',
 }
 
 export enum HelplineChatEventType {
@@ -225,6 +227,8 @@ export const HELPLINE_TIMINGS = {
   QUEUE_UPDATE_DEBOUNCE_MS: 250,
   /** Hard ceiling on the FINAL summary call; it runs off the request path. */
   SUMMARY_TIMEOUT_MS: 90_000,
+  /** ROLLING / HANDOFF: shorter — a stale rolling summary is worth little. */
+  ROLLING_SUMMARY_TIMEOUT_MS: 60_000,
   LAST_SEEN_WRITE_INTERVAL_MS: 60_000,
 } as const;
 
@@ -337,10 +341,18 @@ export const HELPLINE_SYSTEM_COPY = {
   ENDED: 'This chat has ended.',
 } as const;
 
-/** Staff-only content of a keyword RISK message. Never the matched text. */
+/** Staff-only content of a RISK message, by source. Never the matched text. */
 export const HELPLINE_RISK_MESSAGE_COPY = {
-  [HelplineRiskFlagLevel.HIGH]: 'Possible high risk detected (keyword match).',
-  [HelplineRiskFlagLevel.ELEVATED]: 'Possible risk detected (keyword match).',
+  [HelplineRiskSource.KEYWORD]: {
+    [HelplineRiskFlagLevel.HIGH]:
+      'Possible high risk detected (keyword match).',
+    [HelplineRiskFlagLevel.ELEVATED]: 'Possible risk detected (keyword match).',
+  },
+  [HelplineRiskSource.CLASSIFIER]: {
+    [HelplineRiskFlagLevel.HIGH]:
+      'Possible high risk detected (AI risk check).',
+    [HelplineRiskFlagLevel.ELEVATED]: 'Possible risk detected (AI risk check).',
+  },
 } as const;
 
 /** Lobby priority for a WAITING chat once it is HIGH risk (contract §9.3). */

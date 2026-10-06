@@ -120,6 +120,7 @@ const chatMethods: [string, (r: HelplineChatRepository) => Promise<unknown>][] =
     ],
     ['recordTalkerMessage', (r) => r.recordTalkerMessage(TENANT, CHAT_ID)],
     ['recordListenerMessage', (r) => r.recordListenerMessage(TENANT, CHAT_ID)],
+    ['recordNudge', (r) => r.recordNudge(TENANT, CHAT_ID)],
     ['setAbandoned', (r) => r.setAbandoned(TENANT, CHAT_ID, new Date())],
     ['queuePosition', (r) => r.queuePosition(TENANT, chatLike)],
     ['listQueue', (r) => r.listQueue(TENANT)],

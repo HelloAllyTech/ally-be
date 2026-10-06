@@ -17,6 +17,7 @@ import { TenantFeatureService } from 'src/authorization/service/tenant-feature.s
 import { PreferenceName } from 'src/common/constants/user.constants';
 import {
   AcknowledgeRiskFlagDto,
+  CopilotFeedbackDto,
   HelplineAfterIdQueryDto,
   ListChatsQueryDto,
   TeamQueryDto,
@@ -227,6 +228,20 @@ export class HelplineController {
       body.outcome,
       body.note,
     );
+  }
+
+  @RequireHelplineEnabledForChat()
+  @AuthPermissions([PERMISSIONS.VIEW_HELPLINE_COPILOT])
+  @Post('chats/:id/copilot-feedback')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Rate a copilot suggestion or nudge' })
+  async copilotFeedback(
+    @HelplineTenantParam() tenant: HelplineTenant,
+    @CurrentUser() user: HelplineStaffUser,
+    @Param('id', HelplineChatIdPipe) chatId: string,
+    @Body() body: CopilotFeedbackDto,
+  ): Promise<void> {
+    await this.listeners.copilotFeedback(tenant, chatId, user, body);
   }
 
   @RequireHelplineEnabled()

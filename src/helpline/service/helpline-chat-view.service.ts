@@ -26,12 +26,12 @@ import {
   StaffMessageDto,
   SummaryDto,
 } from '../type/helpline.types';
+import { copilotStatusFor, latestStage } from '../util/helpline-copilot.util';
 import { toStaffMessageDto } from '../util/helpline-serializers';
 import {
   HelplineContentCipher,
   decryptTalker,
 } from './helpline-content-cipher.service';
-import { HelplineCopilotService } from './helpline-copilot.service';
 import { HelplineEventService } from './helpline-event.service';
 import { HelplinePresenceService } from './helpline-presence.service';
 import { HelplineProfileService } from './helpline-profile.service';
@@ -84,7 +84,6 @@ export class HelplineChatViewService {
     private readonly profiles: HelplineProfileService,
     private readonly presence: HelplinePresenceService,
     private readonly events: HelplineEventService,
-    private readonly copilot: HelplineCopilotService,
     private readonly cipher: HelplineContentCipher,
   ) {}
 
@@ -359,9 +358,15 @@ export class HelplineChatViewService {
         handoff: await summaryOf(HelplineSummaryKind.HANDOFF),
         final: await summaryOf(HelplineSummaryKind.FINAL),
       },
+      // Status from the last copilot outcome (Redis), stage from the newest
+      // STAGE row already loaded. Read here rather than through
+      // HelplineCopilotService, which depends on this service.
       copilot: {
-        status: this.copilot.status(chat, settings),
-        stage: this.copilot.stage(chat),
+        status: copilotStatusFor(
+          settings,
+          await this.presence.getCopilotStatus(chat.id).catch(() => null),
+        ),
+        stage: latestStage(rows),
       },
       events: eventRows.map((e) => ({
         type: e.type,

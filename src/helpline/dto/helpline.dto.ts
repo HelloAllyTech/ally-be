@@ -200,3 +200,24 @@ export class UpdateAdminSettingsDto {
   @IsObject()
   settings?: Record<string, unknown>;
 }
+
+export class CopilotFeedbackDto {
+  @ApiProperty({ description: 'A SUGGESTION or NUDGE message id' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  messageId!: number;
+
+  @ApiPropertyOptional({
+    description: 'Which suggestion (SUGGESTION rows only)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  index?: number;
+
+  @ApiProperty({ enum: ['UP', 'DOWN'] })
+  @IsIn(['UP', 'DOWN'])
+  rating!: 'UP' | 'DOWN';
+}
