@@ -98,6 +98,7 @@ import { BugCaseFile } from '../constants/bug-case-file';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
+import { independentVerificationOf } from '../type/bug-finding-verdict.type';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -1118,6 +1119,7 @@ export function toFindingDto(
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
+    independentVerification: independentVerificationOf(row.metadata),
     latestFixVerdict: latestVerdictFor(
       row.metadata?.fixVerdicts,
       row.prUrl ?? null,

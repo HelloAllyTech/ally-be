@@ -82,7 +82,7 @@ export interface BugCaseFile {
  */
 export interface BugCaseVerdict {
   kind: 'finding' | 'fix';
-  verdict: 'confirmed' | 'refuted' | 'pass' | 'fail' | 'unavailable';
+  verdict: 'confirmed' | 'refuted' | 'unsure' | 'pass' | 'fail' | 'unavailable';
   /** 0–1 where a verifier gave one. */
   confidence: number | null;
   reason: string | null;

@@ -587,6 +587,7 @@ const emptyDay = (date: string): OperationsDay => ({
     [BugHuntTrigger.MANUAL]: emptyTokens(),
     [BugHuntTrigger.FIX_SESSION]: emptyTokens(),
     [BugHuntTrigger.VERIFY_FIX]: emptyTokens(),
+    [BugHuntTrigger.VERIFY_FINDINGS]: emptyTokens(),
   },
   breadth: null,
 });

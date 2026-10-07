@@ -16,6 +16,7 @@ import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.servic
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { BugVerifyFixService } from '../service/bug-verify-fix.service';
+import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
 import {
   RecordBugHuntRunModelDto,
@@ -61,6 +62,10 @@ describe('BugHunterPipelineController', () => {
         {
           provide: BugVerifyFixService,
           useValue: { dispatch: jest.fn(), recordVerdict: jest.fn() },
+        },
+        {
+          provide: BugVerifyFindingsService,
+          useValue: { dispatchForRun: jest.fn(), recordVerdict: jest.fn() },
         },
         {
           provide: BugHuntRunRepository,

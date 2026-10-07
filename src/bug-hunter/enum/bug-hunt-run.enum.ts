@@ -12,6 +12,12 @@ export enum BugHuntTrigger {
    */
   VERIFY_FIX = 'verify_fix',
   /**
+   * The independent finding verifier's run (OPP-0780): one per closed sweep,
+   * on the other vendor's model, confirming or refuting every unproven
+   * finding the sweep kept before any of them is fixed in AI mode.
+   */
+  VERIFY_FINDINGS = 'verify_findings',
+  /**
    * One admin, one bug, one click — a run scoped to a single finding, started
    * by `POST findings/:id/fix-session` rather than by a repo-wide sweep. It
    * skips Discover and Verify entirely (the bug is already known and already

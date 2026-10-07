@@ -13,6 +13,7 @@ import { BugCaseBudgetService } from './bug-case-budget.service';
 import { BugFindingService } from './bug-finding.service';
 import { groupSessions } from '../util/bug-case-sessions.util';
 import { BugFixVerdict, namedFailures } from '../type/bug-fix-verdict.type';
+import { BugFindingVerdict } from '../type/bug-finding-verdict.type';
 
 /**
  * Assembles the case file for one bug — see `BugCaseFile` for what it is and
@@ -184,6 +185,27 @@ export const collectVerdicts = (
       by: null,
       runId: e.runId ?? null,
       at: e.createdAt,
+    });
+  }
+  // The independent verifier's verdicts on the finding itself (OPP-0780).
+  const findingVerdicts = Array.isArray(metadata.findingVerdicts)
+    ? (metadata.findingVerdicts as BugFindingVerdict[])
+    : [];
+  for (const v of findingVerdicts) {
+    out.push({
+      kind: 'finding',
+      verdict: v.verdict,
+      confidence: v.confidence,
+      reason:
+        v.verdict === 'refuted'
+          ? v.refutation
+          : (v.reproduction ?? v.wouldBeWrongIf),
+      checks: [],
+      by: v.by.engine
+        ? `${v.by.engine}${v.by.model ? ` (${v.by.model})` : ''}`
+        : null,
+      runId: v.runId,
+      at: new Date(v.at),
     });
   }
   // The Verifier's verdicts on fixes (OPP-0779).

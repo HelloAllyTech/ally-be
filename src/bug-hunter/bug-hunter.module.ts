@@ -51,6 +51,7 @@ import { BugHunterMissClassifierService } from './service/bug-hunter-miss-classi
 import { BugCaseBudgetService } from './service/bug-case-budget.service';
 import { BugCaseFileService } from './service/bug-case-file.service';
 import { BugVerifyFixService } from './service/bug-verify-fix.service';
+import { BugVerifyFindingsService } from './service/bug-verify-findings.service';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
 import { BugHunterModelSettingsService } from './service/bug-hunter-model-settings.service';
@@ -138,6 +139,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugCaseBudgetService,
     BugCaseFileService,
     BugVerifyFixService,
+    BugVerifyFindingsService,
     BugHunterDossierService,
     BugHunterMemoryRetirementService,
     BugFindingService,

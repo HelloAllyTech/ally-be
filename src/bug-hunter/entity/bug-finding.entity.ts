@@ -321,6 +321,11 @@ export class BugFinding extends BaseWithoutTenantEntity {
    *    (`BugFixVerdict[]`, OPP-0779), newest last; `verifyFix` — the
    *    dispatch record while a verifier run is in flight, cleared when its
    *    verdict lands. No pass for the current PR means no self-merge.
+   *  - `independentVerification` + `findingVerdicts` + `verifyFindingsRunId`
+   *    — the independent FINDING verifier (OPP-0780): `pending` from the
+   *    moment the sweep closes until a run on the other vendor confirms,
+   *    refutes or is unsure; the verdicts themselves, newest last. An
+   *    unproven finding is fixed in AI mode only when `confirmed`.
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

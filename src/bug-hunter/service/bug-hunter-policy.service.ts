@@ -22,6 +22,7 @@ import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugFindingService } from './bug-finding.service';
 import { BugHunterService } from './bug-hunter.service';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
+import { independentVerificationOf } from '../type/bug-finding-verdict.type';
 
 /** The PATCH fields the policy reads. Kept narrow so the DTO can grow without this file noticing. */
 export interface FindingTransitionPatch {
@@ -138,6 +139,20 @@ export class BugHunterPolicyService {
       throw new ForbiddenException(
         `Verifier confidence ${confidence} is below ${BUG_HUNT_LOW_CONFIDENCE_THRESHOLD}: this finding is held for a human even in AI mode. ` +
           'PATCH it to pending_approval.',
+      );
+    }
+
+    // The independent verifier (OPP-0780): the sweep's own verifiers are a
+    // first filter, not the gate. An unproven finding is fixed in AI mode
+    // only once a run on the other vendor has confirmed it.
+    const independent = independentVerificationOf(finding.metadata);
+    if (independent !== 'confirmed') {
+      throw new ForbiddenException(
+        independent === 'pending'
+          ? 'My independent verifier has not finished with this finding yet. Leave it at NEW; Bug Hunter starts the fix itself once it is confirmed.'
+          : independent === 'refuted' || independent === 'unsure'
+            ? `My independent verifier ${independent === 'refuted' ? 'refuted' : 'could not confirm'} this finding, so it is not fixed in AI mode. A person decides.`
+            : 'This finding has not been independently verified yet. Leave it at NEW; Bug Hunter sends every unproven finding to a verifier on another model after the sweep closes, and starts the fix itself once it is confirmed.',
       );
     }
   }

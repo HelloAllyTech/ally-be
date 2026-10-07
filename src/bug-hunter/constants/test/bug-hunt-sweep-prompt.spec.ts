@@ -358,10 +358,16 @@ describe('buildSweepPrompt', () => {
       expect(build()).toMatch(/The LOWER, not the average/i);
     });
 
-    it('holds a low-confidence survivor for a human even in AI mode', () => {
+    it('in AI mode fixes only proven findings tonight and leaves the rest to the independent Verifier (OPP-0780)', () => {
       const p = build({ mode: BugHunterMode.AI });
+      // Phase 2 still scores survivors against the threshold…
       expect(p).toContain(String(BUG_HUNT_LOW_CONFIDENCE_THRESHOLD));
-      expect(p).toMatch(/pending_approval/);
+      // …but Phase 3 no longer fixes unproven ones in the same run.
+      expect(p).toMatch(/only findings you fix tonight are the PROVEN ones/);
+      expect(p).toMatch(/Every UNPROVEN finding stays at NEW/);
+      expect(p).toMatch(/independent Verifier on a different model/);
+      // The hold for a person is the server's move now, not a PATCH the sweep makes.
+      expect(p).not.toMatch(/PATCH each of those to \{"status":"pending_approval"\}/);
     });
 
     it('still skips verification for proven findings', () => {

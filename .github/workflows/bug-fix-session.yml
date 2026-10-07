@@ -114,9 +114,18 @@ jobs:
           # ally-be builds the prompt: it embeds this bug, this repo's test and
           # lint commands, any answer an admin already gave on a previous
           # attempt, and whether merging is permitted for this finding.
+          # Three protocols share this runner (OPP-0779/0780): the fix, the
+          # Verifier for one fix PR, and the independent verifier for a whole
+          # sweep's findings — whose subject is a run, so finding_id carries
+          # the verify run id and the prompt is fetched by run.
+          case "${{ inputs.mode }}" in
+            verify)          PROMPT_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/verify-prompt?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" ;;
+            verify_findings) PROMPT_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/runs/${{ inputs.run_id }}/verify-findings-prompt?repo=${{ inputs.repo }}" ;;
+            *)               PROMPT_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/fix-prompt?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" ;;
+          esac
           curl -sSf \
             -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/${{ inputs.mode == 'verify' && 'verify-prompt' || 'fix-prompt' }}?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" \
+            "$PROMPT_URL" \
             -o /tmp/fix-prompt.txt
           test -s /tmp/fix-prompt.txt
           echo "Fetched $(wc -c < /tmp/fix-prompt.txt) bytes of protocol."
@@ -133,7 +142,7 @@ jobs:
           # copied into this file: a change takes effect on the next session,
           # not after five PRs.
           RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/models?repo=${{ inputs.repo }}&role=${{ inputs.mode == 'verify' && 'verify_fix' || 'fix' }}&findingId=${{ inputs.finding_id }}")
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/models?repo=${{ inputs.repo }}&role=${{ inputs.mode == 'verify' && 'verify_fix' || inputs.mode == 'verify_findings' && 'verify_findings' || 'fix' }}&findingId=${{ inputs.finding_id }}")
           ENGINE=$(printf '%s' "$RESP" | jq -r '.engine')
           DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
           ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
@@ -298,7 +307,11 @@ jobs:
           # That timeout is the safety net; this is the budget.
           # A verifier reads and runs the suite once; it has no business
           # taking as long as a fix. 20 minutes, against 40 for a fix.
-          if [ "${{ inputs.mode }}" = "verify" ]; then ENGINE_CAP_SECONDS=1200; else ENGINE_CAP_SECONDS=2400; fi
+          case "${{ inputs.mode }}" in
+            verify)          ENGINE_CAP_SECONDS=1200 ;;
+            verify_findings) ENGINE_CAP_SECONDS=1800 ;;
+            *)               ENGINE_CAP_SECONDS=2400 ;;
+          esac
           RUN_STATUS_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/status"
           RUN_REPORT_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/report"
           supervise() {

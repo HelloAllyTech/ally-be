@@ -219,6 +219,17 @@ export class BugHunterService {
     );
   }
 
+  /** Merge keys into a run's metadata scratchpad — the stage services' notes to themselves. */
+  async setRunMetadata(
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    const run = await this.getRun(id);
+    await this.runRepository.update(id, {
+      metadata: { ...(run.metadata ?? {}), ...patch } as Record<string, any>,
+    });
+  }
+
   async getRun(id: string): Promise<BugHuntRun> {
     const run = await this.runRepository.findOne({ where: { id } });
     if (!run) throw new NotFoundException(`Bug hunt run ${id} not found`);

@@ -33,7 +33,13 @@ const finding = (overrides: Partial<BugFinding> = {}): BugFinding =>
     // A Verifier pass on the current PR (OPP-0779): without one no pipeline
     // merge is allowed at all, so the merge rules below are only reachable
     // with it. Left off `prUrl` so the patch-supplied-PR case matches too.
-    metadata: { confidence: 0.9, fixVerdicts: [PASS_VERDICT] },
+    // Independently confirmed (OPP-0780): without that no unproven finding is
+    // fixed in AI mode, so the fix rules below are only reachable with it.
+    metadata: {
+      confidence: 0.9,
+      independentVerification: 'confirmed',
+      fixVerdicts: [PASS_VERDICT],
+    },
     ...overrides,
   }) as BugFinding;
 
@@ -99,6 +105,27 @@ describe('BugHunterPolicyService', () => {
   });
 
   describe('fixing', () => {
+    it('refuses an unproven finding the independent verifier has not confirmed (OPP-0780)', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        finding({ metadata: { confidence: 0.9 } }),
+      );
+      await expect(fixing()).rejects.toThrow(/not been independently verified/);
+
+      bugFindingService.getOne.mockResolvedValue(
+        finding({
+          metadata: { confidence: 0.9, independentVerification: 'pending' },
+        }),
+      );
+      await expect(fixing()).rejects.toThrow(/has not finished/);
+
+      bugFindingService.getOne.mockResolvedValue(
+        finding({
+          metadata: { confidence: 0.9, independentVerification: 'refuted' },
+        }),
+      );
+      await expect(fixing()).rejects.toThrow(/refuted this finding/);
+    });
+
     it('allows a verified, confident finding in AI mode', async () => {
       await expect(fixing()).resolves.toBeUndefined();
     });
@@ -169,7 +196,10 @@ describe('BugHunterPolicyService', () => {
     it('treats the threshold itself as confident enough', async () => {
       bugFindingService.getOne.mockResolvedValue(
         finding({
-          metadata: { confidence: BUG_HUNT_LOW_CONFIDENCE_THRESHOLD },
+          metadata: {
+            confidence: BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
+            independentVerification: 'confirmed',
+          },
         }),
       );
       await expect(fixing()).resolves.toBeUndefined();

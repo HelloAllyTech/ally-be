@@ -271,10 +271,40 @@ export class BugFixSessionService {
    * case and null in the second, which is the only difference between them and
    * shows up only in the event summary.
    */
+  /**
+   * A fix session Bug Hunter starts on its own, after its independent
+   * verifier confirmed a finding in AI mode (OPP-0780) — the session the
+   * sweep used to start for itself inside its own run. Same budget gate as a
+   * person, with no override: an agent past the budget asks a person.
+   */
+  async startByAgent(
+    findingId: string,
+    actor: 'verifier',
+  ): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
+      throw new ForbiddenException(this.explainUnstartable(finding.status));
+    }
+    if (
+      !finding.repo ||
+      !BUG_FIX_SESSION_REPOS.includes(finding.repo as never)
+    ) {
+      throw new BadRequestException(
+        `"${finding.repo ?? 'no repo'}" is not set up for fix sessions.`,
+      );
+    }
+    await this.budgetService.assertCanStartSession(finding, {
+      force: false,
+      userId: null,
+    });
+    await this.dispatchFix(finding, finding.repo, actor);
+    return this.bugFindingService.getOne(finding.id);
+  }
+
   private async dispatchFix(
     finding: BugFinding,
     repo: string,
-    startedBy: number | null,
+    startedBy: number | 'verifier' | null,
   ): Promise<void> {
     // The run row exists before the dispatch so the workflow has a run id to
     // report every step against from its very first call — and so a dispatch
@@ -328,9 +358,12 @@ export class BugFixSessionService {
       stage: startedBy
         ? BugHuntEventStage.SESSION_DISPATCHED
         : BugHuntEventStage.STEP_STARTED,
-      summary: startedBy
-        ? `Fix session started by user ${startedBy} for "${finding.title}".`
-        : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
+      summary:
+        startedBy === 'verifier'
+          ? `Fix session started by my Verifier after it confirmed "${finding.title}".`
+          : startedBy
+            ? `Fix session started by user ${startedBy} for "${finding.title}".`
+            : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
       payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
     });
     void this.budgetService.charge(finding.id, 'sessions', 1);

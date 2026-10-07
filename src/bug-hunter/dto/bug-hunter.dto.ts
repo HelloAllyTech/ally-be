@@ -349,6 +349,16 @@ export class PatchBugFindingDto {
   @IsObject()
   verdict?: Record<string, any>;
 
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description:
+      "The independent verifier's report on a FINDING (OPP-0780): verdict confirmed|refuted|unsure, confidence, reproduction, refutation, wouldBeWrongIf, runId. Acted on server-side: refuted dismisses, unsure holds, confirmed may start a fix in AI mode.",
+  })
+  @IsOptional()
+  @IsObject()
+  findingVerdict?: Record<string, any>;
+
   /**
    * Sent alongside `status: failed` by a fix session that gave up — see
    * FixPostmortemDto. Ignored on other transitions.
@@ -990,6 +1000,19 @@ export class BugFindingDto {
       "The Verifier's latest verdict on this bug's current fix PR (OPP-0779): verdict, confidence, checks with evidence, summary, by, at. Null until a verifier has run.",
   })
   latestFixVerdict!: Record<string, any> | null;
+
+  @ApiProperty({
+    enum: ['pending', 'confirmed', 'refuted', 'unsure'],
+    nullable: true,
+    description:
+      'Where an unproven finding stands with the independent verifier (OPP-0780). Null for proven findings, human reports, and findings from before the verifier existed.',
+  })
+  independentVerification!:
+    | 'pending'
+    | 'confirmed'
+    | 'refuted'
+    | 'unsure'
+    | null;
 
   @ApiProperty({
     type: Object,
