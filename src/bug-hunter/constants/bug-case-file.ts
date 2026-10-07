@@ -2,6 +2,7 @@ import { BugFindingSource, BugFindingSeverity } from '../enum/bug-finding.enum';
 import { BugCaseBudget } from '../type/bug-case-budget.type';
 import { BugFindingMiss } from '../type/bug-finding-miss.type';
 import { FixDossierSession } from './bug-fix-dossier';
+import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 
 /**
  * The case file: everything Bug Hunter knows about one bug, as typed records
@@ -65,7 +66,7 @@ export interface BugCaseFile {
    * Orchestration decisions on this case (OPP-0776). Empty until the decision
    * log exists; reserved here so readers written now do not change shape.
    */
-  decisions: unknown[];
+  decisions: BugHuntDecision[];
   /** Totals a reader wants without walking the arrays. */
   totals: {
     sessions: number;

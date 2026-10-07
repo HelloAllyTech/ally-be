@@ -14,6 +14,7 @@ import { BugFindingService } from './bug-finding.service';
 import { groupSessions } from '../util/bug-case-sessions.util';
 import { BugFixVerdict, namedFailures } from '../type/bug-fix-verdict.type';
 import { BugFindingVerdict } from '../type/bug-finding-verdict.type';
+import { BugHunterDecisionService } from './bug-hunter-decision.service';
 
 /**
  * Assembles the case file for one bug — see `BugCaseFile` for what it is and
@@ -28,6 +29,7 @@ export class BugCaseFileService {
     private readonly eventRepository: BugHuntEventRepository,
     private readonly bugFindingService: BugFindingService,
     private readonly budgetService: BugCaseBudgetService,
+    private readonly decisionService: BugHunterDecisionService,
   ) {}
 
   async build(
@@ -35,7 +37,7 @@ export class BugCaseFileService {
     options: { currentRunId?: string; events?: BugHuntEvent[] } = {},
   ): Promise<BugCaseFile> {
     const metadata = finding.metadata ?? {};
-    const [enriched, events] = await Promise.all([
+    const [enriched, events, decisions] = await Promise.all([
       this.safely('reporter', () =>
         this.bugFindingService.enrich([finding]).then((rows) => rows[0]),
       ),
@@ -44,6 +46,9 @@ export class BugCaseFileService {
         : this.safely('events', () =>
             this.eventRepository.listForFinding(finding.id),
           ),
+      this.safely('decisions', () =>
+        this.decisionService.listForFinding(finding.id),
+      ),
     ]);
     const timeline = events ?? [];
     const report = enriched?.report ?? null;
@@ -93,7 +98,7 @@ export class BugCaseFileService {
         rediscoveredCount: Number(metadata.rediscoveredCount ?? 0) || 0,
       },
       budget: this.budgetService.read(finding),
-      decisions: [],
+      decisions: decisions ?? [],
       totals: {
         sessions: sessions.length,
         attempts: sessions.reduce((n, s) => n + s.attempts.length, 0),

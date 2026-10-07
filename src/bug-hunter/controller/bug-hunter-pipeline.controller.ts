@@ -75,6 +75,7 @@ import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { BugVerifyFixService } from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
+import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
 import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
 import { prNumberFrom } from '../service/bug-hunter-policy.service';
@@ -123,6 +124,7 @@ export class BugHunterPipelineController {
     private readonly caseFileService: BugCaseFileService,
     private readonly verifyFixService: BugVerifyFixService,
     private readonly verifyFindingsService: BugVerifyFindingsService,
+    private readonly finderService: BugHunterFinderService,
     private readonly runRepository: BugHuntRunRepository,
   ) {}
 
@@ -444,6 +446,21 @@ export class BugHunterPipelineController {
     // The Verifier runs on the OTHER vendor (OPP-0779): the counterpart was
     // chosen and stored on the finding at dispatch, so the workflow's first
     // call gets it back here rather than the platform default.
+    // The Finder's D2 (OPP-0781): the sweep workflow asks by run id.
+    if (role === 'finder' && findingId) {
+      const run = await this.bugHunterService
+        .getRun(findingId)
+        .catch(() => null);
+      const chosen = run?.metadata?.finder?.model;
+      if (chosen?.engine && chosen?.model) {
+        return {
+          ...settings,
+          engine: chosen.engine,
+          defaultModel: chosen.model,
+          escalationModel: chosen.model,
+        };
+      }
+    }
     // Same for the finding verifier (OPP-0780), whose `finding_id` input is
     // the verify run's id, because its subject is a sweep, not one bug.
     if (role === 'verify_findings' && findingId) {
@@ -506,6 +523,11 @@ export class BugHunterPipelineController {
         ).join(', ')}.`,
       );
     }
+    // The Finder's plan (OPP-0781): D1 picks the senses, D2 the model, once
+    // per run, here — the first thing the workflow fetches — so the models
+    // call that follows gets the chosen engine.
+    const run = await this.bugHunterService.getRun(runId);
+    const plan = await this.finderService.ensurePlan(run);
     // Read the live mode rather than trusting a workflow input: the switch may
     // have moved between the dispatch and the runner actually starting, and the
     // mode decides whether this sweep is allowed to fix anything.
@@ -514,7 +536,7 @@ export class BugHunterPipelineController {
     // the workflow resolves it from the same settings row a step later, and
     // the prompt has to know it NOW because Gemini has no Task tool, so its
     // Verify phase cannot be the Claude one — see buildSweepPrompt.
-    const { engine } = await this.modelSettingsService.get();
+    const engine = plan.model.engine;
     // What this repo's reviewers already ruled were not bugs. Fetched here
     // rather than baked into the workflow file for the same reason the whole
     // protocol is served rather than copied: it changes every time someone
@@ -560,6 +582,8 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       mode: settings.mode,
       deep: deep === 'true',
+      senses: plan.senses,
+      light: plan.light,
       knownNonBugs,
       engine,
       memories: memories.map((m) => ({
@@ -834,6 +858,10 @@ export class BugHunterPipelineController {
       body.repo,
       body.findings,
     );
+    // D3 (OPP-0781): verify, hold or drop each new unproven finding. Not
+    // awaited; the sweep carries on and the independent verifier at close
+    // only takes what is still NEW.
+    void this.finderService.triageNew(findings, runId);
     return { items: findings.map(toFindingDto) };
   }
 

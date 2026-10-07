@@ -89,6 +89,9 @@ describe('BugHunterController', () => {
       bugFixSessionService as never,
       // Case file service: no case here reads findings/:id/case.
       {} as never,
+      // Decision log + scoreboard: no case here reads them.
+      {} as never,
+      {} as never,
       {} as never,
       // Metrics service: every case here is about routing and gating, and no
       // case calls the metrics route.

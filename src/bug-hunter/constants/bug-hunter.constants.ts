@@ -134,6 +134,7 @@ export const BUG_FINDING_DECISION_NOTE_MAX_LENGTH = 500;
 export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
   CLASSIFY_MISS: 'bug_hunter_classify_miss',
+  DECIDE: 'bug_hunter_decide',
 } as const;
 
 /**
@@ -159,6 +160,21 @@ export const BUG_HUNTER_CLASSIFY_MISS_MODEL = 'gemini-2.5-flash';
 export const BUG_HUNTER_CLASSIFY_MISS_LOOKBACK_DAYS = 21;
 /** Cap on the own-findings context shown to the classifier; newest first. */
 export const BUG_HUNTER_CLASSIFY_MISS_MAX_CONTEXT_FINDINGS = 40;
+
+/**
+ * The orchestration decider (OPP-0776/0781): picks from a closed menu with a
+ * one-line reason, over the scoreboard. Cheap model; the rule always answers
+ * too, and a model that fails or picks off the menu never blocks a run.
+ */
+export const BUG_HUNTER_DECIDE_MAX_TOKENS = 2048;
+export const BUG_HUNTER_DECIDE_TASK_ID = 'bug-hunter-decider';
+export const BUG_HUNTER_DECIDE_MODEL = 'gemini-2.5-flash';
+/** A light Finder pass after a merge or a report runs at most this often per repo. */
+export const BUG_FINDER_EVENT_DEBOUNCE_MS = 2 * 60 * 60 * 1000;
+/** How far back the report trigger looks for human reports when no run has happened yet. */
+export const BUG_FINDER_REPORT_LOOKBACK_MS = 30 * 60 * 1000;
+/** D3 may drop a finding only when the model is at least this sure; below it the drop becomes a verify. */
+export const BUG_FINDER_TRIAGE_DROP_MIN_CONFIDENCE = 0.8;
 
 /**
  * Subagent name for Bug Hunter's model escalation path — defined once per

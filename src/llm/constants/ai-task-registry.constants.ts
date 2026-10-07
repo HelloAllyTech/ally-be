@@ -1502,6 +1502,18 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configuredBy: 'BUG_HUNTER_CLASSIFY_MISS_MODEL (compiled in)',
   },
   {
+    id: 'bug-hunter-decider',
+    task: LlmTask.BUG_HUNTER,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'Bug Hunter plans a sweep or triages a new finding',
+    detail:
+      'Picks from a closed menu over the scoreboard with a one-line reason: which senses (D1), which model (D2), verify/hold/drop a finding (D3). The rule always answers too; the pick not taken is logged (OPP-0781).',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
+    configuredBy: 'BUG_HUNTER_DECIDE_MODEL (compiled in)',
+  },
+  {
     id: 'agent-memory-curation',
     task: LlmTask.AGENT_MEMORY_CURATION,
     runtime: LlmRuntime.ALLY_BE,

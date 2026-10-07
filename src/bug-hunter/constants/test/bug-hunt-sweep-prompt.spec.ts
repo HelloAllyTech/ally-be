@@ -47,6 +47,28 @@ describe('buildSweepPrompt', () => {
     });
   });
 
+  describe('the Finder chooses the senses (OPP-0781)', () => {
+    it("renders only the chosen finders, renumbered, and says the rest are not tonight's", () => {
+      const p = build({ senses: ['code_review', 'tests'], light: true });
+      expect(p).toMatch(/Run these 2 finders/);
+      expect(p).toMatch(/1\. TEST\/LINT/);
+      expect(p).toMatch(/2\. CODE REVIEW/);
+      expect(p).not.toMatch(/PRODUCTION LOGS\./);
+      expect(p).not.toMatch(/REPORTED BUGS\./);
+      expect(p).toMatch(
+        /The Finder chose this set for tonight \(code_review, tests\)/,
+      );
+      expect(p).toMatch(/This is a LIGHT pass/);
+    });
+
+    it('runs all five and says nothing about a chosen set when no senses are given', () => {
+      const p = build();
+      expect(p).toMatch(/Run these 5 finders/);
+      expect(p).not.toMatch(/The Finder chose this set/);
+      expect(p).not.toMatch(/LIGHT pass/);
+    });
+  });
+
   it('scopes the reported-bugs finder to this repo, plus anything still unfiled', () => {
     expect(build({ repo: 'ally-web' })).toContain(
       'pipeline/reported-bugs?repo=ally-web',

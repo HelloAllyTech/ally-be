@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -99,6 +100,12 @@ import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 import { independentVerificationOf } from '../type/bug-finding-verdict.type';
+import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
+import {
+  BugHunterScoreboardService,
+  Scoreboard,
+} from '../service/bug-hunter-scoreboard.service';
+import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -132,6 +139,8 @@ export class BugHunterController {
     private readonly bugFindingService: BugFindingService,
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly caseFileService: BugCaseFileService,
+    private readonly decisionService: BugHunterDecisionService,
+    private readonly scoreboardService: BugHunterScoreboardService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
@@ -482,6 +491,50 @@ export class BugHunterController {
   ): Promise<BugCaseFile> {
     const finding = await this.bugFindingService.getOne(id);
     return this.caseFileService.build(finding);
+  }
+
+  @Get('findings/:id/decisions')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The decision log for one bug: every orchestration choice, the pick, who owned it, and the pick not taken (OPP-0781)',
+  })
+  async listFindingDecisions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugHuntDecision[]> {
+    await this.bugFindingService.getOne(id);
+    return this.decisionService.listForFinding(id);
+  }
+
+  @Get('runs/:id/decisions')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "The decision log for one run: the Finder's D1 and D2 and every D3 it made (OPP-0781)",
+  })
+  async listRunDecisions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugHuntDecision[]> {
+    await this.bugHunterService.getRun(id);
+    return this.decisionService.listForRun(id);
+  }
+
+  @Get('scoreboard')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'What each sense and model has produced on a repo in the last 90 days: filed, accepted, declined, pending (OPP-0781)',
+  })
+  async getScoreboard(
+    @Query('repo') repo: string,
+    @Query('days') days?: string,
+  ): Promise<Scoreboard> {
+    if (!repo) throw new BadRequestException('repo is required');
+    const window = Number(days);
+    return this.scoreboardService.forRepo(
+      repo,
+      Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
+    );
   }
 
   @Post('findings/:id/fix-session')

@@ -197,7 +197,7 @@ jobs:
           # settings) because that would miss the cron-triggered path above,
           # which never goes through workflow_dispatch at all.
           RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/models?repo=${{ steps.cfg.outputs.repo }}")
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/models?repo=${{ steps.cfg.outputs.repo }}&role=finder&findingId=${{ steps.cfg.outputs.run_id }}")
           ENGINE=$(printf '%s' "$RESP" | jq -r '.engine')
           DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
           ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')

@@ -176,6 +176,7 @@ describe('BugHunterDossierService', () => {
         eventRepository as never,
         bugFindingService as never,
         new BugCaseBudgetService({} as never),
+        { listForFinding: jest.fn().mockResolvedValue([]) } as never,
       ),
       memoryService as never,
       telemetryService as never,

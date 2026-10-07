@@ -38,6 +38,9 @@ that a Gemini-engine prompt never mentions the Task tool.
 | Escalation sub-agent | `.claude/agents/bug-escalation.md` in all five repos | Claude Code only | Sub-agent definition, invoked per hard finding |
 | Repo classifier | `src/prompts/bug_hunter/classify_repo.txt` | ally-be's own LLM call | One-shot JSON |
 | Miss classifier | `src/prompts/bug_hunter/classify_miss.txt` | ally-be's own LLM call | One-shot JSON; writes `bug_findings.metadata.miss` on a human report (OPP-0774) |
+| Decider | `src/prompts/bug_hunter/decide.txt` | ally-be's own LLM call | One-shot JSON; D1 senses, D2 model, D3 triage over the scoreboard, recorded in `bug_hunt_decisions` with the rule's shadow pick (OPP-0781) |
+| Verifier for fixes | `src/bug-hunter/constants/bug-verify-fix-prompt.ts` | counterpart engine | Protocol, served by `GET pipeline/findings/:id/verify-prompt` (OPP-0779) |
+| Verifier for findings | `src/bug-hunter/constants/bug-verify-findings-prompt.ts` | counterpart engine | Protocol, served by `GET pipeline/runs/:id/verify-findings-prompt` (OPP-0780) |
 | UX signals triage | `src/prompts/ux_signals/triage.txt` | ally-be's own LLM call | One-shot JSON |
 | Notebook curator | `AgentMemoryCuratorService.CURATOR_SYSTEM_PROMPT` | ally-be's own LLM call (fast tier) | One-shot JSON ops |
 

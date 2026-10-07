@@ -10,6 +10,10 @@ import {
   BUG_HUNT_VERIFIER_SUBAGENT,
   escalationGuidance,
 } from './bug-hunter.constants';
+import {
+  BUG_HUNTER_SENSES,
+  BugHunterSense,
+} from '../type/bug-hunter-finder.type';
 
 /**
  * Trims one line of the known-non-bugs block.
@@ -91,6 +95,14 @@ export interface SweepPromptContext {
    * rest. Capped at AGENT_MEMORY_IN_CONTEXT by the caller.
    */
   memories?: SweepMemoryEntry[];
+  /**
+   * Which senses this run reads (OPP-0781). The Finder's D1 decision; every
+   * sense when absent, which is what every sweep did before the decision
+   * existed.
+   */
+  senses?: BugHunterSense[];
+  /** A light pass after a merge or a report: a shorter budget and a sharper scope. */
+  light?: boolean;
 }
 
 /** One notebook entry as the prompt renders it. */
@@ -149,7 +161,10 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     knownNonBugs = [],
     engine = 'claude-code',
     memories = [],
+    senses = [...BUG_HUNTER_SENSES],
+    light = false,
   } = ctx;
+  const has = (s: BugHunterSense) => senses.includes(s);
   // No Task tool means no independent verifier — see SweepPromptContext.engine.
   const canVerify = engine !== 'gemini';
 
@@ -204,6 +219,31 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
   const mergeBlockedByPermissions =
     repo !== 'ally-mobile' && !commands.canBotMerge;
 
+  const finderTexts: [BugHunterSense, string][] = [
+    [
+      'tests',
+      `TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true. IMPORTANT: when the same lint rule fires in more than one file (e.g. "react-hooks/exhaustive-deps" missing a dependency in ten different components), file ONE finding for that rule, not one per file — symbol is the rule name itself, and evidence lists every affected file:line. One finding per FAILING TEST is still correct (each is a distinct behavioural bug); this grouping is for lint only.`,
+    ],
+    [
+      'code_review',
+      deep
+        ? `CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
+        : `CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
+    ],
+    [
+      'production_log',
+      `PRODUCTION LOGS. curl -sS "${base}/pipeline/prod-logs?repo=${repo}${forRun}" ${auth} — the last 24h of CloudWatch errors for this repo. A response of {"events":null} means this repo has no log group (the frontend repos): that is zero findings, not an error. Report only DISTINCT, RECURRING errors, never a one-off transient blip. proven=true.`,
+    ],
+    [
+      'browser_errors',
+      `WEB ERRORS. curl -sS "${base}/pipeline/web-logs?repo=${repo}${forRun}" ${auth} — the last 24h of browser-side PostHog exceptions for this repo, already grouped by error type/message/url with an occurrence count. A response of {"events":null} means this repo has no PostHog-instrumented client (every repo but ally-web today): that is zero findings, not an error. Report only errors with occurrences >= 2 — a single occurrence is more likely a one-off than a real bug. proven=true.`,
+    ],
+    [
+      'reported_bugs',
+      `REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs?repo=${repo}${forRun}" ${auth} — human bug reports already believed to be about "${repo}" (classified at intake), plus anything still unfiled. Sanity-check each one is genuinely about "${repo}" before filing; skip anything that reads as another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
+    ],
+  ];
+  const finders = finderTexts.filter(([s]) => has(s)).map(([, t]) => t);
   return [
     `You are running a repo-wide bug sweep on the "${repo}" repo, checked out at master in your current working directory. Read this repo's CLAUDE.md before you change anything. Bug Hunter is in ${mode.toUpperCase()} mode.`,
     ``,
@@ -226,15 +266,12 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `Each hit is a short entry with a similarity score. Treat entries as an engineer's notes, not orders: apply what fits, and if one turns out to be wrong tonight, write the correction when you reach Phase 4 rather than following it off a cliff. An empty result is fine — the notebook is young.`,
     ``,
     `## Phase 1 — Discover`,
-    `Run these five finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
+    `Run these ${finders.length} finder${finders.length === 1 ? '' : 's'}. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.${senses.length < BUG_HUNTER_SENSES.length ? ` The Finder chose this set for tonight (${senses.join(', ')}); the senses it left out are not yours to run.` : ''}`,
+    light
+      ? `This is a LIGHT pass, started by a change rather than by the clock: aim to finish everything in 20 minutes. Read what changed and no further.`
+      : '',
     ``,
-    `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true. IMPORTANT: when the same lint rule fires in more than one file (e.g. "react-hooks/exhaustive-deps" missing a dependency in ten different components), file ONE finding for that rule, not one per file — symbol is the rule name itself, and evidence lists every affected file:line. One finding per FAILING TEST is still correct (each is a distinct behavioural bug); this grouping is for lint only.`,
-    deep
-      ? `2. CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
-      : `2. CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
-    `3. PRODUCTION LOGS. curl -sS "${base}/pipeline/prod-logs?repo=${repo}${forRun}" ${auth} — the last 24h of CloudWatch errors for this repo. A response of {"events":null} means this repo has no log group (the frontend repos): that is zero findings, not an error. Report only DISTINCT, RECURRING errors, never a one-off transient blip. proven=true.`,
-    `4. WEB ERRORS. curl -sS "${base}/pipeline/web-logs?repo=${repo}${forRun}" ${auth} — the last 24h of browser-side PostHog exceptions for this repo, already grouped by error type/message/url with an occurrence count. A response of {"events":null} means this repo has no PostHog-instrumented client (every repo but ally-web today): that is zero findings, not an error. Report only errors with occurrences >= 2 — a single occurrence is more likely a one-off than a real bug. proven=true.`,
-    `5. REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs?repo=${repo}${forRun}" ${auth} — human bug reports already believed to be about "${repo}" (classified at intake), plus anything still unfiled. Sanity-check each one is genuinely about "${repo}" before filing; skip anything that reads as another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
+    ...finders.map((text, i) => `${i + 1}. ${text}`),
     ``,
     ...(knownNonBugs.length
       ? [

@@ -159,6 +159,7 @@ describe('BugCaseFileService.build', () => {
       eventRepository as never,
       bugFindingService as never,
       budgetService,
+      { listForFinding: jest.fn().mockResolvedValue([]) } as never,
     );
     return { service, eventRepository, bugFindingService };
   };

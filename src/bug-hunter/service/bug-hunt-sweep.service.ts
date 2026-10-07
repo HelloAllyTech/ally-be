@@ -59,8 +59,9 @@ export class BugHuntSweepService {
    */
   async trigger(
     repo: string,
-    userId: number,
+    userId: number | null,
     deep = false,
+    finder: { kind: 'merge' | 'report'; light: boolean } | null = null,
   ): Promise<BugHuntRun | null> {
     if (!BUG_HUNT_REPOS[repo]) {
       // Fail at the API boundary rather than dispatching a workflow filename
@@ -86,6 +87,15 @@ export class BugHuntSweepService {
       BugHuntTrigger.MANUAL,
       repo,
     );
+    // An event-triggered light pass (OPP-0781): the Finder reads the kind
+    // when it plans the run, and the run history can tell a merge pass from a
+    // person's click.
+    if (finder) {
+      await this.bugHunterService.setRunMetadata(run.id, {
+        finderTrigger: finder.kind,
+        finderLight: finder.light,
+      });
+    }
 
     try {
       await this.github.dispatchWorkflow({
@@ -101,7 +111,7 @@ export class BugHuntSweepService {
       });
       this.logger.info(
         `Dispatched a ${deep ? 'deep' : 'diff-scoped'} sweep of ${repo} ` +
-          `(run ${run.id}) at the request of user ${userId}.`,
+          `(run ${run.id}) ${finder ? `after a ${finder.kind}` : `at the request of user ${userId}`}.`,
       );
       return run;
     } catch (error) {
