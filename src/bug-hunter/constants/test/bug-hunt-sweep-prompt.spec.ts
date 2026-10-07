@@ -367,7 +367,9 @@ describe('buildSweepPrompt', () => {
       expect(p).toMatch(/Every UNPROVEN finding stays at NEW/);
       expect(p).toMatch(/independent Verifier on a different model/);
       // The hold for a person is the server's move now, not a PATCH the sweep makes.
-      expect(p).not.toMatch(/PATCH each of those to \{"status":"pending_approval"\}/);
+      expect(p).not.toMatch(
+        /PATCH each of those to \{"status":"pending_approval"\}/,
+      );
     });
 
     it('still skips verification for proven findings', () => {
