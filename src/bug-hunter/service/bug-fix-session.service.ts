@@ -55,6 +55,7 @@ import {
   BUG_RELEASE_TIMEOUT_MS,
   resolveReleaseTarget,
 } from '../constants/bug-fix-session.constants';
+import { BugCaseBudgetService } from './bug-case-budget.service';
 
 /**
  * The on-demand path: one admin, one bug, one click.
@@ -101,6 +102,7 @@ export class BugFixSessionService {
     private readonly repoClassifier: BugHunterRepoClassifierService,
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
+    private readonly budgetService: BugCaseBudgetService,
   ) {}
 
   // ── start a fix session ──────────────────────────────────────────────────
@@ -123,6 +125,7 @@ export class BugFixSessionService {
     findingId: string,
     userId: number,
     repoOverride?: string,
+    force = false,
   ): Promise<BugFinding> {
     const settings = await this.bugHunterService.getSettings();
     if (settings.mode === BugHunterMode.OFF) {
@@ -135,6 +138,10 @@ export class BugFixSessionService {
     if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
       throw new ForbiddenException(this.explainUnstartable(finding.status));
     }
+    // The case file's budget (OPP-0775): a bug that has had its sessions,
+    // attempts, dollars or minutes is not started again by reflex. `force`
+    // is the admin saying they read the post-mortem and want one anyway.
+    await this.budgetService.assertCanStartSession(finding, { force, userId });
 
     let repo = repoOverride ?? finding.repo;
     let classification: RepoClassification | null = null;
@@ -325,6 +332,7 @@ export class BugFixSessionService {
         : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
       payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
     });
+    void this.budgetService.charge(finding.id, 'sessions', 1);
   }
 
   // ── coordinated multi-repo plans ─────────────────────────────────────────

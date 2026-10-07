@@ -72,6 +72,8 @@ import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
+import { BugCaseFileService } from '../service/bug-case-file.service';
+import { BugCaseFile } from '../constants/bug-case-file';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
 import {
   BUG_HUNT_REPOS,
@@ -112,6 +114,7 @@ export class BugHunterPipelineController {
     private readonly policyService: BugHunterPolicyService,
     private readonly memoryService: AgentMemoryService,
     private readonly dossierService: BugHunterDossierService,
+    private readonly caseFileService: BugCaseFileService,
     private readonly runRepository: BugHuntRunRepository,
   ) {}
 
@@ -589,6 +592,23 @@ export class BugHunterPipelineController {
       repo ?? finding.repo ?? '',
       runId,
     );
+  }
+
+  @Get('pipeline/findings/:id/case')
+  @ApiOperation({
+    summary:
+      "One bug's case file, for a stage that wants typed records rather than a rendered brief (pipeline only)",
+    description:
+      'The shared half of the dossier (OPP-0775): verdicts, sessions with structured attempts, ' +
+      'lineage, post-mortem, miss record, budget and totals. `runId` excludes the calling run ' +
+      'from the sessions, since it has done nothing yet.',
+  })
+  async getCaseFile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+  ): Promise<BugCaseFile> {
+    const finding = await this.bugFindingService.getOne(id);
+    return this.caseFileService.build(finding, { currentRunId: runId });
   }
 
   @Post('pipeline/findings/:id/plan')

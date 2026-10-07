@@ -9,7 +9,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 /**
  * The authorisation split on this controller, asserted as metadata.
  *
- * Three read handlers are gated on VIEW_PRODUCT_ROADMAP so the roadmap's
+ * Four read handlers are gated on VIEW_PRODUCT_ROADMAP so the roadmap's
  * read-only Bugs tab can serve every roadmap viewer; everything else stays on
  * the `bug_hunter` toggle because it writes into repos and other teams'
  * backlogs. That split is currently expressed only in decorators, which no
@@ -65,6 +65,8 @@ describe('BugHunterController — route gating', () => {
   const ROADMAP_READ_HANDLERS = [
     'listFindings',
     'getFinding',
+    // The case file is the drawer's structured view of the same rows (OPP-0775).
+    'getCaseFile',
     'getFindingByReportedBug',
   ];
 

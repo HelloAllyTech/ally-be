@@ -63,6 +63,7 @@ import {
   TriggerBugHuntSweepDto,
   BugFindingDto,
   BugFindingMissDto,
+  BugCaseBudgetDto,
   BugFindingDetailDto,
   ListBugHuntRunsResponseDto,
   BugHuntRunsSummaryDto,
@@ -93,6 +94,9 @@ import {
 } from '../constants/bug-hunter.constants';
 import { BugHunterMetricsService } from '../service/bug-hunter-metrics.service';
 import { effectiveStage } from '../util/bug-finding-stage.util';
+import { BugCaseFile } from '../constants/bug-case-file';
+import { BugCaseFileService } from '../service/bug-case-file.service';
+import { withBudgetDefaults } from '../type/bug-case-budget.type';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -125,6 +129,7 @@ export class BugHunterController {
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
     private readonly bugFixSessionService: BugFixSessionService,
+    private readonly caseFileService: BugCaseFileService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
@@ -456,6 +461,27 @@ export class BugHunterController {
     return this.toFindingDetailDto(finding, events);
   }
 
+  /**
+   * Same read-only reasoning as `getFinding`: the case file is the drawer's
+   * structured view of the same rows, so a roadmap viewer may read it.
+   */
+  @Get('findings/:id/case')
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @ApiOperation({
+    summary:
+      "One bug's case file: typed records of everything Bug Hunter knows about it (roadmap viewer+)",
+    description:
+      'Verdicts, fix sessions with their structured attempts, lineage, the post-mortem, the miss ' +
+      'record, the budget and running totals (OPP-0775). The same record the fix dossier and the ' +
+      'Verifier read, so what a person sees in the drawer is what the agents were told.',
+  })
+  async getCaseFile(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugCaseFile> {
+    const finding = await this.bugFindingService.getOne(id);
+    return this.caseFileService.build(finding);
+  }
+
   @Post('findings/:id/fix-session')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -478,7 +504,12 @@ export class BugHunterController {
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
     return this.toDto(
-      await this.bugFixSessionService.start(id, user.id, body.repo),
+      await this.bugFixSessionService.start(
+        id,
+        user.id,
+        body.repo,
+        body.force === true,
+      ),
     );
   }
 
@@ -1085,6 +1116,7 @@ export function toFindingDto(
     regressed: row.metadata?.regressed === true,
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
     miss: readMiss(row.metadata),
+    budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     postmortem:
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)

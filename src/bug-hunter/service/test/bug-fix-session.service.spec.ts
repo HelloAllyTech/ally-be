@@ -80,6 +80,7 @@ describe('BugFixSessionService', () => {
   let notificationService: { notify: jest.Mock };
   let repoClassifier: { classifyRepo: jest.Mock };
   let roadmapOpportunityRepository: { findOne: jest.Mock; update: jest.Mock };
+  let budgetService: { assertCanStartSession: jest.Mock; charge: jest.Mock };
 
   beforeEach(() => {
     findingRepository = {
@@ -121,6 +122,10 @@ describe('BugFixSessionService', () => {
         rationale: '',
       }),
     };
+    budgetService = {
+      assertCanStartSession: jest.fn().mockResolvedValue(undefined),
+      charge: jest.fn().mockResolvedValue(null),
+    };
     roadmapOpportunityRepository = {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn(),
@@ -140,6 +145,7 @@ describe('BugFixSessionService', () => {
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       repoClassifier as never,
       roadmapOpportunityRepository as never,
+      budgetService as never,
     );
   });
 
@@ -180,6 +186,39 @@ describe('BugFixSessionService', () => {
           stage: BugHuntEventStage.SESSION_DISPATCHED,
         }),
       );
+    });
+
+    it('asks the case file budget before dispatching, and charges a session once it has', async () => {
+      const finding = findingRow();
+      bugFindingService.getOne.mockResolvedValue(finding);
+
+      await service.start('finding-1', 42, undefined, true);
+
+      expect(budgetService.assertCanStartSession).toHaveBeenCalledWith(
+        finding,
+        {
+          force: true,
+          userId: 42,
+        },
+      );
+      expect(budgetService.charge).toHaveBeenCalledWith(
+        'finding-1',
+        'sessions',
+        1,
+      );
+    });
+
+    it('refuses a session the budget refuses, without touching GitHub', async () => {
+      bugFindingService.getOne.mockResolvedValue(findingRow());
+      budgetService.assertCanStartSession.mockRejectedValue(
+        new ForbiddenException('I have already run 2 fix sessions on this bug'),
+      );
+
+      await expect(service.start('finding-1', 42)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
     });
 
     it('refuses while the kill switch is OFF, without touching GitHub', async () => {
@@ -1477,6 +1516,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
   let github: any;
   let notificationService: any;
   let roadmapOpportunityRepository: any;
+  let budgetService: any;
 
   const step = (index: number, overrides: Partial<BugFinding> = {}) =>
     findingRow({
@@ -1518,6 +1558,10 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       nextPatchTag: jest.fn().mockResolvedValue('v1.0.1'),
     };
     notificationService = { notify: jest.fn() };
+    budgetService = {
+      assertCanStartSession: jest.fn().mockResolvedValue(undefined),
+      charge: jest.fn().mockResolvedValue(null),
+    };
     roadmapOpportunityRepository = {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn(),
@@ -1533,6 +1577,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       { classifyRepo: jest.fn() } as never,
       roadmapOpportunityRepository as never,
+      budgetService as never,
     );
   });
 

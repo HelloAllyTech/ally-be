@@ -718,6 +718,31 @@ export class SetBugFindingStageDto {
   stage?: RoadmapOpportunityStage | null;
 }
 
+export class BugCaseBudgetDto {
+  @ApiProperty({
+    type: Object,
+    description:
+      'Caps per kind: sessions, attempts, escalations, usd, minutes.',
+  })
+  caps!: Record<string, number>;
+
+  @ApiProperty({ type: Object, description: 'Spend per kind, same keys.' })
+  used!: Record<string, number>;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description: 'The first cap reached, and when; null while under budget.',
+  })
+  exhausted!: { kind: string; at: string } | null;
+
+  @ApiProperty({ nullable: true })
+  overriddenBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  overriddenAt!: string | null;
+}
+
 export class BugFindingMissDto {
   @ApiProperty({
     enum: BUG_FINDING_MISS_REASONS,
@@ -940,6 +965,13 @@ export class BugFindingDto {
       'On a human-reported bug: why Bug Hunter did not find it first and which sense would have. Null until the classifier has run, and on every other source.',
   })
   miss!: BugFindingMissDto | null;
+
+  @ApiProperty({
+    type: () => BugCaseBudgetDto,
+    description:
+      "The case file's budget (OPP-0775): caps and spend for sessions, attempts, escalations, dollars and minutes. Defaults with nothing spent on a row that has not been metered yet.",
+  })
+  budget!: BugCaseBudgetDto;
 
   @ApiProperty({
     type: Object,
@@ -1173,6 +1205,15 @@ export class StartBugFixSessionDto {
   @IsOptional()
   @IsString()
   repo?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      "Start even though this bug's budget is spent (OPP-0775). The override is recorded on the budget; the drawer offers it only after showing what the last session left behind.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 export class TriggerBugHuntSweepDto {

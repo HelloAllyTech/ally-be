@@ -2,6 +2,8 @@ import {
   BugHunterDossierService,
   groupSessions,
 } from '../bug-hunter-dossier.service';
+import { BugCaseBudgetService } from '../bug-case-budget.service';
+import { BugCaseFileService } from '../bug-case-file.service';
 import { BugFinding } from '../../entity/bug-finding.entity';
 import { BugHuntEvent } from '../../entity/bug-hunt-event.entity';
 import {
@@ -165,10 +167,16 @@ describe('BugHunterDossierService', () => {
     telemetryService = {
       timed: jest.fn((_runId, _kind, fetch) => fetch()),
     };
+    // The dossier now takes sessions, verdicts, lineage and the post-mortem
+    // from the case file (OPP-0775); a real one over the same mocks keeps
+    // every assertion below watching the same inputs it always did.
     service = new BugHunterDossierService(
       findingRepository as never,
-      eventRepository as never,
-      bugFindingService as never,
+      new BugCaseFileService(
+        eventRepository as never,
+        bugFindingService as never,
+        new BugCaseBudgetService({} as never),
+      ),
       memoryService as never,
       telemetryService as never,
     );

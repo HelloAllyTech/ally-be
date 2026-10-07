@@ -35,6 +35,7 @@ import { BugHunterSettingsRepository } from '../repository/bug-hunter-settings.r
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHunterMode } from '../enum/bug-finding.enum';
+import { BugCaseBudgetService } from './bug-case-budget.service';
 
 /**
  * Owns the kill switch, the run lifecycle, and the event transcript.
@@ -87,6 +88,7 @@ export class BugHunterService {
     private readonly llmUsageService: LlmUsageService,
     private readonly github: GithubActionsService,
     private readonly finderDataService: BugHunterFinderDataService,
+    private readonly budgetService: BugCaseBudgetService,
   ) {}
 
   // ── kill switch ──────────────────────────────────────────────────────────
@@ -322,6 +324,17 @@ export class BugHunterService {
       });
     }
 
+    // Meter the case file's budget (OPP-0775). Not awaited: an event that
+    // cannot be charged is still an event, and `charge` swallows its own
+    // failures.
+    if (params.findingId) {
+      if (params.stage === BugHuntEventStage.FIX_ATTEMPT) {
+        void this.budgetService.charge(params.findingId, 'attempts', 1);
+      } else if (params.stage === BugHuntEventStage.ESCALATED) {
+        void this.budgetService.charge(params.findingId, 'escalations', 1);
+      }
+    }
+
     return event;
   }
 
@@ -464,6 +477,13 @@ export class BugHunterService {
     });
     const closed = await this.getRun(id);
 
+    // Minutes against the bug's budget, for the one kind of run that works on
+    // one bug (OPP-0775). A sweep's time is the sweep's, not any finding's.
+    if (run.trigger === BugHuntTrigger.FIX_SESSION) {
+      const minutes = (Date.now() - run.createdAt.getTime()) / 60_000;
+      void this.budgetService.chargeRun(id, 'minutes', minutes);
+    }
+
     const escalated = (await this.eventRepository.listForRun(id)).some(
       (e) => e.stage === BugHuntEventStage.ESCALATED,
     );
@@ -561,6 +581,16 @@ export class BugHunterService {
           ...(cliReportedCostUsd != null ? { cliReportedCostUsd } : {}),
         } as Record<string, any>,
       });
+
+      // Dollars against the bug's budget (OPP-0775): the CLI's own figure for
+      // this call when it gave one, else what this call added to the token
+      // estimate. Only a fix-session run spends on one bug.
+      if (run.trigger === BugHuntTrigger.FIX_SESSION) {
+        const delta =
+          params.cliReportedCostUsd ??
+          Math.max(0, usage.costUsd - Number(run.totalTokenCostUsd || 0));
+        void this.budgetService.chargeRun(runId, 'usd', delta);
+      }
     } catch (error) {
       this.logger.warn(
         `Failed to record actual bug-hunt cost for run ${runId}: ${

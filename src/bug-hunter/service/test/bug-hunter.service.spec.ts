@@ -11,6 +11,7 @@ import { BugHunterFinderDataService } from '../bug-hunter-finder-data.service';
 import { BugHuntRunStatus, BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { BugHuntRun } from '../../entity/bug-hunt-run.entity';
+import { BugCaseBudgetService } from '../bug-case-budget.service';
 
 describe('BugHunterService', () => {
   let service: BugHunterService;
@@ -34,6 +35,10 @@ describe('BugHunterService', () => {
         { provide: LlmUsageService, useValue: {} },
         { provide: GithubActionsService, useValue: {} },
         { provide: BugHunterFinderDataService, useValue: {} },
+        {
+          provide: BugCaseBudgetService,
+          useValue: { charge: jest.fn(), chargeRun: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -146,6 +151,7 @@ describe('BugHunterService.reconcileStaleRuns', () => {
       {} as never,
       {} as never,
       {} as never,
+      { charge: jest.fn(), chargeRun: jest.fn() } as never, // budget (OPP-0775)
     );
     return { service, runRepository, eventRepository, notificationService };
   };

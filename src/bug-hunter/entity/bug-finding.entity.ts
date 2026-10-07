@@ -321,6 +321,15 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
 
+  /**
+   * The case file's budget (migration 1975830000000, OPP-0775): caps and
+   * spend for sessions, attempts, escalations, dollars and minutes. Null
+   * reads as defaults with nothing spent — see `withBudgetDefaults`. Owned by
+   * `BugCaseBudgetService`; nothing else writes it.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  budget?: Record<string, any> | null;
+
   // ── reversal tracking (migration 1970200000000) ──────────────────────────
 
   /**
