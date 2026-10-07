@@ -133,6 +133,7 @@ export const BUG_FINDING_DECISION_NOTE_MAX_LENGTH = 500;
 /** Prompt codes under src/prompts/bug_hunter/ — see toPromptCode('bug_hunter', <stem>). */
 export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
+  CLASSIFY_MISS: 'bug_hunter_classify_miss',
 } as const;
 
 /**
@@ -145,6 +146,19 @@ export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 2048;
 export const BUG_HUNTER_CLASSIFY_REPO_TASK_ID = 'bug-hunter-repo-classifier';
 /** Named explicitly so the call never reaches a Claude model (it used to ride ANTHROPIC_AUTOFILL_MODEL). */
 export const BUG_HUNTER_CLASSIFY_REPO_MODEL = 'gemini-2.5-flash';
+
+/**
+ * The miss classifier (OPP-0774): why a human-reported bug was not found
+ * first, and which sense would have caught it. Same cheap model and token
+ * budget reasoning as the repo classifier; a two-sentence JSON answer.
+ */
+export const BUG_HUNTER_CLASSIFY_MISS_MAX_TOKENS = 2048;
+export const BUG_HUNTER_CLASSIFY_MISS_TASK_ID = 'bug-hunter-miss-classifier';
+export const BUG_HUNTER_CLASSIFY_MISS_MODEL = 'gemini-2.5-flash';
+/** How far back the classifier looks for Bug Hunter's own findings on the repo when deciding whether it had already detected the bug. */
+export const BUG_HUNTER_CLASSIFY_MISS_LOOKBACK_DAYS = 21;
+/** Cap on the own-findings context shown to the classifier; newest first. */
+export const BUG_HUNTER_CLASSIFY_MISS_MAX_CONTEXT_FINDINGS = 40;
 
 /**
  * Subagent name for Bug Hunter's model escalation path — defined once per

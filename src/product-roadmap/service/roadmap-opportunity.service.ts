@@ -17,6 +17,7 @@ import {
   BugFindingStatus,
 } from 'src/bug-hunter/enum/bug-finding.enum';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
 import { truncateTitle } from 'src/bug-hunter/util/truncate-title.util';
 
 import { S3Service } from 'src/aws/service/s3.service';
@@ -95,6 +96,7 @@ export class RoadmapOpportunityService {
     private readonly config: AppConfigService,
     private readonly readinessToken: RoadmapReadinessTokenService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
+    private readonly missClassifier: BugHunterMissClassifierService,
   ) {}
 
   async list(
@@ -259,7 +261,7 @@ export class RoadmapOpportunityService {
         const repo =
           extra?.repo ??
           (await this.repoClassifier.classifyRepo(saved.description)).repo;
-        await this.bugFindingRepository.save(
+        const finding = await this.bugFindingRepository.save(
           this.bugFindingRepository.create({
             source: BugFindingSource.REPORTED_BUG,
             title: truncateTitle(saved.description),
@@ -269,6 +271,11 @@ export class RoadmapOpportunityService {
             status: BugFindingStatus.NEW,
           }),
         );
+        // Why Bug Hunter did not find this first (OPP-0774). Not awaited: the
+        // reporter's request is done once the row exists, and the record is a
+        // few seconds of a cheap model that must never delay or fail a filing.
+        // classifyAndRecord swallows its own failures.
+        void this.missClassifier.classifyAndRecord(finding.id, 'intake');
       } catch (error) {
         this.logger.warn(
           `Failed to create a Bug Hunter finding for opportunity ${saved.id}: ${

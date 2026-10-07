@@ -106,6 +106,7 @@ describe('RoadmapOpportunityService — reference images', () => {
           .fn()
           .mockResolvedValue({ repo: null, rationale: '' }),
       } as never,
+      { classifyAndRecord: jest.fn().mockResolvedValue(null) } as never, // missClassifier
     );
 
     return { service, opportunityRepository, s3Service };

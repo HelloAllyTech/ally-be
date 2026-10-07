@@ -40,6 +40,12 @@ import {
   BUG_HUNTER_METRICS_DEFAULT_DAYS,
   BUG_HUNTER_METRICS_MAX_DAYS,
 } from '../constants/bug-hunter.constants';
+import {
+  BUG_FINDING_MISS_REASONS,
+  BUG_FINDING_MISS_SENSES,
+  BugFindingMissReason,
+  BugFindingMissSense,
+} from '../type/bug-finding-miss.type';
 
 export class BugHuntEventDto {
   @ApiProperty()
@@ -712,6 +718,39 @@ export class SetBugFindingStageDto {
   stage?: RoadmapOpportunityStage | null;
 }
 
+export class BugFindingMissDto {
+  @ApiProperty({
+    enum: BUG_FINDING_MISS_REASONS,
+    description:
+      'no_sense: a new sense is needed · sense_missed: an existing sense did not flag it · detected_declined: a sense found it and a person declined · detected_not_fixed: found, not fixed or released in time · not_a_miss.',
+  })
+  reason!: BugFindingMissReason;
+
+  @ApiProperty({
+    enum: BUG_FINDING_MISS_SENSES,
+    nullable: true,
+    description:
+      'The sense that would have caught it first, or that failed to. Null for not_a_miss.',
+  })
+  sense!: BugFindingMissSense | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'For detected_*: the earlier finding that was this bug or its cause.',
+  })
+  matchedFindingId!: string | null;
+
+  @ApiProperty({ nullable: true })
+  confidence!: number | null;
+
+  @ApiProperty()
+  rationale!: string;
+
+  @ApiProperty()
+  classifiedAt!: string;
+}
+
 /**
  * The answer to "where did this roadmap bug go?" — nothing more.
  *
@@ -893,6 +932,14 @@ export class BugFindingDto {
       'How many sweeps have re-found this bug since it was declined. A high count is the sweep arguing with a human.',
   })
   rediscoveredCount!: number;
+
+  @ApiProperty({
+    type: () => BugFindingMissDto,
+    nullable: true,
+    description:
+      'On a human-reported bug: why Bug Hunter did not find it first and which sense would have. Null until the classifier has run, and on every other source.',
+  })
+  miss!: BugFindingMissDto | null;
 
   @ApiProperty({
     type: Object,

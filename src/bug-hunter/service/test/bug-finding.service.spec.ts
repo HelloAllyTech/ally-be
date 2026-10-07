@@ -11,6 +11,7 @@ import { BugFindingService, RawFinding } from '../bug-finding.service';
 import { BugHunterNotificationService } from '../bug-hunter-notification.service';
 import { BugHunterService } from '../bug-hunter.service';
 import { BugHunterRepoClassifierService } from '../bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from '../bug-hunter-miss-classifier.service';
 
 import { BugFinding } from '../../entity/bug-finding.entity';
 import {
@@ -87,6 +88,12 @@ const classifier = (
     classifyRepo: jest.fn().mockResolvedValue(result),
   }) as unknown as BugHunterRepoClassifierService;
 
+/** The miss classifier — fire-and-forget at intake and on edit, never awaited here. */
+const missClassifier = () =>
+  ({
+    classifyAndRecord: jest.fn().mockResolvedValue(null),
+  }) as unknown as BugHunterMissClassifierService;
+
 const userRepository = () =>
   ({ find: jest.fn().mockResolvedValue([]) }) as unknown as Repository<User>;
 
@@ -138,6 +145,7 @@ describe('BugFindingService.persistFindings', () => {
       userRepository(),
       bugHunterService(),
       classifier(),
+      missClassifier(),
     );
   });
 
@@ -208,6 +216,7 @@ describe('BugFindingService.persistFindings', () => {
         userRepository(),
         bugHunterService({ appendFindingEvent: events }),
         classifier(),
+        missClassifier(),
       );
       repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
 
@@ -434,6 +443,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
       userRepository(),
       bugHunterService(),
       classifier(),
+      missClassifier(),
     );
   });
 
@@ -543,6 +553,7 @@ describe('BugFindingService.setStatus — a failed session’s post-mortem', () 
       userRepository(),
       { appendFindingEvent: jest.fn() } as unknown as BugHunterService,
       classifier(),
+      missClassifier(),
     );
 
     await service.setStatus('finding-1', {
@@ -604,6 +615,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       userRepository(),
       hunterService as unknown as BugHunterService,
       classifier(),
+      missClassifier(),
     );
   };
 
@@ -776,6 +788,7 @@ describe('BugFindingService.editDescription', () => {
   let service: BugFindingService;
   let repo: { findOne: jest.Mock; update: jest.Mock };
   let hunter: { appendFindingEvent: jest.Mock };
+  let miss: { classifyAndRecord: jest.Mock };
 
   const build = (
     finding: BugFinding,
@@ -799,8 +812,43 @@ describe('BugFindingService.editDescription', () => {
       userRepository(),
       hunter as unknown as BugHunterService,
       classifier(classifyResult),
+      (miss = {
+        classifyAndRecord: jest.fn().mockResolvedValue(null),
+      }) as unknown as BugHunterMissClassifierService,
     );
   };
+
+  it('re-runs the miss classifier on a reported bug after its description changes, without waiting for it', async () => {
+    build(
+      row({
+        id: 'finding-9',
+        source: BugFindingSource.REPORTED_BUG,
+        repo: 'ally-web',
+        description: 'old text',
+      }),
+    );
+
+    await service.editDescription('finding-9', 'new text with the route', 7);
+
+    expect(miss.classifyAndRecord).toHaveBeenCalledWith(
+      'finding-9',
+      'description_edited',
+    );
+  });
+
+  it('does not run the miss classifier when a sweep finding is edited', async () => {
+    build(
+      row({
+        id: 'finding-10',
+        source: BugFindingSource.CODE_REVIEW,
+        repo: 'ally-web',
+      }),
+    );
+
+    await service.editDescription('finding-10', 'new text', 7);
+
+    expect(miss.classifyAndRecord).not.toHaveBeenCalled();
+  });
 
   it('re-classifies a repo-less bug from the new text, and says so on the timeline', async () => {
     build(
@@ -992,6 +1040,7 @@ describe('BugFindingService.setStage', () => {
       userRepository(),
       hunter as unknown as BugHunterService,
       classifier(),
+      missClassifier(),
     );
   };
 
@@ -1134,6 +1183,7 @@ describe('BugFindingService.enrich', () => {
         usersRepo as unknown as Repository<User>,
         bugHunterService(),
         classifier(),
+        missClassifier(),
       ),
     };
   };
@@ -1262,6 +1312,7 @@ describe('BugFindingService.enrich', () => {
       { find: jest.fn().mockResolvedValue([]) } as unknown as Repository<User>,
       bugHunterService({ getRunsByIds }),
       classifier(),
+      missClassifier(),
     );
 
     const enriched = await service.enrich([
@@ -1306,6 +1357,7 @@ describe('BugFindingService.reject', () => {
       userRepository(),
       bugHunterService({ appendFindingEvent: events }),
       classifier(),
+      missClassifier(),
     );
     return { service, repo, events };
   };
@@ -1391,6 +1443,7 @@ describe('BugFindingService.setStatus — a declined bug stays declined', () => 
       userRepository(),
       bugHunterService(),
       classifier(),
+      missClassifier(),
     );
   };
 
@@ -1447,6 +1500,7 @@ describe('BugFindingService.setStatus — verifier confidence', () => {
       userRepository(),
       bugHunterService(),
       classifier(),
+      missClassifier(),
     );
     return { service, repo };
   };
@@ -1518,6 +1572,7 @@ describe('BugFindingService.recordPreExistingFailure', () => {
       {} as never,
       {} as never,
       classifier(),
+      missClassifier(),
     );
   });
 

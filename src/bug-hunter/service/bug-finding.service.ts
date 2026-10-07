@@ -18,6 +18,7 @@ import {
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { BugHunterRepoClassifierService } from './bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from './bug-hunter-miss-classifier.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
@@ -142,6 +143,7 @@ export class BugFindingService {
     // the shared event timeline without a circular provider.
     private readonly bugHunterService: BugHunterService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
+    private readonly missClassifier: BugHunterMissClassifierService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -1099,6 +1101,13 @@ export class BugFindingService {
           }`,
         );
       }
+    }
+
+    // The miss record was written against the old text; a rewrite that adds
+    // the route, the error message or the file can change both the reason and
+    // the sense. Re-run it, fire-and-forget, same as at intake.
+    if (finding.source === BugFindingSource.REPORTED_BUG) {
+      void this.missClassifier.classifyAndRecord(id, 'description_edited');
     }
 
     return this.getOne(id);

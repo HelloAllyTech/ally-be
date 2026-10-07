@@ -225,10 +225,13 @@ over accepting whatever arrived.
 
 ### Code-read one-shot prompts
 
-A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/` or
-`product_updates/` holds the system prompt for a **single** call that a feature makes on demand
-or on a schedule, read through `getPromptByCode` like an agent prompt but not driving a
-conversation. `product_updates/consolidate.txt` is the one whose output reaches a public page
+A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/`,
+`bug_hunter/` or `product_updates/` holds the system prompt for a **single** call that a feature
+makes on demand or on a schedule, read through `getPromptByCode` like an agent prompt but not
+driving a conversation. `bug_hunter/classify_repo.txt` and `bug_hunter/classify_miss.txt` are the
+plainest examples: one JSON answer each, and code validates the answer against a closed catalogue
+(dispatchable repos; miss reasons and senses) before anything is stored, so a model that invents a
+value is discarded rather than trusted. `product_updates/consolidate.txt` is the one whose output reaches a public page
 (app.helloally.ai/blog/changelog) with no human step, so its reply is validated field by field
 and code enforces what the prompt asks — public text carrying jargon is capped at low confidence so
 the team digest flags it — rather than trusting the model to comply. Since 2026-10-01 public is the

@@ -16,6 +16,7 @@ import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
 import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation.repository';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
 import {
   RoadmapOpportunityEffort,
   RoadmapOpportunityType,
@@ -126,6 +127,10 @@ describe('RoadmapOpportunityService — readiness gate', () => {
               .fn()
               .mockResolvedValue({ repo: null, rationale: '' }),
           },
+        },
+        {
+          provide: BugHunterMissClassifierService,
+          useValue: { classifyAndRecord: jest.fn().mockResolvedValue(null) },
         },
       ],
     }).compile();

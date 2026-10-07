@@ -95,6 +95,7 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
         }),
       } as never,
       repoClassifier as never,
+      { classifyAndRecord: jest.fn().mockResolvedValue(null) } as never, // missClassifier
     );
 
     return { service, emit, bugFindingRepository, repoClassifier };

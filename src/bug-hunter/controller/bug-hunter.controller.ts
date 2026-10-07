@@ -62,6 +62,7 @@ import {
   BugHuntRunDto,
   TriggerBugHuntSweepDto,
   BugFindingDto,
+  BugFindingMissDto,
   BugFindingDetailDto,
   ListBugHuntRunsResponseDto,
   BugHuntRunsSummaryDto,
@@ -1003,6 +1004,30 @@ export function toSettingsDto(row: BugHunterSettings): BugHunterSettingsDto {
  * number in [0,1] comes back null — a malformed certainty must not render as a
  * confident one.
  */
+/**
+ * The miss record under `metadata.miss` (OPP-0774), or null. Validated at
+ * write time by `toBugFindingMiss`; here only the shape is checked so a
+ * hand-edited or pre-catalogue blob cannot break the drawer.
+ */
+function readMiss(
+  metadata?: Record<string, any> | null,
+): BugFindingMissDto | null {
+  const miss = metadata?.miss;
+  if (!miss || typeof miss !== 'object' || typeof miss.reason !== 'string') {
+    return null;
+  }
+  return {
+    reason: miss.reason,
+    sense: typeof miss.sense === 'string' ? miss.sense : null,
+    matchedFindingId:
+      typeof miss.matchedFindingId === 'string' ? miss.matchedFindingId : null,
+    confidence: typeof miss.confidence === 'number' ? miss.confidence : null,
+    rationale: typeof miss.rationale === 'string' ? miss.rationale : '',
+    classifiedAt:
+      typeof miss.classifiedAt === 'string' ? miss.classifiedAt : '',
+  };
+}
+
 function readConfidence(metadata?: Record<string, any> | null): number | null {
   const raw = metadata?.confidence;
   if (raw == null || raw === '') return null;
@@ -1059,6 +1084,7 @@ export function toFindingDto(
         : null,
     regressed: row.metadata?.regressed === true,
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
+    miss: readMiss(row.metadata),
     postmortem:
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)

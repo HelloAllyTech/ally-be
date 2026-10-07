@@ -313,6 +313,10 @@ export class BugFinding extends BaseWithoutTenantEntity {
    *  - `verificationUnavailable` — true when the engine that found this had
    *    no independent verifier (Gemini has no Task tool). Held for a human;
    *    `BugHunterPolicyService` refuses to let it be fixed in AI mode.
+   *  - `miss` — on a `reported_bug` row only: why Bug Hunter did not find it
+   *    first and which sense would have (`BugFindingMiss`, OPP-0774). Written
+   *    by `BugHunterMissClassifierService` a moment after intake and again
+   *    after a description edit; read by the drawer and the goal metrics.
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

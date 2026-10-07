@@ -1490,6 +1490,18 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configuredBy: 'BUG_HUNTER_CLASSIFY_REPO_MODEL (compiled in)',
   },
   {
+    id: 'bug-hunter-miss-classifier',
+    task: LlmTask.BUG_HUNTER,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A person reports a bug, or edits its description',
+    detail:
+      'Writes why Bug Hunter did not find the bug first and which sense would have (OPP-0774). One cheap JSON answer per report, never on the request path.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
+    configuredBy: 'BUG_HUNTER_CLASSIFY_MISS_MODEL (compiled in)',
+  },
+  {
     id: 'agent-memory-curation',
     task: LlmTask.AGENT_MEMORY_CURATION,
     runtime: LlmRuntime.ALLY_BE,
