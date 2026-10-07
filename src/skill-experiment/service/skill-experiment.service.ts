@@ -425,7 +425,7 @@ export class SkillExperimentService {
     return this.getDetail(promptId);
   }
 
-  /** Judged samples for one variant (or all), lowest score first. */
+  /** Judged samples for one variant (or all), newest first. */
   async listObservations(
     promptId: string,
     query: SkillExperimentObservationsQueryDto,
