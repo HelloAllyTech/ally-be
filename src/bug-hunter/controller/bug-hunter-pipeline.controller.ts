@@ -73,6 +73,9 @@ import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import { BugCaseFileService } from '../service/bug-case-file.service';
+import { BugVerifyFixService } from '../service/bug-verify-fix.service';
+import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
+import { prNumberFrom } from '../service/bug-hunter-policy.service';
 import { BugCaseFile } from '../constants/bug-case-file';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
 import {
@@ -115,6 +118,7 @@ export class BugHunterPipelineController {
     private readonly memoryService: AgentMemoryService,
     private readonly dossierService: BugHunterDossierService,
     private readonly caseFileService: BugCaseFileService,
+    private readonly verifyFixService: BugVerifyFixService,
     private readonly runRepository: BugHuntRunRepository,
   ) {}
 
@@ -428,8 +432,29 @@ export class BugHunterPipelineController {
       "platform-wide, same as Builder's.",
   })
   @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
-  async getModels(): Promise<BugHunterModelSettingsDto> {
-    return this.modelSettingsService.get();
+  async getModels(
+    @Query('role') role?: string,
+    @Query('findingId') findingId?: string,
+  ): Promise<BugHunterModelSettingsDto> {
+    const settings = await this.modelSettingsService.get();
+    // The Verifier runs on the OTHER vendor (OPP-0779): the counterpart was
+    // chosen and stored on the finding at dispatch, so the workflow's first
+    // call gets it back here rather than the platform default.
+    if (role === 'verify_fix' && findingId) {
+      const finding = await this.bugFindingService
+        .getOne(findingId)
+        .catch(() => null);
+      const counterpart = finding?.metadata?.verifyFix?.counterpart;
+      if (counterpart?.engine && counterpart?.model) {
+        return {
+          ...settings,
+          engine: counterpart.engine,
+          defaultModel: counterpart.model,
+          escalationModel: counterpart.model,
+        };
+      }
+    }
+    return settings;
   }
 
   @Get('pipeline/sweep-prompt')
@@ -594,6 +619,52 @@ export class BugHunterPipelineController {
     );
   }
 
+  @Get('pipeline/findings/:id/verify-prompt')
+  @ApiOperation({
+    summary:
+      "The Verifier's protocol for this finding's open PR, as plain text (pipeline only)",
+    description:
+      'Fetched by `bug-fix-session.yml` when dispatched with mode=verify (OPP-0779). A read-only ' +
+      "checklist over the PR on the other vendor's model: reproduce at base, pass at head, suite " +
+      'against base, diff against the brief, data-file counts, blast radius. Ends in a verdict PATCH.',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getVerifyFixPrompt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId: string,
+    @Query('repo') repo?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    const targetRepo = repo ?? finding.repo ?? '';
+    if (!finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request to verify.',
+      );
+    }
+    const prNumber = prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+    const dispatched = finding.metadata?.verifyFix ?? null;
+    const caseFile = await this.caseFileService.build(finding, {
+      currentRunId: runId,
+    });
+    return buildVerifyFixPrompt({
+      finding,
+      caseFile,
+      repo: targetRepo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      prUrl: finding.prUrl,
+      prNumber,
+      engine: dispatched?.counterpart?.engine ?? 'claude-code',
+      model: dispatched?.counterpart?.model ?? 'claude-sonnet-5',
+      fixEngine: dispatched?.fixEngine ?? null,
+    });
+  }
+
   @Get('pipeline/findings/:id/case')
   @ApiOperation({
     summary:
@@ -722,11 +793,29 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: PatchBugFindingDto,
   ): Promise<BugFindingDto> {
+    // The Verifier's report (OPP-0779): checks in, verdict computed, stored
+    // on the case file, acted on. A verdict never changes status directly —
+    // the merge or the hand-off is the server's move, not the verifier's.
+    if (body.verdict) {
+      const { verdict, ...rest } = body;
+      await this.verifyFixService.recordVerdict(id, verdict);
+      const hasMore = Object.values(rest).some((v) => v !== undefined);
+      if (!hasMore) {
+        return toFindingDto(await this.bugFindingService.getOne(id));
+      }
+      body = rest as PatchBugFindingDto;
+    }
     // The rules the sweep prompt states, enforced where the agent's write
     // arrives — see BugHunterPolicyService. Human routes never pass through
     // here, which is the point: a person's decision is what these defer to.
     await this.policyService.assertTransitionAllowed(id, body);
     const finding = await this.bugFindingService.setStatus(id, body);
+    // A fix reached its PR: the Verifier reads it next (OPP-0779). Not
+    // awaited — the fix session's PATCH is done; `dispatch` swallows its
+    // own failures and leaves the PR for a person if it cannot run.
+    if (body.status === BugFindingStatus.PR_OPENED) {
+      void this.verifyFixService.dispatch(id);
+    }
     // The agent's own merge path. Its protocol merges with --delete-branch,
     // so this usually finds the branch already gone; it is the backstop for a
     // session that merged and then ran out of time before deleting

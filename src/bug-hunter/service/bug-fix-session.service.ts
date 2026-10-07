@@ -56,6 +56,7 @@ import {
   resolveReleaseTarget,
 } from '../constants/bug-fix-session.constants';
 import { BugCaseBudgetService } from './bug-case-budget.service';
+import { BugFixVerdict } from '../type/bug-fix-verdict.type';
 
 /**
  * The on-demand path: one admin, one bug, one click.
@@ -572,6 +573,99 @@ export class BugFixSessionService {
       payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber, ...branch },
     });
 
+    return this.bugFindingService.getOne(finding.id);
+  }
+
+  /**
+   * The merge Bug Hunter makes itself after the Verifier passed a fix
+   * (OPP-0779) — the same GitHub checks `mergeFinding` insists on for a
+   * person, with the verdict as the actor. Policy has already said this
+   * repo and this diff may self-merge; this only does the merging.
+   */
+  async mergeVerifiedFinding(
+    finding: BugFinding,
+    verdict: BugFixVerdict,
+  ): Promise<BugFinding> {
+    if (finding.status !== BugFindingStatus.PR_OPENED) {
+      throw new ForbiddenException(
+        `Only a fix with an open PR can be merged — this one is ${finding.status}.`,
+      );
+    }
+    if (!finding.repo || !finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request recorded.',
+      );
+    }
+    const prNumber = BugFixSessionService.prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+    const pr = await this.github.getPullRequest(finding.repo, prNumber);
+    if (!pr) {
+      throw new BadRequestException(
+        `Could not read ${finding.prUrl} from GitHub.`,
+      );
+    }
+    if (pr.merged) {
+      await this.bugFindingService.setStatus(finding.id, {
+        status: BugFindingStatus.MERGED,
+      });
+      await this.releaseLinkedRoadmapOpportunity(finding);
+      await this.deleteMergedBranch(finding.repo, pr);
+      return this.bugFindingService.getOne(finding.id);
+    }
+    if (pr.state === 'closed') {
+      throw new ForbiddenException(
+        `${finding.prUrl} was closed without being merged.`,
+      );
+    }
+    if (verdict.prHeadSha && pr.headSha && verdict.prHeadSha !== pr.headSha) {
+      throw new ForbiddenException(
+        `The PR moved since the Verifier read it (${verdict.prHeadSha.slice(0, 7)} → ${pr.headSha.slice(0, 7)}); it needs a fresh verdict.`,
+      );
+    }
+    const rollup = pr.headSha
+      ? await this.github.getCheckRollup(finding.repo, pr.headSha)
+      : null;
+    if (!rollup || rollup.state !== 'success') {
+      throw new ForbiddenException(
+        `This PR's own checks are ${rollup?.state ?? 'unreadable'}; I only merge on green.`,
+      );
+    }
+    const result = await this.github.mergePullRequest(
+      finding.repo,
+      prNumber,
+      `fix: ${finding.title.slice(0, 120)} (#${prNumber})`,
+    );
+    if (!result.merged) {
+      throw new BadRequestException(
+        `GitHub would not merge this PR: ${result.message ?? 'no reason given'}`,
+      );
+    }
+    const decidedAt = new Date();
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.MERGED,
+      decidedAt,
+    });
+    finding.status = BugFindingStatus.MERGED;
+    await this.releaseLinkedRoadmapOpportunity(finding);
+    await this.checkForAndRecordReversals(finding, decidedAt);
+    const branch = await this.deleteMergedBranch(finding.repo, pr);
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.MERGED,
+      summary: `Merged ${finding.prUrl} after the Verifier passed it on ${verdict.by.engine ?? 'another model'}.`,
+      payload: {
+        prUrl: finding.prUrl,
+        mergedBy: 'verifier',
+        prNumber,
+        verdictAt: verdict.at,
+        ...branch,
+      },
+    });
     return this.bugFindingService.getOne(finding.id);
   }
 

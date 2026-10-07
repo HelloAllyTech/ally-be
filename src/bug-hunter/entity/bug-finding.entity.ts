@@ -317,6 +317,10 @@ export class BugFinding extends BaseWithoutTenantEntity {
    *    first and which sense would have (`BugFindingMiss`, OPP-0774). Written
    *    by `BugHunterMissClassifierService` a moment after intake and again
    *    after a description edit; read by the drawer and the goal metrics.
+   *  - `fixVerdicts` — the Verifier's verdicts on this bug's fix PRs
+   *    (`BugFixVerdict[]`, OPP-0779), newest last; `verifyFix` — the
+   *    dispatch record while a verifier run is in flight, cleared when its
+   *    verdict lands. No pass for the current PR means no self-merge.
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

@@ -21,6 +21,7 @@ import {
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugFindingService } from './bug-finding.service';
 import { BugHunterService } from './bug-hunter.service';
+import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 
 /** The PATCH fields the policy reads. Kept narrow so the DTO can grow without this file noticing. */
 export interface FindingTransitionPatch {
@@ -149,6 +150,7 @@ export class BugHunterPolicyService {
   async assertMayMerge(
     finding: BugFinding,
     prUrl: string | null,
+    options: { verified?: boolean } = {},
   ): Promise<void> {
     if (finding.touchesGuardedPath) {
       throw new ForbiddenException(
@@ -163,6 +165,20 @@ export class BugHunterPolicyService {
       throw new ForbiddenException(
         `"${repo}" never auto-merges Bug Hunter fixes. Leave the PR open and PATCH to pr_opened; an admin merges it with one click.`,
       );
+    }
+
+    // No Verify pass, no self-merge (OPP-0779). The agent that wrote the fix
+    // never merges it; a separate run on another vendor reads the PR and
+    // Bug Hunter merges on a pass. `verified` is that path vouching for
+    // itself; everything else must show a recorded pass for this PR.
+    if (!options.verified) {
+      const pass = latestVerdictFor(finding.metadata?.fixVerdicts, prUrl);
+      if (!pass || pass.verdict !== 'pass') {
+        throw new ForbiddenException(
+          'This fix has no Verifier pass yet, so it does not merge itself. Leave the PR open and PATCH to pr_opened: ' +
+            'a separate Verifier run reads it on another model, and Bug Hunter merges it if it passes.',
+        );
+      }
     }
 
     const run = await this.runOf(finding);

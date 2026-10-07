@@ -2,7 +2,6 @@ import { BugHunterMode } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import {
   BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
-  BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
   BUG_HUNT_VERIFIER_SUBAGENT,
 } from '../bug-hunter.constants';
 import { buildSweepPrompt } from '../bug-hunt-sweep-prompt';
@@ -433,17 +432,21 @@ describe('buildSweepPrompt', () => {
   });
 
   describe('merge policy', () => {
-    // ally-ai-learn is the only repo where the bot can actually land a merge
-    // (unprotected master), so it is the only place the auto-merge rules are
-    // reachable — see BUG_HUNT_REPOS.canBotMerge.
+    // ally-ai-learn is the only repo where the bot could land a merge
+    // (unprotected master). Since OPP-0779 even there the sweep does not: a
+    // separate Verifier run reads every PR and Bug Hunter merges on a pass.
     const mergeable = () => build({ repo: 'ally-ai-learn' });
 
-    it('states the per-run auto-merge cap from the shared constant', () => {
-      expect(mergeable()).toContain(String(BUG_HUNT_MAX_AUTO_MERGES_PER_RUN));
+    it('tells every repo, the mergeable one included, not to merge: the Verifier decides', () => {
+      const p = mergeable();
+      expect(p).toMatch(/Do not merge anything, however trivial it looks/);
+      expect(p).toMatch(/Verifier run on a different model/);
+      expect(p).not.toContain('gh pr merge --squash');
+      expect(p).not.toMatch(/you may merge at most/i);
     });
 
-    it('never permits merging a guarded path', () => {
-      expect(mergeable()).toMatch(/touchesGuardedPath=false/);
+    it('still leaves every fix as an open PR the server can act on', () => {
+      expect(mergeable()).toContain('{"status":"pr_opened"}');
     });
 
     it('forbids tagging a release or deploying', () => {
@@ -451,19 +454,8 @@ describe('buildSweepPrompt', () => {
       expect(build()).toMatch(/Never tag a release and never deploy/i);
     });
 
-    it('tells the agent not to merge something borderline', () => {
-      expect(mergeable()).toMatch(/borderline/i);
-    });
-
-    it('merges behind the PR checks, never with --admin', () => {
-      const p = mergeable();
-      expect(p).toContain('gh pr checks --watch');
-      expect(p).toContain('gh pr merge --squash');
-      expect(p).not.toContain('gh pr merge --admin');
-    });
-
-    it('deletes the branch with the merge (OPP-0750)', () => {
-      expect(mergeable()).toContain('gh pr merge --squash --delete-branch');
+    it('never instructs a merge with --admin, anywhere', () => {
+      expect(mergeable()).not.toContain('gh pr merge --admin');
     });
 
     it('tells a protected repo it cannot merge, separately from the mobile rule', () => {

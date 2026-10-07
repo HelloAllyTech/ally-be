@@ -30,9 +30,20 @@ const finding = (overrides: Partial<BugFinding> = {}): BugFinding =>
     proven: false,
     touchesGuardedPath: false,
     prUrl: 'https://github.com/HelloAllyTech/ally-ai-learn/pull/42',
-    metadata: { confidence: 0.9 },
+    // A Verifier pass on the current PR (OPP-0779): without one no pipeline
+    // merge is allowed at all, so the merge rules below are only reachable
+    // with it. Left off `prUrl` so the patch-supplied-PR case matches too.
+    metadata: { confidence: 0.9, fixVerdicts: [PASS_VERDICT] },
     ...overrides,
   }) as BugFinding;
+
+const PASS_VERDICT = {
+  verdict: 'pass',
+  prUrl: null,
+  prHeadSha: null,
+  at: '2026-10-07T09:00:00.000Z',
+  checks: [],
+};
 
 const run = (overrides: Partial<BugHuntRun> = {}): BugHuntRun =>
   ({
@@ -166,6 +177,37 @@ describe('BugHunterPolicyService', () => {
   });
 
   describe('merging', () => {
+    it('refuses any pipeline merge without a Verifier pass for the PR (OPP-0779)', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        finding({ metadata: { confidence: 0.9 } }),
+      );
+      await expect(merging()).rejects.toThrow(/no Verifier pass yet/);
+      expect(github.listPullRequestFiles).not.toHaveBeenCalled();
+    });
+
+    it('treats a failed verdict like no verdict', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        finding({
+          metadata: {
+            fixVerdicts: [{ ...PASS_VERDICT, verdict: 'fail' }],
+          },
+        }),
+      );
+      await expect(merging()).rejects.toThrow(/no Verifier pass yet/);
+    });
+
+    it('lets the Verifier path vouch for itself', async () => {
+      await expect(
+        service.assertMayMerge(
+          finding({ metadata: { confidence: 0.9 } }),
+          null,
+          {
+            verified: true,
+          },
+        ),
+      ).rejects.toThrow(/No pull request URL/);
+    });
+
     it('allows a small, unguarded sweep fix under the cap in a repo the bot may merge to', async () => {
       await expect(merging()).resolves.toBeUndefined();
       expect(github.listPullRequestFiles).toHaveBeenCalledWith(

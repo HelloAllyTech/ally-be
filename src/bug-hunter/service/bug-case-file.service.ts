@@ -12,6 +12,7 @@ import { BugFindingMiss } from '../type/bug-finding-miss.type';
 import { BugCaseBudgetService } from './bug-case-budget.service';
 import { BugFindingService } from './bug-finding.service';
 import { groupSessions } from '../util/bug-case-sessions.util';
+import { BugFixVerdict, namedFailures } from '../type/bug-fix-verdict.type';
 
 /**
  * Assembles the case file for one bug — see `BugCaseFile` for what it is and
@@ -183,6 +184,29 @@ export const collectVerdicts = (
       by: null,
       runId: e.runId ?? null,
       at: e.createdAt,
+    });
+  }
+  // The Verifier's verdicts on fixes (OPP-0779).
+  const fixVerdicts = Array.isArray(metadata.fixVerdicts)
+    ? (metadata.fixVerdicts as BugFixVerdict[])
+    : [];
+  for (const v of fixVerdicts) {
+    const failures = namedFailures(v);
+    out.push({
+      kind: 'fix',
+      verdict: v.verdict,
+      confidence: v.confidence,
+      reason: v.summary ?? (failures.length ? failures.join('; ') : null),
+      checks: v.checks.map((c) => ({
+        name: c.name,
+        ok: c.ok === true,
+        evidence: c.skipped ? `skipped: ${c.skipped}` : c.evidence,
+      })),
+      by: v.by.engine
+        ? `${v.by.engine}${v.by.model ? ` (${v.by.model})` : ''}`
+        : null,
+      runId: v.runId,
+      at: new Date(v.at),
     });
   }
   return out.sort((a, b) => (a.at?.getTime() ?? 0) - (b.at?.getTime() ?? 0));

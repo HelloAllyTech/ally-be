@@ -97,6 +97,7 @@ import { effectiveStage } from '../util/bug-finding-stage.util';
 import { BugCaseFile } from '../constants/bug-case-file';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
+import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -1117,6 +1118,10 @@ export function toFindingDto(
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
+    latestFixVerdict: latestVerdictFor(
+      row.metadata?.fixVerdicts,
+      row.prUrl ?? null,
+    ) as Record<string, any> | null,
     postmortem:
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)

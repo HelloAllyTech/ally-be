@@ -53,15 +53,19 @@ describe('buildFixSessionPrompt', () => {
 
   // ── merge policy ─────────────────────────────────────────────────────────
 
-  it('tells an ordinary fix to merge behind the PR checks, and not to deploy', () => {
-    // ally-ai-learn is the one repo whose master is unprotected, so it is the
-    // only place the bot can actually land its own work.
+  it('tells an ordinary fix to stop at a green PR for the Verifier, and not to deploy', () => {
+    // ally-ai-learn is the one repo whose master is unprotected, so it was the
+    // only place the bot used to land its own work. Since OPP-0779 the fix
+    // stops at the PR there too; a Verifier run on another model reads it and
+    // Bug Hunter merges on a pass.
     const prompt = build({ repo: 'ally-ai-learn' }, 'ally-ai-learn');
 
-    expect(prompt).toContain('gh pr merge --squash');
-    // OPP-0750: the branch goes with the merge.
-    expect(prompt).toContain('gh pr merge --squash --delete-branch');
+    expect(prompt).toMatch(
+      /9\. Do NOT merge, even though an admin asked for this fix/,
+    );
+    expect(prompt).toMatch(/separate Verifier run on a different model/);
     expect(prompt).toContain('gh pr checks --watch');
+    expect(prompt).not.toContain('gh pr merge --squash');
     expect(prompt).toMatch(/do NOT tag a release or deploy/i);
   });
 
@@ -94,9 +98,9 @@ describe('buildFixSessionPrompt', () => {
     }
   });
 
-  it('tells the one mergeable repo explicitly not to use --admin', () => {
+  it('tells the one mergeable repo not to run gh pr merge in any form', () => {
     expect(build({ repo: 'ally-ai-learn' }, 'ally-ai-learn')).toMatch(
-      /Do NOT use "gh pr merge --admin"/i,
+      /Do NOT run "gh pr merge" in any form/i,
     );
   });
 

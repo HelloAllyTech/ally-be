@@ -58,6 +58,15 @@ on:
         required: true
         type: string
         description: "Base URL of ally-be, for the pipeline callbacks"
+      mode:
+        required: false
+        type: string
+        default: "fix"
+        description: >-
+          "fix" (default) runs the fix protocol. "verify" runs Bug Hunter's
+          Verifier instead (OPP-0779): a read-only pass over this finding's
+          open PR on the other vendor's model, ending in a verdict rather than
+          a merge. Same runner, different protocol — ally-be picks the engine.
 
 concurrency:
   # One session per bug. A double-click in the admin tab, or a retry while the
@@ -107,7 +116,7 @@ jobs:
           # attempt, and whether merging is permitted for this finding.
           curl -sSf \
             -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/fix-prompt?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/${{ inputs.mode == 'verify' && 'verify-prompt' || 'fix-prompt' }}?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" \
             -o /tmp/fix-prompt.txt
           test -s /tmp/fix-prompt.txt
           echo "Fetched $(wc -c < /tmp/fix-prompt.txt) bytes of protocol."
@@ -124,7 +133,7 @@ jobs:
           # copied into this file: a change takes effect on the next session,
           # not after five PRs.
           RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/models?repo=${{ inputs.repo }}")
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/models?repo=${{ inputs.repo }}&role=${{ inputs.mode == 'verify' && 'verify_fix' || 'fix' }}&findingId=${{ inputs.finding_id }}")
           ENGINE=$(printf '%s' "$RESP" | jq -r '.engine')
           DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
           ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
@@ -287,7 +296,9 @@ jobs:
           # saying "Done" and running `exit 0`, resending the whole session to
           # the model each turn, until the job's timeout-minutes killed it.
           # That timeout is the safety net; this is the budget.
-          ENGINE_CAP_SECONDS=2400
+          # A verifier reads and runs the suite once; it has no business
+          # taking as long as a fix. 20 minutes, against 40 for a fix.
+          if [ "${{ inputs.mode }}" = "verify" ]; then ENGINE_CAP_SECONDS=1200; else ENGINE_CAP_SECONDS=2400; fi
           RUN_STATUS_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/status"
           RUN_REPORT_URL="${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/report"
           supervise() {
@@ -308,8 +319,8 @@ jobs:
                 echo "::warning::The engine has run for $((ENGINE_CAP_SECONDS / 60)) minutes — stopping it. This is the per-run budget, not a crash."
                 echo timeout > /tmp/engine-stop-reason.txt
                 curl -sS -m 20 -X POST -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" "$RUN_REPORT_URL" \
-                  -d "$(jq -n --arg repo "${{ inputs.repo }}" --arg m "The engine was stopped after $((ENGINE_CAP_SECONDS / 60)) minutes without closing the run — the per-run budget. Whatever it had reported stands; nothing after this point ran." \
-                    '{repo: $repo, stage: "error", summary: $m, payload: {engineStopped: "timeout", capSeconds: 2400}}')" || true
+                  -d "$(jq -n --arg repo "${{ inputs.repo }}" --argjson cap "$ENGINE_CAP_SECONDS" --arg m "The engine was stopped after $((ENGINE_CAP_SECONDS / 60)) minutes without closing the run — the per-run budget. Whatever it had reported stands; nothing after this point ran." \
+                    '{repo: $repo, stage: "error", summary: $m, payload: {engineStopped: "timeout", capSeconds: $cap}}')" || true
                 kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
                 sleep 15
                 kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null

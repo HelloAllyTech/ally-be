@@ -339,6 +339,16 @@ export class FixPostmortemDto {
 }
 
 export class PatchBugFindingDto {
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description:
+      "The Verifier's report on an open fix PR (OPP-0779): checks with evidence, scopeExceeded, confidence, summary, wouldBeWrongIf, runId, prUrl, prHeadSha. Pass or fail is computed server-side from the checks.",
+  })
+  @IsOptional()
+  @IsObject()
+  verdict?: Record<string, any>;
+
   /**
    * Sent alongside `status: failed` by a fix session that gave up — see
    * FixPostmortemDto. Ignored on other transitions.
@@ -972,6 +982,14 @@ export class BugFindingDto {
       "The case file's budget (OPP-0775): caps and spend for sessions, attempts, escalations, dollars and minutes. Defaults with nothing spent on a row that has not been metered yet.",
   })
   budget!: BugCaseBudgetDto;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      "The Verifier's latest verdict on this bug's current fix PR (OPP-0779): verdict, confidence, checks with evidence, summary, by, at. Null until a verifier has run.",
+  })
+  latestFixVerdict!: Record<string, any> | null;
 
   @ApiProperty({
     type: Object,

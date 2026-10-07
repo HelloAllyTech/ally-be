@@ -6,6 +6,12 @@ export enum BugHuntTrigger {
   SCHEDULED = 'scheduled',
   MANUAL = 'manual',
   /**
+   * The Verifier's run (OPP-0779): a read-only pass over one fix PR on the
+   * OTHER vendor's model, dispatched by Bug Hunter itself the moment a fix
+   * session reaches PR_OPENED. Records a verdict; never writes to the repo.
+   */
+  VERIFY_FIX = 'verify_fix',
+  /**
    * One admin, one bug, one click — a run scoped to a single finding, started
    * by `POST findings/:id/fix-session` rather than by a repo-wide sweep. It
    * skips Discover and Verify entirely (the bug is already known and already

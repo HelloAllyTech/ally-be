@@ -6,7 +6,6 @@ import { DATA_BEGIN, DATA_END } from './bug-fix-dossier';
 import {
   BUG_HUNT_KNOWN_NON_BUG_EXCERPT,
   BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
-  BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
   BUG_HUNT_MAX_FIX_ATTEMPTS,
   BUG_HUNT_VERIFIER_SUBAGENT,
   escalationGuidance,
@@ -352,17 +351,11 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
             ? `Do not attempt to merge anything here, and do not treat that as a failure. "${repo}"'s master requires an approving review and your token has push access only, so "gh pr merge --admin" has no admin rights to bypass it with and will simply fail. Every fix you open stays a green PR; Bug Hunter shows each one to an admin as one click to merge. Leaving a green PR IS the finished outcome on this repo — do not run "gh pr merge" at all.`
             : neverMerges
               ? `Never merge here, however trivial the fix looks. This repo's pipeline only runs Jest, which cannot verify the native/on-device behaviour that actually ships, and a released mobile build is a frozen contract real users stay on for a long time. Every fix you open in ally-mobile stays a PR for a human to merge — do not run "gh pr merge" at all.`
-              : `Nobody asked for these fixes, so most of them stay PRs. You may merge at most ${BUG_HUNT_MAX_AUTO_MERGES_PER_RUN} of them in this entire run, and ONLY ones that are all of:`,
-          neverMerges ? '' : `  - fully green on both gates,`,
-          neverMerges
-            ? ''
-            : `  - touchesGuardedPath=false — never a migration, auth/permission, payment or other security-sensitive change, whatever the diff size,`,
-          neverMerges
-            ? ''
-            : `  - genuinely trivial: a lint/type-only fix, or a single-file change plus its test.`,
-          neverMerges
-            ? ''
-            : `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: wait for the PR's own checks with "gh pr checks --watch --fail-fast", then "gh pr merge --squash --delete-branch" — never "--admin", which would bypass the very run that is your second opinion here. If the checks go red, leave the PR open and report an error stage instead. On a green merge, PATCH to {"status":"merged"} and report merged.`,
+              : `Do not merge anything, however trivial it looks. Since 7 October every fix PR is read by a separate Verifier run on a different model (OPP-0779); Bug Hunter merges it if the verdict is a pass and this repo allows a self-merge, or hands it to a person with the verdict. Leave every PR open, PATCH each to {"status":"pr_opened"} with its prUrl, and report pr_opened. Do not run "gh pr merge" in any form.`,
+          '',
+          '',
+          '',
+          '',
           `Never tag a release and never deploy. Promoting anything to production is a separate decision an admin makes in the Bug Hunter tab.`,
           ``,
         ]
