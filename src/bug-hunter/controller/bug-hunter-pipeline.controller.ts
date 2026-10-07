@@ -696,8 +696,8 @@ export class BugHunterPipelineController {
       repo: repo ?? run.repo,
       runId: run.id,
       apiBaseUrl: this.configService.publicApiBaseUrl,
-      engine: dispatched.counterpart?.engine ?? 'claude-code',
-      model: dispatched.counterpart?.model ?? 'claude-sonnet-5',
+      engine: dispatched.counterpart?.engine ?? 'gemini',
+      model: dispatched.counterpart?.model ?? 'gemini-2.5-pro',
       sweepEngine: dispatched.sweepEngine ?? null,
     });
   }
@@ -742,8 +742,8 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       prUrl: finding.prUrl,
       prNumber,
-      engine: dispatched?.counterpart?.engine ?? 'claude-code',
-      model: dispatched?.counterpart?.model ?? 'claude-sonnet-5',
+      engine: dispatched?.counterpart?.engine ?? 'gemini',
+      model: dispatched?.counterpart?.model ?? 'gemini-2.5-pro',
       fixEngine: dispatched?.fixEngine ?? null,
     });
   }

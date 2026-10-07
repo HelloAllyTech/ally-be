@@ -386,9 +386,9 @@ jobs:
                 curl -sS -m 20 -X POST -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" "$RUN_REPORT_URL" \
                   -d "$(jq -n --arg repo "${{ steps.cfg.outputs.repo }}" --arg m "The engine was stopped after $((ENGINE_CAP_SECONDS / 60)) minutes without closing the run — the per-run budget. Whatever it had reported stands; nothing after this point ran." \
                     '{repo: $repo, stage: "error", summary: $m, payload: {engineStopped: "timeout", capSeconds: 3600}}')" || true
-                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
                 sleep 15
-                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
                 break
               fi
               local status
@@ -396,15 +396,18 @@ jobs:
               if [ "$status" != "running" ] && [ "$status" != "unknown" ]; then
                 echo "::notice::The run is '$status' — the agent reported completion; stopping the engine rather than letting it keep buying model turns."
                 echo closed > /tmp/engine-stop-reason.txt
-                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+                kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
                 sleep 15
-                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+                kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
                 break
               fi
             done
             local rc=0
             wait "$pid" 2>/dev/null || rc=$?
-            # A stop we chose is not an engine failure.
+            # A stop we chose is not an engine failure. (The kills above end in
+            # `|| true` on purpose: this step runs under bash -e, and on
+            # 2026-10-07 a kill that found the engine already gone aborted
+            # four sweeps the agent had just closed as completed.)
             if [ -s /tmp/engine-stop-reason.txt ]; then return 0; fi
             return $rc
           }
@@ -530,8 +533,23 @@ jobs:
               git clean -fd
               supervise run_opencode
             fi
+          elif [ "${{ steps.models.outputs.engine }}" = "claude-code" ]; then
+            # Claude Code is an engine again (decided 2026-10-07, after 0975d3c7
+            # had removed it): Gemini and OpenCode carry the bulk of the work, and
+            # the Finder or the Verifier picks Claude where its record earns it —
+            # above all as the OTHER vendor's reading of a Gemini-made fix.
+            run_claude() {
+              claude -p "$(cat /tmp/sweep-prompt.txt)" \
+                --permission-mode acceptEdits \
+                --model "${{ steps.models.outputs.default_model }}" \
+                --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
+                --max-turns 300 \
+                --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+            }
+            echo "claude-code" > /tmp/actual-engine.txt
+            supervise run_claude
           else
-            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — only gemini or opencode is allowed (no Claude path). Set the engine in admin."
+            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — expected gemini, opencode or claude-code. Set the engine in admin."
             exit 1
           fi
 
@@ -697,6 +715,14 @@ jobs:
           # bury it in the admin tab.
           if [ -f /tmp/bug-sweep-already-reported ]; then
             echo "Already reported by the outcome gate; nothing to add."
+            exit 0
+          fi
+          # The agent closes its own run; if it already did, this step has
+          # nothing to add — re-closing it as failed with zero totals is how
+          # four completed sweeps read as failures on 2026-10-07.
+          STATUS=$(curl -sS -m 20 -H "x-api-key: $ALLY_BE_API_KEY" "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)
+          if [ "$STATUS" != "running" ] && [ "$STATUS" != "unknown" ]; then
+            echo "The run is already '$STATUS'; the agent closed it. Not re-closing it as failed."
             exit 0
           fi
           curl -sS -X POST \

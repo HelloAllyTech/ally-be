@@ -52,9 +52,12 @@ export interface VerifyFixDispatch {
 
 /**
  * The other vendor. A verifier on the same model family as the fixer shares
- * its blind spots, so the pairing is forced: Gemini checks Claude's work and
- * Claude checks Gemini's. OpenCode is a shell around one of those two, so it
- * is classified by the model it ran.
+ * its blind spots, so the pairing is forced: Claude reads a Gemini-made fix
+ * and Gemini reads a Claude-made one. OpenCode is a shell around one of the
+ * two, so it is classified by the model it ran. Claude Code is kept as an
+ * engine for exactly this (decided 2026-10-07): Gemini and OpenCode do the
+ * bulk of the work, and the second opinion is where another vendor earns
+ * its cost.
  */
 export function counterpartFor(
   fixEngine: string | null,

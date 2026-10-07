@@ -38,7 +38,13 @@ export const BUG_HUNTER_SENSE_DESCRIPTIONS: Record<BugHunterSense, string> = {
 /** What started a Finder run. `scheduled` is the nightly cron; the rest are event triggers. */
 export type FinderTriggerKind = 'scheduled' | 'manual' | 'merge' | 'report';
 
-/** The engines and models the Finder may run on: two tiers from each installable vendor. */
+/**
+ * The engines and models the Finder may run on. Gemini and OpenCode carry
+ * the bulk of the work; Claude Code stays on the menu (decided 2026-10-07)
+ * for the Finder to pick where its record on the scoreboard earns the cost,
+ * and for the Verifier to read a Gemini-made fix with another vendor's eyes.
+ * The rule's default is always the platform setting, which is Gemini.
+ */
 export const BUG_HUNTER_FINDER_MODEL_MENU: {
   engine: BugHunterEngine;
   model: string;
@@ -46,6 +52,7 @@ export const BUG_HUNTER_FINDER_MODEL_MENU: {
 }[] = [
   { engine: 'gemini', model: 'gemini-2.5-flash', tier: 'fast' },
   { engine: 'gemini', model: 'gemini-2.5-pro', tier: 'strong' },
+  { engine: 'opencode', model: 'gemini-2.5-pro', tier: 'strong' },
   { engine: 'claude-code', model: 'claude-sonnet-5', tier: 'fast' },
   { engine: 'claude-code', model: 'claude-opus-5', tier: 'strong' },
 ];

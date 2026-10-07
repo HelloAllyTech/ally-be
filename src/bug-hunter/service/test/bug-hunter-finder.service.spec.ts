@@ -171,7 +171,7 @@ describe('BugHunterFinderService', () => {
 
       decisions.decide = decideWith({
         D1: { pick: ['code_review', 'browser_errors', 'nonsense'] },
-        D2: { pick: { engine: 'claude-code', model: 'claude-sonnet-5' } },
+        D2: { pick: { engine: 'opencode', model: 'gemini-2.5-pro' } },
       });
       plan = await service.ensurePlan(
         run({
@@ -181,8 +181,8 @@ describe('BugHunterFinderService', () => {
       );
       expect(plan.senses).toEqual(['code_review', 'browser_errors']);
       expect(plan.model).toEqual({
-        engine: 'claude-code',
-        model: 'claude-sonnet-5',
+        engine: 'opencode',
+        model: 'gemini-2.5-pro',
       });
     });
   });

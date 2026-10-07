@@ -35,14 +35,14 @@ describe('counterpartFor', () => {
     defaultModel: 'gemini-2.5-pro',
     escalationModel: 'gemini-2.5-pro',
   };
-  it('pairs Claude fixes with Gemini verifiers and the reverse', () => {
-    expect(counterpartFor('claude-code', 'claude-sonnet-5', settings)).toEqual({
-      engine: 'gemini',
-      model: 'gemini-2.5-pro',
-    });
+  it('pairs a Gemini-made fix with a Claude verifier and the reverse', () => {
     expect(counterpartFor('gemini', 'gemini-2.5-pro', settings)).toEqual({
       engine: 'claude-code',
       model: 'claude-sonnet-5',
+    });
+    expect(counterpartFor('claude-code', 'claude-sonnet-5', settings)).toEqual({
+      engine: 'gemini',
+      model: 'gemini-2.5-pro',
     });
   });
   it('classifies OpenCode by the model it ran, and falls back to the platform default when the fix run is unknown', () => {
@@ -98,8 +98,8 @@ describe('BugVerifyFixService', () => {
     bugHunterService = {
       getRun: jest.fn().mockResolvedValue({
         id: 'run-fix',
-        engine: 'claude-code',
-        model: 'claude-sonnet-5',
+        engine: 'gemini',
+        model: 'gemini-2.5-pro',
       }),
       startRun: jest.fn().mockResolvedValue({ id: 'run-verify' }),
       closeRun: jest.fn(),
@@ -149,8 +149,8 @@ describe('BugVerifyFixService', () => {
         runId: 'run-verify',
         prNumber: 812,
         prHeadSha: 'head-1',
-        fixEngine: 'claude-code',
-        counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
+        fixEngine: 'gemini',
+        counterpart: { engine: 'claude-code', model: 'claude-sonnet-5' },
       });
       expect(findingRepository.update).toHaveBeenCalledWith(
         'f-1',
@@ -220,7 +220,7 @@ describe('BugVerifyFixService', () => {
           verifyFix: {
             runId: 'run-verify',
             prHeadSha: 'head-1',
-            counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
+            counterpart: { engine: 'claude-code', model: 'claude-sonnet-5' },
           },
         },
       });
