@@ -176,6 +176,9 @@ export const BUG_FINDER_REPORT_LOOKBACK_MS = 30 * 60 * 1000;
 /** D3 may drop a finding only when the model is at least this sure; below it the drop becomes a verify. */
 export const BUG_FINDER_TRIAGE_DROP_MIN_CONFIDENCE = 0.8;
 
+/** "Today" on the Work tab's board is the team's day: the sweeps run at 06:00 India. */
+export const BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE = 'Asia/Kolkata';
+
 /**
  * Subagent name for Bug Hunter's model escalation path — defined once per
  * fixable repo at `.claude/agents/bug-escalation.md`, pinned to a stronger

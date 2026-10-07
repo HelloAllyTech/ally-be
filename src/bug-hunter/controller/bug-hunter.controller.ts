@@ -89,9 +89,10 @@ import {
   UpdateBugHunterModelSettingsDto,
 } from '../dto/bug-hunter.dto';
 import {
+  BUG_HUNTER_METRICS_DEFAULT_DAYS,
+  BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE,
   BUG_HUNT_SSE_PING_INTERVAL_MS,
   BUG_HUNT_SSE_POLL_INTERVAL_MS,
-  BUG_HUNTER_METRICS_DEFAULT_DAYS,
 } from '../constants/bug-hunter.constants';
 import { BugHunterMetricsService } from '../service/bug-hunter-metrics.service';
 import { effectiveStage } from '../util/bug-finding-stage.util';
@@ -106,6 +107,10 @@ import {
   Scoreboard,
 } from '../service/bug-hunter-scoreboard.service';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
+import {
+  BugHunterToday,
+  BugHunterTodayService,
+} from '../service/bug-hunter-today.service';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -141,6 +146,7 @@ export class BugHunterController {
     private readonly caseFileService: BugCaseFileService,
     private readonly decisionService: BugHunterDecisionService,
     private readonly scoreboardService: BugHunterScoreboardService,
+    private readonly todayService: BugHunterTodayService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
@@ -750,6 +756,29 @@ export class BugHunterController {
     return this.toDto(
       await this.bugFindingService.reject(id, user.id, body.reason, body.note),
     );
+  }
+
+  @Get('today')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "The Work tab's board: what Bug Hunter did today, one row per repo (super-duper-admin)",
+    description:
+      'Since midnight in `timeZone` (default Asia/Kolkata, when the sweeps run): sweeps by ' +
+      'outcome, bugs found, independent-verifier verdicts, fix sessions by who started them, ' +
+      'fix-PR verdicts, PRs open right now, merges, releases and spend. Read from runs, ' +
+      'findings and the event timeline; nothing stored.',
+  })
+  async getToday(
+    @Query('timeZone') timeZone?: string,
+  ): Promise<BugHunterToday> {
+    const zone = timeZone?.trim() || BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    } catch {
+      throw new BadRequestException(`Unknown time zone "${zone}".`);
+    }
+    return this.todayService.today(zone);
   }
 
   @Get('metrics')
