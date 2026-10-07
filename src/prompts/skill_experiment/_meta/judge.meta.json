@@ -1,0 +1,8 @@
+{
+  "name": "Auto-improve — output judge",
+  "description": "Scores one output of a skill under an auto-improve experiment, 1–5 on each criterion of the admin's rubric, blind to which variant wrote it. The rubric and the output arrive as a separate message, so this text has no placeholders. Editing it changes how every experiment is judged — stop running experiments first, or their scores stop being comparable.",
+  "category": "Auto-improve",
+  "runtimes": [
+    "ally-be"
+  ]
+}

@@ -795,6 +795,26 @@ blanks `helpline_messages.content` (all types) to `[erased]` and drops suggestio
 `erased_at`. Rows, counts, levels, scores and timings stay, so history does not shrink. A talker's
 own **erasure** does the same to one chat immediately and revokes their token.
 
+### 3.18 Skill experiments — auto-improve (`skill-experiment`)
+
+The loop that A/B tests designer-drafted revisions of a System Skill (`prompts` row) against its
+current best, judged by an LLM against an admin-written rubric, until the best version reaches a
+target score. How it works, its guardrails and how to connect a skill:
+[`docs/skill-experiments.md`](docs/skill-experiments.md). All four tables are hand-written SQL
+(migration `1975830000000`), system-wide like `prompts` (no tenant), camelCase columns, and every
+enum column is a CHECK listed in `check-constraints-cover-enums.spec.ts`.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `skill_experiments` | BaseWithoutTenant | `id` (uuid), `promptId` (uuid, **uniq**, FK → `prompts` ON DELETE CASCADE), `promptCode` (snapshot for the hot-path router), `status` (CHECK `off`/`baseline`/`testing`/`paused`), `pausedReason` (CHECK `target_reached`/`baseline_meets_target`/`max_variants`/`no_progress`/`designer_failed`, nullable), `run` (int — bumped on every start and reset), `rubric` (jsonb array of `{key, name, description, weight}`), `targetScore`/`minImprovement` (numeric(5,2)), `minSamplesPerVariant`, `challengerTrafficPercent` (CHECK 1–50), `maxVariants`, `maxConsecutiveLosses`, `judgeModel`/`designerModel` (nullable), `baseContentHash` (sha256 of the skill text the run started from), `outputShape` (jsonb `{kind:'json', requiredKeys}` or `{kind:'text'}`, learnt from the baseline), `championVariantId`/`challengerVariantId` (uuid, no FK), per-run counters `variantsDrafted`/`consecutiveLosses`/`designFailures`, `startedAt`/`pausedAt`/`lastTickAt`, `lastError`, `updatedBy` | One row per skill, kept across runs. The router reads `status` + the two variant ids every 30 s; nothing else is on a skill's request path |
+| `skill_experiment_variants` | BaseWithoutTenant | `id` (uuid), `experimentId` (FK ON DELETE CASCADE), `run`, `ordinal` (0 = original), **uniq `(experimentId, run, ordinal)`**, `label` (`Original`/`V1`…), `isOriginal`, `content` (text — the full skill text), `contentHash`, `parentVariantId`, `status` (CHECK `champion`/`challenger`/`retired`/`rejected`), `changeSummary`/`hypothesis`/`designerModel` (designer provenance), `statusReason`, `launchedAt`/`retiredAt`, stats snapshot `judgedCount`/`meanScore`/`scoreStdDev`/`criterionMeans` (jsonb)/`formatFailures` | `rejected` = drafted but failed the placeholder lock or length checks, never served. The stats are recomputed from observations every tick — the observations are the truth |
+| `skill_experiment_observations` | BaseWithoutTenant | `id` (uuid), `experimentId`/`variantId` (FKs ON DELETE CASCADE), `promptCode`, `tenantId` (nullable), `input` (jsonb — the data the skill ran on, string fields capped at 30k chars), `output` (text), `skillError`, `status` (CHECK `pending`/`judged`/`failed`), `formatOk`, `score` (numeric(5,2), 0–100), `criterionScores` (jsonb `{key: {score 1–5, reason}}`), `judgeSummary`, `judgeModel`, `judgeError`, `judgeAttempts`, `judgedAt`; idx `(experimentId, status)`, `(variantId, status)` | **Holds raw skill input and output** (e.g. a roleplay transcript and its debrief) and is **kept indefinitely** — a product decision; `tenantId` is stamped so it can be scoped or purged per tenant later. Readable only with `view:admin:skill-experiments`, granted to roles holding `edit:admin:prompts` (not multi-tenant admins) |
+| `skill_experiment_events` | BaseWithoutTenant | `id` (uuid), `experimentId` (FK ON DELETE CASCADE), `variantId` (nullable, no FK), `type` (CHECK, 13 values — `started`, `variant_launched`, `champion_changed`, `paused`, `applied` …), `message` (text the admin reads), `metadata` (jsonb — numbers only, never skill input/output), `actorId` (null = the loop); idx `(experimentId, createdAt)` | The append-only timeline |
+
+**Cost telemetry:** judge and designer calls record to `llm_usage` under
+`LlmTask.SKILL_EXPERIMENT_JUDGE` / `SKILL_EXPERIMENT_DESIGNER` with `metadata.experimentId`, which is
+how the admin drawer shows an experiment's spend.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -879,6 +899,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | The bot's thresholds, copy and kill switch | `global_settings` row `name='whatsapp_bot'` — not a table |
 | LLM prompts driving the agent | `prompts`, `prompts_versions` (Postgres); guardrails in `conversational_guardrails` |
 | AI Lab skills / variables / values | `lab_skills`, `lab_variables`, `lab_values` |
+| Whether a System Skill is being auto-improved, which version is serving, and how each scored | `skill_experiments` (state, rubric, champion/challenger) → `skill_experiment_variants` (texts + stats) → `skill_experiment_observations` (each judged output); story in `skill_experiment_events` |
 | Semantic search / RAG content | Weaviate `Conversation`, `ReferenceDocument` |
 | A recording or uploaded audio file | `scenario_session_recording`, `chat_audio_uploads` → S3 key |
 | Whether a *played thinking filler* fit the character and the moment | `filler_judgment_sessions` (denominator) + `filler_finding_annotations` (findings). Rates are per 100 **played fillers** and computed at read time — nothing here stores one |

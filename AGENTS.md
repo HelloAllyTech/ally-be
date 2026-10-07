@@ -39,6 +39,7 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 | Changing the DB schema | [`DATA_SCHEMA.md`](DATA_SCHEMA.md) §the affected domain, then the migration recipe below |
 | Auth, roles, permissions | **[Gotchas](https://tech.helloally.ai/#/wiki/memory.md) — this area has bitten us four times.** See the roles note below |
 | Adding or editing a prompt | [`docs/prompts-folder.md`](docs/prompts-folder.md), then [`docs/prompts-api.md`](docs/prompts-api.md) |
+| Connecting a skill to auto-improve (A/B prompt experiments) | [`docs/skill-experiments.md`](docs/skill-experiments.md) — a call-site change plus a `CONNECTED_SKILLS` row |
 | **Adding, removing or re-pointing an AI/LLM call** | [`docs/ai-task-registry.md`](docs/ai-task-registry.md) — then add your row to `src/llm/constants/ai-task-registry.constants.ts` **in the same PR**. CI enforces both halves |
 | Calling ally-ai | `src/ai/` — service-to-service auth is `X-API-Key` |
 | Real-time / WebSocket work | `src/**/*.gateway.ts` — namespaces are `/microphone-chat`, `/cloud-telephony-chat`, `/scenario-report` |

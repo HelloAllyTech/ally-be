@@ -60,6 +60,13 @@ import {
   HelplineSenderRole,
   HelplineSummaryKind,
 } from '../../helpline/constants/helpline.constants';
+import {
+  SkillExperimentEventType,
+  SkillExperimentPauseReason,
+  SkillExperimentStatus,
+  SkillObservationStatus,
+  SkillVariantStatus,
+} from '../../skill-experiment/enum/skill-experiment.enum';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -235,6 +242,20 @@ describe('CHECK constraints cover their enums', () => {
     ],
     ['CHK_helpline_chat_events_type', Object.values(HelplineChatEventType)],
     ['CHK_helpline_chat_summaries_kind', Object.values(HelplineSummaryKind)],
+    ['CHK_skill_experiments_status', Object.values(SkillExperimentStatus)],
+    [
+      'CHK_skill_experiments_paused_reason',
+      Object.values(SkillExperimentPauseReason),
+    ],
+    ['CHK_skill_experiment_variants_status', Object.values(SkillVariantStatus)],
+    [
+      'CHK_skill_experiment_observations_status',
+      Object.values(SkillObservationStatus),
+    ],
+    [
+      'CHK_skill_experiment_events_type',
+      Object.values(SkillExperimentEventType),
+    ],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

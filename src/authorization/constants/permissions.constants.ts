@@ -162,6 +162,11 @@ const PERMISSIONS = {
   // === PROMPTS ===
   VIEW_PROMPT: 'view:admin:prompts',
   EDIT_PROMPT: 'edit:admin:prompts',
+  // Skill experiments (auto-improve) read every tenant's outputs for a skill, so
+  // they sit with EDIT_PROMPT, not VIEW_PROMPT — multi-tenant admins can read a
+  // prompt but must not read other tenants' transcripts through its experiment.
+  VIEW_SKILL_EXPERIMENT: 'view:admin:skill-experiments',
+  EDIT_SKILL_EXPERIMENT: 'edit:admin:skill-experiments',
 
   VIEW_GUARDRAILS: 'view:admin:guardrails',
   EDIT_GUARDRAILS: 'edit:admin:guardrails',
@@ -491,6 +496,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.CREATE_SCENARIO_CHARACTER,
   PERMISSIONS.VIEW_PROMPT,
   PERMISSIONS.EDIT_PROMPT,
+  PERMISSIONS.VIEW_SKILL_EXPERIMENT,
+  PERMISSIONS.EDIT_SKILL_EXPERIMENT,
   PERMISSIONS.VIEW_GUARDRAILS,
   PERMISSIONS.EDIT_GUARDRAILS,
   PERMISSIONS.VIEW_SCENARIO_COVER_IMAGE_LIBRARY,

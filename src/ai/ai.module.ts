@@ -11,12 +11,15 @@ import { TranscriptionRequestDlqConsumer } from './consumer/transcription-reques
 import { TranscriptionResponseDlqConsumer } from './consumer/transcription-response-dlq.consumer';
 import { LearnModule } from 'src/learn/learn.module';
 import { PromptModule } from '../prompt/prompt.module';
+import { SkillExperimentModule } from '../skill-experiment/skill-experiment.module';
 
 @Module({
   imports: [
     forwardRef(() => ChatModule),
     forwardRef(() => LearnModule),
     PromptModule,
+    // The debrief (scenario evaluation) is a skill connected to auto-improve.
+    SkillExperimentModule,
   ],
   providers: [
     AiService,
