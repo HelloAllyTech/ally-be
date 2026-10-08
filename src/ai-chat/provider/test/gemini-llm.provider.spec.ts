@@ -54,6 +54,19 @@ describe('GeminiLlmProvider', () => {
     ]);
   });
 
+  it('omits temperature for Gemini 3+, which deprecated custom sampling', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'ok' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, {
+      model: 'gemini-3-pro-preview',
+      temperature: 0.5,
+    });
+
+    const arg = mockGenerateContent.mock.calls[0][0];
+    expect(arg.config).not.toHaveProperty('temperature');
+  });
+
   it('streams text chunks, skipping empty ones', async () => {
     mockGenerateContentStream.mockResolvedValue(
       (async function* () {

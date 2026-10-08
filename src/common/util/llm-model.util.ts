@@ -64,8 +64,27 @@ export const resolveChatProviderModel = (
 };
 
 /**
+ * Gemini 3 onwards: Google deprecated custom sampling (`temperature`, `top_p`,
+ * `top_k`) and `thinking_budget` for this family, and models after Gemini 3
+ * reject them with a 400. The `-latest` aliases are included because they
+ * move to the newest model without the id changing.
+ */
+export const isGemini3OrLater = (model?: string | null): boolean => {
+  if (!model) return false;
+  const name = model
+    .trim()
+    .toLowerCase()
+    .replace(/^models\//, '');
+  if (!name.startsWith('gemini-')) return false;
+  if (name.endsWith('-latest')) return true;
+  const major = /^gemini-(\d+)/.exec(name)?.[1];
+  return major !== undefined && Number(major) >= 3;
+};
+
+/**
  * Whether a model accepts a custom `temperature`. OpenAI reasoning models
- * (o-series, gpt-5 family) only allow the default and 400 on any other value.
+ * (o-series, gpt-5 family) only allow the default and 400 on any other value;
+ * Gemini 3+ deprecated it (see {@link isGemini3OrLater}).
  * Unknown/empty models default to true.
  */
 export const modelSupportsTemperature = (model?: string | null): boolean => {
@@ -75,7 +94,8 @@ export const modelSupportsTemperature = (model?: string | null): boolean => {
     name.startsWith('o1') ||
     name.startsWith('o3') ||
     name.startsWith('o4') ||
-    name.startsWith('gpt-5')
+    name.startsWith('gpt-5') ||
+    isGemini3OrLater(name)
   );
 };
 
