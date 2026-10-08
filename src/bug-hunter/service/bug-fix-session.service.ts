@@ -279,7 +279,7 @@ export class BugFixSessionService {
    */
   async startByAgent(
     findingId: string,
-    actor: 'verifier',
+    actor: 'verifier' | 'answer',
   ): Promise<BugFinding> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
@@ -301,10 +301,42 @@ export class BugFixSessionService {
     return this.bugFindingService.getOne(finding.id);
   }
 
+  /**
+   * An admin answered the question a fix session asked. If that session is
+   * still polling for the answer it reads it itself; if it has already given
+   * up (it waits twenty minutes, then ends with the bug at NEEDS_INPUT), a
+   * fresh session starts here with the answer in its dossier, so answering
+   * is enough and nobody has to also press "Put me on it". Same budget gate
+   * as every agent-started session; a bug past its budget asks a person.
+   */
+  async continueAfterAnswer(findingId: string): Promise<BugFinding | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.NEEDS_INPUT) return null;
+    if (finding.runId) {
+      const run = await this.bugHunterService
+        .getRun(finding.runId)
+        .catch(() => null);
+      const stillPolling =
+        run?.status === BugHuntRunStatus.RUNNING &&
+        Date.now() - run.createdAt.getTime() < BUG_FIX_SESSION_RUN_TIMEOUT_MS;
+      if (stillPolling) return null;
+    }
+    try {
+      return await this.startByAgent(finding.id, 'answer');
+    } catch (error) {
+      this.logger.warn(
+        `[BUG_HUNTER] Answer recorded on finding ${findingId} but no session could start: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
   private async dispatchFix(
     finding: BugFinding,
     repo: string,
-    startedBy: number | 'verifier' | null,
+    startedBy: number | 'verifier' | 'answer' | null,
   ): Promise<void> {
     // The run row exists before the dispatch so the workflow has a run id to
     // report every step against from its very first call — and so a dispatch
@@ -361,9 +393,11 @@ export class BugFixSessionService {
       summary:
         startedBy === 'verifier'
           ? `Fix session started by my Verifier after it confirmed "${finding.title}".`
-          : startedBy
-            ? `Fix session started by user ${startedBy} for "${finding.title}".`
-            : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
+          : startedBy === 'answer'
+            ? `Fix session restarted with your answer to its question on "${finding.title}".`
+            : startedBy
+              ? `Fix session started by user ${startedBy} for "${finding.title}".`
+              : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
       payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
     });
     void this.budgetService.charge(finding.id, 'sessions', 1);

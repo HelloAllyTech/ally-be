@@ -846,10 +846,11 @@ export class BugHunterController {
   @ApiOperation({
     summary: "Answer a finding's open escalation question (super-duper-admin)",
     description:
-      'Only valid while the finding is NEEDS_INPUT. The fix agent may be ' +
-      'actively polling for this (it waits up to a bounded timeout before ' +
-      "giving up for now) — answering doesn't itself change the status; the " +
-      'pipeline transitions it once it reads the answer.',
+      'Only valid while the finding is NEEDS_INPUT. If the fix agent is still ' +
+      'polling for this (it waits twenty minutes before giving up), it reads ' +
+      'the answer itself and carries on. If it has already given up, a fresh ' +
+      'fix session starts with the answer in its dossier — answering is enough; ' +
+      'nobody has to also press "Put me on it".',
   })
   @ApiResponse({ status: 200, type: BugFindingDto })
   async answerFinding(
@@ -857,9 +858,15 @@ export class BugHunterController {
     @Body() body: AnswerBugFindingDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return this.toDto(
-      await this.bugFindingService.recordAnswer(id, body.answer, user.id),
+    const finding = await this.bugFindingService.recordAnswer(
+      id,
+      body.answer,
+      user.id,
     );
+    // Not awaited: the answer is saved whether or not a session can start,
+    // and `continueAfterAnswer` logs its own refusals.
+    void this.bugFixSessionService.continueAfterAnswer(id);
+    return this.toDto(finding);
   }
 
   @Get('notifications')

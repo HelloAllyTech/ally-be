@@ -65,6 +65,7 @@ describe('BugFixSessionService', () => {
     closeRun: jest.Mock;
     appendEvent: jest.Mock;
     appendFindingEvent: jest.Mock;
+    getRun: jest.Mock;
   };
   let github: {
     isConfigured: boolean;
@@ -101,6 +102,7 @@ describe('BugFixSessionService', () => {
       closeRun: jest.fn(),
       appendEvent: jest.fn(),
       appendFindingEvent: jest.fn(),
+      getRun: jest.fn(),
     };
     github = {
       isConfigured: true,
@@ -206,6 +208,59 @@ describe('BugFixSessionService', () => {
         'sessions',
         1,
       );
+    });
+
+    it('restarts a session with the answer once the asking run has ended', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          status: BugFindingStatus.NEEDS_INPUT,
+          runId: 'run-asked',
+        }),
+      );
+      bugHunterService.getRun.mockResolvedValue({
+        id: 'run-asked',
+        status: BugHuntRunStatus.COMPLETED,
+        createdAt: new Date(Date.now() - 3600_000),
+      });
+
+      await service.continueAfterAnswer('finding-1');
+
+      expect(budgetService.assertCanStartSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'finding-1' }),
+        { force: false, userId: null },
+      );
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+      expect(bugHunterService.appendEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.SESSION_DISPATCHED,
+          summary: expect.stringContaining('restarted with your answer'),
+        }),
+      );
+    });
+
+    it('leaves a session that is still polling for the answer to read it itself', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          status: BugFindingStatus.NEEDS_INPUT,
+          runId: 'run-asked',
+        }),
+      );
+      bugHunterService.getRun.mockResolvedValue({
+        id: 'run-asked',
+        status: BugHuntRunStatus.RUNNING,
+        createdAt: new Date(Date.now() - 5 * 60_000),
+      });
+
+      expect(await service.continueAfterAnswer('finding-1')).toBeNull();
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a bug that is not waiting on input', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({ status: BugFindingStatus.FIXING }),
+      );
+      expect(await service.continueAfterAnswer('finding-1')).toBeNull();
+      expect(bugHunterService.getRun).not.toHaveBeenCalled();
     });
 
     it('refuses a session the budget refuses, without touching GitHub', async () => {
