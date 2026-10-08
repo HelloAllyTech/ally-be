@@ -25,7 +25,6 @@
 # production stays an explicitly human click in the admin tab.
 #
 # Required repository secrets:
-#   ANTHROPIC_API_KEY   — for Claude Code
 #   GEMINI_API_KEY      — only consumed when the configured engine is "gemini"
 #                         (GET pipeline/models). A plain Google AI Studio key.
 #                         Also handed to opencode as GOOGLE_GENERATIVE_AI_API_KEY —
@@ -241,7 +240,6 @@ jobs:
             oc_model() {
               case "$1" in
                 */*) printf '%s' "$1" ;;
-                claude-*) printf 'anthropic/%s' "$1" ;;
                 gemini-*) printf 'google/%s' "$1" ;;
                 gpt-* | o[0-9]-* | o[0-9]) printf 'openai/%s' "$1" ;;
                 *) printf '%s' "$1" ;;
@@ -282,18 +280,13 @@ jobs:
           if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
             npm install -g @google/gemini-cli@0.22.5
             gemini --version
-            # Installed alongside, not instead: if this sweep gets stuck (loop
-            # detection, an abandoned turn), "Run the sweep" falls back to
-            # Claude Code without a second install step mid-fallback.
-            npm install -g @anthropic-ai/claude-code@2.1.220
-            claude --version
           elif [ "${{ steps.models.outputs.engine }}" = "opencode" ]; then
             # Pinned to the version Builder already runs in CI (scripts/builder/install-engine.sh).
             npm install -g opencode-ai@1.18.32
             opencode --version
           else
-            npm install -g @anthropic-ai/claude-code@2.1.220
-            claude --version
+            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — expected gemini or opencode. Claude Code is off the platform."
+            exit 1
           fi
 
       - name: Persist credentials to disk for the agent's own shell
@@ -336,7 +329,6 @@ jobs:
       - name: Run the sweep
         if: steps.cfg.outputs.skip != 'true'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Only consumed when engine=gemini. A plain Google AI Studio key —
           # see run-engine.sh's own note on why this isn't Vertex/Workspace auth.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -533,23 +525,8 @@ jobs:
               git clean -fd
               supervise run_opencode
             fi
-          elif [ "${{ steps.models.outputs.engine }}" = "claude-code" ]; then
-            # Claude Code is an engine again (decided 2026-10-07, after 0975d3c7
-            # had removed it): Gemini and OpenCode carry the bulk of the work, and
-            # the Finder or the Verifier picks Claude where its record earns it —
-            # above all as the OTHER vendor's reading of a Gemini-made fix.
-            run_claude() {
-              claude -p "$(cat /tmp/sweep-prompt.txt)" \
-                --permission-mode acceptEdits \
-                --model "${{ steps.models.outputs.default_model }}" \
-                --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
-                --max-turns 300 \
-                --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
-            }
-            echo "claude-code" > /tmp/actual-engine.txt
-            supervise run_claude
           else
-            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — expected gemini, opencode or claude-code. Set the engine in admin."
+            echo "::error::Bug Hunter engine is '${{ steps.models.outputs.engine }}' — expected gemini or opencode. Claude Code is off the platform; set the engine in admin."
             exit 1
           fi
 

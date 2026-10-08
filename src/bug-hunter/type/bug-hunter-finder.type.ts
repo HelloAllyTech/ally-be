@@ -39,11 +39,10 @@ export const BUG_HUNTER_SENSE_DESCRIPTIONS: Record<BugHunterSense, string> = {
 export type FinderTriggerKind = 'scheduled' | 'manual' | 'merge' | 'report';
 
 /**
- * The engines and models the Finder may run on. Gemini and OpenCode carry
- * the bulk of the work; Claude Code stays on the menu (decided 2026-10-07)
- * for the Finder to pick where its record on the scoreboard earns the cost,
- * and for the Verifier to read a Gemini-made fix with another vendor's eyes.
- * The rule's default is always the platform setting, which is Gemini.
+ * The engines and models the Finder may run on: Gemini only. Claude Code
+ * was on the menu until 2026-10-08, when Claude left the platform after
+ * Bug Hunter drained the Anthropic credits. The rule's default is always
+ * the platform setting, which is Gemini.
  */
 export const BUG_HUNTER_FINDER_MODEL_MENU: {
   engine: BugHunterEngine;
@@ -53,8 +52,6 @@ export const BUG_HUNTER_FINDER_MODEL_MENU: {
   { engine: 'gemini', model: 'gemini-2.5-flash', tier: 'fast' },
   { engine: 'gemini', model: 'gemini-2.5-pro', tier: 'strong' },
   { engine: 'opencode', model: 'gemini-2.5-pro', tier: 'strong' },
-  { engine: 'claude-code', model: 'claude-sonnet-5', tier: 'fast' },
-  { engine: 'claude-code', model: 'claude-opus-5', tier: 'strong' },
 ];
 
 /** D3's menu. */
