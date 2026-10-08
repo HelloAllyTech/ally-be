@@ -19,6 +19,7 @@ import { BugVerifyFixService } from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
+import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
 import {
   RecordBugHuntRunModelDto,
   PersistBugFindingsDto,
@@ -75,6 +76,10 @@ describe('BugHunterPipelineController', () => {
         {
           provide: BugHuntRunRepository,
           useValue: { findOne: jest.fn(), save: jest.fn() },
+        },
+        {
+          provide: BugHunterOrchestratorService,
+          useValue: { onSessionFailed: jest.fn() },
         },
         // Policy: allow everything; the rules have their own spec.
         {

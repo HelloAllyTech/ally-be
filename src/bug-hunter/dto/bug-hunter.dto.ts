@@ -624,6 +624,39 @@ export class UpdateBugHunterSettingsDto {
   mode!: BugHunterMode;
 }
 
+/** Who owns each decision point (OPP-0783). */
+export class DecisionOwnersDto {
+  @ApiProperty({
+    description:
+      'The owner acting on each point right now: the setting over the default; D4 and D8 always the rule.',
+  })
+  owners!: Record<string, 'rule' | 'model'>;
+
+  @ApiProperty({ description: 'The day-one defaults.' })
+  defaults!: Record<string, 'rule' | 'model'>;
+
+  @ApiProperty({ type: [String], description: 'Points no setting can move.' })
+  fixed!: string[];
+
+  @ApiProperty({ description: 'What an admin has set, point by point.' })
+  overrides!: Record<string, string>;
+}
+
+export class UpdateDecisionOwnerDto {
+  @ApiProperty({ enum: ['D1', 'D2', 'D3', 'D5', 'D6', 'D7'] })
+  @IsIn(['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'])
+  point!: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8';
+
+  @ApiPropertyOptional({
+    enum: ['rule', 'model'],
+    nullable: true,
+    description: 'null clears the setting and the default owner acts again.',
+  })
+  @IsOptional()
+  @IsIn(['rule', 'model'])
+  owner?: 'rule' | 'model' | null;
+}
+
 export class BugHunterModelSettingsDto {
   @ApiProperty({
     description:

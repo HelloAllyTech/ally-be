@@ -148,6 +148,7 @@ describe('BugFixSessionService', () => {
       repoClassifier as never,
       roadmapOpportunityRepository as never,
       budgetService as never,
+      { plan: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 
@@ -234,6 +235,56 @@ describe('BugFixSessionService', () => {
         expect.objectContaining({
           stage: BugHuntEventStage.SESSION_DISPATCHED,
           summary: expect.stringContaining('restarted with your answer'),
+        }),
+      );
+    });
+
+    it('retry (OPP-0783): writes why it is back, charges the budget, dispatches as the orchestrator and keeps the PR URL', async () => {
+      const row = findingRow({
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+        metadata: { orchestrator: { retries: 1 } },
+      });
+      bugFindingService.getOne.mockResolvedValue(row);
+
+      await service.retry(row, {
+        kind: 'verifier_fail',
+        move: 'escalate_model',
+        failures: ['suite: 3 tests red'],
+        prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+        decisionId: 'dec-D7',
+      });
+
+      expect(budgetService.assertCanStartSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'finding-1' }),
+        { force: false, userId: null },
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            retry: expect.objectContaining({
+              kind: 'verifier_fail',
+              move: 'escalate_model',
+              attempt: 2,
+              failures: ['suite: 3 tests red'],
+            }),
+          }),
+        }),
+      );
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+      // The refused PR is kept so the brief can say which branch to continue on.
+      expect(findingRepository.update).not.toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ prUrl: null }),
+      );
+      expect(bugHunterService.appendEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.SESSION_DISPATCHED,
+          summary: expect.stringContaining(
+            'sent back in by my orchestrator (escalate_model, attempt 2) after the Verifier refused the last PR',
+          ),
+          payload: expect.objectContaining({ startedBy: 'orchestrator' }),
         }),
       );
     });
@@ -1633,6 +1684,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       { classifyRepo: jest.fn() } as never,
       roadmapOpportunityRepository as never,
       budgetService as never,
+      { plan: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 

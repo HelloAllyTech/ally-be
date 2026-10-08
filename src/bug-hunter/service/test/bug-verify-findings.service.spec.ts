@@ -40,6 +40,10 @@ describe('BugVerifyFindingsService', () => {
   let github: { dispatchWorkflow: jest.Mock };
   let policy: { assertMayFix: jest.Mock };
   let fixSession: { startByAgent: jest.Mock };
+  let orchestrator: {
+    recordVerifierChoice: jest.Mock;
+    onFindingConfirmed: jest.Mock;
+  };
   let service: BugVerifyFindingsService;
 
   const sweep = {
@@ -118,6 +122,10 @@ describe('BugVerifyFindingsService', () => {
     github = { dispatchWorkflow: jest.fn().mockResolvedValue(new Date()) };
     policy = { assertMayFix: jest.fn().mockResolvedValue(undefined) };
     fixSession = { startByAgent: jest.fn().mockResolvedValue(undefined) };
+    orchestrator = {
+      recordVerifierChoice: jest.fn().mockResolvedValue(undefined),
+      onFindingConfirmed: jest.fn().mockResolvedValue('fix'),
+    };
     service = new BugVerifyFindingsService(
       findingRepository as never,
       bugFindingService as never,
@@ -133,6 +141,7 @@ describe('BugVerifyFindingsService', () => {
         }),
       } as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
+      orchestrator as never,
     );
   });
 
@@ -212,7 +221,7 @@ describe('BugVerifyFindingsService', () => {
       ];
     });
 
-    it('confirms, lowers confidence to the stricter reader, and starts a fix in AI mode', async () => {
+    it('confirms, lowers confidence to the stricter reader, and hands D5 to the orchestrator', async () => {
       const v = await service.recordVerdict('f-1', {
         verdict: 'confirmed',
         confidence: 0.8,
@@ -231,35 +240,23 @@ describe('BugVerifyFindingsService', () => {
         confidence: 0.8,
       });
       expect(row.metadata?.findingVerdicts).toHaveLength(1);
-      expect(policy.assertMayFix).toHaveBeenCalled();
-      expect(fixSession.startByAgent).toHaveBeenCalledWith('f-1', 'verifier');
+      // D5 (OPP-0783): the orchestrator decides fix-now or hold, with the
+      // lowered confidence in hand; the mode and confidence vetoes live there.
+      expect(orchestrator.onFindingConfirmed).toHaveBeenCalledWith('f-1', 0.8);
+      expect(fixSession.startByAgent).not.toHaveBeenCalled();
     });
 
-    it('holds a confirmed finding below the confidence bar, and never fixes outside AI mode', async () => {
-      await service.recordVerdict('f-1', {
-        verdict: 'confirmed',
-        confidence: 0.5,
-        reproduction: 'repro',
-      });
-      expect(bugFindingService.setStatus).toHaveBeenCalledWith('f-1', {
-        status: BugFindingStatus.PENDING_APPROVAL,
-      });
-      expect(fixSession.startByAgent).not.toHaveBeenCalled();
-
-      rows = [
-        finding({
-          metadata: { confidence: 0.9, independentVerification: 'pending' },
+    it('records D4 when it dispatches the Verifier (OPP-0783)', async () => {
+      rows = [finding({ id: 'f-1' })];
+      await service.dispatchForRun('sweep-1');
+      expect(orchestrator.recordVerifierChoice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'finding',
+          runId: 'verify-1',
+          findingId: null,
+          counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
         }),
-      ];
-      bugHunterService.getSettings.mockResolvedValue({
-        mode: BugHunterMode.MANUAL,
-      });
-      await service.recordVerdict('f-1', {
-        verdict: 'confirmed',
-        confidence: 0.9,
-        reproduction: 'repro',
-      });
-      expect(fixSession.startByAgent).not.toHaveBeenCalled();
+      );
     });
 
     it('dismisses a refuted finding with the refutation as the reason, by verification', async () => {

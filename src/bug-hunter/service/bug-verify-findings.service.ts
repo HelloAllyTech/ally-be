@@ -9,12 +9,10 @@ import {
   BUG_FIX_SESSION_WORKFLOW_FILE,
 } from '../constants/bug-fix-session.constants';
 import { repoCommands } from '../constants/bug-hunt-repos.constants';
-import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import {
   BugFindingDecisionReason,
   BugFindingSource,
   BugFindingStatus,
-  BugHunterMode,
 } from '../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
@@ -27,6 +25,7 @@ import { BugHunterEngine } from '../type/bug-hunter-model-settings.type';
 import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
+import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
 import { BugHunterPolicyService } from './bug-hunter-policy.service';
 import { BugHunterService } from './bug-hunter.service';
 import { verifierFor } from './bug-verify-fix.service';
@@ -65,6 +64,7 @@ export class BugVerifyFindingsService {
     private readonly fixSessionService: BugFixSessionService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly configService: AppConfigService,
+    private readonly orchestrator: BugHunterOrchestratorService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the findings pending, which is the safe side. */
@@ -113,6 +113,15 @@ export class BugVerifyFindingsService {
       };
       await this.bugHunterService.setRunMetadata(run.id, {
         verifyFindings: dispatched,
+      });
+      // D4 (OPP-0783): which Verifier — fixed by rule, recorded all the same.
+      void this.orchestrator.recordVerifierChoice({
+        repo: sweep.repo,
+        runId: run.id,
+        findingId: null,
+        subject: 'finding',
+        producer: { engine: sweep.engine ?? null, model: sweep.model ?? null },
+        counterpart,
       });
       for (const f of candidates) {
         await this.findingRepository.update(f.id, {
@@ -299,21 +308,11 @@ export class BugVerifyFindingsService {
       return;
     }
 
-    // Confirmed. In AI mode and above the bar, the fix session the sweep
-    // would once have started itself. Otherwise it sits in the queue as a
-    // verified finding, which is what the queue is now for.
-    const settings = await this.bugHunterService.getSettings();
-    if (settings.mode !== BugHunterMode.AI) return;
-    if (confidence != null && confidence < BUG_HUNT_LOW_CONFIDENCE_THRESHOLD) {
-      await this.bugFindingService.setStatus(finding.id, {
-        status: BugFindingStatus.PENDING_APPROVAL,
-      });
-      return;
-    }
+    // Confirmed. The orchestrator's D5 (OPP-0783) decides whether the fix
+    // starts now or waits for a person; mode, confidence, budget and policy
+    // veto inside it, and every answer is a decision row.
     try {
-      const fresh = await this.bugFindingService.getOne(finding.id);
-      await this.policyService.assertMayFix(fresh);
-      await this.fixSessionService.startByAgent(fresh.id, 'verifier');
+      await this.orchestrator.onFindingConfirmed(finding.id, confidence);
     } catch (error) {
       this.logger.info(
         `[BUG_HUNTER] Confirmed finding ${finding.id} not fixed automatically: ${

@@ -99,6 +99,11 @@ describe('BugVerifyFixService', () => {
   let notifications: { notify: jest.Mock };
   let policy: { assertMayMerge: jest.Mock };
   let fixSession: { mergeVerifiedFinding: jest.Mock };
+  let orchestrator: {
+    recordVerifierChoice: jest.Mock;
+    onFixRefused: jest.Mock;
+    recordMergeGate: jest.Mock;
+  };
   let service: BugVerifyFixService;
   let current: BugFinding;
 
@@ -136,6 +141,11 @@ describe('BugVerifyFixService', () => {
     fixSession = {
       mergeVerifiedFinding: jest.fn().mockResolvedValue(undefined),
     };
+    orchestrator = {
+      recordVerifierChoice: jest.fn().mockResolvedValue(undefined),
+      onFixRefused: jest.fn().mockResolvedValue('ask_human'),
+      recordMergeGate: jest.fn().mockResolvedValue(undefined),
+    };
     service = new BugVerifyFixService(
       findingRepository as never,
       bugFindingService as never,
@@ -152,6 +162,7 @@ describe('BugVerifyFixService', () => {
         }),
       } as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
+      orchestrator as never,
     );
   });
 
@@ -295,7 +306,7 @@ describe('BugVerifyFixService', () => {
       );
     });
 
-    it('refuses a fix with a failed check, names the failure to the admin, and never merges', async () => {
+    it('refuses a fix with a failed check, hands it to the orchestrator with the named failure, and never merges', async () => {
       const verdict = await service.recordVerdict('f-1', {
         checks: [
           ...okChecks,
@@ -315,13 +326,45 @@ describe('BugVerifyFixService', () => {
       );
       expect(policy.assertMayMerge).not.toHaveBeenCalled();
       expect(fixSession.mergeVerifiedFinding).not.toHaveBeenCalled();
-      expect(notifications.notify).toHaveBeenCalledWith(
+      // D7 (OPP-0783) owns what happens next, including the notification.
+      expect(orchestrator.onFixRefused).toHaveBeenCalledWith(
+        'f-1',
+        expect.objectContaining({ verdict: 'fail' }),
+        expect.arrayContaining([
+          'data_file_counts: blank values 0 → 385 in mr.json',
+        ]),
+      );
+      expect(notifications.notify).not.toHaveBeenCalled();
+      expect(orchestrator.recordMergeGate).not.toHaveBeenCalled();
+    });
+
+    it('records D8 on a pass: merge where policy allows, hand over where it refuses (OPP-0783)', async () => {
+      await service.recordVerdict('f-1', { checks: okChecks });
+      expect(orchestrator.recordMergeGate).toHaveBeenCalledWith(
+        expect.objectContaining({ allowed: true }),
+      );
+
+      orchestrator.recordMergeGate.mockClear();
+      policy.assertMayMerge.mockRejectedValue(
+        new ForbiddenException('ally-web never self-merges'),
+      );
+      current = finding();
+      await service.recordVerdict('f-1', { checks: okChecks });
+      expect(orchestrator.recordMergeGate).toHaveBeenCalledWith(
         expect.objectContaining({
-          level: BugHunterNotificationLevel.ACTION_NEEDED,
-          title: expect.stringContaining('Verifier refused my fix'),
-          body: expect.stringContaining(
-            'data_file_counts: blank values 0 → 385 in mr.json',
-          ),
+          allowed: false,
+          reason: 'ally-web never self-merges',
+        }),
+      );
+    });
+
+    it('records D4 when it dispatches the Verifier (OPP-0783)', async () => {
+      await service.dispatch('f-1');
+      expect(orchestrator.recordVerifierChoice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'fix',
+          runId: 'run-verify',
+          counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
         }),
       );
     });

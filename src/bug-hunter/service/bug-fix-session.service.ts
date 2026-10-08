@@ -56,7 +56,12 @@ import {
   resolveReleaseTarget,
 } from '../constants/bug-fix-session.constants';
 import { BugCaseBudgetService } from './bug-case-budget.service';
+import { BugFixPlanService } from './bug-fix-plan.service';
 import { BugFixVerdict } from '../type/bug-fix-verdict.type';
+import {
+  FixRetry,
+  orchestratorStateOf,
+} from '../type/bug-hunter-orchestrator.type';
 
 /**
  * The on-demand path: one admin, one bug, one click.
@@ -104,6 +109,7 @@ export class BugFixSessionService {
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
     private readonly budgetService: BugCaseBudgetService,
+    private readonly fixPlanService: BugFixPlanService,
   ) {}
 
   // ── start a fix session ──────────────────────────────────────────────────
@@ -333,11 +339,61 @@ export class BugFixSessionService {
     }
   }
 
+  /**
+   * The orchestrator's D7 sends a bug back in (OPP-0783): after the
+   * Verifier refused the PR, or after a session failed. The reason is
+   * written to `metadata.retry` so the fix brief can say why the session is
+   * here again and, for a refusal, which PR branch to continue on; D6 then
+   * plans the model for the attempt inside `dispatchFix`. Same budget gate
+   * as every agent-started session.
+   */
+  async retry(
+    finding: BugFinding,
+    params: Omit<FixRetry, 'attempt' | 'at'>,
+  ): Promise<BugFinding> {
+    if (
+      !finding.repo ||
+      !BUG_FIX_SESSION_REPOS.includes(finding.repo as never)
+    ) {
+      throw new BadRequestException(
+        `"${finding.repo ?? 'no repo'}" is not set up for fix sessions.`,
+      );
+    }
+    await this.budgetService.assertCanStartSession(finding, {
+      force: false,
+      userId: null,
+    });
+    const retry: FixRetry = {
+      ...params,
+      attempt: orchestratorStateOf(finding).retries + 1,
+      at: new Date().toISOString(),
+    };
+    const fresh = await this.bugFindingService.getOne(finding.id);
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(fresh.metadata ?? {}),
+        retry,
+      } as Record<string, any>,
+    });
+    fresh.metadata = { ...(fresh.metadata ?? {}), retry };
+    await this.dispatchFix(fresh, finding.repo, 'orchestrator');
+    return this.bugFindingService.getOne(finding.id);
+  }
+
   private async dispatchFix(
     finding: BugFinding,
     repo: string,
-    startedBy: number | 'verifier' | 'answer' | null,
+    startedBy: number | 'verifier' | 'answer' | 'orchestrator' | null,
   ): Promise<void> {
+    // D6 (OPP-0783): which model and approach this attempt runs with, made
+    // before the run exists so the workflow's models call can read it.
+    // Best-effort inside; a plan that cannot be made leaves the default.
+    const retry =
+      startedBy === 'orchestrator'
+        ? ((finding.metadata?.retry as FixRetry | undefined) ?? null)
+        : null;
+    await this.fixPlanService.plan(finding, repo, retry);
+
     // The run row exists before the dispatch so the workflow has a run id to
     // report every step against from its very first call — and so a dispatch
     // that fails still leaves a visible, closed-out record of the attempt
@@ -395,10 +451,24 @@ export class BugFixSessionService {
           ? `Fix session started by my Verifier after it confirmed "${finding.title}".`
           : startedBy === 'answer'
             ? `Fix session restarted with your answer to its question on "${finding.title}".`
-            : startedBy
-              ? `Fix session started by user ${startedBy} for "${finding.title}".`
-              : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
-      payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
+            : startedBy === 'orchestrator'
+              ? `Fix session sent back in by my orchestrator (${retry?.move ?? 'retry'}, attempt ${retry?.attempt ?? '?'}) after ${
+                  retry?.kind === 'verifier_fail'
+                    ? 'the Verifier refused the last PR'
+                    : 'the last session failed'
+                } on "${finding.title}".`
+              : startedBy
+                ? `Fix session started by user ${startedBy} for "${finding.title}".`
+                : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
+      payload: {
+        startedBy,
+        repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        ...(retry ? { retry } : {}),
+        ...(finding.metadata?.fixPlan
+          ? { fixPlan: finding.metadata.fixPlan }
+          : {}),
+      },
     });
     void this.budgetService.charge(finding.id, 'sessions', 1);
   }

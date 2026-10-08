@@ -34,6 +34,7 @@ import {
 } from './bug-hunter-policy.service';
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
 import { BugFixSessionService } from './bug-fix-session.service';
+import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
 
 /**
  * What the verifier run needs to know about itself, stored on the finding at
@@ -112,6 +113,7 @@ export class BugVerifyFixService {
     private readonly fixSessionService: BugFixSessionService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly configService: AppConfigService,
+    private readonly orchestrator: BugHunterOrchestratorService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the PR open for a person, which is what happened before this existed. */
@@ -167,6 +169,18 @@ export class BugVerifyFixService {
           ...(finding.metadata ?? {}),
           verifyFix: dispatched,
         } as Record<string, any>,
+      });
+      // D4 (OPP-0783): which Verifier — fixed by rule, recorded all the same.
+      void this.orchestrator.recordVerifierChoice({
+        repo: finding.repo,
+        runId: run.id,
+        findingId: finding.id,
+        subject: 'fix',
+        producer: {
+          engine: fixRun?.engine ?? null,
+          model: fixRun?.model ?? null,
+        },
+        counterpart,
       });
 
       try {
@@ -287,29 +301,26 @@ export class BugVerifyFixService {
     if (fresh.status !== BugFindingStatus.PR_OPENED) return; // a person already acted
 
     if (verdict.verdict === 'fail') {
-      await this.notificationService.notify({
-        level: BugHunterNotificationLevel.ACTION_NEEDED,
-        title: `Verifier refused my fix for "${clip(fresh.title)}"`,
-        body:
-          `${failures
-            .slice(0, 4)
-            .map((f) => `• ${f}`)
-            .join('\n')}\n` +
-          `The PR is still open. Ask me to try again with these failures in hand, fix it yourself, or close it.`,
-        findingId: fresh.id,
-        runId: verdict.runId ?? undefined,
-        repo: fresh.repo ?? undefined,
-      });
+      // D7 (OPP-0783): retry with the named failures in hand, escalate to
+      // the strong tier, or bring it to a person. The orchestrator owns the
+      // notification on the ask_human path.
+      await this.orchestrator.onFixRefused(fresh.id, verdict, failures);
       return;
     }
 
     // A pass. Merge only where policy already allowed a self-merge; the
-    // Verifier adds a gate, it never opens one.
+    // Verifier adds a gate, it never opens one. D8 records the gate's answer.
     try {
       await this.policyService.assertMayMerge(fresh, fresh.prUrl ?? null, {
         verified: true,
       });
     } catch (error) {
+      await this.orchestrator.recordMergeGate({
+        finding: fresh,
+        verdict,
+        allowed: false,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       await this.notificationService.notify({
         level: BugHunterNotificationLevel.ACTION_NEEDED,
         title: `Verified and ready for your merge: "${clip(fresh.title)}"`,
@@ -323,6 +334,13 @@ export class BugVerifyFixService {
       return;
     }
 
+    await this.orchestrator.recordMergeGate({
+      finding: fresh,
+      verdict,
+      allowed: true,
+      reason:
+        'the Verifier passed every check and policy allows a self-merge here',
+    });
     try {
       await this.fixSessionService.mergeVerifiedFinding(fresh, verdict);
     } catch (error) {

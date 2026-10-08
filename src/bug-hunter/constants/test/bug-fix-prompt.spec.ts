@@ -388,6 +388,94 @@ describe('buildFixSessionPrompt', () => {
     expect(prompt).toMatch(/do not ask it again/i);
   });
 
+  describe('the orchestrator sent this session back in (OPP-0783)', () => {
+    const retry = (over: Record<string, unknown> = {}) => ({
+      kind: 'verifier_fail' as const,
+      move: 'retry_fix' as const,
+      attempt: 1,
+      failures: [
+        'suite: 3 tests red',
+        'data_file_counts: blank values 0 → 385',
+      ],
+      prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+      decisionId: 'dec-D7',
+      at: '2026-10-08T10:00:00Z',
+      ...over,
+    });
+
+    it("renders the Verifier's named failures as data and tells the fixer to continue on the refused PR", () => {
+      const prompt = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry(),
+      });
+      expect(prompt).toMatch(
+        /Why you are here again — attempt 2: the Verifier refused the last PR/,
+      );
+      expect(prompt).toContain('  - suite: 3 tests red');
+      expect(prompt).toContain('  - data_file_counts: blank values 0 → 385');
+      expect(prompt).toMatch(/gh pr checkout 812/);
+      expect(prompt).toMatch(/push to that branch so the same PR updates/);
+      expect(prompt).toMatch(
+        /UNLESS the "Why you are here again" section above names an open PR/,
+      );
+      expect(prompt).not.toMatch(/You are the stronger tier/);
+    });
+
+    it('tells the strong tier it is the strong tier, and reads a failed session through its post-mortem', () => {
+      const escalated = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({ move: 'escalate_model' }),
+      });
+      expect(escalated).toMatch(/You are the stronger tier/);
+
+      const failed = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({
+          kind: 'session_failed',
+          move: 'escalate_model',
+          failures: ['TypeError in RolePlayer'],
+          prUrl: null,
+        }),
+      });
+      expect(failed).toMatch(/attempt 2: the last session failed/);
+      expect(failed).toMatch(/read "tryNext" first/);
+      expect(failed).toContain('TypeError in RolePlayer');
+      expect(failed).not.toMatch(/gh pr checkout/);
+    });
+
+    it('carries the D6 approach as a suggestion, and says nothing when there is none', () => {
+      const withPlan = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        plan: {
+          engine: 'gemini',
+          model: 'gemini-2.5-pro',
+          tier: 'strong',
+          approach: 'Add the four keys to mr.json.',
+          attempt: 1,
+          decisionId: 'dec-D6',
+          plannedAt: '2026-10-08T10:00:00Z',
+        },
+      });
+      expect(withPlan).toMatch(
+        /Suggested approach from my orchestrator \(D6.*not an order.*\): Add the four keys to mr\.json\./,
+      );
+      expect(build()).not.toMatch(/Suggested approach/);
+      expect(build()).not.toMatch(/Why you are here again/);
+    });
+  });
+
   it('tells the agent to find the file itself when the bug names none', () => {
     expect(build({ file: null })).toMatch(
       /not identified — locate it yourself/,

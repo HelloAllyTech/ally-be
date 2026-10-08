@@ -32,6 +32,10 @@ import {
 } from '../repository/bug-hunt-run.repository';
 import { BugHuntEventRepository } from '../repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from '../repository/bug-hunter-settings.repository';
+import {
+  DecisionOwner,
+  DecisionPoint,
+} from '../type/bug-hunter-orchestrator.type';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHunterMode } from '../enum/bug-finding.enum';
@@ -103,6 +107,30 @@ export class BugHunterService {
    * SUPER_DUPER_ADMIN reviewing "why did nothing run last night" sees the
    * mode change right next to the skipped run it explains.
    */
+  /** An admin hands a decision point to the other owner, or back to the default (OPP-0783). */
+  async setDecisionOwner(
+    point: DecisionPoint,
+    owner: DecisionOwner | null,
+    updatedBy: number,
+  ): Promise<BugHunterSettings> {
+    const settings = await this.settingsRepository.setDecisionOwner(
+      point,
+      owner,
+      updatedBy,
+    );
+    await this.eventRepository.save(
+      this.eventRepository.create({
+        runId: null,
+        stage: BugHuntEventStage.SETTINGS_CHANGED,
+        summary: owner
+          ? `Decision point ${point} handed to the ${owner} by user ${updatedBy}`
+          : `Decision point ${point} back to its default owner, by user ${updatedBy}`,
+        payload: { point, owner, updatedBy },
+      }),
+    );
+    return settings;
+  }
+
   async setMode(
     mode: BugHunterMode,
     updatedBy: number,

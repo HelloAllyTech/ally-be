@@ -231,8 +231,10 @@ makes on demand or on a schedule, read through `getPromptByCode` like an agent p
 driving a conversation. `bug_hunter/classify_repo.txt`, `bug_hunter/classify_miss.txt` and `bug_hunter/decide.txt` are the
 plainest examples: one JSON answer each, and code validates the answer against a closed catalogue
 (dispatchable repos; miss reasons and senses; for `decide.txt`'s D1 the sense menu is per repo, so
-`locale_parity` is only offered where locale files exist) before anything is stored, so a model
-that invents a value is discarded rather than trusted. `product_updates/consolidate.txt` is the one whose output reaches a public page
+`locale_parity` is only offered where locale files exist; its D5–D7 answers for the orchestrator
+are checked against the move menu the same way, and a veto or a fixed point never asks the model
+at all) before anything is stored, so a model that invents a value is discarded rather than
+trusted. `product_updates/consolidate.txt` is the one whose output reaches a public page
 (app.helloally.ai/blog/changelog) with no human step, so its reply is validated field by field
 and code enforces what the prompt asks — public text carrying jargon is capped at low confidence so
 the team digest flags it — rather than trusting the model to comply. Since 2026-10-01 public is the

@@ -79,6 +79,8 @@ import {
 } from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
+import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
+import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
 import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
 import { prNumberFrom } from '../service/bug-hunter-policy.service';
@@ -129,6 +131,7 @@ export class BugHunterPipelineController {
     private readonly verifyFindingsService: BugVerifyFindingsService,
     private readonly finderService: BugHunterFinderService,
     private readonly runRepository: BugHuntRunRepository,
+    private readonly orchestrator: BugHunterOrchestratorService,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -485,6 +488,22 @@ export class BugHunterPipelineController {
         };
       }
     }
+    // The orchestrator's D6 (OPP-0783): the fix workflow asks by finding id
+    // and gets the model the plan chose for this attempt.
+    if (role === 'fix' && findingId) {
+      const finding = await this.bugFindingService
+        .getOne(findingId)
+        .catch(() => null);
+      const plan = finding?.metadata?.fixPlan as FixPlan | undefined;
+      if (plan?.engine && plan?.model) {
+        return {
+          ...settings,
+          engine: plan.engine,
+          defaultModel: plan.model,
+          escalationModel: plan.model,
+        };
+      }
+    }
     if (role === 'verify_fix' && findingId) {
       const finding = await this.bugFindingService
         .getOne(findingId)
@@ -646,6 +665,9 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       dossier,
       engine,
+      // The orchestrator's plan and reason for a retry (OPP-0783).
+      plan: (finding.metadata?.fixPlan as FixPlan | undefined) ?? null,
+      retry: (finding.metadata?.retry as FixRetry | undefined) ?? null,
     });
   }
 
@@ -922,6 +944,12 @@ export class BugHunterPipelineController {
     // own failures and leaves the PR for a person if it cannot run.
     if (body.status === BugFindingStatus.PR_OPENED) {
       void this.verifyFixService.dispatch(id);
+    }
+    // A session gave up (OPP-0783): the orchestrator's D7 decides whether a
+    // stronger attempt goes in with the post-mortem, or a person is asked.
+    // Not awaited, and it swallows its own failures.
+    if (body.status === BugFindingStatus.FAILED) {
+      void this.orchestrator.onSessionFailed(id);
     }
     // The agent's own merge path. Its protocol merges with --delete-branch,
     // so this usually finds the branch already gone; it is the backstop for a

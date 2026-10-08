@@ -57,36 +57,38 @@ import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHunterNotification } from '../entity/bug-hunter-notification.entity';
 import {
-  BugHunterSettingsDto,
+  AnswerBugFindingDto,
+  BugCaseBudgetDto,
+  BugFindingDetailDto,
+  BugFindingDto,
+  BugFindingMissDto,
+  BugFindingRefDto,
+  BugFixStepDto,
   BugHuntEventDto,
   BugHuntRunDetailDto,
   BugHuntRunDto,
-  TriggerBugHuntSweepDto,
-  BugFindingDto,
-  BugFindingMissDto,
-  BugCaseBudgetDto,
-  BugFindingDetailDto,
-  ListBugHuntRunsResponseDto,
   BugHuntRunsSummaryDto,
   BugHuntRunsSummaryQueryDto,
-  ListBugFindingsQueryDto,
-  ListBugFindingsResponseDto,
-  UpdateBugHunterSettingsDto,
-  AnswerBugFindingDto,
-  EditBugFindingDescriptionDto,
-  StartBugFixSessionDto,
-  BugFixStepDto,
-  BugHunterNotificationDto,
-  ListBugHunterNotificationsQueryDto,
-  ListBugHunterNotificationsResponseDto,
-  SetBugFindingStageDto,
-  BugFindingRefDto,
-  RejectBugFindingDto,
   BugHunterMetricsDto,
-  BugHunterOperationsMetricsDto,
   BugHunterMetricsQueryDto,
   BugHunterModelSettingsDto,
+  BugHunterNotificationDto,
+  BugHunterOperationsMetricsDto,
+  BugHunterSettingsDto,
+  DecisionOwnersDto,
+  EditBugFindingDescriptionDto,
+  ListBugFindingsQueryDto,
+  ListBugFindingsResponseDto,
+  ListBugHuntRunsResponseDto,
+  ListBugHunterNotificationsQueryDto,
+  ListBugHunterNotificationsResponseDto,
+  RejectBugFindingDto,
+  SetBugFindingStageDto,
+  StartBugFixSessionDto,
+  TriggerBugHuntSweepDto,
   UpdateBugHunterModelSettingsDto,
+  UpdateBugHunterSettingsDto,
+  UpdateDecisionOwnerDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNTER_METRICS_DEFAULT_DAYS,
@@ -106,6 +108,14 @@ import {
   BugHunterScoreboardService,
   Scoreboard,
 } from '../service/bug-hunter-scoreboard.service';
+import {
+  BugHunterDecisionReplayService,
+  ReplayReport,
+} from '../service/bug-hunter-decision-replay.service';
+import {
+  BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+  BUG_HUNTER_DECISION_POINTS_FIXED,
+} from '../type/bug-hunter-orchestrator.type';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 import {
   BugHunterToday,
@@ -153,6 +163,7 @@ export class BugHunterController {
     private readonly telemetryService: BugHunterTelemetryService,
     private readonly evalService: BugHunterEvalService,
     private readonly memoryService: AgentMemoryService,
+    private readonly replayService: BugHunterDecisionReplayService,
   ) {}
 
   @Get('memory')
@@ -523,6 +534,58 @@ export class BugHunterController {
   ): Promise<BugHuntDecision[]> {
     await this.bugHunterService.getRun(id);
     return this.decisionService.listForRun(id);
+  }
+
+  @Get('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Who owns each decision point — the rule or the model — as it stands, with the defaults and which points are fixed (OPP-0783)',
+  })
+  async getDecisionOwners(): Promise<DecisionOwnersDto> {
+    const settings = await this.bugHunterService.getSettings();
+    return {
+      owners: await this.replayService.effectiveOwners(),
+      defaults: BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+      fixed: [...BUG_HUNTER_DECISION_POINTS_FIXED],
+      overrides: (settings.decisionOwners ?? {}) as Record<string, string>,
+    };
+  }
+
+  @Patch('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Hand one decision point to the other owner, or back to its default with owner null (OPP-0783). D4 and D8 are fixed and refuse.',
+  })
+  async setDecisionOwner(
+    @Body() body: UpdateDecisionOwnerDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<DecisionOwnersDto> {
+    if (BUG_HUNTER_DECISION_POINTS_FIXED.includes(body.point)) {
+      throw new BadRequestException(
+        `${body.point} is fixed in code (the Verifier vendor and the merge gate) and cannot change owner.`,
+      );
+    }
+    await this.bugHunterService.setDecisionOwner(
+      body.point,
+      body.owner ?? null,
+      user.id,
+    );
+    return this.getDecisionOwners();
+  }
+
+  @Get('decisions/replay')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The replay: per decision point, how often the owner and the shadow disagreed and who was right, and whether the owner should flip (OPP-0783)',
+  })
+  async getDecisionReplay(@Query('days') days?: string): Promise<ReplayReport> {
+    const window = Number(days);
+    return this.replayService.report(
+      Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
+    );
   }
 
   @Get('scoreboard')
