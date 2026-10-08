@@ -1,4 +1,5 @@
 import { BugFinding } from '../entity/bug-finding.entity';
+import { BugFindingSource } from '../enum/bug-finding.enum';
 import {
   DATA_BEGIN,
   DATA_END,
@@ -218,6 +219,9 @@ export function buildFixSessionPrompt({
     DATA_END,
     finding.escalationAnswer
       ? `An admin already answered an open question about this bug on an earlier attempt: "${finding.escalationAnswer}". Use that answer; do not ask it again.`
+      : '',
+    finding.source === BugFindingSource.LOCALE_PARITY
+      ? `This is a locale-parity bug (OPP-0782), and the shape of the fix is fixed: write a real translation for every key the evidence lists, in that language, in that file, keeping every {{placeholder}} and <tag> exactly as the English has them. Never write a blank, never paste the English, and NEVER run "npm run i18n:sync" without its translate key — run without the key it writes "" for every missing key, which is the bug that blanked 385 strings per language on 2026-10-01. Your regression test at step 1 is "node scripts/i18n-parity.mjs", which must exit non-zero before your change and zero after. If the evidence lists more than 40 keys for one file, stop after the first 40 and escalate with the count: a person decides whether a bulk translation ships without review.`
       : '',
     ``,
     dossier ? renderFixDossier(dossier) : '',

@@ -78,7 +78,7 @@ export function buildVerifyFindingsPrompt({
     ``,
     `## For each finding, in order`,
     `1. Read the code the finder points at, and its callers. Decide what would have to be true for the bug to be real.`,
-    `2. REPRODUCE. Make the bug happen, or show the defect in the code path with a command: a throwaway failing test, a script, a query, a curl against a locally started service, a grep that shows the unguarded input reaching the call. Record exactly what you ran and what it printed.`,
+    `2. REPRODUCE. Make the bug happen, or show the defect in the code path with a command: a throwaway failing test, a script, a query, a curl against a locally started service, a grep that shows the unguarded input reaching the call. Record exactly what you ran and what it printed. For a finding with source "locale_parity" the reproduction is the same script that filed it: "node scripts/i18n-parity.mjs --json" — quote the counts for that file, and confirm only if they are still non-zero on master.`,
     `3. REFUTE. Now try to make it NOT a bug: a guard upstream the finder missed; a test that already asserts the opposite and passes; a caller that can never pass the input in question; the code already fixed on master since the sweep ran (git log -5 -- <file>); behaviour that is by design (a comment, a doc, a product decision in the repo). Record what you tried and whether it held.`,
     `4. Decide:`,
     `   - "confirmed": you reproduced it and your refutation attempts did not hold. Requires a reproduction.`,

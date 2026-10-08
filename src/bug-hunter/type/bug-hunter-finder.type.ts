@@ -23,8 +23,36 @@ export const BUG_HUNTER_SENSES = [
   'production_log',
   'browser_errors',
   'reported_bugs',
+  'locale_parity',
 ] as const;
 export type BugHunterSense = (typeof BUG_HUNTER_SENSES)[number];
+
+/**
+ * The senses a model runs by reading the brief. `locale_parity` is not one:
+ * the sweep workflow runs it as a script before the engine starts and files
+ * its findings itself (OPP-0782), so the brief only tells the model it has
+ * already happened.
+ */
+export const BUG_HUNTER_MODEL_SENSES: readonly BugHunterSense[] =
+  BUG_HUNTER_SENSES.filter((s) => s !== 'locale_parity');
+
+/**
+ * Where a sense can run at all. A sense absent here runs on every repo. The
+ * locale check needs locale files, which only the two front ends carry
+ * (`scripts/i18n-parity.mjs` in each).
+ */
+export const BUG_HUNTER_SENSE_REPOS: Partial<Record<BugHunterSense, string[]>> =
+  {
+    locale_parity: ['ally-web', 'ally-mobile'],
+  };
+
+/** D1's menu for a repo: every sense that can run there. */
+export function sensesForRepo(repo: string): BugHunterSense[] {
+  return BUG_HUNTER_SENSES.filter((s) => {
+    const repos = BUG_HUNTER_SENSE_REPOS[s];
+    return !repos || repos.includes(repo);
+  });
+}
 
 export const BUG_HUNTER_SENSE_DESCRIPTIONS: Record<BugHunterSense, string> = {
   tests:
@@ -33,6 +61,8 @@ export const BUG_HUNTER_SENSE_DESCRIPTIONS: Record<BugHunterSense, string> = {
   production_log: 'read the last 24h of CloudWatch errors for the repo',
   browser_errors: 'read the last 24h of PostHog client exceptions for the repo',
   reported_bugs: 'read the human bug reports filed against the repo',
+  locale_parity:
+    'a script, no model: compare every locale file with en.json for missing keys and blanks; costs nothing and only exists on repos with locale files',
 };
 
 /** What started a Finder run. `scheduled` is the nightly cron; the rest are event triggers. */
@@ -82,6 +112,8 @@ export function senseOfSource(source: string): BugHunterSense | null {
       return 'production_log';
     case 'reported_bug':
       return 'reported_bugs';
+    case 'locale_parity':
+      return 'locale_parity';
     default:
       return null;
   }

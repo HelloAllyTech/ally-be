@@ -82,16 +82,16 @@ describe('BugHunterMissClassifierService', () => {
     mockComplete.mockResolvedValue(
       textResponse({
         reason: 'no_sense',
-        sense: 'locale_parity',
+        sense: 'user_journey',
         confidence: 0.9,
-        rationale: 'Keys were added to en.json only.',
+        rationale: 'Only visible on the rendered screen.',
       }),
     );
 
     const miss = await service.classifyAndRecord('f-report');
 
     expect(miss?.reason).toBe('no_sense');
-    expect(miss?.sense).toBe('locale_parity');
+    expect(miss?.sense).toBe('user_journey');
     expect(findingRepo.update).toHaveBeenCalledWith(
       'f-report',
       expect.objectContaining({

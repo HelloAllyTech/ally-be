@@ -13,6 +13,11 @@
  * PostHog telemetry rather than the codebase. Those findings carry no `file`:
  * their stable coordinate is a route/element, passed as `symbol` so they dedupe
  * precisely instead of falling back to the description fingerprint.
+ *
+ * `LOCALE_PARITY` is written by the sweep workflow itself, not by a model:
+ * `scripts/i18n-parity.mjs` (ally-web, ally-mobile) compares every locale
+ * file with en.json and posts one proven finding per file out of parity,
+ * keyed on the file plus the constant symbol `locale-parity` (OPP-0782).
  */
 export enum BugFindingSource {
   TEST_FAILURE = 'test_failure',
@@ -22,6 +27,7 @@ export enum BugFindingSource {
   REPORTED_BUG = 'reported_bug',
   ANALYTICS_SUGGESTION = 'analytics_suggestion',
   UX_SIGNAL = 'ux_signal',
+  LOCALE_PARITY = 'locale_parity',
 }
 
 export enum BugFindingSeverity {

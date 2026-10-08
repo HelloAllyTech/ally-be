@@ -67,6 +67,37 @@ describe('buildSweepPrompt', () => {
       expect(p).not.toMatch(/The Finder chose this set/);
       expect(p).not.toMatch(/LIGHT pass/);
     });
+
+    it('renders locale_parity as "already done" and counts it as a finder the model must not run (OPP-0782)', () => {
+      const p = build({
+        repo: 'ally-web',
+        senses: ['tests', 'locale_parity'],
+      });
+      expect(p).toMatch(/Run these 2 finders/);
+      expect(p).toMatch(/2\. LOCALE PARITY — already done, not yours to run/);
+      expect(p).toMatch(/scripts\/i18n-parity\.mjs/);
+      expect(p).toMatch(/report no finder_result for it/);
+      // Measured against the repo's own menu (six on ally-web), so a partial set still says so.
+      expect(p).toMatch(
+        /The Finder chose this set for tonight \(tests, locale_parity\)/,
+      );
+    });
+
+    it('does not call a full set partial on a repo whose menu has no locale sense', () => {
+      const p = build({
+        repo: 'ally-be',
+        senses: [
+          'tests',
+          'code_review',
+          'production_log',
+          'browser_errors',
+          'reported_bugs',
+        ],
+      });
+      expect(p).toMatch(/Run these 5 finders/);
+      expect(p).not.toMatch(/The Finder chose this set/);
+      expect(p).not.toMatch(/LOCALE PARITY/);
+    });
   });
 
   it('scopes the reported-bugs finder to this repo, plus anything still unfiled', () => {

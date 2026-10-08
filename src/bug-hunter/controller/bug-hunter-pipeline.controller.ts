@@ -455,12 +455,14 @@ export class BugHunterPipelineController {
         .getRun(findingId)
         .catch(() => null);
       const chosen = run?.metadata?.finder?.model;
+      const senses = run?.metadata?.finder?.senses;
       if (chosen?.engine && chosen?.model) {
         return {
           ...settings,
           engine: chosen.engine,
           defaultModel: chosen.model,
           escalationModel: chosen.model,
+          ...(Array.isArray(senses) ? { senses } : {}),
         };
       }
     }

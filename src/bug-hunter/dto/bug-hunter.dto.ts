@@ -641,6 +641,13 @@ export class BugHunterModelSettingsDto {
       'Model pinned into the bug-escalation subagent before each run. Ignored when engine is "gemini" — escalation has no Gemini equivalent yet, so a gemini-engine run skips it.',
   })
   escalationModel!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Only with role=finder: the senses the Finder's D1 chose for this run (OPP-0781). The sweep workflow reads it to know whether to run the script-driven senses itself, such as locale_parity (OPP-0782).",
+    type: [String],
+  })
+  senses?: string[];
 }
 
 export class UpdateBugHunterModelSettingsDto {
