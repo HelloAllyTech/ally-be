@@ -497,6 +497,7 @@ describe('LearnController', () => {
           // Authenticated detail attaches the learner's own completion record.
           includeCompletion: true,
           includeTextChatAvailability: true,
+          includeAvailableLanguages: true,
         },
         'mr',
       );

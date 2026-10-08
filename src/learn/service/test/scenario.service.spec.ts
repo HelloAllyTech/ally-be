@@ -1828,6 +1828,58 @@ describe('ScenarioService', () => {
       await expect(service.getScenario(999)).rejects.toThrow(NotFoundException);
     });
 
+    describe('availableLanguages', () => {
+      beforeEach(() => {
+        scenariosRepository.getScenarioById.mockResolvedValue({
+          ...mockScenario,
+        } as any);
+        (scenariosRepository as any).query = jest.fn();
+      });
+
+      it('is not attached unless the caller asks for it', async () => {
+        const result = await service.getScenario(1);
+
+        expect(result.availableLanguages).toBeUndefined();
+        expect((scenariosRepository as any).query).not.toHaveBeenCalled();
+      });
+
+      // A course player holds only the detail. Without this a Kannada-only
+      // roleplay offered no language and its start fell back to English.
+      it('lists the voiced languages even when English has no voice', async () => {
+        (scenariosRepository as any).query.mockResolvedValue([
+          { languageVoices: { '8': 'kn-voice', '2': 'hi-voice', '5': null } },
+        ]);
+        sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+          { id: 2, label: 'Hindi', value: 'hi' },
+          { id: 8, label: 'Kannada', value: 'kn' },
+        ] as any);
+
+        const result = await service.getScenario(1, {
+          includeAvailableLanguages: true,
+        });
+
+        expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
+          2, 8,
+        ]);
+        expect(result.availableLanguages).toEqual([
+          { language_id: 2, label: 'Hindi', value: 'hi' },
+          { language_id: 8, label: 'Kannada', value: 'kn' },
+        ]);
+      });
+
+      it('is null when no language is voiced', async () => {
+        (scenariosRepository as any).query.mockResolvedValue([
+          { languageVoices: null },
+        ]);
+
+        const result = await service.getScenario(1, {
+          includeAvailableLanguages: true,
+        });
+
+        expect(result.availableLanguages).toBeNull();
+      });
+    });
+
     describe('textChatAvailable', () => {
       beforeEach(() => {
         scenariosRepository.getScenarioById.mockResolvedValue({

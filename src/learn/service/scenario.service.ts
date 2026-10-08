@@ -188,6 +188,7 @@ import {
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
 import {
+  AvailableLanguageItem,
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
   getLanguageVoiceIds,
@@ -524,7 +525,36 @@ export class ScenarioService {
       scenario.textChatAvailable = await this.isTextChatAvailable(scenario.id);
     }
 
+    if (options?.includeAvailableLanguages) {
+      scenario.availableLanguages = await this.getVoicedLanguages(scenario.id);
+    }
+
     return scenario;
+  }
+
+  /**
+   * The languages a scenario has a voice for, built exactly as the catalog
+   * list builds them. Read separately for the same reason as
+   * isTextChatAvailable: the learner detail query never selects `metadata`,
+   * and this needs only its `languageVoices` key.
+   */
+  private async getVoicedLanguages(
+    scenarioId: number,
+  ): Promise<AvailableLanguageItem[] | null> {
+    const rows: { languageVoices: Record<string, unknown> | null }[] =
+      await this.scenariosRepository.query(
+        `SELECT "metadata"->'languageVoices' AS "languageVoices"
+         FROM "scenarios" WHERE "id" = $1 LIMIT 1`,
+        [scenarioId],
+      );
+    const languageIds = getLanguageVoiceIds(rows?.[0]?.languageVoices);
+    if (!languageIds.length) return null;
+    const languagesMap = buildAvailableLanguagesMap(
+      await this.sharedLanguageService.getLanguagesByIds(languageIds),
+    );
+    return languageIds
+      .map((languageId) => languagesMap.get(languageId))
+      .filter((language): language is AvailableLanguageItem => !!language);
   }
 
   /**

@@ -44,4 +44,12 @@ export type GetScenarioByIdOptions = {
    * caller's tenant.
    */
   includeTextChatAvailability?: boolean;
+  /**
+   * Attach `availableLanguages` — the languages this scenario has a voice for.
+   * The learner detail query never selects `metadata`, so without this a
+   * client holding only the detail (a course player) has no languages to
+   * offer and its start falls back to English, which a scenario voiced only
+   * in Hindi or Kannada rejects with "Voice not found".
+   */
+  includeAvailableLanguages?: boolean;
 };
