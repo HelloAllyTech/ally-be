@@ -29,7 +29,7 @@ import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
 import { BugHunterPolicyService } from './bug-hunter-policy.service';
 import { BugHunterService } from './bug-hunter.service';
-import { counterpartFor } from './bug-verify-fix.service';
+import { verifierFor } from './bug-verify-fix.service';
 
 /** Stored on the verify run's metadata, so the workflow's models call can read the counterpart. */
 export interface VerifyFindingsDispatch {
@@ -45,7 +45,7 @@ export interface VerifyFindingsDispatch {
  * The Verifier stage for findings — OPP-0780. See `BugFindingVerdict`.
  *
  *  1. `dispatchForRun` — a sweep closed. Every unproven finding it kept goes
- *     to one `verify_findings` run on the other vendor, marked `pending`.
+ *     to one `verify_findings` run on Gemini, marked `pending`.
  *  2. `recordVerdict` — the verifier PATCHed a finding. Store it, then act:
  *     refuted → dismissed with the refutation; unsure → held for a person;
  *     confirmed → in AI mode and above the confidence bar, a fix session.
@@ -98,11 +98,7 @@ export class BugVerifyFindingsService {
       if (!candidates.length) return null;
 
       const settings = await this.modelSettingsService.get();
-      const counterpart = counterpartFor(
-        sweep.engine ?? null,
-        sweep.model ?? null,
-        settings,
-      );
+      const counterpart = verifierFor(settings);
       const run = await this.bugHunterService.startRun(
         BugHuntTrigger.VERIFY_FINDINGS,
         sweep.repo,

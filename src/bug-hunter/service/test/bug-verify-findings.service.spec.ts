@@ -54,11 +54,11 @@ describe('BugVerifyFindingsService', () => {
     id: 'verify-1',
     repo: 'ally-web',
     trigger: BugHuntTrigger.VERIFY_FINDINGS,
-    engine: 'claude-code',
-    model: 'claude-sonnet-5',
+    engine: 'gemini',
+    model: 'gemini-2.5-pro',
     metadata: {
       verifyFindings: {
-        counterpart: { engine: 'claude-code', model: 'claude-sonnet-5' },
+        counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
       },
     },
   };
@@ -137,13 +137,13 @@ describe('BugVerifyFindingsService', () => {
   });
 
   describe('dispatchForRun', () => {
-    it('sends only the unproven, non-human findings of a closed sweep to one run on the other vendor, marking them pending', async () => {
+    it('sends only the unproven, non-human findings of a closed sweep to one Gemini verifier run, marking them pending', async () => {
       const d = await service.dispatchForRun('sweep-1');
 
       expect(d?.findingIds).toEqual(['f-1']);
       expect(d?.counterpart).toEqual({
-        engine: 'claude-code',
-        model: 'claude-sonnet-5',
+        engine: 'gemini',
+        model: 'gemini-2.5-pro',
       });
       expect(bugHunterService.startRun).toHaveBeenCalledWith(
         BugHuntTrigger.VERIFY_FINDINGS,
@@ -222,8 +222,8 @@ describe('BugVerifyFindingsService', () => {
 
       expect(v?.verdict).toBe('confirmed');
       expect(v?.by).toEqual({
-        engine: 'claude-code',
-        model: 'claude-sonnet-5',
+        engine: 'gemini',
+        model: 'gemini-2.5-pro',
       });
       const row = rows[0];
       expect(row.metadata).toMatchObject({

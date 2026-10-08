@@ -51,44 +51,47 @@ export interface VerifyFixDispatch {
 }
 
 /**
- * The other vendor. A verifier on the same model family as the fixer shares
- * its blind spots, so the pairing is forced: Claude reads a Gemini-made fix
- * and Gemini reads a Claude-made one. OpenCode is a shell around one of the
- * two, so it is classified by the model it ran. Claude Code is kept as an
- * engine for exactly this (decided 2026-10-07): Gemini and OpenCode do the
- * bulk of the work, and the second opinion is where another vendor earns
- * its cost.
+ * The model the Verifier runs on. It was a forced cross-vendor pairing
+ * (Claude reading every Gemini-made fix), but every fix is Gemini-made, so
+ * every verify run billed Anthropic — and drained the credits on 2026-10-08.
+ * Claude is gone from the platform, so the Verifier stays on Gemini: the
+ * admin's model when it is a Gemini one, else gemini-2.5-pro. The engine is
+ * always `gemini`, the one every repo's workflow supports.
  */
-export function counterpartFor(
-  fixEngine: string | null,
-  fixModel: string | null,
-  settings: BugHunterModelSettings,
-): { engine: BugHunterEngine; model: string } {
-  const fixVendor =
-    vendorOf(fixEngine, fixModel) ??
-    vendorOf(settings.engine, settings.defaultModel);
-  return fixVendor === 'anthropic'
-    ? { engine: 'gemini', model: 'gemini-2.5-pro' }
-    : { engine: 'claude-code', model: 'claude-sonnet-5' };
+export function verifierFor(settings: BugHunterModelSettings): {
+  engine: BugHunterEngine;
+  model: string;
+} {
+  return {
+    engine: 'gemini',
+    model: settings.defaultModel?.startsWith('gemini')
+      ? settings.defaultModel
+      : 'gemini-2.5-pro',
+  };
 }
 
-function vendorOf(
-  engine: string | null,
-  model: string | null,
-): 'anthropic' | 'google' | null {
-  if (model?.startsWith('claude')) return 'anthropic';
-  if (model?.startsWith('gemini')) return 'google';
-  if (engine === 'claude-code') return 'anthropic';
-  if (engine === 'gemini') return 'google';
-  return null;
+/**
+ * The verifier model stored on a finding or run at dispatch — except a
+ * Claude one, which runs dispatched before the switch to Gemini still carry;
+ * those get `verifierFor(settings)` so a retry never reaches Anthropic.
+ */
+export function storedVerifier(
+  stored: { engine?: BugHunterEngine; model?: string } | null | undefined,
+  settings: BugHunterModelSettings,
+): { engine: BugHunterEngine; model: string } | null {
+  if (!stored?.engine || !stored?.model) return null;
+  if (stored.engine === 'claude-code' || stored.model.startsWith('claude')) {
+    return verifierFor(settings);
+  }
+  return { engine: stored.engine, model: stored.model };
 }
 
 /**
  * The Verifier stage for fixes — OPP-0779. See `BugFixVerdict` for why.
  *
  * Three moments:
- *  1. `dispatch` — a fix reached PR_OPENED. Open a `verify_fix` run on the
- *     other vendor and hand the workflow the PR.
+ *  1. `dispatch` — a fix reached PR_OPENED. Open a `verify_fix` run on
+ *     Gemini and hand the workflow the PR.
  *  2. `recordVerdict` — the verifier PATCHed its checks. Validate, compute
  *     pass or fail, store on the case file, post on the PR.
  *  3. `actOnVerdict` — pass and policy allows a self-merge: merge. Pass but
@@ -141,11 +144,7 @@ export class BugVerifyFixService {
         ? await this.bugHunterService.getRun(finding.runId).catch(() => null)
         : null;
       const settings = await this.modelSettingsService.get();
-      const counterpart = counterpartFor(
-        fixRun?.engine ?? null,
-        fixRun?.model ?? null,
-        settings,
-      );
+      const counterpart = verifierFor(settings);
 
       const run = await this.bugHunterService.startRun(
         BugHuntTrigger.VERIFY_FIX,

@@ -73,7 +73,10 @@ import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
 import { BugCaseFileService } from '../service/bug-case-file.service';
-import { BugVerifyFixService } from '../service/bug-verify-fix.service';
+import {
+  BugVerifyFixService,
+  storedVerifier,
+} from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
@@ -443,9 +446,9 @@ export class BugHunterPipelineController {
     @Query('findingId') findingId?: string,
   ): Promise<BugHunterModelSettingsDto> {
     const settings = await this.modelSettingsService.get();
-    // The Verifier runs on the OTHER vendor (OPP-0779): the counterpart was
-    // chosen and stored on the finding at dispatch, so the workflow's first
-    // call gets it back here rather than the platform default.
+    // The Verifier's model (OPP-0779) was chosen and stored on the finding
+    // at dispatch, so the workflow's first call gets it back here rather
+    // than the platform default.
     // The Finder's D2 (OPP-0781): the sweep workflow asks by run id.
     if (role === 'finder' && findingId) {
       const run = await this.bugHunterService
@@ -467,8 +470,11 @@ export class BugHunterPipelineController {
       const run = await this.bugHunterService
         .getRun(findingId)
         .catch(() => null);
-      const counterpart = run?.metadata?.verifyFindings?.counterpart;
-      if (counterpart?.engine && counterpart?.model) {
+      const counterpart = storedVerifier(
+        run?.metadata?.verifyFindings?.counterpart,
+        settings,
+      );
+      if (counterpart) {
         return {
           ...settings,
           engine: counterpart.engine,
@@ -481,8 +487,11 @@ export class BugHunterPipelineController {
       const finding = await this.bugFindingService
         .getOne(findingId)
         .catch(() => null);
-      const counterpart = finding?.metadata?.verifyFix?.counterpart;
-      if (counterpart?.engine && counterpart?.model) {
+      const counterpart = storedVerifier(
+        finding?.metadata?.verifyFix?.counterpart,
+        settings,
+      );
+      if (counterpart) {
         return {
           ...settings,
           engine: counterpart.engine,
@@ -670,7 +679,7 @@ export class BugHunterPipelineController {
     description:
       'Fetched by `bug-fix-session.yml` when dispatched with mode=verify_findings (OPP-0780). ' +
       'Lists every unproven finding the sweep kept; the verifier reproduces and tries to refute ' +
-      "each on the other vendor's model and PATCHes a findingVerdict per finding.",
+      "each on the Verifier's Gemini model and PATCHes a findingVerdict per finding.",
   })
   @Header('Content-Type', 'text/plain; charset=utf-8')
   async getVerifyFindingsPrompt(
@@ -708,7 +717,7 @@ export class BugHunterPipelineController {
       "The Verifier's protocol for this finding's open PR, as plain text (pipeline only)",
     description:
       'Fetched by `bug-fix-session.yml` when dispatched with mode=verify (OPP-0779). A read-only ' +
-      "checklist over the PR on the other vendor's model: reproduce at base, pass at head, suite " +
+      "checklist over the PR on the Verifier's Gemini model: reproduce at base, pass at head, suite " +
       'against base, diff against the brief, data-file counts, blast radius. Ends in a verdict PATCH.',
   })
   @Header('Content-Type', 'text/plain; charset=utf-8')
@@ -1055,7 +1064,7 @@ export class BugHunterPipelineController {
       errorMessage,
     );
     // A sweep closed: every unproven finding it kept now goes to the
-    // independent verifier on the other vendor (OPP-0780). Not awaited; the
+    // independent verifier on Gemini (OPP-0780). Not awaited; the
     // service swallows its own failures and leaves findings pending.
     if (
       run.trigger === BugHuntTrigger.SCHEDULED ||

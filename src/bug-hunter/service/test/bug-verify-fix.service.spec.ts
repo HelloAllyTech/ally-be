@@ -1,6 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
 
-import { BugVerifyFixService, counterpartFor } from '../bug-verify-fix.service';
+import {
+  BugVerifyFixService,
+  storedVerifier,
+  verifierFor,
+} from '../bug-verify-fix.service';
 import { BugFinding } from '../../entity/bug-finding.entity';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
@@ -29,37 +33,51 @@ const okChecks = [
   { name: 'diff_vs_brief', ok: true, evidence: '72 hunks, all locale files' },
 ];
 
-describe('counterpartFor', () => {
+describe('verifierFor', () => {
+  const settings = {
+    engine: 'opencode',
+    defaultModel: 'gemini-3.1-pro-preview',
+    escalationModel: 'gemini-2.5-pro',
+  };
+  it('always runs the Verifier on the gemini engine, on the admin model when it is a Gemini one', () => {
+    expect(verifierFor(settings)).toEqual({
+      engine: 'gemini',
+      model: 'gemini-3.1-pro-preview',
+    });
+  });
+  it('never picks Claude, even when the platform default is a Claude model', () => {
+    expect(
+      verifierFor({
+        ...settings,
+        engine: 'claude-code',
+        defaultModel: 'claude-sonnet-5',
+      }),
+    ).toEqual({ engine: 'gemini', model: 'gemini-2.5-pro' });
+  });
+});
+
+describe('storedVerifier', () => {
   const settings = {
     engine: 'gemini',
     defaultModel: 'gemini-2.5-pro',
     escalationModel: 'gemini-2.5-pro',
   };
-  it('pairs a Gemini-made fix with a Claude verifier and the reverse', () => {
-    expect(counterpartFor('gemini', 'gemini-2.5-pro', settings)).toEqual({
-      engine: 'claude-code',
-      model: 'claude-sonnet-5',
-    });
-    expect(counterpartFor('claude-code', 'claude-sonnet-5', settings)).toEqual({
-      engine: 'gemini',
-      model: 'gemini-2.5-pro',
-    });
-  });
-  it('classifies OpenCode by the model it ran, and falls back to the platform default when the fix run is unknown', () => {
-    expect(counterpartFor('opencode', 'gemini-2.5-pro', settings).engine).toBe(
-      'claude-code',
-    );
-    expect(counterpartFor('opencode', 'claude-sonnet-5', settings).engine).toBe(
-      'gemini',
-    );
-    expect(counterpartFor(null, null, settings).engine).toBe('claude-code');
+  it('returns the stored model, or null when none was stored', () => {
     expect(
-      counterpartFor(null, null, {
-        ...settings,
-        engine: 'claude-code',
-        defaultModel: 'claude-sonnet-5',
-      }).engine,
-    ).toBe('gemini');
+      storedVerifier({ engine: 'gemini', model: 'gemini-2.5-flash' }, settings),
+    ).toEqual({ engine: 'gemini', model: 'gemini-2.5-flash' });
+    expect(storedVerifier(undefined, settings)).toBeNull();
+  });
+  it('replaces a Claude verifier stored before the switch with Gemini', () => {
+    expect(
+      storedVerifier(
+        { engine: 'claude-code', model: 'claude-sonnet-5' },
+        settings,
+      ),
+    ).toEqual({ engine: 'gemini', model: 'gemini-2.5-pro' });
+    expect(
+      storedVerifier({ engine: 'opencode', model: 'claude-opus-5' }, settings),
+    ).toEqual({ engine: 'gemini', model: 'gemini-2.5-pro' });
   });
 });
 
@@ -138,7 +156,7 @@ describe('BugVerifyFixService', () => {
   });
 
   describe('dispatch', () => {
-    it('opens a verify_fix run on the other vendor and hands the workflow the PR in verify mode', async () => {
+    it('opens a verify_fix run on Gemini and hands the workflow the PR in verify mode', async () => {
       const dispatched = await service.dispatch('f-1');
 
       expect(bugHunterService.startRun).toHaveBeenCalledWith(
@@ -150,7 +168,7 @@ describe('BugVerifyFixService', () => {
         prNumber: 812,
         prHeadSha: 'head-1',
         fixEngine: 'gemini',
-        counterpart: { engine: 'claude-code', model: 'claude-sonnet-5' },
+        counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
       });
       expect(findingRepository.update).toHaveBeenCalledWith(
         'f-1',
@@ -220,7 +238,7 @@ describe('BugVerifyFixService', () => {
           verifyFix: {
             runId: 'run-verify',
             prHeadSha: 'head-1',
-            counterpart: { engine: 'claude-code', model: 'claude-sonnet-5' },
+            counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
           },
         },
       });
