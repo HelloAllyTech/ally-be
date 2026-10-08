@@ -66,7 +66,15 @@ function git(dir, args) {
 }
 
 function collect(dir) {
-  const base = git(dir, ['merge-base', 'origin/master', 'HEAD']).trim();
+  // origin/master on a runner clone; plain master in a repo with no remote,
+  // which is what the dry-run harness builds.
+  let upstream = 'origin/master';
+  try {
+    git(dir, ['rev-parse', '--verify', '--quiet', upstream]);
+  } catch {
+    upstream = 'master';
+  }
+  const base = git(dir, ['merge-base', upstream, 'HEAD']).trim();
   const deleted = git(dir, ['diff', '--name-only', '--diff-filter=D', base])
     .split('\n')
     .filter(Boolean);
