@@ -2172,6 +2172,24 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/BugAgentPerformance.tsx'),
       note: 'Whole-window counts per miss reason from the miss classifier (OPP-0774) on human-reported bugs: no sense covers it, a sense missed it, detected and declined, detected and not fixed in time, not a miss, plus unclassified. The order the Finder gets new senses in. /v1/analytics/bug-agent-performance goal.window.missReasons',
     },
+    {
+      id: 'AAQ-235',
+      tab: 'Bug Agent',
+      title: 'Scoreboard — which sense and model is winning where',
+      kind: 'group',
+      chartType: 'table',
+      componentFile: f('Analytics/BugHunterDecisionsPanel.tsx'),
+      note: "Per repo (picker), the last N days: filed / accepted / declined / pending and acceptance rate by sense and by finder model, plus each engine/model as a fixer (sessions, merged, failed, Verifier pass/fail). The cells the Finder's D1, D2 and the orchestrator's D6 read (OPP-0776, OPP-0783). Acceptance reads as a dash under 5 ruled on. /v1/bug-hunter/scoreboard",
+    },
+    {
+      id: 'AAQ-236',
+      tab: 'Bug Agent',
+      title: 'Decision replay — should the other owner take a point?',
+      kind: 'group',
+      chartType: 'table',
+      componentFile: f('Analytics/BugHunterDecisionsPanel.tsx'),
+      note: "Per decision point D1–D8: owner now, decisions, agreed, disagreed, owner right, shadow right, vetoes and the verdict (flip / keep / not enough cases / fixed), judged by each case's outcome. Flip once the shadow has won 30 disagreements and more than the owner; the flip is made on Settings → AI models (OPP-0783). /v1/bug-hunter/decisions/replay",
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
