@@ -2154,6 +2154,24 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/OrgEffectivenessCard.tsx'),
       note: 'Ruler R1 + R10. Per non-test org, all time, one pass: measurable learners, own start→now composite change ± CI, share improving beyond the platform noise band, unhelpful-behaviour change, course completion, self-harm follow-up (internal: share only privately with partners), 6-month median-composite sparkline. Rows with < 20 measurable learners show counts only. Sorted by measurable learners. First candidate to expose to tenant admins later, with the same floors. /v1/analytics/effectiveness/orgs',
     },
+    {
+      id: 'AAQ-233',
+      tab: 'Bug Agent',
+      title: 'Are we finding bugs before people do?',
+      kind: 'chart',
+      chartType: 'line',
+      componentFile: f('Analytics/BugAgentPerformance.tsx'),
+      note: "Bug Hunter's goal numbers (OPP-0778), per week: first-finder share (real bugs its senses filed over all real bugs, agent plus human) and escape rate (human reports whose repo a sweep had completed within 7 days — a bug in code it read and passed). Takeaway carries the window totals and median hours from filing to merge. Finder-error declines (not a bug, duplicate, wrong repo) are left out of both sides. /v1/analytics/bug-agent-performance goal",
+    },
+    {
+      id: 'AAQ-234',
+      tab: 'Bug Agent',
+      title: 'Why people found bugs first',
+      kind: 'chart',
+      chartType: 'bar',
+      componentFile: f('Analytics/BugAgentPerformance.tsx'),
+      note: 'Whole-window counts per miss reason from the miss classifier (OPP-0774) on human-reported bugs: no sense covers it, a sense missed it, detected and declined, detected and not fixed in time, not a miss, plus unclassified. The order the Finder gets new senses in. /v1/analytics/bug-agent-performance goal.window.missReasons',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */

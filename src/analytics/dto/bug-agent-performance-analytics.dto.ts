@@ -139,7 +139,69 @@ export class BugAgentPerformancePrecisionDto {
   @ApiProperty({ type: [SourceAccuracyDto] }) bySource!: SourceAccuracyDto[];
 }
 
+/**
+ * The goal numbers (OPP-0778). Bug Hunter's goal is to find a bug before any
+ * staff member or live user does, so these say how often it did, how often a
+ * bug got past a sweep that had read the code, and how long a found bug took
+ * to fix.
+ */
+export class GoalWeekDto {
+  @ApiProperty() week!: string;
+  @ApiProperty({
+    description:
+      'Bugs people reported this week that were real (not declined as duplicate, not a bug or wrong repo). Every one is a bug Bug Hunter did not find first.',
+  })
+  humanReports!: number;
+  @ApiProperty({
+    description:
+      "Real bugs Bug Hunter's own senses filed this week (not declined as finder error).",
+  })
+  agentBugs!: number;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'agentBugs / (agentBugs + humanReports): the share of this week’s real bugs Bug Hunter found rather than a person. Null when nothing was found by anyone.',
+  })
+  firstFinderShare!: number | null;
+  @ApiProperty({
+    description:
+      'Human reports whose repo a sweep had completed within the previous 7 days — the bug sat in code Bug Hunter had read and passed.',
+  })
+  escapes!: number;
+  @ApiProperty({ nullable: true, description: 'escapes / humanReports.' })
+  escapeRate!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Median hours from a finding being filed to its fix merging, for fixes merged this week.',
+  })
+  timeToFixHoursMedian!: number | null;
+}
+
+export class GoalWindowDto {
+  @ApiProperty() humanReports!: number;
+  @ApiProperty() agentBugs!: number;
+  @ApiProperty({ nullable: true }) firstFinderShare!: number | null;
+  @ApiProperty() escapes!: number;
+  @ApiProperty({ nullable: true }) escapeRate!: number | null;
+  @ApiProperty({ nullable: true }) timeToFixHoursMedian!: number | null;
+  @ApiProperty({
+    type: Object,
+    description:
+      'Why people found bugs first, over the whole window: counts per miss reason from the miss classifier (no_sense, sense_missed, detected_declined, detected_not_fixed, not_a_miss) plus unclassified.',
+  })
+  missReasons!: Record<string, number>;
+}
+
+export class BugAgentGoalDto {
+  @ApiProperty({ type: [GoalWeekDto] }) weekly!: GoalWeekDto[];
+  @ApiProperty({ type: GoalWindowDto }) window!: GoalWindowDto;
+}
+
 export class BugAgentPerformanceResponseDto {
+  @ApiProperty({ type: BugAgentGoalDto })
+  goal!: BugAgentGoalDto;
+
   @ApiProperty({ type: BugAgentPerformancePrecisionDto })
   precision!: BugAgentPerformancePrecisionDto;
 

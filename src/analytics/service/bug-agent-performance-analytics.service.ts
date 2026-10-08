@@ -9,9 +9,11 @@ import {
 } from 'src/bug-hunter/service/bug-hunter-metrics.service';
 
 import {
+  BugAgentGoalDto,
   BugAgentPerformanceQueryDto,
   BugAgentPerformanceResponseDto,
   CostWeekDto,
+  GoalWeekDto,
   FoundDayDto,
   PrecisionWeekDto,
   ReliabilityWeekDto,
@@ -24,6 +26,7 @@ import {
   isoDate,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { Between, In } from 'typeorm';
 
 const defaultBucketFor = () => 'week' as const;
 
@@ -271,7 +274,10 @@ export class BugAgentPerformanceAnalyticsService {
       new Map(filedRows.map((row) => [isoDate(row.day), row.filed])),
     );
 
+    const goal = await this.goal(start, endExclusive, weeks);
+
     return {
+      goal,
       precision: { weekly: precisionWeekly, bySource },
       throughput: throughputWeekly,
       speed: speedWeekly,
@@ -282,4 +288,188 @@ export class BugAgentPerformanceAnalyticsService {
       computedAt: new Date().toISOString(),
     };
   }
+
+  /**
+   * The goal numbers (OPP-0778) — see `GoalWeekDto`. Computed from the rows
+   * in the window rather than a new aggregate: a few hundred findings, the
+   * completed sweeps of the window plus the week before it (for the escape
+   * look-back), and the merge events of the window.
+   */
+  private async goal(
+    start: Date,
+    endExclusive: Date,
+    weeks: string[],
+  ): Promise<BugAgentGoalDto> {
+    const lookbackStart = new Date(start.getTime() - ESCAPE_LOOKBACK_MS);
+    const [findings, sweeps, mergeEvents] = await Promise.all([
+      this.findingRepository.find({
+        where: { createdAt: Between(start, endExclusive) },
+        select: [
+          'id',
+          'repo',
+          'source',
+          'status',
+          'decisionReason',
+          'createdAt',
+          'metadata',
+        ],
+      }),
+      this.runRepository.find({
+        where: {
+          trigger: In(['scheduled', 'manual']),
+          status: 'completed' as never,
+          finishedAt: Between(lookbackStart, endExclusive),
+        },
+        select: ['id', 'repo', 'finishedAt'],
+      }),
+      this.eventRepository.find({
+        where: {
+          stage: 'merged' as never,
+          createdAt: Between(start, endExclusive),
+        },
+        select: ['id', 'findingId', 'createdAt'],
+      }),
+    ]);
+    const mergedFindingIds = [
+      ...new Set(mergeEvents.map((e) => e.findingId).filter(Boolean)),
+    ] as string[];
+    const mergedFindings = mergedFindingIds.length
+      ? await this.findingRepository.find({
+          where: { id: In(mergedFindingIds) },
+          select: ['id', 'createdAt'],
+        })
+      : [];
+    const filedAt = new Map(mergedFindings.map((f) => [f.id, f.createdAt]));
+
+    const sweepsByRepo = new Map<string, number[]>();
+    for (const r of sweeps) {
+      if (!r.finishedAt) continue;
+      const list = sweepsByRepo.get(r.repo) ?? [];
+      list.push(r.finishedAt.getTime());
+      sweepsByRepo.set(r.repo, list);
+    }
+    const sweptBefore = (
+      repo: string | null | undefined,
+      at: Date,
+    ): boolean => {
+      if (!repo) return false;
+      const t = at.getTime();
+      return (sweepsByRepo.get(repo) ?? []).some(
+        (s) => s <= t && t - s <= ESCAPE_LOOKBACK_MS,
+      );
+    };
+    const finderError = (f: {
+      status: string;
+      decisionReason?: string | null;
+    }) =>
+      (f.status === 'dismissed' || f.status === 'rejected') &&
+      !!f.decisionReason &&
+      FINDER_ERROR_REASONS.has(f.decisionReason);
+
+    const perWeek = new Map<string, GoalWeekDto>(
+      weeks.map((week) => [
+        week,
+        {
+          week,
+          humanReports: 0,
+          agentBugs: 0,
+          firstFinderShare: null,
+          escapes: 0,
+          escapeRate: null,
+          timeToFixHoursMedian: null,
+        },
+      ]),
+    );
+    const hoursByWeek = new Map<string, number[]>();
+    const missReasons: Record<string, number> = {};
+    let escapes = 0;
+    let humanReports = 0;
+    let agentBugs = 0;
+
+    for (const f of findings) {
+      if (finderError(f)) continue;
+      const row = perWeek.get(weekStartIso(f.createdAt));
+      if (f.source === 'reported_bug') {
+        humanReports += 1;
+        if (row) row.humanReports += 1;
+        const reason =
+          typeof f.metadata?.miss?.reason === 'string'
+            ? (f.metadata.miss.reason as string)
+            : 'unclassified';
+        missReasons[reason] = (missReasons[reason] ?? 0) + 1;
+        if (sweptBefore(f.repo, f.createdAt)) {
+          escapes += 1;
+          if (row) row.escapes += 1;
+        }
+      } else {
+        agentBugs += 1;
+        if (row) row.agentBugs += 1;
+      }
+    }
+    const allHours: number[] = [];
+    for (const e of mergeEvents) {
+      const at = e.findingId ? filedAt.get(e.findingId) : undefined;
+      if (!at) continue;
+      const hours = (e.createdAt.getTime() - at.getTime()) / 36e5;
+      if (hours < 0) continue;
+      allHours.push(hours);
+      const key = weekStartIso(e.createdAt);
+      hoursByWeek.set(key, [...(hoursByWeek.get(key) ?? []), hours]);
+    }
+    for (const row of perWeek.values()) {
+      row.firstFinderShare = rate(
+        row.agentBugs,
+        row.agentBugs + row.humanReports,
+      );
+      row.escapeRate = rate(row.escapes, row.humanReports);
+      row.timeToFixHoursMedian = median(hoursByWeek.get(row.week) ?? []);
+      if (row.firstFinderShare != null)
+        row.firstFinderShare = round(row.firstFinderShare);
+      if (row.escapeRate != null) row.escapeRate = round(row.escapeRate);
+    }
+
+    return {
+      weekly: [...perWeek.values()],
+      window: {
+        humanReports,
+        agentBugs,
+        firstFinderShare: round0(rate(agentBugs, agentBugs + humanReports)),
+        escapes,
+        escapeRate: round0(rate(escapes, humanReports)),
+        timeToFixHoursMedian: median(allHours),
+        missReasons,
+      },
+    };
+  }
 }
+
+/** Human reports count as escapes when a sweep had completed on the repo this recently. */
+export const ESCAPE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const FINDER_ERROR_REASONS: ReadonlySet<string> = new Set([
+  'not_a_bug',
+  'duplicate',
+  'wrong_repo',
+]);
+
+const round0 = (v: number | null): number | null =>
+  v == null ? null : round(v);
+
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const m =
+    sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return Math.round(m * 10) / 10;
+};
+
+/** The UTC Monday that starts the week `date` falls in, as yyyy-mm-dd — the same label `generateBucketLabels` emits. */
+export const weekStartIso = (date: Date): string => {
+  const d = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  const day = d.getUTCDay(); // 0 Sunday … 6 Saturday
+  d.setUTCDate(d.getUTCDate() - ((day + 6) % 7));
+  return d.toISOString().slice(0, 10);
+};

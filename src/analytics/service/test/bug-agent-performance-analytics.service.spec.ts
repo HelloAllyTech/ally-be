@@ -22,11 +22,17 @@ describe('BugAgentPerformanceAnalyticsService', () => {
     weeklyQueueToStartLatency: jest.Mock;
     weeklyStageLatencies: jest.Mock;
     dailyFiledTotals: jest.Mock;
+    find: jest.Mock;
   };
-  let runRepository: { weeklyRunStats: jest.Mock; getDataFloor: jest.Mock };
+  let runRepository: {
+    weeklyRunStats: jest.Mock;
+    getDataFloor: jest.Mock;
+    find: jest.Mock;
+  };
   let eventRepository: {
     weeklyEscalationCounts: jest.Mock;
     weeklyFallbackCounts: jest.Mock;
+    find: jest.Mock;
   };
 
   const setup = async (
@@ -39,6 +45,11 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       escalationRows?: unknown[];
       fallbackRows?: unknown[];
       filedRows?: unknown[];
+      /** Rows the goal block reads: findings in the window, then the merged findings looked up by id. */
+      goalFindings?: unknown[];
+      goalMergedFindings?: unknown[];
+      goalSweeps?: unknown[];
+      goalMergeEvents?: unknown[];
     } = {},
   ) => {
     findingRepository = {
@@ -53,10 +64,15 @@ describe('BugAgentPerformanceAnalyticsService', () => {
         .fn()
         .mockResolvedValue(over.stageLatencyRows ?? []),
       dailyFiledTotals: jest.fn().mockResolvedValue(over.filedRows ?? []),
+      find: jest
+        .fn()
+        .mockResolvedValueOnce(over.goalFindings ?? [])
+        .mockResolvedValueOnce(over.goalMergedFindings ?? []),
     };
     runRepository = {
       weeklyRunStats: jest.fn().mockResolvedValue(over.runRows ?? []),
       getDataFloor: jest.fn().mockResolvedValue(new Date('2025-01-01')),
+      find: jest.fn().mockResolvedValue(over.goalSweeps ?? []),
     };
     eventRepository = {
       weeklyEscalationCounts: jest
@@ -65,6 +81,7 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       weeklyFallbackCounts: jest
         .fn()
         .mockResolvedValue(over.fallbackRows ?? []),
+      find: jest.fn().mockResolvedValue(over.goalMergeEvents ?? []),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -368,5 +385,114 @@ describe('BugAgentPerformanceAnalyticsService', () => {
     await service.getPerformance(query());
 
     expect(runRepository.getDataFloor).not.toHaveBeenCalled();
+  });
+
+  describe('goal (OPP-0778)', () => {
+    const at = (iso: string) => new Date(iso);
+    it('counts first-finder share, escapes and time to fix per week and over the window, leaving finder errors out', async () => {
+      await setup({
+        goalFindings: [
+          // week of 2026-01-05: two agent bugs, one human report that a sweep had passed
+          {
+            id: 'a1',
+            repo: 'ally-web',
+            source: 'code_review',
+            status: 'merged',
+            createdAt: at('2026-01-06T10:00:00Z'),
+            metadata: {},
+          },
+          {
+            id: 'a2',
+            repo: 'ally-web',
+            source: 'production_log',
+            status: 'new',
+            createdAt: at('2026-01-07T10:00:00Z'),
+            metadata: {},
+          },
+          {
+            id: 'h1',
+            repo: 'ally-web',
+            source: 'reported_bug',
+            status: 'new',
+            createdAt: at('2026-01-08T10:00:00Z'),
+            metadata: { miss: { reason: 'no_sense' } },
+          },
+          // a declined duplicate report and a declined finder error: neither counts
+          {
+            id: 'h2',
+            repo: 'ally-web',
+            source: 'reported_bug',
+            status: 'rejected',
+            decisionReason: 'duplicate',
+            createdAt: at('2026-01-08T11:00:00Z'),
+            metadata: {},
+          },
+          {
+            id: 'a3',
+            repo: 'ally-web',
+            source: 'code_review',
+            status: 'dismissed',
+            decisionReason: 'not_a_bug',
+            createdAt: at('2026-01-08T12:00:00Z'),
+            metadata: {},
+          },
+          // week of 2026-01-12: one human report on a repo never swept
+          {
+            id: 'h3',
+            repo: 'ally-be',
+            source: 'reported_bug',
+            status: 'new',
+            createdAt: at('2026-01-13T10:00:00Z'),
+            metadata: {},
+          },
+        ],
+        goalSweeps: [
+          {
+            id: 's1',
+            repo: 'ally-web',
+            finishedAt: at('2026-01-05T01:00:00Z'),
+          },
+        ],
+        goalMergeEvents: [
+          { id: 'e1', findingId: 'a1', createdAt: at('2026-01-07T10:00:00Z') },
+        ],
+        goalMergedFindings: [
+          { id: 'a1', createdAt: at('2026-01-06T10:00:00Z') },
+        ],
+      });
+
+      const result = await service.getPerformance({
+        from: '2026-01-05',
+        to: '2026-01-18',
+      } as never);
+
+      const w1 = result.goal.weekly.find((w) => w.week === '2026-01-05')!;
+      expect(w1).toMatchObject({
+        humanReports: 1,
+        agentBugs: 2,
+        firstFinderShare: 0.6667,
+        escapes: 1,
+        escapeRate: 1,
+        timeToFixHoursMedian: 24,
+      });
+      const w2 = result.goal.weekly.find((w) => w.week === '2026-01-12')!;
+      expect(w2).toMatchObject({
+        humanReports: 1,
+        agentBugs: 0,
+        firstFinderShare: 0,
+        escapes: 0,
+        escapeRate: 0,
+        timeToFixHoursMedian: null,
+      });
+      expect(result.goal.window).toMatchObject({
+        humanReports: 2,
+        agentBugs: 2,
+        firstFinderShare: 0.5,
+        escapes: 1,
+        escapeRate: 0.5,
+        timeToFixHoursMedian: 24,
+        missReasons: { no_sense: 1, unclassified: 1 },
+      });
+    });
   });
 });
