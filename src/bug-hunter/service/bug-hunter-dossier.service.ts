@@ -4,6 +4,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
 import { FixDossier, clipDossierText } from '../constants/bug-fix-dossier';
+import { BugFindingVerdict } from '../type/bug-finding-verdict.type';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHuntLookupKind } from '../enum/bug-hunt-telemetry.enum';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
@@ -105,9 +106,28 @@ export class BugHunterDossierService {
         ),
       ]);
 
+    // The sweep's own verifiers (votes) and the independent Verifier are
+    // kept apart: the first is a judgement on the reading, the second comes
+    // with a reproduction the Fixer starts from (OPP-0784).
     const votes = caseFile.verdicts.filter(
-      (v) => v.kind === 'finding' && v.verdict !== 'unavailable',
+      (v) => v.kind === 'finding' && v.verdict !== 'unavailable' && !v.by,
     );
+    const findingVerdicts = Array.isArray(metadata.findingVerdicts)
+      ? (metadata.findingVerdicts as BugFindingVerdict[])
+      : [];
+    const lastIndependent = findingVerdicts[findingVerdicts.length - 1];
+    const independent: FixDossier['independent'] = lastIndependent
+      ? {
+          verdict: lastIndependent.verdict,
+          reproduction: lastIndependent.reproduction ?? null,
+          refutation: lastIndependent.refutation ?? null,
+          wouldBeWrongIf: lastIndependent.wouldBeWrongIf ?? null,
+          by: lastIndependent.by?.engine
+            ? `${lastIndependent.by.engine}${lastIndependent.by.model ? ` (${lastIndependent.by.model})` : ''}`
+            : null,
+          at: lastIndependent.at ? new Date(lastIndependent.at) : null,
+        }
+      : null;
     const confidence =
       typeof metadata.confidence === 'number' ? metadata.confidence : null;
 
@@ -128,6 +148,7 @@ export class BugHunterDossierService {
         createdAt: finding.createdAt,
       },
       reporter: caseFile.reporter,
+      independent,
       verification:
         confidence != null || votes.length
           ? {

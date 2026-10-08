@@ -47,6 +47,18 @@ export interface FixDossier {
     reportedAt: Date;
     context: Record<string, unknown> | null;
   } | null;
+  /**
+   * The independent Verifier's last word on the finding itself (OPP-0780),
+   * with its reproduction verbatim — the Fixer's first test (OPP-0784).
+   */
+  independent: {
+    verdict: 'confirmed' | 'refuted' | 'unsure';
+    reproduction: string | null;
+    refutation: string | null;
+    wouldBeWrongIf: string | null;
+    by: string | null;
+    at: Date | null;
+  } | null;
   /** The Verify phase's verdicts, when the finding went through one. */
   verification: {
     /** The LOWER of the two certainties, 0-1. */
@@ -170,6 +182,29 @@ export const renderFixDossier = (dossier: FixDossier): string => {
       `### Verification`,
       `Proven by tool output (${dossier.finding.source}) — no verifier judgement was needed.`,
     );
+  }
+
+  if (dossier.independent) {
+    const ind = dossier.independent;
+    lines.push(
+      `### Independent verification`,
+      `A separate Verifier run${ind.by ? ` on ${ind.by}` : ''} read this finding and ${ind.verdict === 'confirmed' ? 'CONFIRMED' : ind.verdict === 'refuted' ? 'REFUTED' : 'was UNSURE about'} it${ind.at ? ` on ${day(ind.at)}` : ''}.`,
+    );
+    if (ind.reproduction) {
+      lines.push(
+        `  - Its reproduction, which is your first test — turn it into the regression test at step 1 rather than proving the bug again: "${clipDossierText(ind.reproduction, 900)}"`,
+      );
+    }
+    if (ind.refutation) {
+      lines.push(
+        `  - What it tried in order to refute the bug, and ${ind.verdict === 'refuted' ? 'why that held' : 'why that did not hold'}: "${clipDossierText(ind.refutation, 600)}"`,
+      );
+    }
+    if (ind.wouldBeWrongIf) {
+      lines.push(
+        `  - It said its verdict is wrong if: "${clipDossierText(ind.wouldBeWrongIf, 300)}" — check this before you trust the reproduction.`,
+      );
+    }
   }
 
   const { regressionOf, rediscoveredCount } = dossier.lineage;

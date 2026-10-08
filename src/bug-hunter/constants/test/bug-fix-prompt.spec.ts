@@ -1,6 +1,10 @@
 import { buildFixSessionPrompt } from '../bug-fix-prompt';
+import { FixDossier } from '../bug-fix-dossier';
 import { BugFinding } from '../../entity/bug-finding.entity';
-import { BugFindingStatus } from '../../enum/bug-finding.enum';
+import {
+  BugFindingSource,
+  BugFindingStatus,
+} from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { stageMentions } from './stage-mentions';
 
@@ -308,6 +312,7 @@ describe('buildFixSessionPrompt', () => {
           createdAt: new Date(),
         },
         reporter: null,
+        independent: null,
         verification: { confidence: 0.62, votes: [] },
         lineage: { regressionOf: null, rediscoveredCount: 0 },
         previousSessions: [
@@ -473,6 +478,91 @@ describe('buildFixSessionPrompt', () => {
       );
       expect(build()).not.toMatch(/Suggested approach/);
       expect(build()).not.toMatch(/Why you are here again/);
+    });
+  });
+
+  describe('the Fixer narrowed (OPP-0784)', () => {
+    const dossierWith = (
+      independent: FixDossier['independent'],
+    ): FixDossier => ({
+      finding: {
+        id: 'f-1',
+        title: 'Terms link',
+        description: 'd',
+        originalDescription: null,
+        file: 'src/app.ts',
+        symbol: null,
+        source: BugFindingSource.CODE_REVIEW,
+        severity: null,
+        proven: false,
+        evidence: null,
+        touchesGuardedPath: false,
+        status: 'approved',
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+      reporter: null,
+      independent,
+      verification: null,
+      lineage: { regressionOf: null, rediscoveredCount: 0 },
+      previousSessions: [],
+      postmortem: null,
+      similarShipped: [],
+      openNeighbours: [],
+      notebook: [],
+    });
+
+    it("starts a verified bug from the Verifier's reproduction instead of proving it again", () => {
+      const p = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-1',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: dossierWith({
+          verdict: 'confirmed',
+          reproduction: 'curl /v1/x returns 500 for an empty body',
+          refutation: null,
+          wouldBeWrongIf: null,
+          by: 'gemini (gemini-2.5-pro)',
+          at: new Date('2026-10-08T01:00:00.000Z'),
+        }),
+      });
+      expect(p).toMatch(/1\. Start from the Verifier's reproduction/);
+      expect(p).toMatch(/do not re-litigate whether the bug is real/);
+      expect(p).not.toMatch(/1\. Reproduce it\./);
+      // and the reproduction itself is in the dossier it points at
+      expect(p).toContain('curl /v1/x returns 500 for an empty body');
+    });
+
+    it('keeps the ordinary reproduce step for an unverified or unsure bug', () => {
+      expect(build()).toMatch(/1\. Reproduce it\./);
+      const unsure = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-1',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: dossierWith({
+          verdict: 'unsure',
+          reproduction: null,
+          refutation: null,
+          wouldBeWrongIf: 'x',
+          by: null,
+          at: null,
+        }),
+      });
+      expect(unsure).toMatch(/1\. Reproduce it\./);
+    });
+
+    it('renders the PR description from the case file and leaves the Fixer its two paragraphs', () => {
+      const p = build();
+      expect(p).toContain(
+        'curl -sS "https://api.example.com/api/v1/bug-hunter/pipeline/findings/finding-1/pr-body?runId=run-1"',
+      );
+      expect(p).toContain('<!-- fixer: the change, in words -->');
+      expect(p).toContain('<!-- fixer: left untouched on purpose -->');
+      expect(p).toMatch(
+        /gh pr create --title '<the bug, in under 70 characters>' --body-file \/tmp\/pr-body\.md/,
+      );
+      expect(p).toMatch(/do not add a description of your own on top/);
     });
   });
 

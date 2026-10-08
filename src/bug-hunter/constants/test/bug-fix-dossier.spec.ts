@@ -22,6 +22,7 @@ const dossier = (over: Partial<FixDossier> = {}): FixDossier => ({
     createdAt: new Date('2026-09-20T00:00:00.000Z'),
   },
   reporter: null,
+  independent: null,
   verification: null,
   lineage: { regressionOf: null, rediscoveredCount: 0 },
   previousSessions: [],
@@ -85,6 +86,55 @@ describe('renderFixDossier', () => {
       'verifier 1 (accepted, 90%): "The retry path never re-registers the listener."',
     );
     expect(text).toContain('verifier 2 (accepted, 62%)');
+  });
+
+  it("quotes the independent Verifier's reproduction as the first test, and its doubt (OPP-0784)", () => {
+    const text = renderFixDossier(
+      dossier({
+        independent: {
+          verdict: 'confirmed',
+          reproduction:
+            'Throwaway test: queue a job, drop the Redis socket, reconnect — the job is gone.',
+          refutation:
+            'Looked for a re-registration on reconnect; there is none.',
+          wouldBeWrongIf: 'ioredis replays pending commands itself.',
+          by: 'gemini (gemini-2.5-pro)',
+          at: new Date('2026-10-08T01:00:00.000Z'),
+        },
+      }),
+    );
+    expect(text).toContain('### Independent verification');
+    expect(text).toContain(
+      'on gemini (gemini-2.5-pro) read this finding and CONFIRMED it on 2026-10-08',
+    );
+    expect(text).toMatch(
+      /your first test — turn it into the regression test at step 1/,
+    );
+    expect(text).toContain(
+      'drop the Redis socket, reconnect — the job is gone.',
+    );
+    expect(text).toContain(
+      'why that did not hold: "Looked for a re-registration',
+    );
+    expect(text).toContain(
+      'wrong if: "ioredis replays pending commands itself."',
+    );
+
+    const refuted = renderFixDossier(
+      dossier({
+        independent: {
+          verdict: 'refuted',
+          reproduction: null,
+          refutation: 'A guard upstream rejects that input.',
+          wouldBeWrongIf: null,
+          by: null,
+          at: null,
+        },
+      }),
+    );
+    expect(refuted).toContain('read this finding and REFUTED it.');
+    expect(refuted).toContain('why that held: "A guard upstream');
+    expect(refuted).not.toContain('your first test');
   });
 
   it('tells a proven finding it needed no verifier', () => {

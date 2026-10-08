@@ -80,6 +80,7 @@ import {
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
+import { renderPrBody } from '../constants/bug-pr-body';
 import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
 import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
@@ -796,6 +797,33 @@ export class BugHunterPipelineController {
   ): Promise<BugCaseFile> {
     const finding = await this.bugFindingService.getOne(id);
     return this.caseFileService.build(finding, { currentRunId: runId });
+  }
+
+  @Get('pipeline/findings/:id/pr-body')
+  @ApiOperation({
+    summary:
+      "A fix PR's description, rendered from the case file, with two marker lines for the Fixer to fill (pipeline only)",
+    description:
+      'OPP-0784: the bug as filed, who verified it and how (the independent reproduction verbatim), ' +
+      'every orchestration decision and the cost so far come from the case file; the Fixer replaces ' +
+      'the two markers with the change in words and what it left untouched on purpose. The drawer ' +
+      'reads the same case file, so the PR and the drawer say the same thing. Returns Markdown.',
+  })
+  @Header('Content-Type', 'text/markdown; charset=utf-8')
+  async getPrBody(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    const caseFile = await this.caseFileService.build(finding, {
+      currentRunId: runId,
+    });
+    return renderPrBody(caseFile, {
+      repo: finding.repo ?? 'unknown',
+      adminUrl: this.configService.adminBaseUrl
+        ? `${this.configService.adminBaseUrl.replace(/\/+$/, '')}/bug-hunter?finding=${finding.id}`
+        : null,
+    });
   }
 
   @Post('pipeline/findings/:id/plan')

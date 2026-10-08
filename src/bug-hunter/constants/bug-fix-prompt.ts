@@ -1,6 +1,7 @@
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingSource } from '../enum/bug-finding.enum';
 import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
+import { PR_BODY_SLOT_CHANGE, PR_BODY_SLOT_UNTOUCHED } from './bug-pr-body';
 import {
   DATA_BEGIN,
   DATA_END,
@@ -113,6 +114,14 @@ export function buildFixSessionPrompt({
   // never hit this problem — both engines read the same file.
   const authHeader = '-H "x-api-key: $(cat /tmp/ally-be-api-key)"';
   const findingUrl = `${apiBaseUrl}/api/v1/bug-hunter/pipeline/findings/${finding.id}`;
+  const prBodyUrl = `${findingUrl}/pr-body?runId=${runId}`;
+  // The independent Verifier's reproduction (OPP-0780) is the Fixer's first
+  // test (OPP-0784): a verified bug is not proven twice.
+  const verifiedReproduction =
+    dossier?.independent?.verdict === 'confirmed' &&
+    dossier.independent.reproduction
+      ? dossier.independent.reproduction
+      : null;
   const reportUrl = `${apiBaseUrl}/api/v1/bug-hunter/runs/${runId}/report`;
   const closeUrl = `${apiBaseUrl}/api/v1/bug-hunter/runs/${runId}/close`;
   const phasesUrl = `${apiBaseUrl}/api/v1/bug-hunter/runs/${runId}/phases`;
@@ -247,7 +256,9 @@ export function buildFixSessionPrompt({
     `0. Mark yourself as working on it: ${patch({ status: 'fixing' })}. Do this once, before anything else — an admin is watching this status.`,
     `0a. ${escalationGuidance(engine)}${hasSubagents ? ' If you escalate, continue from step 6 below once the subagent reports back — it owns steps 1-5 for this finding, you own everything after.' : ''}`,
     `0b. Ask your notebook first: curl -sS "${memorySearchUrl}?repo=${repo}&q=<the bug in one line>&limit=3&runId=${runId}" ${authHeader} — past sessions on "${repo}" may have written down how a bug like this was fixed, or a trap around this file. Apply what fits; an empty result is fine.`,
-    `1. Reproduce it. First mark the phase: ${phase('reproduce', 'started')}. Then write a new or updated regression test, in this repo's existing test-file convention, that fails because of this bug.`,
+    verifiedReproduction
+      ? `1. Start from the Verifier's reproduction. First mark the phase: ${phase('reproduce', 'started')}. The independent Verifier already made this bug happen — its reproduction is quoted in the dossier above under "Independent verification". Turn THAT into a new or updated regression test, in this repo's existing test-file convention; do not design a reproduction of your own first, and do not re-litigate whether the bug is real. If its reproduction names a command, a throwaway test or a query, your test asserts the same thing.`
+      : `1. Reproduce it. First mark the phase: ${phase('reproduce', 'started')}. Then write a new or updated regression test, in this repo's existing test-file convention, that fails because of this bug.`,
     `2. Run ONLY that new test against the current code and confirm it FAILS. If you cannot make it fail — the bug does not reproduce as described — stop here: run ${report('error', 'could not reproduce with a regression test')}, then ${patch({ status: 'dismissed' })}, and finish with outcome "dismissed". Say precisely what you tried and what you observed instead: an admin asked for this, so "could not reproduce" has to be actionable rather than a shrug.`,
     `2a. Check the blast radius before you change anything. You have ONLY this repo checked out. If a complete fix needs a change in another Ally repo too — a backend field the frontend has to render, a contract both sides share, a worker and the API that feeds it — do NOT fix your half and call it done: a merged half-fix is worse than no fix, because it looks finished and can be released on its own. Instead, hand back a plan and let Bug Hunter run it:`,
     `   ${plan()}`,
@@ -264,7 +275,7 @@ export function buildFixSessionPrompt({
     `   d. If it is answered in time: use the answer, continue from step 3, and report stage "escalated" again noting what the answer changed.`,
     `   e. If it is not: report stage "escalated" noting that no answer arrived, and finish with outcome "escalated" WITHOUT applying a fix. Leave the status exactly as step (a) set it. The admin can answer at any time and start a fresh session, which will read the stored answer and not ask again.`,
     `7. Never touch migrations, auth/permission gating, payment or financial code, or other security-sensitive services as an incidental "while I am in here" change — only the diff this bug requires.`,
-    `8. Commit, push a branch, and open a PR with "gh pr create"${retry?.kind === 'verifier_fail' && retry.prUrl ? ' — UNLESS the "Why you are here again" section above names an open PR to continue on, in which case push to that PR\'s branch and open nothing new' : ''} — marking the boundary first: ${phase('suite', 'finished')} then ${phase('pr', 'started')} — whose description states the bug, the evidence, the fix, and the regression test that proves it. ${commitHookNote} Run ${report('pr_opened', 'opened a PR with the fix and its regression test')}, then PATCH the finding to status "pr_opened" with the PR URL in a "prUrl" field.`,
+    `8. Commit, push a branch, and open a PR with "gh pr create"${retry?.kind === 'verifier_fail' && retry.prUrl ? ' — UNLESS the "Why you are here again" section above names an open PR to continue on, in which case push to that PR\'s branch and open nothing new' : ''} — marking the boundary first: ${phase('suite', 'finished')} then ${phase('pr', 'started')} — whose description is rendered from this bug's case file rather than written from scratch: curl -sS "${prBodyUrl}" ${authHeader} -o /tmp/pr-body.md, then replace the two marker lines "${PR_BODY_SLOT_CHANGE}" and "${PR_BODY_SLOT_UNTOUCHED}" with your own two paragraphs — the change in plain words (what was wrong, what you changed, the regression test that proves it), and what you deliberately left alone (the neighbouring bug, the refactor, the file you did not touch and why) — and open the PR with "gh pr create --title '<the bug, in under 70 characters>' --body-file /tmp/pr-body.md". Everything else in that file (the bug as filed, who verified it and how, the decisions, the cost) is already correct; do not rewrite it, and do not add a description of your own on top. ${commitHookNote} Run ${report('pr_opened', 'opened a PR with the fix and its regression test')}, then PATCH the finding to status "pr_opened" with the PR URL in a "prUrl" field.`,
     allowMerge
       ? `9. Do NOT merge, even though an admin asked for this fix. Since 7 October every fix PR is read by a separate Verifier run on a different model before anything merges. Make sure the PR is green — run "gh pr checks --watch --fail-fast" and ${report('error', 'PR checks went red after the local suite passed')} if it is not — then ${patch({ status: 'pr_opened', prUrl: '<the PR url>' })} and finish with outcome "pr_opened". Bug Hunter dispatches the Verifier the moment that PATCH lands; on a pass it merges the PR itself (where this repo allows a self-merge), and on a fail it brings the PR to a person with the named failures. Do NOT run "gh pr merge" in any form, and do NOT tag a release or deploy anything.`
       : mobileNeverMerges
