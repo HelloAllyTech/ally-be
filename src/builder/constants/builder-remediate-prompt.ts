@@ -20,7 +20,7 @@ import { buildPromptHeader, renderPrd } from './builder-build-prompt';
 
 export interface GateFailure {
   repo: string;
-  /** test | lint | typecheck | integrity */
+  /** test | lint | typecheck | integrity | gate-config */
   kind: string;
   command: string;
   /** Failures this change introduced — the ones that block. */

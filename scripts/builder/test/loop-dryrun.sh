@@ -255,6 +255,18 @@ if [ "${DRYRUN_READONLY_WRITES:-}" = "1" ] &&
   done
 fi
 
+# A coder that writes something. Most scenarios start on a branch that already
+# carries a change; one that starts again from master has nothing to gate
+# unless the coding pass actually produces it.
+if [ "${DRYRUN_CODER_WRITES:-}" = "1" ] && [ "$phase" = "build" ]; then
+  for d in repos/*/; do
+    [ -d "$d/.git" ] || continue
+    echo "written by this run's coder" >> "$d/file.txt"
+    git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" -c user.email=t@t.t -c user.name=t commit -qm "fresh work" >/dev/null 2>&1
+  done
+fi
+
 # In the gate-block scenario the coder's change is what breaks the suite: the
 # baseline was captured green, so the gate sees a NEW failure. Remediation
 # rounds leave the marker in place, so it never recovers.
@@ -397,6 +409,7 @@ setup_repo() {
 # branch is what tells the runner this is a resume rather than a first build —
 # a first build's branch exists only locally, because the runner just made it.
 setup_repo_resumed() {
+  local failed="${1:-}"
   rm -rf "${WORK}/run" "${WORK}/origin.git"
   git init -q --bare "${WORK}/origin.git"
   (
@@ -407,6 +420,9 @@ setup_repo_resumed() {
     git remote add origin "${WORK}/origin.git" && git push -q origin master
     git checkout -qb builder/demo
     echo changed >> file.txt && git add -A && git commit -qm "work from the previous run"
+    # What run-engine.sh's mark_failed_build leaves when a build gives up.
+    [ "$failed" = failed ] && git commit -q --allow-empty \
+      -m "chore(builder): this build did not pass the gate and review" -m "Builder-Outcome: failed"
     git push -q origin builder/demo
   ) >/dev/null 2>&1
   git -C "${WORK}/origin.git" symbolic-ref HEAD refs/heads/master
@@ -434,6 +450,7 @@ run_scenario() {
   local name="$1"; shift
   echo "── ${name} ──"
   case " $* " in
+    *" DRYRUN_FAILED_BRANCH=1 "*) setup_repo_resumed failed ;;
     *" DRYRUN_RESUME=1 "*) setup_repo_resumed ;;
     *" DRYRUN_ENGINE_DEAD=1 "*) setup_repo_clean ;;
     *) setup_repo ;;
@@ -569,6 +586,9 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = gate-block ]; then
   check "retried the coder with the failures" yes "$(has_in_log 'GET remediate-prompt')"
   check "stopped at the attempt limit" 3 "$(count_in_log 'GET remediate-prompt')"
   check "reported the failure to ally-be" yes "$(has_in_log 'POST complete')"
+  check "marked the branch as a failed build" yes \
+    "$(git -C "${WORK}/run/repos/demo-repo" log -1 --format=%B | grep -qxF 'Builder-Outcome: failed' \
+       && echo yes || echo no)"
 fi
 
 # ── 4. budget exhausted, no hold window ─────────────────────────────────────
@@ -740,6 +760,25 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = resume ]; then
   # is nothing to inherit and the coder runs exactly as before.
   run_scenario resume-not-a-resume BUILDER_BRANCH_SLUG=demo
   check "a first build still codes" "PLANNING CODING GATE VERIFYING FINALISING" \
+    "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+
+  # A branch whose last build gave up is not resumed. Session 178e6598's
+  # retries kept gating and patching the specs-deleted branch run 2 left.
+  run_scenario resume-failed-build DRYRUN_FAILED_BRANCH=1 BUILDER_BRANCH_SLUG=demo \
+    DRYRUN_GH=none DRYRUN_PR_BODY=1 DRYRUN_CODER_WRITES=1
+  check "a failed build's branch is coded again" "PLANNING CODING GATE VERIFYING FINALISING" \
+    "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+  check "says which failed build it discarded" yes \
+    "$(grep -qE 'held a failed build \([0-9a-f]{7,}\); starting again from master' \
+       "${WORK}/resume-failed-build.out" && echo yes || echo no)"
+  check "from master, without the failed work" no \
+    "$(git -C "${WORK}/run/repos/demo-repo" log --format=%s master..HEAD \
+       | grep -q 'work from the previous run' && echo yes || echo no)"
+
+  # Unless a pull request is open on it: that branch is someone's to look at.
+  run_scenario resume-failed-build-open-pr DRYRUN_FAILED_BRANCH=1 BUILDER_BRANCH_SLUG=demo \
+    DRYRUN_GH=found DRYRUN_PR_BODY=1
+  check "an open pull request keeps the resume" "PLANNING GATE VERIFYING FINALISING" \
     "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
 fi
 

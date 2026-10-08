@@ -50,18 +50,21 @@ mkdir -p "$GATE_DIR"
 # coding benchmark, where test *files* were restored from pristine before each
 # attempt but runner *config* was not, so the config was the way through.
 #
-# The response is deliberately NOT to revert these files. A build whose actual
-# job is to add a test directory, split a config or add a package legitimately
-# changes them, and reverting would fail correct work — replacing a false pass
-# with a false failure is not an improvement.
+# These edits BLOCK. They used to pass as "untrusted", on the view that a build
+# might legitimately split a config and a false failure is no better than a
+# false pass. Session 178e6598 run 3 showed what that buys: gemini-2.5-pro
+# loosened `.eslintrc.js` until lint went quiet, and the gate let it through
+# with a label nobody acted on. An agent that cannot clear its checks reaches
+# for the checks.
 #
-# Instead the gate says so. A pass on a run that edited its own judge is
-# reported as untrusted: the build still proceeds (a human and the verifier
-# read the diff), but nothing downstream may record it as evidence that the
-# code was good. That distinction matters most for the model-selection dataset,
-# where a captured pass would teach exactly the wrong lesson — cheaper models
-# reward-hack more, so the signal degrades in the same direction we would be
-# pushing it.
+# The false failures are kept narrow instead. gate-config-diff.py drops the
+# edits that do not change judging: a dependency added to package.json or
+# pyproject.toml is not an edit to `npm test`. What is left is a change to the
+# judge itself, and a build that genuinely needs one is a build for a person.
+# Nothing reverts the files automatically; the agent is told to undo them.
+#
+# `trusted` stays on the gate_result payload for the dataset and the PR
+# comment, where a pass with an edited judge must never count as evidence.
 #
 # Compared against origin/master rather than the baseline worktree: what
 # matters is whether THIS change touched the judge, not what master looks like.
@@ -258,8 +261,13 @@ for dir in repos/*/; do
   # it. Emits one gate_result event per check plus a repo verdict on stdout.
   config_touched="$(gate_config_touched "$dir")"
   if [ -n "$config_touched" ]; then
-    echo "  note: this change edits the gate's own configuration (${config_touched})." >&2
-    echo "  A pass will be recorded as untrusted; the diff needs a human read." >&2
+    # Unreadable means it counts: the filter only ever narrows the list.
+    config_touched="$(python3 "${HERE}/gate-config-diff.py" "$dir" "$config_touched" 2>/dev/null \
+      || printf '%s' "$config_touched")"
+  fi
+  if [ -n "$config_touched" ]; then
+    echo "  BLOCKED: this change edits how the gate judges it (${config_touched})." >&2
+    echo "  Revert those edits and make the change pass the checks as they are." >&2
   fi
 
   repo_verdict="$(node "${HERE}/gate-verdict.mjs" \

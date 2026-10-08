@@ -93,6 +93,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # gate-config-diff.py reads pyproject.toml with tomllib (3.11+); this
+      # image ships 3.10. The Builder runner itself is ubuntu-latest.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -123,6 +129,9 @@ jobs:
 
       - name: Gate integrity check
         run: node scripts/builder/test/check-integrity.test.mjs
+
+      - name: Gate config filter
+        run: bash scripts/builder/test/gate-config-diff.test.sh
 
       - name: Engine output normalisers
         run: node scripts/builder/test/forward-events.test.mjs
