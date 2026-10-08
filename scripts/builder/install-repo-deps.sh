@@ -21,7 +21,13 @@ dir="repos/${repo}"
 marker="/tmp/builder-deps-installed-${repo}"
 [ -f "$marker" ] && exit 0
 
+# shellcheck source=repo-node.sh
+. "$(cd "$(dirname "$0")" && pwd)/repo-node.sh"
+
 cd "$dir" || exit 1
+
+# Install on the Node the checks will run on, so native modules match.
+use_repo_node .
 
 if [ -f package-lock.json ]; then
   # `npm ci` over `npm install` so the lockfile is honoured exactly; the

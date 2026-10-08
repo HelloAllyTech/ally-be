@@ -44,6 +44,8 @@ mkdir -p "$OUT_DIR"
 
 API_ROOT="${ALLY_BE_API_URL}/api/v1/builder/pipeline"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=repo-node.sh
+. "${HERE}/repo-node.sh"
 
 commands_json=/tmp/builder-repo-commands.json
 if ! curl -fsS "${API_ROOT}/repo-commands" \
@@ -117,7 +119,7 @@ for dir in repos/*/; do
   while IFS=$'\t' read -r kind command; do
     [ -n "${kind:-}" ] || continue
     log="/tmp/builder-baseline-${repo}-${kind}.log"
-    if (cd "$base_dir" && eval "$command") > "$log" 2>&1; then
+    if (cd "$base_dir" && use_repo_node . && eval "$command") > "$log" 2>&1; then
       passed=true
     else
       passed=false

@@ -13,6 +13,8 @@
 //   lint, typecheck — any failure blocks. Deterministic, fast, and a change
 //     has no business leaving new ones behind. A baseline failure here is
 //     still surfaced, but it does not excuse the check.
+//   integrity       — any failure blocks: check-integrity.mjs refusing a
+//     change that deleted specs or emptied a file. There is no baseline for it.
 //   test            — new failures block; baseline-matching ones are carried
 //     over and reported.
 //
@@ -67,7 +69,7 @@ if (!current) {
 const baseline = readJson(baselinePath);
 
 /** Checks where a pre-existing failure does not excuse the check. */
-const HARD_CHECKS = new Set(['lint', 'typecheck']);
+const HARD_CHECKS = new Set(['lint', 'typecheck', 'integrity']);
 
 const events = [];
 let blocked = false;

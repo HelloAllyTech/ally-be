@@ -213,6 +213,13 @@ jobs:
           git config --global user.email "builder@helloally.ai"
           git config --global init.defaultBranch master
 
+      # Node 22 first, then 24 as the default on PATH. ally-be ships on 24;
+      # ally-web pins 22 (.nvmrc) and its jsdom tests fail under 24, so the gate
+      # switches to each repo's pinned Node (scripts/builder/repo-node.sh). It
+      # can only switch to a version installed here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/setup-node@v4
         with:
           node-version: 24

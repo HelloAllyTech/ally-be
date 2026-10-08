@@ -17,6 +17,9 @@
 #     still be gated on what THIS change broke, and the alternative — letting
 #     the agent nominate which failures to excuse — is the self-reporting this
 #     gate replaces.
+#   integrity       — HARD gate. A deleted spec or an emptied source file
+#     (check-integrity.mjs). The test check cannot see a failure in a spec
+#     that no longer exists.
 #
 # What gates is the verdict file on disk. Every POST here is telemetry and
 # swallows its errors: a curl outage must never pass or fail a build.
@@ -25,6 +28,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=repo-node.sh
+. "${HERE}/repo-node.sh"
 API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
 API_ROOT="${ALLY_BE_API_URL}/api/v1/builder/pipeline"
 BASELINE_DIR=/tmp/builder-baseline
@@ -214,7 +219,7 @@ for dir in repos/*/; do
     checked_any=true
     log="/tmp/builder-gate-${repo}-${kind}.log"
     started=$(date +%s)
-    if (cd "$dir" && eval "$command") > "$log" 2>&1; then
+    if (cd "$dir" && use_repo_node . && eval "$command") > "$log" 2>&1; then
       passed=true
     else
       passed=false
@@ -229,6 +234,9 @@ for dir in repos/*/; do
     --tally "${GATE_DIR}/${repo}.checks" \
     --repo "$repo" \
     --out "${GATE_DIR}/${repo}.json" || true
+  node "${HERE}/check-integrity.mjs" \
+    --dir "$dir" \
+    --results "${GATE_DIR}/${repo}.json" || true
   # Hashed after the checks, not before: a formatter or codegen a check runs
   # can rewrite the tree, and the next round must compare against what was
   # actually judged.
