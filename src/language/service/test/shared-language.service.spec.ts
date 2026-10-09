@@ -42,6 +42,7 @@ describe('SharedLanguageService', () => {
           provide: LanguagesRepository,
           useValue: {
             getLanguagesById: jest.fn(),
+            getActiveScenarioVoices: jest.fn(),
             findOneBy: jest.fn(),
           },
         },
@@ -54,6 +55,43 @@ describe('SharedLanguageService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getActiveScenarioVoices', () => {
+    it('maps each active voice to its language, deduplicating the lookup', async () => {
+      languagesRepository.getActiveScenarioVoices.mockResolvedValue([
+        { id: 'en-voice', languageId: 2 },
+        { id: 'hi-voice', languageId: 1 },
+      ]);
+
+      const result = await service.getActiveScenarioVoices([
+        'en-voice',
+        'hi-voice',
+        'en-voice',
+        'retired-voice',
+      ]);
+
+      expect(languagesRepository.getActiveScenarioVoices).toHaveBeenCalledWith([
+        'en-voice',
+        'hi-voice',
+        'retired-voice',
+      ]);
+      expect(result).toEqual(
+        new Map([
+          ['en-voice', 2],
+          ['hi-voice', 1],
+        ]),
+      );
+    });
+
+    it('skips the query when there is nothing to look up', async () => {
+      const result = await service.getActiveScenarioVoices([]);
+
+      expect(result.size).toBe(0);
+      expect(
+        languagesRepository.getActiveScenarioVoices,
+      ).not.toHaveBeenCalled();
+    });
   });
 
   describe('getLanguagesByIds', () => {

@@ -25,6 +25,7 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
+  getDistinctScenarioVoiceIds,
   getLanguageVoiceIds,
 } from 'src/common/util/language-availability.util';
 import { PostHog } from 'posthog-node';
@@ -129,8 +130,14 @@ export class CaseSessionService {
       languageCode,
     );
 
+    // Only languages whose voice Studio still shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(caseWithScenarios.scenarios),
+      );
     const languageIds = getDistinctScenarioLanguageIds(
       caseWithScenarios.scenarios,
+      activeVoices,
     );
 
     const languages = languageIds.length
@@ -152,6 +159,7 @@ export class CaseSessionService {
         scenarios: caseWithScenarios.scenarios.map((scenario) => {
           const languageVoiceIds = getLanguageVoiceIds(
             scenario?.metadata?.languageVoices,
+            activeVoices,
           );
           delete scenario?.metadata?.languageVoices;
           return {
@@ -188,6 +196,7 @@ export class CaseSessionService {
         const caseSessionItem = sessionItemsMap.get(scenario.id);
         const languageVoiceIds = getLanguageVoiceIds(
           scenario?.metadata?.languageVoices,
+          activeVoices,
         );
         delete scenario?.metadata?.languageVoices;
         return {

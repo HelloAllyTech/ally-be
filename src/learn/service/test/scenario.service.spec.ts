@@ -276,6 +276,7 @@ describe('ScenarioService', () => {
       getSharedLanguages: jest.fn(),
       getValidLanguages: jest.fn(),
       getLanguagesByIds: jest.fn().mockResolvedValue([]),
+      getActiveScenarioVoices: jest.fn().mockResolvedValue(new Map()),
     };
 
     const mockScenarioSharedService = {
@@ -1575,8 +1576,8 @@ describe('ScenarioService', () => {
           metadata: {
             ...mockScenario.metadata,
             languageVoices: {
-              '1': ['voice-1'],
-              '2': ['voice-2'],
+              '1': 'voice-1',
+              '2': 'voice-2',
             },
           },
         },
@@ -1585,6 +1586,12 @@ describe('ScenarioService', () => {
         data: mockScenarios,
         count: mockScenarios.length,
       };
+      sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+        new Map([
+          ['voice-1', 1],
+          ['voice-2', 2],
+        ]),
+      );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         { id: 1, label: 'English (India)', value: 'en-IN' },
         { id: 2, label: 'Spanish (Argentina)', value: 'es-AR' },
@@ -1622,6 +1629,62 @@ describe('ScenarioService', () => {
       expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
+      expect(
+        sharedLanguageService.getActiveScenarioVoices,
+      ).toHaveBeenCalledWith(['voice-1', 'voice-2']);
+    });
+
+    // The Shivamma case: Studio showed English only, learners were offered
+    // Kannada too, because the Kannada voice had been retired but the mapping
+    // on the scenario stayed. Learners must see what Studio shows.
+    it('offers only the languages whose voice is still an active catalog voice', async () => {
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [
+          {
+            ...mockScenario,
+            status: ScenarioStatus.ACTIVE,
+            metadata: {
+              languageVoices: { '1': 'en-voice', '8': 'retired-kn-voice' },
+            },
+          },
+        ],
+        count: 1,
+      } as any);
+      sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+        new Map([['en-voice', 1]]),
+      );
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+        { id: 1, label: 'English', value: 'en' },
+        { id: 8, label: 'Kannada', value: 'kn' },
+      ] as any);
+
+      const result = await service.getScenariosV2();
+
+      expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([1]);
+      expect((result.data[0] as any).availableLanguages).toEqual([
+        { language_id: 1, label: 'English', value: 'en' },
+      ]);
+    });
+
+    it('offers no language when every mapped voice has been retired', async () => {
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [
+          {
+            ...mockScenario,
+            status: ScenarioStatus.ACTIVE,
+            metadata: { languageVoices: { '8': 'retired-kn-voice' } },
+          },
+        ],
+        count: 1,
+      } as any);
+      sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+        new Map(),
+      );
+
+      const result = await service.getScenariosV2();
+
+      expect((result.data[0] as any).availableLanguages).toBeNull();
+      expect(sharedLanguageService.getLanguagesByIds).not.toHaveBeenCalled();
     });
 
     it("attaches the requesting learner's completion to each scenario", async () => {
@@ -1678,7 +1741,7 @@ describe('ScenarioService', () => {
           metadata: {
             ...mockScenario.metadata,
             languageVoices: {
-              '2': ['voice-2'],
+              '2': 'voice-2',
             },
           },
           translations: { mr: { title: 'Marathi Title' } },
@@ -1688,6 +1751,9 @@ describe('ScenarioService', () => {
         data: mockScenarios,
         count: mockScenarios.length,
       };
+      sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+        new Map([['voice-2', 2]]),
+      );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         { id: 2, label: 'Marathi', value: 'mr-IN' },
       ] as any);
@@ -1849,6 +1915,12 @@ describe('ScenarioService', () => {
         (scenariosRepository as any).query.mockResolvedValue([
           { languageVoices: { '8': 'kn-voice', '2': 'hi-voice', '5': null } },
         ]);
+        sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+          new Map([
+            ['kn-voice', 8],
+            ['hi-voice', 2],
+          ]),
+        );
         sharedLanguageService.getLanguagesByIds.mockResolvedValue([
           { id: 2, label: 'Hindi', value: 'hi' },
           { id: 8, label: 'Kannada', value: 'kn' },
@@ -1858,12 +1930,39 @@ describe('ScenarioService', () => {
           includeAvailableLanguages: true,
         });
 
+        // Integer-like keys enumerate in numeric order, so '2' comes first.
+        expect(
+          sharedLanguageService.getActiveScenarioVoices,
+        ).toHaveBeenCalledWith(['hi-voice', 'kn-voice']);
         expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
           2, 8,
         ]);
         expect(result.availableLanguages).toEqual([
           { language_id: 2, label: 'Hindi', value: 'hi' },
           { language_id: 8, label: 'Kannada', value: 'kn' },
+        ]);
+      });
+
+      it('drops a language whose voice Studio no longer offers', async () => {
+        (scenariosRepository as any).query.mockResolvedValue([
+          { languageVoices: { '1': 'en-voice', '8': 'retired-kn-voice' } },
+        ]);
+        sharedLanguageService.getActiveScenarioVoices.mockResolvedValue(
+          new Map([['en-voice', 1]]),
+        );
+        sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+          { id: 1, label: 'English', value: 'en' },
+        ] as any);
+
+        const result = await service.getScenario(1, {
+          includeAvailableLanguages: true,
+        });
+
+        expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
+          1,
+        ]);
+        expect(result.availableLanguages).toEqual([
+          { language_id: 1, label: 'English', value: 'en' },
         ]);
       });
 

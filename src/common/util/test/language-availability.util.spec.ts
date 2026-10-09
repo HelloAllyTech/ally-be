@@ -1,6 +1,7 @@
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
+  getDistinctScenarioVoiceIds,
   getLanguageVoiceIds,
 } from '../language-availability.util';
 
@@ -84,6 +85,61 @@ describe('language-availability.util', () => {
       });
 
       expect(result).toEqual([10, 30]);
+    });
+  });
+
+  describe('getLanguageVoiceIds with activeVoices', () => {
+    const activeVoices = new Map([
+      ['en-voice', 1],
+      ['hi-voice', 2],
+    ]);
+
+    it('keeps only languages whose voice is an active voice for that language', () => {
+      const result = getLanguageVoiceIds(
+        { '1': 'en-voice', '2': 'hi-voice', '8': 'retired-kn-voice' },
+        activeVoices,
+      );
+
+      expect(result).toEqual([1, 2]);
+    });
+
+    it('drops a mapping whose voice belongs to a different language', () => {
+      const result = getLanguageVoiceIds({ '8': 'en-voice' }, activeVoices);
+
+      expect(result).toEqual([]);
+    });
+
+    it('drops non-string voice values when filtering', () => {
+      const result = getLanguageVoiceIds(
+        { '1': '', '2': 0, '3': { id: 'en-voice' } },
+        activeVoices,
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('applies the filter inside getDistinctScenarioLanguageIds too', () => {
+      const result = getDistinctScenarioLanguageIds(
+        [
+          { metadata: { languageVoices: { '1': 'en-voice', '8': 'gone' } } },
+          { scenario_metadata: { languageVoices: { '2': 'hi-voice' } } },
+        ],
+        activeVoices,
+      );
+
+      expect(result).toEqual([1, 2]);
+    });
+  });
+
+  describe('getDistinctScenarioVoiceIds', () => {
+    it('collects every string voice id once across both metadata shapes', () => {
+      const result = getDistinctScenarioVoiceIds([
+        { metadata: { languageVoices: { '1': 'a', '2': 'b', '3': null } } },
+        { scenario_metadata: { languageVoices: { '2': 'b', '4': '' } } },
+        {},
+      ]);
+
+      expect(result).toEqual(['a', 'b']);
     });
   });
 

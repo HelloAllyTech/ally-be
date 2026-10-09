@@ -74,6 +74,7 @@ describe('CaseSessionService', () => {
 
     const mockSharedLanguageService = {
       getLanguagesByIds: jest.fn(),
+      getActiveScenarioVoices: jest.fn().mockResolvedValue(new Map()),
     };
 
     const module: TestingModule = await Test.createTestingModule({

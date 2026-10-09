@@ -191,6 +191,7 @@ import {
   AvailableLanguageItem,
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
+  getDistinctScenarioVoiceIds,
   getLanguageVoiceIds,
 } from 'src/common/util/language-availability.util';
 import {
@@ -284,7 +285,12 @@ export class ScenarioService {
       });
     let data = fetchedData;
 
-    const languageIds = getDistinctScenarioLanguageIds(data);
+    // Only languages whose voice Studio still shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(data),
+      );
+    const languageIds = getDistinctScenarioLanguageIds(data, activeVoices);
 
     const languages = languageIds.length
       ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
@@ -295,6 +301,7 @@ export class ScenarioService {
     data = data.map((scenario: any) => {
       const languageVoiceIds = getLanguageVoiceIds(
         scenario?.metadata?.languageVoices,
+        activeVoices,
       );
 
       delete scenario?.metadata;
@@ -401,7 +408,11 @@ export class ScenarioService {
       options,
     );
 
-    const languageIds = getDistinctScenarioLanguageIds(scenarios);
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(scenarios),
+      );
+    const languageIds = getDistinctScenarioLanguageIds(scenarios, activeVoices);
 
     const languages = languageIds.length
       ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
@@ -414,6 +425,7 @@ export class ScenarioService {
 
       const languageVoiceIds = getLanguageVoiceIds(
         item?.scenario_metadata?.languageVoices,
+        activeVoices,
       );
 
       return {
@@ -547,7 +559,14 @@ export class ScenarioService {
          FROM "scenarios" WHERE "id" = $1 LIMIT 1`,
         [scenarioId],
       );
-    const languageIds = getLanguageVoiceIds(rows?.[0]?.languageVoices);
+    const languageVoices = rows?.[0]?.languageVoices;
+    // Same rule as the catalog: a language counts only while its voice is an
+    // active catalog voice, which is what Studio shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds([{ metadata: { languageVoices } }]),
+      );
+    const languageIds = getLanguageVoiceIds(languageVoices, activeVoices);
     if (!languageIds.length) return null;
     const languagesMap = buildAvailableLanguagesMap(
       await this.sharedLanguageService.getLanguagesByIds(languageIds),

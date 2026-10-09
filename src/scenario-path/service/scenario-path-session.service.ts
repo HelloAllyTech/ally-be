@@ -25,6 +25,7 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
+  getDistinctScenarioVoiceIds,
   getLanguageVoiceIds,
 } from 'src/common/util/language-availability.util';
 
@@ -138,8 +139,14 @@ export class ScenarioPathSessionService {
         languageCode,
       );
 
+    // Only languages whose voice Studio still shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(scenarioPathWithScenarios.scenarios),
+      );
     const languageIds = getDistinctScenarioLanguageIds(
       scenarioPathWithScenarios.scenarios,
+      activeVoices,
     );
 
     const languages = languageIds.length
@@ -162,6 +169,7 @@ export class ScenarioPathSessionService {
         scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
           const languageVoiceIds = getLanguageVoiceIds(
             scenario?.metadata?.languageVoices,
+            activeVoices,
           );
 
           delete scenario?.metadata;
@@ -200,6 +208,7 @@ export class ScenarioPathSessionService {
         const scenarioPathSessionItem = sessionItemsMap.get(scenario.id);
         const languageVoiceIds = getLanguageVoiceIds(
           scenario?.metadata?.languageVoices,
+          activeVoices,
         );
         delete scenario?.metadata;
         return {
