@@ -83,4 +83,11 @@ export enum BugHuntEventStage {
    * reversed, not just an aggregate rate on the scorecard.
    */
   REVERSED = 'reversed',
+
+  /**
+   * The reconcile loop found a pull request for a fix session that had
+   * completed successfully without reporting back, and pulled the finding out
+   * of FAILED.
+   */
+  SESSION_RECOVERED = 'session_recovered',
 }

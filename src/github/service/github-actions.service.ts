@@ -77,6 +77,12 @@ export interface PullRequestInfo {
   headIsFork: boolean;
 }
 
+/** A pull request, as returned by the list-all endpoint. */
+export interface PullRequestFromList {
+  htmlUrl: string;
+  headRef: string | null;
+}
+
 /** What became of a branch-delete request — see `deleteBranch`. */
 export type BranchDeleteOutcome =
   | 'deleted'
@@ -382,6 +388,37 @@ export class GithubActionsService {
       this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Every open pull request in a repository.
+   *
+   * Only what the Bug Hunter reconcile loop needs: the branch name, to find the
+   * one that belongs to a given bug. O(n) in the number of open PRs, which is
+   * never high enough to be a problem.
+   */
+  async listPullRequests(repo: string): Promise<PullRequestFromList[] | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, `pulls`), {
+        headers: this.headers,
+        timeout: 15_000,
+        params: { state: 'open', per_page: 100 },
+      });
+      this.noteAuthOutcome();
+      return (data ?? []).map((pr: any) => ({
+        htmlUrl: pr?.html_url ? String(pr.html_url) : '',
+        headRef: pr?.head?.ref ? String(pr.head.ref) : null,
+      }));
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not list pull requests in ${repo}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

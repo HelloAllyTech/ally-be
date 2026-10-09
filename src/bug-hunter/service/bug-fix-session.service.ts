@@ -1254,6 +1254,31 @@ export class BugFixSessionService {
             : null;
 
         if (run?.status === 'completed') {
+          if (run.conclusion === 'success' && finding.repo) {
+            const prs = await this.github.listPullRequests(finding.repo);
+            const branchName = `bughunter/fix-${finding.id}`;
+            const pr = prs?.find((pr) => pr.headRef === branchName);
+            if (pr) {
+              await this.findingRepository.update(finding.id, {
+                status: BugFindingStatus.PR_OPENED,
+                prUrl: pr.htmlUrl,
+              });
+              await this.bugHunterService.appendFindingEvent({
+                findingId: finding.id,
+                repo: finding.repo,
+                stage: BugHuntEventStage.SESSION_RECOVERED,
+                summary: `The fix session's GitHub Actions run ended successfully but never reported a result. Found pull request ${BugFixSessionService.prNumberFrom(pr.htmlUrl)} and recovered it.`,
+                payload: {
+                  runId,
+                  conclusion: run.conclusion,
+                  runUrl: run.htmlUrl,
+                  prUrl: pr.htmlUrl,
+                },
+              });
+              continue;
+            }
+          }
+
           await this.findingRepository.update(finding.id, {
             status: BugFindingStatus.FAILED,
           });
