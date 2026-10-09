@@ -28,6 +28,8 @@ export const BUG_FIX_VERDICT_CHECKS = [
   'blast_radius',
   /** Frontend: the affected route loaded and looked at. Often skipped in CI, and says so. */
   'what_user_sees',
+  /** Server-computed (OPP-0759): the PR touches a file a person must merge — Bug Hunter's own files, migrations, locales, seeds, snapshots, lockfiles, a stray pr-body.md. */
+  'forbidden_files',
 ] as const;
 export type BugFixVerdictCheckName = (typeof BUG_FIX_VERDICT_CHECKS)[number];
 
@@ -136,6 +138,32 @@ export function toBugFixVerdict(
     prHeadSha: context.prHeadSha,
     runId: context.runId,
     at: (context.now ?? new Date()).toISOString(),
+  };
+}
+
+/**
+ * Adds checks the server computed itself to a verifier's report and
+ * recomputes the verdict (OPP-0759). A deterministic rule the model cannot
+ * talk itself out of: a failed server check fails the fix.
+ */
+export function withServerChecks(
+  verdict: BugFixVerdict,
+  extra: BugFixVerdictCheck[],
+): BugFixVerdict {
+  if (!extra.length) return verdict;
+  const checks = [
+    ...verdict.checks.filter((c) => !extra.some((e) => e.name === c.name)),
+    ...extra,
+  ];
+  const requiredOk = BUG_FIX_VERDICT_REQUIRED_CHECKS.every(
+    (name) => checks.find((c) => c.name === name)?.ok === true,
+  );
+  const anyFailed = checks.some((c) => c.ok === false);
+  return {
+    ...verdict,
+    checks,
+    verdict:
+      requiredOk && !anyFailed && !verdict.scopeExceeded ? 'pass' : 'fail',
   };
 }
 

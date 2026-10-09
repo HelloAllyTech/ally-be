@@ -95,6 +95,7 @@ describe('BugVerifyFixService', () => {
     getPullRequest: jest.Mock;
     dispatchWorkflow: jest.Mock;
     createIssueComment: jest.Mock;
+    listPullRequestFiles: jest.Mock;
   };
   let notifications: { notify: jest.Mock };
   let policy: { assertMayMerge: jest.Mock };
@@ -135,6 +136,10 @@ describe('BugVerifyFixService', () => {
         .mockResolvedValue({ headSha: 'head-1', merged: false, state: 'open' }),
       dispatchWorkflow: jest.fn().mockResolvedValue(new Date()),
       createIssueComment: jest.fn().mockResolvedValue('c'),
+      listPullRequestFiles: jest.fn().mockResolvedValue({
+        files: ['src/a.ts', 'src/a.spec.ts'],
+        truncated: false,
+      }),
     };
     notifications = { notify: jest.fn() };
     policy = { assertMayMerge: jest.fn().mockResolvedValue(undefined) };
@@ -366,6 +371,39 @@ describe('BugVerifyFixService', () => {
           runId: 'run-verify',
           counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
         }),
+      );
+    });
+
+    it('fails a pass itself when the PR touches a file a person must merge, and names the file (OPP-0759)', async () => {
+      github.listPullRequestFiles.mockResolvedValue({
+        files: [
+          'src/health/controller/health.controller.ts',
+          '.claude/agents/bug-escalation.md',
+          'pr-body.md',
+        ],
+        truncated: false,
+      });
+      const verdict = await service.recordVerdict('f-1', { checks: okChecks });
+      expect(verdict?.verdict).toBe('fail');
+      const forbidden = verdict?.checks.find(
+        (c) => c.name === 'forbidden_files',
+      );
+      expect(forbidden?.ok).toBe(false);
+      expect(forbidden?.evidence).toContain(
+        '.claude/agents/bug-escalation.md (Bug Hunter agent files)',
+      );
+      expect(forbidden?.evidence).toContain(
+        'pr-body.md (a PR body written into the repo)',
+      );
+      expect(fixSession.mergeVerifiedFinding).not.toHaveBeenCalled();
+      expect(orchestrator.onFixRefused).toHaveBeenCalledWith(
+        'f-1',
+        expect.objectContaining({ verdict: 'fail' }),
+        expect.arrayContaining([
+          expect.stringContaining(
+            'forbidden_files: files a fix must not touch',
+          ),
+        ]),
       );
     });
 

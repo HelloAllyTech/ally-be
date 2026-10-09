@@ -15,6 +15,10 @@ import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterService } from './bug-hunter.service';
 import { BugHunterMemoryRetirementService } from './bug-hunter-memory-retirement.service';
 import { BugHunterFinderService } from './bug-hunter-finder.service';
+import {
+  BUG_HUNT_PROTECTION_DRIFT_TASK,
+  BugHunterProtectionDriftService,
+} from './bug-hunter-protection-drift.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -24,6 +28,7 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly bugHunterService: BugHunterService,
     private readonly memoryRetirement: BugHunterMemoryRetirementService,
     private readonly finderService: BugHunterFinderService,
+    private readonly protectionDrift: BugHunterProtectionDriftService,
   ) {}
 
   onModuleInit(): void {
@@ -78,6 +83,16 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     // a night.
     scheduledTaskRegistry.register('5min', 'bug-finder-event-triggers', () =>
       this.finderService.runEventTriggers(),
+    );
+
+    // Does master protection still match the repo map (OPP-0759)? Daily,
+    // one Problem notice per repo when the answer changes.
+    scheduledTaskRegistry.register(
+      'daily',
+      BUG_HUNT_PROTECTION_DRIFT_TASK,
+      async () => {
+        await this.protectionDrift.run();
+      },
     );
 
     scheduledTaskRegistry.register(

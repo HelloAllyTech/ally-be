@@ -56,6 +56,7 @@ import { BugHunterDecisionService } from './service/bug-hunter-decision.service'
 import { BugHunterDecisionReplayService } from './service/bug-hunter-decision-replay.service';
 import { BugFixPlanService } from './service/bug-fix-plan.service';
 import { BugHunterOrchestratorService } from './service/bug-hunter-orchestrator.service';
+import { BugHunterProtectionDriftService } from './service/bug-hunter-protection-drift.service';
 import { BugHunterScoreboardService } from './service/bug-hunter-scoreboard.service';
 import { BugHunterFinderService } from './service/bug-hunter-finder.service';
 import { BugHunterTodayService } from './service/bug-hunter-today.service';
@@ -155,6 +156,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterFinderService,
     BugFixPlanService,
     BugHunterOrchestratorService,
+    BugHunterProtectionDriftService,
     BugHunterTodayService,
     BugHunterDossierService,
     BugHunterMemoryRetirementService,

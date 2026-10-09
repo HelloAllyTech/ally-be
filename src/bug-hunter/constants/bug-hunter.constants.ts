@@ -24,6 +24,15 @@ export const BUG_HUNT_MAX_FIX_ATTEMPTS = 2;
  */
 export const BUG_HUNT_TRIVIAL_FIX_MAX_FILES = 2;
 export const BUG_HUNT_TRIVIAL_LINT_FIX_MAX_FILES = 10;
+/**
+ * The most a verified fix may change and still merge itself, on any trigger
+ * (OPP-0759). A sweep's own fixes stay under the stricter trivial-diff rule
+ * above; this is the ceiling for a fix session's self-merge after a Verifier
+ * pass. Anything wider is a reviewed PR. Files a person has to count are
+ * refused outright — see util/bug-person-only-paths.util.ts.
+ */
+export const BUG_HUNT_SELF_MERGE_MAX_FILES = 6;
+export const BUG_HUNT_SELF_MERGE_MAX_LINES = 300;
 
 /**
  * How long the fix agent's escalation-wait loop polls for an admin's answer

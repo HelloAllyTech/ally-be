@@ -75,6 +75,21 @@ export interface PullRequestInfo {
    * branch deletion when this is set.
    */
   headIsFork: boolean;
+  /** Lines added and removed, and files changed, as GitHub counts them. Null when GitHub did not say. */
+  additions: number | null;
+  deletions: number | null;
+  changedFiles: number | null;
+}
+
+/**
+ * What a branch's protection requires, read from both the classic
+ * protection API and rulesets (a repo may use either). `source` says which
+ * answered; `none` means neither protects the branch.
+ */
+export interface BranchProtectionSummary {
+  reviewsRequired: number;
+  requiredChecks: string[];
+  source: 'classic' | 'ruleset' | 'both' | 'none';
 }
 
 /** A pull request, as returned by the list-all endpoint. */
@@ -383,11 +398,94 @@ export class GithubActionsService {
           String(data.head.repo.full_name).toLowerCase() !==
             String(data.base.repo.full_name).toLowerCase(),
         ),
+        additions: typeof data?.additions === 'number' ? data.additions : null,
+        deletions: typeof data?.deletions === 'number' ? data.deletions : null,
+        changedFiles:
+          typeof data?.changed_files === 'number' ? data.changed_files : null,
       };
     } catch (error) {
       this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * What a branch's protection requires, from classic protection and from
+   * rulesets together (OPP-0759). A 404 on the classic endpoint means "not
+   * protected that way", not an error. Null only when GitHub cannot be read
+   * at all, which a caller must treat as unknown rather than unprotected.
+   */
+  async getBranchProtection(
+    repo: string,
+    branch = 'master',
+  ): Promise<BranchProtectionSummary | null> {
+    this.requireConfigured();
+    let reviews = 0;
+    const checks = new Set<string>();
+    let classic = false;
+    let ruleset = false;
+    try {
+      try {
+        const { data } = await axios.get(
+          this.url(repo, `branches/${branch}/protection`),
+          { headers: this.headers, timeout: 15_000 },
+        );
+        classic = true;
+        reviews = Math.max(
+          reviews,
+          Number(
+            data?.required_pull_request_reviews
+              ?.required_approving_review_count ?? 0,
+          ) || 0,
+        );
+        for (const c of data?.required_status_checks?.contexts ?? [])
+          checks.add(String(c));
+      } catch (error) {
+        if (
+          (error as { response?: { status?: number } })?.response?.status !==
+          404
+        )
+          throw error;
+      }
+      const { data: rules } = await axios.get(
+        this.url(repo, `rules/branches/${branch}`),
+        { headers: this.headers, timeout: 15_000 },
+      );
+      for (const rule of (rules ?? []) as Record<string, any>[]) {
+        if (rule?.type === 'pull_request') {
+          ruleset = true;
+          reviews = Math.max(
+            reviews,
+            Number(rule?.parameters?.required_approving_review_count ?? 0) || 0,
+          );
+        } else if (rule?.type === 'required_status_checks') {
+          ruleset = true;
+          for (const c of rule?.parameters?.required_status_checks ?? [])
+            if (c?.context) checks.add(String(c.context));
+        }
+      }
+      this.noteAuthOutcome();
+      return {
+        reviewsRequired: reviews,
+        requiredChecks: [...checks].sort(),
+        source:
+          classic && ruleset
+            ? 'both'
+            : classic
+              ? 'classic'
+              : ruleset
+                ? 'ruleset'
+                : 'none',
+      };
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not read ${branch} protection on ${repo}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

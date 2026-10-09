@@ -16,10 +16,15 @@ import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import {
+  describePersonOnlyPaths,
+  personOnlyPaths,
+} from '../util/bug-person-only-paths.util';
+import {
   BugFixVerdict,
   latestVerdictFor,
   namedFailures,
   toBugFixVerdict,
+  withServerChecks,
 } from '../type/bug-fix-verdict.type';
 import {
   BugHunterModelSettings,
@@ -245,7 +250,7 @@ export class BugVerifyFixService {
     const run = runId
       ? await this.bugHunterService.getRun(runId).catch(() => null)
       : null;
-    const verdict = toBugFixVerdict(raw, {
+    const reported = toBugFixVerdict(raw, {
       by: {
         engine: run?.engine ?? pending?.counterpart.engine ?? null,
         model: run?.model ?? pending?.counterpart.model ?? null,
@@ -258,12 +263,13 @@ export class BugVerifyFixService {
           : (pending?.prHeadSha ?? null),
       runId,
     });
-    if (!verdict) {
+    if (!reported) {
       this.logger.warn(
         `[BUG_HUNTER] Verifier report for finding ${findingId} had no checks; nothing recorded.`,
       );
       return null;
     }
+    const verdict = await this.withForbiddenFiles(finding, reported);
 
     const verdicts = Array.isArray(finding.metadata?.fixVerdicts)
       ? (finding.metadata!.fixVerdicts as BugFixVerdict[])
@@ -290,6 +296,36 @@ export class BugVerifyFixService {
     await this.commentOnPr(finding, verdict, failures);
     await this.actOnVerdict(finding, verdict, failures);
     return verdict;
+  }
+
+  /**
+   * The one check the server makes itself (OPP-0759): the PR's file list
+   * against the person-only paths. A model can be argued out of calling a
+   * stray file scope creep; a pattern cannot. Fails closed only on a hit —
+   * an unreadable listing leaves the verifier's own verdict alone.
+   */
+  private async withForbiddenFiles(
+    finding: BugFinding,
+    verdict: BugFixVerdict,
+  ): Promise<BugFixVerdict> {
+    const prNumber = finding.prUrl ? prNumberFrom(finding.prUrl) : null;
+    if (!finding.repo || !prNumber) return verdict;
+    let listing: { files: string[]; truncated: boolean };
+    try {
+      listing = await this.github.listPullRequestFiles(finding.repo, prNumber);
+    } catch {
+      return verdict;
+    }
+    const hits = personOnlyPaths(listing.files);
+    if (!hits.length) return verdict;
+    return withServerChecks(verdict, [
+      {
+        name: 'forbidden_files',
+        ok: false,
+        evidence: `files a fix must not touch: ${describePersonOnlyPaths(hits)}`,
+        skipped: null,
+      },
+    ]);
   }
 
   private async actOnVerdict(

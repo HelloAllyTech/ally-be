@@ -64,7 +64,7 @@ describe('BugHunterPolicyService', () => {
   let bugFindingService: { getOne: jest.Mock };
   let bugHunterService: { getRun: jest.Mock; getSettings: jest.Mock };
   let findingRepository: { count: jest.Mock };
-  let github: { listPullRequestFiles: jest.Mock };
+  let github: { listPullRequestFiles: jest.Mock; getPullRequest: jest.Mock };
 
   beforeEach(() => {
     bugFindingService = { getOne: jest.fn().mockResolvedValue(finding()) };
@@ -78,6 +78,9 @@ describe('BugHunterPolicyService', () => {
         files: ['src/a.py', 'tests/test_a.py'],
         truncated: false,
       }),
+      getPullRequest: jest
+        .fn()
+        .mockResolvedValue({ additions: 40, deletions: 12, headSha: 'h' }),
     };
     service = new BugHunterPolicyService(
       bugFindingService as never,
@@ -265,13 +268,80 @@ describe('BugHunterPolicyService', () => {
       },
     );
 
-    it('exempts a fix session from the sweep cap and the trivial-diff rule', async () => {
+    it('exempts a fix session from the sweep cap and the trivial-diff rule, but not from the self-merge ceiling (OPP-0759)', async () => {
       bugHunterService.getRun.mockResolvedValue(
         run({ trigger: BugHuntTrigger.FIX_SESSION }),
       );
       findingRepository.count.mockResolvedValue(99);
+      github.listPullRequestFiles.mockResolvedValue({
+        files: ['src/a.py', 'src/b.py', 'src/c.py', 'tests/test_a.py'],
+        truncated: false,
+      });
       await expect(merging()).resolves.toBeUndefined();
-      expect(github.listPullRequestFiles).not.toHaveBeenCalled();
+      // Four files is over the sweep's trivial limit and under the self-merge ceiling.
+      expect(github.listPullRequestFiles).toHaveBeenCalledWith(
+        'ally-ai-learn',
+        42,
+      );
+      expect(findingRepository.count).not.toHaveBeenCalled();
+    });
+
+    describe('the self-merge ceiling, on every trigger (OPP-0759)', () => {
+      beforeEach(() => {
+        bugHunterService.getRun.mockResolvedValue(
+          run({ trigger: BugHuntTrigger.FIX_SESSION }),
+        );
+      });
+
+      it.each([
+        ['.claude/agents/bug-escalation.md', 'Bug Hunter agent files'],
+        ['pr-body.md', 'a PR body written into the repo'],
+        ['src/database/migrations/1-x.ts', 'a database migration'],
+        ['apps/x/src/i18n/locales/mr.json', 'a locale file'],
+        ['package-lock.json', 'a lockfile'],
+        ['src/__snapshots__/a.snap', 'a test snapshot'],
+        ['.github/workflows/test.yml', 'workflows and CI'],
+      ])('refuses a self-merge that touches %s', async (file, why) => {
+        github.listPullRequestFiles.mockResolvedValue({
+          files: ['src/a.py', file],
+          truncated: false,
+        });
+        await expect(merging()).rejects.toThrow(
+          new RegExp(
+            `files a person has to merge: .*${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(${why}\\)`,
+          ),
+        );
+      });
+
+      it('refuses more files or more lines than the ceiling, and fails closed when GitHub cannot list', async () => {
+        github.listPullRequestFiles.mockResolvedValue({
+          files: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+          truncated: false,
+        });
+        await expect(merging()).rejects.toThrow(
+          /changes 7 files; a fix may merge itself at up to 6/,
+        );
+
+        github.listPullRequestFiles.mockResolvedValue({
+          files: ['src/a.py'],
+          truncated: false,
+        });
+        github.getPullRequest.mockResolvedValue({
+          additions: 290,
+          deletions: 20,
+        });
+        await expect(merging()).rejects.toThrow(
+          /changes 310 lines; a fix may merge itself at up to 300/,
+        );
+
+        github.getPullRequest.mockResolvedValue(null); // unknown size is not a refusal
+        await expect(merging()).resolves.toBeUndefined();
+
+        github.listPullRequestFiles.mockRejectedValue(new Error('502'));
+        await expect(merging()).rejects.toThrow(
+          /Could not read the pull request/,
+        );
+      });
     });
 
     it('refuses once the run has merged its nightly cap', async () => {
