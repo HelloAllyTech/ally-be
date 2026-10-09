@@ -30,7 +30,7 @@ export function renderPrBody(
 
   lines.push(
     `## The bug`,
-    clipDossierText(f.description, 900),
+    clipDossierText(f.description, 1200),
     ``,
     ...[
       f.file
