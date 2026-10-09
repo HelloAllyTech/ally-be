@@ -262,6 +262,13 @@ export enum LlmTask {
   // are due to move onto the same table (OPP-0714).
   AGENT_MEMORY_CURATION = 'agent_memory_curation',
 
+  // Skill experiments (auto-improve): the judge that scores one skill output
+  // against the admin's rubric, and the designer that drafts the next variant.
+  // Both tagged with metadata.experimentId so an experiment's spend is one
+  // llm_usage query.
+  SKILL_EXPERIMENT_JUDGE = 'skill_experiment_judge',
+  SKILL_EXPERIMENT_DESIGNER = 'skill_experiment_designer',
+
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',
 }

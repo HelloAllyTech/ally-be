@@ -36,6 +36,10 @@ import { PromptsController } from './controller/prompts.controller';
   ],
   exports: [
     PromptSharedService,
+    // Skill experiments apply a winning variant as a new version through the
+    // same path an admin's edit takes (versioning, variable reconcile,
+    // auto-translation), rather than writing prompts_versions themselves.
+    PromptsService,
     PromptTranslationRepository,
     PromptTranslationService,
   ],

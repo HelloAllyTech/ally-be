@@ -1530,6 +1530,45 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     defaultModel: 'gpt-4o-mini',
     configuredBy: 'LLM_FAST_MODEL',
   },
+  {
+    id: 'skill-experiment-judge',
+    task: LlmTask.SKILL_EXPERIMENT_JUDGE,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    // A judge is a ruler: scores from two models are not comparable, and an
+    // experiment's whole decision is a comparison of scores. Fail the attempt
+    // (the observation is retried on the next tick) rather than mix judges.
+    neverFallback: true,
+    trigger:
+      'Every 5 minutes, for each skill with auto-improve on and outputs waiting',
+    detail:
+      'Scores one skill output 1-5 per criterion of the rubric an admin wrote, blind to ' +
+      'which variant produced it. Volume follows the experimented skill’s traffic, capped ' +
+      'per tick.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: 'gpt-5-mini',
+    configuredBy:
+      'skill_experiments.judgeModel, else the prompt row, else LLM_REASONING_MODEL',
+    promptOverride: 'skill_experiment_judge',
+  },
+  {
+    id: 'skill-experiment-designer',
+    task: LlmTask.SKILL_EXPERIMENT_DESIGNER,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'When an auto-improve experiment needs its next challenger',
+    detail:
+      'Drafts a revised skill text from the champion, the rubric and the judge’s reasons. ' +
+      'A draft that drops, renames or invents a runtime placeholder is rejected in code and ' +
+      'never served. A few calls per experiment, not per output.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: 'gpt-5-mini',
+    configuredBy:
+      'skill_experiments.designerModel, else the prompt row, else LLM_REASONING_MODEL',
+    promptOverride: 'skill_experiment_designer',
+  },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────────

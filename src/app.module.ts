@@ -66,6 +66,7 @@ import { TooltipModule } from './tooltip/tooltip.module';
 import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-session-logs.module';
 import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
+import { SkillExperimentModule } from './skill-experiment/skill-experiment.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
 import { PostHogModule } from './posthog/posthog.module';
@@ -145,6 +146,7 @@ import { HelplineModule } from './helpline/helpline.module';
     RoleplaySessionLogsModule,
     BlogModule,
     LabModule,
+    SkillExperimentModule,
     ProductRoadmapModule,
     LogsModule,
     ChangelogModule,
