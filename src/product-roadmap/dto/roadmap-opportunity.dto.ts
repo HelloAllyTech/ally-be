@@ -22,6 +22,14 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import {
+  BUG_REPORT_FREQUENCIES,
+  BUG_REPORT_IMPACTS,
+  BUG_REPORT_SURFACES,
+  BugReportFrequency,
+  BugReportImpact,
+  BugReportSurface,
+} from 'src/bug-hunter/util/bug-report-brief.util';
 
 import {
   BUG_FIX_SESSION_REPOS,
@@ -443,6 +451,71 @@ export class ReporterContextDto {
   @IsOptional()
   @IsISO8601()
   clientTimestamp?: string;
+
+  // ── the staff form's structured answers (admin "Report a bug"), all optional ──
+  // Folded into the finding's description by composeBugReportDescription so
+  // every reader of the brief sees them; kept here raw for the drawer.
+
+  @ApiPropertyOptional({
+    description: 'What the reporter expected to happen instead.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  expected?: string;
+
+  @ApiPropertyOptional({ description: 'Steps to reproduce, one per line.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1500)
+  steps?: string;
+
+  @ApiPropertyOptional({
+    enum: BUG_REPORT_SURFACES,
+    description:
+      'Where the reporter saw it, in product words; maps to a repo server-side.',
+  })
+  @IsOptional()
+  @IsIn(BUG_REPORT_SURFACES)
+  surface?: BugReportSurface;
+
+  @ApiPropertyOptional({
+    description:
+      'When it happened, ISO 8601 — the log windows are read around this, not around filing time.',
+  })
+  @IsOptional()
+  @IsISO8601()
+  happenedAt?: string;
+
+  @ApiPropertyOptional({ enum: BUG_REPORT_FREQUENCIES })
+  @IsOptional()
+  @IsIn(BUG_REPORT_FREQUENCIES)
+  frequency?: BugReportFrequency;
+
+  @ApiPropertyOptional({
+    enum: BUG_REPORT_IMPACTS,
+    description: "Becomes the finding's severity.",
+  })
+  @IsOptional()
+  @IsIn(BUG_REPORT_IMPACTS)
+  impact?: BugReportImpact;
+
+  @ApiPropertyOptional({
+    description:
+      'Session, user, tenant or scenario ids the reporter had to hand.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  identifiers?: string;
+
+  @ApiPropertyOptional({
+    description: 'UI language selected when it happened, e.g. "mr".',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  language?: string;
 }
 
 /**

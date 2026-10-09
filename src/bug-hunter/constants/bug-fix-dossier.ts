@@ -294,9 +294,22 @@ export const renderFixDossier = (dossier: FixDossier): string => {
 
   if (dossier.reporter) {
     const ctx = dossier.reporter.context ?? {};
-    const facts = ['screen', 'route', 'device', 'os', 'appVersion', 'platform']
+    const facts = [
+      'surface',
+      'screen',
+      'route',
+      'device',
+      'os',
+      'appVersion',
+      'platform',
+      'language',
+      'happenedAt',
+      'frequency',
+      'impact',
+      'identifiers',
+    ]
       .filter((k) => ctx[k] != null && ctx[k] !== '')
-      .map((k) => `${k} ${clipDossierText(ctx[k], 80)}`);
+      .map((k) => `${k} ${clipDossierText(ctx[k], 120)}`);
     lines.push(
       `### Reported by a person`,
       `Filed by ${dossier.reporter.source === 'consumer' ? 'a consumer through the in-app report form' : 'a staff member'} on ${day(dossier.reporter.reportedAt)}${facts.length ? ` — ${facts.join(', ')}` : ''}. Their words are the brief above; the context was captured silently by their client and is evidence about where the bug shows up.`,
