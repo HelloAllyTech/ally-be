@@ -404,7 +404,8 @@ describe('BugHunterPolicyService', () => {
         ),
         truncated: false,
       });
-      await expect(merging()).rejects.toThrow(/lint fix touching at most/);
+      // Over the lint limit either rule may answer first; both say 10.
+      await expect(merging()).rejects.toThrow(/at most 10|up to 10/);
     });
 
     it('fails closed when GitHub cannot be read or the listing is truncated', async () => {
