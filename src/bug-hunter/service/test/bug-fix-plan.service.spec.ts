@@ -141,6 +141,33 @@ describe('BugFixPlanService', () => {
     });
   });
 
+  it('rule: a conflict retry stays on the pair that ran last — a rebase is not a harder problem (OPP-0758)', async () => {
+    const f = finding({
+      metadata: {
+        fixPlan: {
+          engine: 'gemini',
+          model: 'gemini-2.5-flash',
+          tier: 'fast',
+          attempt: 1,
+        },
+      },
+    });
+    const plan = await service.plan(f, 'ally-web', {
+      kind: 'conflict',
+      move: 'retry_fix',
+      attempt: 1,
+      failures: ['merge conflict'],
+      prUrl: 'https://github.com/HelloAllyTech/ally-web/pull/812',
+      decisionId: 'dec-D7',
+      at: new Date().toISOString(),
+    });
+    expect(plan).toMatchObject({
+      engine: 'gemini',
+      model: 'gemini-2.5-flash',
+      attempt: 2,
+    });
+  });
+
   it('model: an on-menu pick with an approach wins and the approach is stored', async () => {
     decisions.decide = decideWith({
       engine: 'gemini',

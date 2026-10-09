@@ -455,7 +455,9 @@ export class BugFixSessionService {
               ? `Fix session sent back in by my orchestrator (${retry?.move ?? 'retry'}, attempt ${retry?.attempt ?? '?'}) after ${
                   retry?.kind === 'verifier_fail'
                     ? 'the Verifier refused the last PR'
-                    : 'the last session failed'
+                    : retry?.kind === 'conflict'
+                      ? 'the PR fell into conflict with master'
+                      : 'the last session failed'
                 } on "${finding.title}".`
               : startedBy
                 ? `Fix session started by user ${startedBy} for "${finding.title}".`

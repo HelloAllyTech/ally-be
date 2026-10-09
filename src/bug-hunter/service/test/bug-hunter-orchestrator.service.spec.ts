@@ -49,7 +49,11 @@ const failVerdict = (over: Partial<BugFixVerdict> = {}): BugFixVerdict =>
  */
 describe('BugHunterOrchestratorService', () => {
   let current: BugFinding;
-  let findingRepository: { update: jest.Mock; findOne: jest.Mock };
+  let findingRepository: {
+    update: jest.Mock;
+    findOne: jest.Mock;
+    find: jest.Mock;
+  };
   let bugFindingService: { getOne: jest.Mock; setStatus: jest.Mock };
   let bugHunterService: {
     getSettings: jest.Mock;
@@ -60,6 +64,10 @@ describe('BugHunterOrchestratorService', () => {
   let policy: { assertMayFix: jest.Mock };
   let fixSession: { startByAgent: jest.Mock; retry: jest.Mock };
   let notifications: { notify: jest.Mock };
+  let github: {
+    getPullRequest: jest.Mock;
+    updatePullRequestBranch: jest.Mock;
+  };
   let service: BugHunterOrchestratorService;
 
   /** The decision service as a pass-through: the rule acts unless a model override is given for the point. */
@@ -87,6 +95,7 @@ describe('BugHunterOrchestratorService', () => {
         return Promise.resolve();
       }),
       findOne: jest.fn().mockImplementation(() => Promise.resolve(current)),
+      find: jest.fn().mockImplementation(() => Promise.resolve([current])),
     };
     bugFindingService = {
       getOne: jest.fn().mockImplementation(() => Promise.resolve(current)),
@@ -107,6 +116,12 @@ describe('BugHunterOrchestratorService', () => {
       retry: jest.fn().mockResolvedValue(undefined),
     };
     notifications = { notify: jest.fn() };
+    github = {
+      getPullRequest: jest.fn().mockResolvedValue(null),
+      updatePullRequestBranch: jest
+        .fn()
+        .mockResolvedValue({ updated: true, message: null }),
+    };
     service = new BugHunterOrchestratorService(
       findingRepository as never,
       bugFindingService as never,
@@ -116,6 +131,7 @@ describe('BugHunterOrchestratorService', () => {
       policy as never,
       fixSession as never,
       notifications as never,
+      github as never,
     );
   });
 
@@ -376,6 +392,91 @@ describe('BugHunterOrchestratorService', () => {
       });
       expect(await service.onSessionFailed('f-1')).toBeNull();
       expect(decisions.decide).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('open PRs — conflicts and stale branches (OPP-0758)', () => {
+    beforeEach(() => {
+      current = finding({ status: BugFindingStatus.PR_OPENED, prUrl: PR });
+      findingRepository.find = jest
+        .fn()
+        .mockImplementation(() => Promise.resolve([current]));
+    });
+
+    it('sends a conflicted PR back to a session to rebase, once per head', async () => {
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        headSha: 'abc1234def',
+        mergeableState: 'dirty',
+      });
+      await service.reconcileOpenPullRequests();
+      expect(fixSession.retry).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'f-1' }),
+        expect.objectContaining({
+          kind: 'conflict',
+          move: 'retry_fix',
+          prUrl: PR,
+          failures: [expect.stringContaining('merge conflict')],
+        }),
+      );
+      expect(lastDecision('D7').context).toMatchObject({ cause: 'conflict' });
+      expect(current.metadata?.prConflict).toMatchObject({
+        headSha: 'abc1234def',
+      });
+
+      fixSession.retry.mockClear();
+      await service.reconcileOpenPullRequests();
+      expect(fixSession.retry).not.toHaveBeenCalled();
+    });
+
+    it('asks a person about a conflict once the retries are spent', async () => {
+      current = finding({
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: PR,
+        metadata: { orchestrator: { retries: 2 } },
+      });
+      expect(await service.onPrConflict('f-1', 'abc1234def')).toBe('ask_human');
+      expect(fixSession.retry).not.toHaveBeenCalled();
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: expect.stringContaining('in conflict with master'),
+        }),
+      );
+    });
+
+    it('asks GitHub to update a branch that is merely behind, once per head, and leaves a clean PR alone', async () => {
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        headSha: 'h1',
+        mergeableState: 'behind',
+      });
+      await service.reconcileOpenPullRequests();
+      expect(github.updatePullRequestBranch).toHaveBeenCalledWith(
+        'ally-web',
+        812,
+        'h1',
+      );
+      expect(current.metadata?.prBranchUpdate).toMatchObject({
+        headSha: 'h1',
+        updated: true,
+      });
+      expect(decisions.decide).not.toHaveBeenCalled();
+
+      github.updatePullRequestBranch.mockClear();
+      await service.reconcileOpenPullRequests();
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        headSha: 'h2',
+        mergeableState: 'clean',
+      });
+      await service.reconcileOpenPullRequests();
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+      expect(fixSession.retry).not.toHaveBeenCalled();
     });
   });
 

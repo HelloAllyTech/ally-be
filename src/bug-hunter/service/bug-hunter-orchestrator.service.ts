@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 import { LoggerService } from 'src/logger/logger.service';
 
 import { repoCommands } from '../constants/bug-hunt-repos.constants';
+import { prNumberFrom } from './bug-hunter-policy.service';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingStatus, BugHunterMode } from '../enum/bug-finding.enum';
@@ -65,7 +67,153 @@ export class BugHunterOrchestratorService {
     private readonly policyService: BugHunterPolicyService,
     private readonly fixSessionService: BugFixSessionService,
     private readonly notificationService: BugHunterNotificationService,
+    private readonly github: GithubActionsService,
   ) {}
+
+  // ── open PRs: conflicts and stale branches (OPP-0758) ────────────────────
+
+  /**
+   * Every five minutes, every fix PR still open: a PR GitHub calls `dirty`
+   * has fallen into conflict with master and goes to D7 once per head; a PR
+   * that is merely `behind` gets its branch updated by GitHub, once per
+   * head, so CI and the Verifier see it against today's master. A reviewer
+   * used to find both states by hand and either leave the PR or redo it.
+   */
+  async reconcileOpenPullRequests(): Promise<void> {
+    const open = await this.findingRepository.find({
+      where: { status: BugFindingStatus.PR_OPENED },
+    });
+    for (const finding of open) {
+      try {
+        const prNumber = finding.prUrl ? prNumberFrom(finding.prUrl) : null;
+        if (!finding.repo || !prNumber) continue;
+        const pr = await this.github.getPullRequest(finding.repo, prNumber);
+        if (!pr || pr.merged || pr.state !== 'open' || !pr.headSha) continue;
+
+        if (pr.mergeableState === 'dirty') {
+          const seen = finding.metadata?.prConflict as
+            | { headSha: string }
+            | undefined;
+          if (seen?.headSha === pr.headSha) continue; // already decided for this head
+          await this.onPrConflict(finding.id, pr.headSha);
+        } else if (pr.mergeableState === 'behind') {
+          const seen = finding.metadata?.prBranchUpdate as
+            | { headSha: string }
+            | undefined;
+          if (seen?.headSha === pr.headSha) continue;
+          const result = await this.github.updatePullRequestBranch(
+            finding.repo,
+            prNumber,
+            pr.headSha,
+          );
+          await this.findingRepository.update(finding.id, {
+            metadata: {
+              ...(finding.metadata ?? {}),
+              prBranchUpdate: {
+                headSha: pr.headSha,
+                at: new Date().toISOString(),
+                updated: result.updated,
+                message: result.message,
+              },
+            } as Record<string, any>,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: finding.id,
+            repo: finding.repo,
+            stage: BugHuntEventStage.PR_OPENED,
+            summary: result.updated
+              ? `${finding.prUrl} had fallen behind master; I asked GitHub to update its branch so CI and the Verifier read it against today's master.`
+              : `${finding.prUrl} is behind master and GitHub would not update the branch: ${result.message ?? 'no reason given'}.`,
+            payload: { move: 'update_branch', prUrl: finding.prUrl, ...result },
+          });
+        }
+      } catch (error) {
+        this.warn('open-PR reconcile', finding.id, error);
+      }
+    }
+  }
+
+  /**
+   * D7 for a PR in conflict with master. Rule-owned: send a session back in
+   * to rebase the branch and re-run the suite, on the same tier, once per
+   * automatic-retry cap; a person after that, or when the budget is spent.
+   */
+  async onPrConflict(
+    findingId: string,
+    headSha: string,
+  ): Promise<D7Pick | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.PR_OPENED) return null;
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(finding.metadata ?? {}),
+        prConflict: { headSha, at: new Date().toISOString() },
+      } as Record<string, any>,
+    });
+    const state = stateOf(finding);
+    let veto: OrchestratorVeto | null = null;
+    if (state.retries >= BUG_HUNTER_D7_MAX_AUTOMATIC_RETRIES) {
+      veto = {
+        by: 'safety',
+        reason: `I have already sent this back ${state.retries} times; a person decides`,
+      };
+    } else {
+      veto = await this.vetoForBudget(finding);
+    }
+    const failures = [
+      `merge conflict: the PR branch no longer merges cleanly into master (head ${headSha.slice(0, 7)})`,
+    ];
+    const d7 = await this.decisions.decide<D7Pick>({
+      point: 'D7',
+      question: 'next_move',
+      repo: finding.repo ?? null,
+      runId: finding.runId ?? null,
+      findingId: finding.id,
+      menu: [...BUG_HUNTER_D7_MENU],
+      context: {
+        cause: 'conflict',
+        retries: state.retries,
+        headSha,
+        budget: finding.budget ?? null,
+        fixPlan: finding.metadata?.fixPlan ?? null,
+      },
+      modelOwned: BUG_HUNTER_DECISION_OWNER_DEFAULTS.D7 === 'model',
+      rule: () => (veto ? 'ask_human' : 'retry_fix'),
+      validate: (raw) => oneOf(BUG_HUNTER_D7_MENU, raw),
+      veto: veto ?? undefined,
+    });
+    await this.remember(finding, d7.pick);
+    if (d7.pick === 'retry_fix' || d7.pick === 'escalate_model') {
+      try {
+        await this.fixSessionService.retry(finding, {
+          kind: 'conflict',
+          move: d7.pick,
+          failures,
+          prUrl: finding.prUrl ?? null,
+          decisionId: d7.record.id,
+        });
+        return d7.pick;
+      } catch (error) {
+        this.logger.warn(
+          `[BUG_HUNTER] D7 picked ${d7.pick} for the conflicted PR on ${finding.id} but the retry could not start: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    await this.notificationService.notify({
+      level: BugHunterNotificationLevel.ACTION_NEEDED,
+      title: `My fix PR for "${clip(finding.title)}" is in conflict with master`,
+      body:
+        `${failures[0]}.
+` +
+        (veto ? `Not rebased by me because ${veto.reason}. ` : '') +
+        `Rebase it yourself, ask me to try again, or close it.`,
+      findingId: finding.id,
+      repo: finding.repo ?? undefined,
+    });
+    return d7.pick === 'close' ? 'close' : 'ask_human';
+  }
 
   // ── D4 ───────────────────────────────────────────────────────────────────
 

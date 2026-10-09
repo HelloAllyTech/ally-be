@@ -93,7 +93,7 @@ export interface FixPlan {
 
 /** Why the orchestrator sent a session back in — rendered into the fix brief. Stored on `metadata.retry`. */
 export interface FixRetry {
-  kind: 'verifier_fail' | 'session_failed';
+  kind: 'verifier_fail' | 'session_failed' | 'conflict';
   /** The D7 pick that caused it. */
   move: 'retry_fix' | 'escalate_model';
   attempt: number;
@@ -168,6 +168,9 @@ export const BUG_HUNTER_DECISION_POINT_QUESTIONS: Record<
   D7: 'next_move',
   D8: 'merge',
 };
+
+/** The orchestrator's 5-minute look at open fix PRs: conflicts and stale branches (OPP-0758). */
+export const BUG_HUNT_PR_RECONCILE_TASK = 'bug-hunter-open-pr-reconcile';
 
 /** How many refusals or failures the orchestrator will act on before it insists on a person. */
 export const BUG_HUNTER_D7_MAX_AUTOMATIC_RETRIES = 2;

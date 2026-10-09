@@ -69,7 +69,11 @@ export class BugFixPlanService {
         BUG_HUNTER_FIX_MODEL_MENU[0];
 
       const rule = (): D6Pick => {
-        if (!retry) return { ...platformDefault, approach: null };
+        // A rebase is not a harder problem; it stays on whatever ran last.
+        if (!retry || retry.kind === 'conflict') {
+          const last = previous ?? platformDefault;
+          return { engine: last.engine, model: last.model, approach: null };
+        }
         // A retry goes to the strong tier, on a different model than the
         // one that just failed where the menu offers one.
         const strong = BUG_HUNTER_FIX_MODEL_MENU.filter(

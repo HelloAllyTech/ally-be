@@ -322,6 +322,13 @@ function renderRetry(retry: FixRetry | null, repo: string): string[] {
         : '',
     ];
   }
+  if (retry.kind === 'conflict') {
+    return [
+      ``,
+      `## Why you are here again — attempt ${retry.attempt + 1}: the PR fell into conflict with master`,
+      `The previous fix for this bug is still open as a PR${retry.prUrl ? `: ${retry.prUrl}` : ''}, and master has moved so that GitHub can no longer merge it. Your job is to bring THAT branch up to date, not to write the fix again: run "gh pr checkout ${prNumber ?? '<number>'}", then "git fetch origin master && git rebase origin/master", resolve every conflict by keeping the intent of the fix, run the suite at step 5 as usual, and "git push --force-with-lease" so the same PR updates. Open nothing new. If the conflict shows the fix no longer applies — the code it changed is gone or rewritten — redo the fix on the rebased branch, and say so in the PR body's "change, in words" paragraph. Bug Hunter runs the Verifier again on the new head the moment you PATCH pr_opened with the same PR URL.`,
+    ];
+  }
   return [
     ``,
     `## Why you are here again — attempt ${retry.attempt + 1}: the last session failed`,

@@ -457,6 +457,26 @@ describe('buildFixSessionPrompt', () => {
       expect(failed).not.toMatch(/gh pr checkout/);
     });
 
+    it('tells a conflict retry to rebase the open PR branch rather than write the fix again (OPP-0758)', () => {
+      const p = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({
+          kind: 'conflict',
+          failures: [
+            'merge conflict: the PR branch no longer merges cleanly into master (head abc1234)',
+          ],
+        }),
+      });
+      expect(p).toMatch(/attempt 2: the PR fell into conflict with master/);
+      expect(p).toMatch(/gh pr checkout 812/);
+      expect(p).toMatch(/git rebase origin\/master/);
+      expect(p).toMatch(/git push --force-with-lease/);
+      expect(p).toMatch(/Open nothing new/);
+    });
+
     it('carries the D6 approach as a suggestion, and says nothing when there is none', () => {
       const withPlan = buildFixSessionPrompt({
         finding: finding(),

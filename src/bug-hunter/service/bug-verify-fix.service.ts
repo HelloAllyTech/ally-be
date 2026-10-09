@@ -237,6 +237,23 @@ export class BugVerifyFixService {
     }
   }
 
+  /**
+   * Every five minutes, every open fix PR whose head has no verdict and no
+   * verifier in flight gets one (OPP-0758). A head can change without a
+   * `pr_opened` PATCH: GitHub updated the branch, a retry pushed to it, a
+   * person pushed a fix-up. `dispatch` already no-ops when the head is
+   * judged or being judged, so this is cheap when nothing moved.
+   */
+  async reconcileOpenPrs(): Promise<void> {
+    const open = await this.findingRepository.find({
+      where: { status: BugFindingStatus.PR_OPENED },
+      select: ['id'],
+    });
+    for (const f of open) {
+      await this.dispatch(f.id);
+    }
+  }
+
   /** The verifier's PATCH. Returns the stored verdict, or null when the report was unusable. */
   async recordVerdict(
     findingId: string,

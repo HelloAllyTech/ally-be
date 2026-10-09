@@ -19,6 +19,9 @@ import {
   BUG_HUNT_PROTECTION_DRIFT_TASK,
   BugHunterProtectionDriftService,
 } from './bug-hunter-protection-drift.service';
+import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
+import { BugVerifyFixService } from './bug-verify-fix.service';
+import { BUG_HUNT_PR_RECONCILE_TASK } from '../type/bug-hunter-orchestrator.type';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -29,6 +32,8 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly memoryRetirement: BugHunterMemoryRetirementService,
     private readonly finderService: BugHunterFinderService,
     private readonly protectionDrift: BugHunterProtectionDriftService,
+    private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly verifyFix: BugVerifyFixService,
   ) {}
 
   onModuleInit(): void {
@@ -83,6 +88,18 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     // a night.
     scheduledTaskRegistry.register('5min', 'bug-finder-event-triggers', () =>
       this.finderService.runEventTriggers(),
+    );
+
+    // Open fix PRs (OPP-0758): a conflicted PR goes back to a session to
+    // rebase, a stale one gets its branch updated, and a head nobody has
+    // judged gets a Verifier. Same cadence as the other reconciles.
+    scheduledTaskRegistry.register(
+      '5min',
+      BUG_HUNT_PR_RECONCILE_TASK,
+      async () => {
+        await this.orchestrator.reconcileOpenPullRequests();
+        await this.verifyFix.reconcileOpenPrs();
+      },
     );
 
     // Does master protection still match the repo map (OPP-0759)? Daily,

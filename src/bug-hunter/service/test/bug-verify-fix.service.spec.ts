@@ -82,7 +82,7 @@ describe('storedVerifier', () => {
 });
 
 describe('BugVerifyFixService', () => {
-  let findingRepository: { update: jest.Mock };
+  let findingRepository: { update: jest.Mock; find: jest.Mock };
   let bugFindingService: { getOne: jest.Mock };
   let bugHunterService: {
     getRun: jest.Mock;
@@ -115,6 +115,7 @@ describe('BugVerifyFixService', () => {
         current = { ...current, ...patch } as BugFinding;
         return Promise.resolve();
       }),
+      find: jest.fn().mockImplementation(() => Promise.resolve([current])),
     };
     bugFindingService = {
       getOne: jest.fn().mockImplementation(() => Promise.resolve(current)),
@@ -231,6 +232,15 @@ describe('BugVerifyFixService', () => {
         },
       });
       expect(await service.dispatch('f-1')).toBeNull();
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
+
+    it('reconciles open PRs: a head without a verdict gets a Verifier, a judged head does not (OPP-0758)', async () => {
+      await service.reconcileOpenPrs();
+      expect(bugHunterService.startRun).toHaveBeenCalledTimes(1);
+
+      bugHunterService.startRun.mockClear();
+      await service.reconcileOpenPrs(); // a verifier is now pending on this head
       expect(bugHunterService.startRun).not.toHaveBeenCalled();
     });
 
