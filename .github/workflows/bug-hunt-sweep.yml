@@ -210,23 +210,6 @@ jobs:
           # Also the model a gemini-engine sweep falls back to if it gets
           # stuck — see "Run the sweep"'s own fallback logic.
           echo "escalation_model=$ESCALATION_MODEL" >> "$GITHUB_OUTPUT"
-          if [ "$ENGINE" = "gemini" ]; then
-            echo "Engine is gemini — bug-escalation.md is only read if this run falls back to Claude below."
-          fi
-          # Rewritten unconditionally, even on a pure gemini run that never
-          # falls back: Gemini CLI has no equivalent to the Task-tool subagent
-          # dispatch this file's frontmatter drives, so gemini never reads it
-          # either way — cheap to keep current regardless, and it means a
-          # gemini-engine sweep that DOES fall back to Claude below always
-          # finds it already pointing at the right model, with no extra step.
-          #
-          # The committed frontmatter becomes just a fallback the moment this
-          # runs — this endpoint is now the one source of truth for the
-          # escalation model too, so it can no longer drift across this
-          # file's five otherwise-identical copies the way it used to be able
-          # to (nothing kept them in sync before).
-          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
-          rm -f .claude/agents/bug-escalation.md.bak
           # opencode: a multi-provider harness with the one thing Gemini CLI lacks —
           # Task-tool subagents — so Verify and escalation come back on any
           # vendor's model (spike, 2026-09-30). It names models as

@@ -671,7 +671,7 @@ export class BugHunterModelSettingsDto {
 
   @ApiProperty({
     description:
-      'Model pinned into the bug-escalation subagent before each run. Ignored when engine is "gemini" — escalation has no Gemini equivalent yet, so a gemini-engine run skips it.',
+      'The stronger model one hard fix may escalate to, handed to OpenCode\'s escalation agent by value at run time; nothing in the repo is rewritten. Ignored when engine is "gemini", which has no subagents.',
   })
   escalationModel!: string;
 
