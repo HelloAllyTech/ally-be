@@ -22,6 +22,8 @@ import {
 import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
 import { BugVerifyFixService } from './bug-verify-fix.service';
 import { BUG_HUNT_PR_RECONCILE_TASK } from '../type/bug-hunter-orchestrator.type';
+import { BUG_HUNT_PR_REVIEW_TASK } from '../type/bug-hunter-pr-review.type';
+import { BugHunterPrReviewService } from './bug-hunter-pr-review.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -34,6 +36,7 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly protectionDrift: BugHunterProtectionDriftService,
     private readonly orchestrator: BugHunterOrchestratorService,
     private readonly verifyFix: BugVerifyFixService,
+    private readonly prReview: BugHunterPrReviewService,
   ) {}
 
   onModuleInit(): void {
@@ -99,6 +102,16 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
       async () => {
         await this.orchestrator.reconcileOpenPullRequests();
         await this.verifyFix.reconcileOpenPrs();
+      },
+    );
+
+    // The PR review sense (OPP-0785): every open pull request a person
+    // pushed gets one review run per head, within five minutes.
+    scheduledTaskRegistry.register(
+      '5min',
+      BUG_HUNT_PR_REVIEW_TASK,
+      async () => {
+        await this.prReview.poll();
       },
     );
 

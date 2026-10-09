@@ -66,6 +66,8 @@ export interface RawFinding {
   proven?: boolean;
   /** Optional: as `proven`. */
   touchesGuardedPath?: boolean;
+  /** Only from a pr_review run (OPP-0785): the open PR this finding is about. */
+  pr?: { number: number; url: string; headSha: string };
   /**
    * The function, class, route, component or endpoint the bug sits on. Optional
    * because not every finder can name one (a prod-log cluster often cannot), but
@@ -536,6 +538,15 @@ export class BugFindingService {
           ...(adoptSymbol && !existingOpen.symbol
             ? { symbol: finding.symbol, dedupeKey }
             : {}),
+          // A PR review re-finding an open bug links it to the PR too.
+          ...(finding.pr
+            ? {
+                metadata: {
+                  ...(existingOpen.metadata ?? {}),
+                  pr: { ...(existingOpen.metadata?.pr ?? {}), ...finding.pr },
+                } as Record<string, any>,
+              }
+            : {}),
         });
         results.push(await this.getOne(existingOpen.id));
         continue;
@@ -626,8 +637,13 @@ export class BugFindingService {
           reportedBugId: finding.reportedBugId ?? null,
           dedupeKey,
           status: BugFindingStatus.NEW,
-          ...(regressionOf
-            ? { metadata: { regressionOf: regressionOf.id } }
+          ...(regressionOf || finding.pr
+            ? {
+                metadata: {
+                  ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
+                  ...(finding.pr ? { pr: finding.pr } : {}),
+                },
+              }
             : {}),
         }),
       );

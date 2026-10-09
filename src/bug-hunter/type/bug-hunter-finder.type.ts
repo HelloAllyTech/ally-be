@@ -24,6 +24,7 @@ export const BUG_HUNTER_SENSES = [
   'browser_errors',
   'reported_bugs',
   'locale_parity',
+  'pr_review',
 ] as const;
 export type BugHunterSense = (typeof BUG_HUNTER_SENSES)[number];
 
@@ -34,7 +35,7 @@ export type BugHunterSense = (typeof BUG_HUNTER_SENSES)[number];
  * already happened.
  */
 export const BUG_HUNTER_MODEL_SENSES: readonly BugHunterSense[] =
-  BUG_HUNTER_SENSES.filter((s) => s !== 'locale_parity');
+  BUG_HUNTER_SENSES.filter((s) => s !== 'locale_parity' && s !== 'pr_review');
 
 /**
  * Where a sense can run at all. A sense absent here runs on every repo. The
@@ -44,6 +45,8 @@ export const BUG_HUNTER_MODEL_SENSES: readonly BugHunterSense[] =
 export const BUG_HUNTER_SENSE_REPOS: Partial<Record<BugHunterSense, string[]>> =
   {
     locale_parity: ['ally-web', 'ally-mobile'],
+    // Started by a pull request, never by D1: no repo offers it to a sweep.
+    pr_review: [],
   };
 
 /** D1's menu for a repo: every sense that can run there. */
@@ -63,6 +66,8 @@ export const BUG_HUNTER_SENSE_DESCRIPTIONS: Record<BugHunterSense, string> = {
   reported_bugs: 'read the human bug reports filed against the repo',
   locale_parity:
     'a script, no model: compare every locale file with en.json for missing keys and blanks; costs nothing and only exists on repos with locale files',
+  pr_review:
+    'review an open pull request a person opened, on its head: diff against its description, tests, blast radius, data files; started by the PR, not by a sweep',
 };
 
 /** What started a Finder run. `scheduled` is the nightly cron; the rest are event triggers. */
@@ -98,6 +103,15 @@ export interface FinderPlan {
   /** Decision row ids for D1 and D2, so the run's timeline can link them. */
   decisions: { D1: string | null; D2: string | null };
   plannedAt: string;
+}
+
+/** The sense a finding came from: a PR-linked finding is the PR review sense whatever its source says. */
+export function senseOfFinding(finding: {
+  source: string;
+  metadata?: Record<string, any> | null;
+}): BugHunterSense | null {
+  if (finding.metadata?.pr) return 'pr_review';
+  return senseOfSource(finding.source);
 }
 
 /** The sense a finding's `source` came from. Browser errors file as production_log. */

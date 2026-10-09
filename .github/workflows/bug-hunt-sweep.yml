@@ -79,12 +79,24 @@ on:
         required: false
         type: string
         description: "Base URL of ally-be. Defaults to the ALLY_BE_API_URL variable."
+      mode:
+        required: false
+        type: string
+        default: "sweep"
+        description: >
+          "sweep" (default) runs the nightly protocol. "pr_review" (OPP-0785)
+          reviews one open pull request on its head, read-only, and files
+          findings linked to it; needs pr_number and a run_id from ally-be.
+      pr_number:
+        required: false
+        type: string
+        description: "With mode=pr_review: the pull request to review."
 
 concurrency:
   # One sweep per repo. A cron firing while a human-triggered sweep is still
   # running would put two agents in the same checkout opening PRs for the same
   # findings.
-  group: bug-hunt-sweep-${{ github.repository }}
+  group: bug-hunt-sweep-${{ github.repository }}-${{ inputs.mode || 'sweep' }}-${{ inputs.pr_number || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -102,6 +114,18 @@ jobs:
           ref: master
           fetch-depth: 0
           token: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+
+      - name: Check out the pull request head (PR review)
+        # OPP-0785: a pr_review run reviews an open pull request on ITS head,
+        # not master. Read-only toward the repo: the brief files findings with
+        # Bug Hunter and never pushes, comments or merges.
+        if: inputs.mode == 'pr_review'
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.pr_number }}" || { echo "::error::mode=pr_review needs pr_number."; exit 1; }
+          git fetch origin "pull/${{ inputs.pr_number }}/head:bug-hunter-pr-review"
+          git checkout bug-hunter-pr-review
+          echo "Reviewing PR #${{ inputs.pr_number }} at $(git rev-parse --short HEAD)."
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -131,6 +155,9 @@ jobs:
           test -n "$API" || { echo "::error::No ally-be base URL — set the ALLY_BE_API_URL variable."; exit 1; }
 
           RUN_ID="${{ inputs.run_id }}"
+          if [ "${{ inputs.mode }}" = "pr_review" ] && [ -z "$RUN_ID" ]; then
+            echo "::error::A PR review run is only ever started by ally-be, which supplies run_id."; exit 1
+          fi
           if [ -z "$RUN_ID" ]; then
             # The scheduled path. ally-be opens the run for a human-triggered
             # sweep so the tab can show it straight away; a cron has to open its
@@ -173,9 +200,14 @@ jobs:
           # ally-be builds the prompt: it embeds this repo's test and lint
           # commands, the live mode (MANUAL stops at pending_approval, AI carries
           # on into Fix), and the merge cap.
+          if [ "${{ inputs.mode }}" = "pr_review" ]; then
+            PROMPT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/pr-review-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}"
+          else
+            PROMPT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/sweep-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}&deep=${{ inputs.deep || 'false' }}"
+          fi
           curl -sSf \
             -H "x-api-key: $ALLY_BE_API_KEY" \
-            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/sweep-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}&deep=${{ inputs.deep || 'false' }}" \
+            "$PROMPT_URL" \
             -o /tmp/sweep-prompt.txt
           test -s /tmp/sweep-prompt.txt
           echo "Fetched $(wc -c < /tmp/sweep-prompt.txt) bytes of protocol."
@@ -338,7 +370,8 @@ jobs:
           # saying "Done" and running `exit 0`, resending the whole session to
           # the model each turn, until the job's timeout-minutes killed it.
           # That timeout is the safety net; this is the budget.
-          ENGINE_CAP_SECONDS=3600
+          # A PR review is a 20-minute read, not a night's sweep (OPP-0785).
+          if [ "${{ inputs.mode }}" = "pr_review" ]; then ENGINE_CAP_SECONDS=1500; else ENGINE_CAP_SECONDS=3600; fi
           RUN_STATUS_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status"
           RUN_REPORT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report"
           supervise() {

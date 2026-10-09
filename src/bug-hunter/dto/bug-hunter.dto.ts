@@ -173,6 +173,27 @@ export class StartBugHuntRunDto {
   repo!: string;
 }
 
+export class BugFindingPrRefDto {
+  @ApiProperty()
+  @IsInt()
+  number!: number;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  url!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  headSha!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  commentUrl?: string | null;
+}
+
 export class RawBugFindingDto {
   @ApiProperty({ enum: BugFindingSource })
   @IsEnum(BugFindingSource)
@@ -238,6 +259,16 @@ export class RawBugFindingDto {
   @IsOptional()
   @IsUUID()
   reportedBugId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only from a pr_review run (OPP-0785): the open pull request this finding is about. Stored on the finding; a confirmed finding becomes a review comment there.',
+    type: () => BugFindingPrRefDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BugFindingPrRefDto)
+  pr?: BugFindingPrRefDto;
 }
 
 /**
@@ -1053,6 +1084,14 @@ export class BugFindingDto {
     | 'refuted'
     | 'unsure'
     | null;
+
+  @ApiPropertyOptional({
+    description:
+      'The open pull request this finding was found on, when a PR review run filed it (OPP-0785), with the URL of the review comment once Bug Hunter has spoken there.',
+    nullable: true,
+    type: () => BugFindingPrRefDto,
+  })
+  pr!: BugFindingPrRefDto | null;
 
   @ApiProperty({
     type: Object,

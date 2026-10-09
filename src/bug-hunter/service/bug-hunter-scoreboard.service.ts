@@ -9,7 +9,7 @@ import {
   BugFindingDecisionReason,
   BugFindingStatus,
 } from '../enum/bug-finding.enum';
-import { BugHunterSense, senseOfSource } from '../type/bug-hunter-finder.type';
+import { BugHunterSense, senseOfFinding } from '../type/bug-hunter-finder.type';
 
 /** One cell: what a (sense, model) produced on a repo in the window. */
 export interface ScoreboardRow {
@@ -159,7 +159,7 @@ export class BugHunterScoreboardService {
     };
 
     for (const f of rows) {
-      const sense = senseOfSource(f.source);
+      const sense = senseOfFinding(f);
       if (!sense) continue;
       const run = f.runId ? runById.get(f.runId) : undefined;
       const engine = run?.engine ?? null;

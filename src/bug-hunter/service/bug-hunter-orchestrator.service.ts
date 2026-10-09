@@ -33,6 +33,7 @@ import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterDecisionService } from './bug-hunter-decision.service';
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterPolicyService } from './bug-hunter-policy.service';
+import { BugHunterPrReviewService } from './bug-hunter-pr-review.service';
 import { BugHunterService } from './bug-hunter.service';
 
 /**
@@ -68,6 +69,7 @@ export class BugHunterOrchestratorService {
     private readonly fixSessionService: BugFixSessionService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly github: GithubActionsService,
+    private readonly prReview: BugHunterPrReviewService,
   ) {}
 
   // ── open PRs: conflicts and stale branches (OPP-0758) ────────────────────
@@ -267,6 +269,37 @@ export class BugHunterOrchestratorService {
       finding.status !== BugFindingStatus.PENDING_APPROVAL
     ) {
       return null; // a person already acted
+    }
+
+    // A finding on someone's open pull request (OPP-0785): the author owns
+    // the change, so the move is a review comment, not a fix session.
+    if (finding.metadata?.pr) {
+      const d5 = await this.decisions.decide<D5Pick>({
+        point: 'D5',
+        question: 'fix_now',
+        repo: finding.repo ?? null,
+        runId: finding.runId ?? null,
+        findingId: finding.id,
+        menu: [...BUG_HUNTER_D5_MENU],
+        context: {
+          confidence,
+          pr: finding.metadata.pr,
+          severity: finding.severity,
+        },
+        modelOwned: false,
+        rule: () => 'ask_human',
+        validate: (raw) => oneOf(BUG_HUNTER_D5_MENU, raw),
+        fixed:
+          "the finding is on an open pull request a person owns: Bug Hunter comments there and never fixes or merges someone else's change",
+      });
+      await this.remember(finding, 'ask_human');
+      try {
+        await this.prReview.commentForFinding(finding);
+      } catch (error) {
+        this.warn('comment on PR', finding.id, error);
+      }
+      void d5;
+      return 'ask_human';
     }
 
     const veto = await this.vetoForFix(finding, confidence);

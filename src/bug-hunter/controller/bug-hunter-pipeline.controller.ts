@@ -81,6 +81,8 @@ import { BugVerifyFindingsService } from '../service/bug-verify-findings.service
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
 import { renderPrBody } from '../constants/bug-pr-body';
+import { buildPrReviewPrompt } from '../constants/bug-pr-review-prompt';
+import { PrReviewTarget } from '../type/bug-hunter-pr-review.type';
 import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
 import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
@@ -626,6 +628,31 @@ export class BugHunterPipelineController {
     });
   }
 
+  @Get('pipeline/pr-review-prompt')
+  @ApiOperation({
+    summary:
+      'The PR review brief for a pr_review run: review one open pull request on its head, read-only, filing findings linked to it (pipeline only, OPP-0785)',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getPrReviewPrompt(
+    @Query('repo') repo: string,
+    @Query('runId') runId: string,
+  ): Promise<string> {
+    const run = await this.bugHunterService.getRun(runId);
+    const pr = run.metadata?.prReview as PrReviewTarget | undefined;
+    if (!pr?.number || !pr.headSha) {
+      throw new BadRequestException(
+        `Run ${runId} is not a PR review run: it carries no pull request.`,
+      );
+    }
+    return buildPrReviewPrompt({
+      repo: repo ?? run.repo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      pr,
+    });
+  }
+
   @Get('pipeline/findings/:id/fix-prompt')
   @ApiOperation({
     summary:
@@ -1126,7 +1153,8 @@ export class BugHunterPipelineController {
     // service swallows its own failures and leaves findings pending.
     if (
       run.trigger === BugHuntTrigger.SCHEDULED ||
-      run.trigger === BugHuntTrigger.MANUAL
+      run.trigger === BugHuntTrigger.MANUAL ||
+      run.trigger === BugHuntTrigger.PR_REVIEW
     ) {
       void this.verifyFindingsService.dispatchForRun(run.id);
     }

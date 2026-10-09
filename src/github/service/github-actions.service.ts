@@ -96,6 +96,15 @@ export interface BranchProtectionSummary {
 export interface PullRequestFromList {
   htmlUrl: string;
   headRef: string | null;
+  /** The rest is what the PR review sense (OPP-0785) needs to decide whether, and which head, to review. */
+  number: number | null;
+  headSha: string | null;
+  baseRef: string | null;
+  authorLogin: string | null;
+  title: string | null;
+  body: string | null;
+  draft: boolean;
+  updatedAt: Date | null;
 }
 
 /** What became of a branch-delete request — see `deleteBranch`. */
@@ -512,6 +521,14 @@ export class GithubActionsService {
       return (data ?? []).map((pr: any) => ({
         htmlUrl: pr?.html_url ? String(pr.html_url) : '',
         headRef: pr?.head?.ref ? String(pr.head.ref) : null,
+        number: typeof pr?.number === 'number' ? pr.number : null,
+        headSha: pr?.head?.sha ? String(pr.head.sha) : null,
+        baseRef: pr?.base?.ref ? String(pr.base.ref) : null,
+        authorLogin: pr?.user?.login ? String(pr.user.login) : null,
+        title: pr?.title ? String(pr.title) : null,
+        body: typeof pr?.body === 'string' ? pr.body : null,
+        draft: Boolean(pr?.draft),
+        updatedAt: pr?.updated_at ? new Date(pr.updated_at) : null,
       }));
     } catch (error) {
       this.noteAuthOutcome(error);
@@ -1037,6 +1054,51 @@ export class GithubActionsService {
    * Reply in the thread of a review comment, so the person who raised it sees
    * the answer where they asked rather than as a new top-level comment.
    */
+  /**
+   * Submits a review on a pull request as a COMMENT, never an approval or a
+   * request for changes (OPP-0785): Bug Hunter speaks, the merge stays the
+   * person's. File-level comments carry a path and no line, so a finding
+   * that names a file lands beside it without needing a diff position.
+   * Returns the review's URL, or null when GitHub refused.
+   */
+  async createPullRequestReview(
+    repo: string,
+    number: number,
+    review: {
+      commitId: string;
+      body: string;
+      comments?: { path: string; body: string }[];
+    },
+  ): Promise<string | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, `pulls/${number}/reviews`),
+        {
+          commit_id: review.commitId,
+          event: 'COMMENT',
+          body: review.body,
+          comments: (review.comments ?? []).map((c) => ({
+            path: c.path,
+            body: c.body,
+            subject_type: 'file',
+          })),
+        },
+        { headers: this.headers, timeout: 20_000 },
+      );
+      this.noteAuthOutcome();
+      return data?.html_url ? String(data.html_url) : null;
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not post a review on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
   async replyToReviewComment(
     repo: string,
     number: number,

@@ -75,7 +75,8 @@ export class BugVerifyFindingsService {
       const sweep = await this.bugHunterService.getRun(sweepRunId);
       if (
         sweep.trigger !== BugHuntTrigger.SCHEDULED &&
-        sweep.trigger !== BugHuntTrigger.MANUAL
+        sweep.trigger !== BugHuntTrigger.MANUAL &&
+        sweep.trigger !== BugHuntTrigger.PR_REVIEW
       ) {
         return null;
       }

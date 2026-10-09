@@ -56,6 +56,9 @@ export function buildVerifyFindingsPrompt({
         typeof f.metadata?.confidence === 'number'
           ? `   The sweep's own verifiers scored it ${f.metadata.confidence} — a claim to test, not a fact.`
           : '',
+        f.metadata?.pr?.number
+          ? `   About an OPEN pull request, not master: #${f.metadata.pr.number} at head ${String(f.metadata.pr.headSha ?? '').slice(0, 7)} (${f.metadata.pr.url}). Before you reproduce, run "git fetch origin pull/${f.metadata.pr.number}/head && git checkout FETCH_HEAD" and judge the PR's code; a refutation that only holds on master is not a refutation.`
+          : '',
       ];
       return lines.filter(Boolean).join('\n');
     })

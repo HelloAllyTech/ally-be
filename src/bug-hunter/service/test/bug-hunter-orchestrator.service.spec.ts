@@ -68,6 +68,7 @@ describe('BugHunterOrchestratorService', () => {
     getPullRequest: jest.Mock;
     updatePullRequestBranch: jest.Mock;
   };
+  let prReview: { commentForFinding: jest.Mock };
   let service: BugHunterOrchestratorService;
 
   /** The decision service as a pass-through: the rule acts unless a model override is given for the point. */
@@ -116,6 +117,11 @@ describe('BugHunterOrchestratorService', () => {
       retry: jest.fn().mockResolvedValue(undefined),
     };
     notifications = { notify: jest.fn() };
+    prReview = {
+      commentForFinding: jest
+        .fn()
+        .mockResolvedValue('https://github.com/x/pull/1#review'),
+    };
     github = {
       getPullRequest: jest.fn().mockResolvedValue(null),
       updatePullRequestBranch: jest
@@ -132,6 +138,7 @@ describe('BugHunterOrchestratorService', () => {
       fixSession as never,
       notifications as never,
       github as never,
+      prReview as never,
     );
   });
 
@@ -199,6 +206,26 @@ describe('BugHunterOrchestratorService', () => {
       );
       expect(await service.onFindingConfirmed('f-1', 0.9)).toBe('ask_human');
       expect(lastDecision('D5').veto).toMatchObject({ by: 'safety' });
+    });
+
+    it("a finding on someone's open PR gets a review comment, never a fix session (OPP-0785)", async () => {
+      current = finding({
+        metadata: {
+          pr: {
+            number: 42,
+            url: 'https://github.com/HelloAllyTech/ally-web/pull/42',
+            headSha: 'abc',
+          },
+        },
+      });
+      expect(await service.onFindingConfirmed('f-1', 0.95)).toBe('ask_human');
+      expect(prReview.commentForFinding).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'f-1' }),
+      );
+      expect(fixSession.startByAgent).not.toHaveBeenCalled();
+      const d5 = lastDecision('D5');
+      expect(d5.fixed).toMatch(/open pull request a person owns/);
+      expect(d5.rule()).toBe('ask_human');
     });
 
     it('leaves a finding a person already acted on alone', async () => {

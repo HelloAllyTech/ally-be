@@ -1272,6 +1272,7 @@ export function toFindingDto(
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     independentVerification: independentVerificationOf(row.metadata),
+    pr: (row.metadata?.pr as BugFindingDto['pr'] | undefined) ?? null,
     latestFixVerdict: latestVerdictFor(
       row.metadata?.fixVerdicts,
       row.prUrl ?? null,
