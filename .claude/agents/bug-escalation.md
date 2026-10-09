@@ -1,7 +1,7 @@
 ---
 name: bug-escalation
 description: Bug Hunter's own escalation path for one specific finding that resists a straightforward fix — a root cause spanning multiple files or modules, a fix that already failed once for a non-obvious reason, or a change that sits in a guarded area (auth, payments, migrations) where extra care is worth the cost. Bug Hunter's default sweep and fix sessions run on a cheaper model; they invoke this subagent by name only for the specific bug that warrants it, then continue the rest of the protocol (verification, PR, merge/no-merge decision) themselves.
-model: claude-opus-5
+model: gemini-2.5-pro
 tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
