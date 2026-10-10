@@ -8,6 +8,7 @@ import { CreateTooltipDto } from '../../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../../dto/update-tooltip.dto';
 import { NotFoundException } from 'src/exception/custom.exception';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 describe('TooltipService', () => {
   let service: TooltipService;
@@ -46,6 +47,16 @@ describe('TooltipService', () => {
             createUpdateTooltipTranslations: jest
               .fn()
               .mockResolvedValue(undefined),
+            getTooltipsWithTranslations: jest.fn(
+              (tooltips: Tooltip[]) =>
+                Promise.resolve(tooltips) as Promise<Tooltip[]>,
+            ),
+          },
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: {
+            getLanguageByLanguageCode: jest.fn(),
           },
         },
       ],
