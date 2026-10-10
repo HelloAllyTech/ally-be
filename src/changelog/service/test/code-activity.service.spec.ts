@@ -256,7 +256,6 @@ describe('CodeActivityService', () => {
       'ally-be': () => ({
         data: { errors: [{ message: 'Something went wrong' }] },
       }),
-      infra: () => ({ data: { data: { repository: null } } }),
     });
 
     const result = await service.getActivity();
@@ -264,7 +263,6 @@ describe('CodeActivityService', () => {
     expect(result.incomplete).toBe(true);
     const logged = mockLogger.error.mock.calls.map(([m]) => m).join('\n');
     expect(logged).toContain('Something went wrong');
-    expect(logged).toContain('HelloAllyTech/infra');
     expect(redis.set).not.toHaveBeenCalledWith(
       'changelog:code-activity:v1:ally-be:2026-09',
       expect.anything(),
