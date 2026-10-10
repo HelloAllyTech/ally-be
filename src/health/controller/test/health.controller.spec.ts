@@ -29,18 +29,25 @@ describe('HealthController', () => {
                 const results = await Promise.all(
                   checks.map((check) => check()),
                 );
-                const combined = results.reduce(
-                  (acc: HealthIndicatorResult, one: HealthIndicatorResult) => ({
-                    ...acc,
-                    ...one,
-                  }),
-                  {},
-                );
+                const combinedInfo: HealthIndicatorResult = {};
+                const combinedError: HealthIndicatorResult = {};
+                let isOk = true;
+
+                for (const result of results) {
+                  for (const key in result) {
+                    if (result[key].status === 'down') {
+                      isOk = false;
+                      combinedError[key] = result[key];
+                    }
+                    combinedInfo[key] = result[key];
+                  }
+                }
+
                 return {
-                  status: 'ok',
-                  info: combined,
-                  error: {},
-                  details: combined,
+                  status: isOk ? 'ok' : 'error',
+                  info: combinedInfo,
+                  error: combinedError,
+                  details: combinedInfo,
                 };
               },
             ),
@@ -97,5 +104,18 @@ describe('HealthController', () => {
     const health = await controller.check();
 
     expect(health.info?.redis?.status).toBe('down');
+  });
+
+  it('returns the second error when redis check fails twice', async () => {
+    const firstError = new Error('First timeout');
+    const secondError = new Error('Second timeout');
+    (redis.ping as jest.Mock)
+      .mockRejectedValueOnce(firstError)
+      .mockRejectedValueOnce(secondError);
+
+    const health = await controller.check();
+
+    expect(health.info?.redis?.status).toBe('down');
+    expect(health.error?.redis?.reason).toBe('Second timeout');
   });
 });
