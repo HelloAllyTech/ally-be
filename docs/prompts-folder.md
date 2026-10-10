@@ -228,7 +228,7 @@ over accepting whatever arrived.
 A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/`,
 `bug_hunter/` or `product_updates/` holds the system prompt for a **single** call that a feature
 makes on demand or on a schedule, read through `getPromptByCode` like an agent prompt but not
-driving a conversation. `bug_hunter/classify_repo.txt`, `bug_hunter/classify_miss.txt` and `bug_hunter/decide.txt` are the
+driving a conversation. `bug_hunter/classify_repo.txt`, `bug_hunter/classify_miss.txt`, `bug_hunter/decide.txt` and `bug_hunter/review_study.txt` (a second model reads a fix session's study of the feature before any code changes) are the
 plainest examples: one JSON answer each, and code validates the answer against a closed catalogue
 (dispatchable repos; miss reasons and senses; for `decide.txt`'s D1 the sense menu is per repo, so
 `locale_parity` is only offered where locale files exist; its D5–D7 answers for the orchestrator

@@ -1502,6 +1502,19 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configuredBy: 'BUG_HUNTER_CLASSIFY_MISS_MODEL (compiled in)',
   },
   {
+    id: 'bug-hunter-study-reviewer',
+    task: LlmTask.BUG_HUNTER,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'A fix session posts its study of the feature before changing code',
+    detail:
+      "Reads the session's study — how the feature works today, where the value lives, the planned fix — and raises the concerns it must answer first: a parallel mechanism, a header no client sends, a half-fix across repos. One cheap JSON answer per study, on the session's critical path.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
+    configuredBy: 'BUG_HUNTER_REVIEW_STUDY_MODEL (compiled in)',
+  },
+  {
     id: 'bug-hunter-decider',
     task: LlmTask.BUG_HUNTER,
     runtime: LlmRuntime.ALLY_BE,

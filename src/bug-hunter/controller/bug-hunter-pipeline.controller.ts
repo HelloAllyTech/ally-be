@@ -79,6 +79,8 @@ import {
 } from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
+import { BugFixStudyService } from '../service/bug-fix-study.service';
 import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
 import { renderPrBody } from '../constants/bug-pr-body';
 import { buildPrReviewPrompt } from '../constants/bug-pr-review-prompt';
@@ -135,6 +137,7 @@ export class BugHunterPipelineController {
     private readonly finderService: BugHunterFinderService,
     private readonly runRepository: BugHuntRunRepository,
     private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly studyService: BugFixStudyService,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -1066,8 +1069,23 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: ReportBugHuntEventDto,
   ): Promise<BugHuntEventDto> {
+    // A fix session's study (stage `study`) is more than a timeline line: it
+    // is validated, read by a second model and stored on the finding, and the
+    // event's payload — which this response carries back — is the stored
+    // study WITH that review, so the session reads the concerns in the same
+    // round trip. A study missing a required field is a 400 naming it; the
+    // prompt tells the session to fix the body and post again.
+    let payload = body.payload;
+    if (body.stage === BugHuntEventStage.STUDY && body.findingId) {
+      const finding = await this.bugFindingService.getOne(body.findingId);
+      payload = (await this.studyService.record(
+        finding,
+        id,
+        body.payload,
+      )) as unknown as Record<string, any>;
+    }
     return toEventDto(
-      await this.bugHunterService.appendEvent({ runId: id, ...body }),
+      await this.bugHunterService.appendEvent({ runId: id, ...body, payload }),
     );
   }
 

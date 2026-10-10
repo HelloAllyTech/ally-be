@@ -175,6 +175,12 @@ export class BugHunterDossierService {
       },
       previousSessions: caseFile.sessions,
       postmortem: caseFile.postmortem,
+      // Only a study from another run is "previous": the current session has
+      // not written one yet when the prompt is built.
+      previousStudy:
+        caseFile.study && caseFile.study.runId !== runId
+          ? caseFile.study
+          : null,
       similarShipped: (similar ?? []).map((s) => ({
         id: s.id,
         title: s.title,

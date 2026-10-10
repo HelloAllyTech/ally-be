@@ -144,6 +144,7 @@ export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
   CLASSIFY_MISS: 'bug_hunter_classify_miss',
   DECIDE: 'bug_hunter_decide',
+  REVIEW_STUDY: 'bug_hunter_review_study',
 } as const;
 
 /**
@@ -167,6 +168,17 @@ export const BUG_HUNTER_CLASSIFY_MISS_TASK_ID = 'bug-hunter-miss-classifier';
 export const BUG_HUNTER_CLASSIFY_MISS_MODEL = 'gemini-2.5-flash';
 /** How far back the classifier looks for Bug Hunter's own findings on the repo when deciding whether it had already detected the bug. */
 export const BUG_HUNTER_CLASSIFY_MISS_LOOKBACK_DAYS = 21;
+
+/**
+ * The study review — a second model reads a fix session's study before any
+ * code changes (see BugFixStudy). Cheap and on the session's critical path:
+ * the session waits for the answer, so the fast tier and a small budget.
+ */
+export const BUG_HUNTER_REVIEW_STUDY_TASK_ID = 'bug-hunter-study-reviewer';
+export const BUG_HUNTER_REVIEW_STUDY_MODEL = 'gemini-2.5-flash';
+export const BUG_HUNTER_REVIEW_STUDY_MAX_TOKENS = 2048;
+/** Four is enough to say what is wrong; more is a rewrite, which is not the reviewer's job. */
+export const BUG_HUNTER_REVIEW_STUDY_MAX_CONCERNS = 4;
 /** Cap on the own-findings context shown to the classifier; newest first. */
 export const BUG_HUNTER_CLASSIFY_MISS_MAX_CONTEXT_FINDINGS = 40;
 

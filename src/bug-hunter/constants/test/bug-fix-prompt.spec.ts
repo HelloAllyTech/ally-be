@@ -327,6 +327,7 @@ describe('buildFixSessionPrompt', () => {
           },
         ],
         postmortem: null,
+        previousStudy: null,
         similarShipped: [],
         openNeighbours: [],
         notebook: [],
@@ -352,6 +353,110 @@ describe('buildFixSessionPrompt', () => {
     ]) {
       expect(prompt).toContain(field);
     }
+  });
+
+  describe('the study before the fix (2026-10-10)', () => {
+    it('makes the session study the feature and post it before it edits anything, with the three rules', () => {
+      const prompt = build();
+      const study = prompt.indexOf(
+        '0c. STUDY THE FEATURE BEFORE YOU TOUCH ANYTHING',
+      );
+      const reproduce = prompt.indexOf('1. Reproduce it');
+      expect(study).toBeGreaterThan(-1);
+      expect(study).toBeLessThan(reproduce);
+      expect(prompt).toContain('"stage":"study"');
+      for (const field of [
+        '"feature"',
+        '"howItWorksToday"',
+        '"valueLivesIn":"<database|locale_file|config|code|other_repo|mixed>"',
+        '"workingSibling"',
+        '"rootCause"',
+        '"approach"',
+        '"filesToChange"',
+        '"otherRepos"',
+        '"testPlan"',
+      ]) {
+        expect(prompt).toContain(field);
+      }
+      // Rule 1: content lives where its siblings live, never copied into a locale file.
+      expect(prompt).toContain('never copied into a locale file or a constant');
+      // Rule 2: a request value needs a sender.
+      expect(prompt).toContain('must have a sender');
+      // The review round trip, and the Verifier's use of the latest study.
+      expect(prompt).toContain("a second model's concerns with your study");
+      expect(prompt).toContain('post the study again');
+      expect(prompt).toContain(
+        '3. Apply the minimal fix — the one your study (step 0c) planned',
+      );
+      expect(prompt).toMatch(/Valid stages: study, fix_attempt/);
+      // No "previous study" clause on a first attempt.
+      expect(prompt).not.toContain('previousStudyWasWrongBecause');
+    });
+
+    it("renders the previous session's study and demands to know what it got wrong on a retry", () => {
+      const prompt = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-web',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: {
+          finding: {
+            id: 'finding-1',
+            title: 't',
+            description: 'd',
+            originalDescription: null,
+            file: 'AppTooltip.tsx',
+            symbol: null,
+            source: 'reported_bug' as never,
+            severity: null,
+            proven: false,
+            evidence: null,
+            touchesGuardedPath: false,
+            status: 'approved',
+            createdAt: new Date(),
+          },
+          reporter: null,
+          independent: null,
+          verification: null,
+          lineage: { regressionOf: null, rediscoveredCount: 0 },
+          previousSessions: [],
+          postmortem: null,
+          previousStudy: {
+            feature: 'CMS tooltips',
+            entryPoints: [],
+            howItWorksToday: ['en.json holds the labels', 't() renders them'],
+            valueLivesIn: 'locale_file',
+            workingSibling: null,
+            rootCause: 'keys missing from mr.json',
+            approach: 'add tooltips.* keys to the locale files',
+            filesToChange: ['en.json', 'mr.json'],
+            leaveAlone: [],
+            otherRepos: [],
+            risks: [],
+            testPlan: 'i18n-parity',
+            previousStudyWasWrongBecause: null,
+            recordedAt: '2026-10-10T05:00:00.000Z',
+            runId: 'run-1',
+            review: {
+              concerns: ['tooltips are rows in a table, not locale keys'],
+              model: 'gemini-2.5-flash',
+              at: 'x',
+            },
+          },
+          similarShipped: [],
+          openNeighbours: [],
+          notebook: [],
+        },
+      });
+      expect(prompt).toContain(
+        '### How the previous session understood the feature',
+      );
+      expect(prompt).toContain('The value lives in: the locale JSON files');
+      expect(prompt).toContain(
+        'raised: tooltips are rows in a table, not locale keys',
+      );
+      expect(prompt).toContain('"previousStudyWasWrongBecause"');
+    });
   });
 
   it('makes a failed session leave a post-mortem in the same PATCH as the failed status', () => {
@@ -526,6 +631,7 @@ describe('buildFixSessionPrompt', () => {
       lineage: { regressionOf: null, rediscoveredCount: 0 },
       previousSessions: [],
       postmortem: null,
+      previousStudy: null,
       similarShipped: [],
       openNeighbours: [],
       notebook: [],

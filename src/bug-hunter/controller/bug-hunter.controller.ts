@@ -101,6 +101,7 @@ import { effectiveStage } from '../util/bug-finding-stage.util';
 import { BugCaseFile } from '../constants/bug-case-file';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
+import { readBugFixStudy } from '../type/bug-fix-study.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 import { independentVerificationOf } from '../type/bug-finding-verdict.type';
 import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
@@ -1281,6 +1282,10 @@ export function toFindingDto(
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)
         : null,
+    study: readBugFixStudy(row.metadata) as unknown as Record<
+      string,
+      unknown
+    > | null,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
     engine: row.engine ?? null,

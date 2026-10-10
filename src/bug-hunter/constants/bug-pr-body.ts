@@ -1,4 +1,5 @@
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
+import { renderBugFixStudyLines } from '../type/bug-fix-study.type';
 import { BugCaseFile, BugCaseVerdict } from './bug-case-file';
 import { clipDossierText } from './bug-fix-dossier';
 
@@ -73,6 +74,19 @@ export function renderPrBody(
   } else {
     lines.push(
       `Not independently verified before this fix; the regression test in this PR is the proof.`,
+    );
+  }
+
+  lines.push(``, `## How it works today, and the plan`);
+  if (caseFile.study) {
+    lines.push(
+      `What the fix session read before it changed anything — the reasoning behind the diff, reviewed by a second model before the session acted on it:`,
+      ``,
+      ...renderBugFixStudyLines(caseFile.study),
+    );
+  } else {
+    lines.push(
+      `No study was recorded for this fix: the session predates the study step, or skipped it. The Verifier treats the mechanism question inside its diff check instead.`,
     );
   }
 

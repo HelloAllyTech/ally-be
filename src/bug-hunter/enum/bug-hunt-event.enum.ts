@@ -14,6 +14,12 @@ export enum BugHuntEventStage {
   SKIPPED_QUIET = 'skipped_quiet',
   FINDER_RESULT = 'finder_result',
   VERIFY = 'verify',
+  /**
+   * A fix session's study of the feature, posted before it changes any code —
+   * how it works today, where the value lives, the planned fix — with a
+   * second model's review in the payload. See BugFixStudy.
+   */
+  STUDY = 'study',
   FIX_ATTEMPT = 'fix_attempt',
   TEST_WRITTEN = 'test_written',
   DOC_UPDATED = 'doc_updated',

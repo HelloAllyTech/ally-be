@@ -31,6 +31,7 @@ const caseFile = (over: Partial<BugCaseFile> = {}): BugCaseFile => ({
   verdicts: [],
   sessions: [],
   postmortem: null,
+  study: null,
   lineage: { regressionOf: null, regressed: false, rediscoveredCount: 0 },
   budget: {
     caps: { sessions: 2, attempts: 4, escalations: 1, usd: 15, minutes: 120 },
@@ -65,6 +66,48 @@ const decision = (over: Partial<BugHuntDecision>): BugHuntDecision =>
   }) as BugHuntDecision;
 
 describe('renderPrBody', () => {
+  it('shows the study the session wrote before the fix, or says there was none', () => {
+    const without = renderPrBody(caseFile(), { repo: 'ally-web' });
+    expect(without).toContain('## How it works today, and the plan');
+    expect(without).toContain('No study was recorded for this fix');
+
+    const withStudy = renderPrBody(
+      caseFile({
+        study: {
+          feature: 'CMS tooltips in the selected language',
+          entryPoints: ['AppTooltip.tsx'],
+          howItWorksToday: [
+            'tooltips table',
+            'GET /v1/tooltips/active',
+            'AppTooltip.tsx',
+          ],
+          valueLivesIn: 'database',
+          workingSibling: 'Checklist.tsx',
+          rootCause: 'The app never sends its language.',
+          approach: 'Send languageCode from AppTooltip.',
+          filesToChange: ['AppTooltip.tsx'],
+          leaveAlone: ['en.json'],
+          otherRepos: ['ally-be'],
+          risks: [],
+          testPlan: 'AppTooltip.test.tsx',
+          previousStudyWasWrongBecause: null,
+          recordedAt: '2026-10-10T08:00:00.000Z',
+          runId: 'run-1',
+          review: { concerns: [], model: 'gemini-2.5-flash', at: 'x' },
+        },
+      }),
+      { repo: 'ally-web' },
+    );
+    expect(withStudy).toContain('    2. GET /v1/tooltips/active');
+    expect(withStudy).toContain(
+      '- The value lives in: a database table (admin-editable content)',
+    );
+    expect(withStudy).toContain('- Review by gemini-2.5-flash: no concerns.');
+    expect(withStudy.indexOf('## How it works today')).toBeLessThan(
+      withStudy.indexOf('## The change, in words'),
+    );
+  });
+
   it('states the bug, who found it, and that a proven finding needed no judgement; leaves the two Fixer slots', () => {
     const body = renderPrBody(caseFile(), { repo: 'ally-web' });
     expect(body).toContain('## The bug');

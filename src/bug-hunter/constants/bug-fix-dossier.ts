@@ -1,4 +1,8 @@
 import { BugFindingSeverity, BugFindingSource } from '../enum/bug-finding.enum';
+import {
+  BugFixStudy,
+  renderBugFixStudyLines,
+} from '../type/bug-fix-study.type';
 
 /**
  * Everything already known about a bug, assembled for the session about to
@@ -90,6 +94,12 @@ export interface FixDossier {
   previousSessions: FixDossierSession[];
   /** The post-mortem a failed session left behind, if any (OPP-0735). */
   postmortem: Record<string, unknown> | null;
+  /**
+   * The study an EARLIER session wrote before its fix — how it read the
+   * feature and what it planned. A fix that did not hold usually started from
+   * a study that was wrong somewhere, so the retry reads it first.
+   */
+  previousStudy: BugFixStudy | null;
   /** Fixes that landed in this repo for bugs in the same file or on the same symbol. */
   similarShipped: {
     id: string;
@@ -259,6 +269,14 @@ export const renderFixDossier = (dossier: FixDossier): string => {
     if (str('tryNext')) lines.push(`  - Try next: ${str('tryNext')}`);
     if (str('repoGotcha'))
       lines.push(`  - Repo gotcha it hit: ${str('repoGotcha')}`);
+  }
+
+  if (dossier.previousStudy) {
+    lines.push(
+      `### How the previous session understood the feature`,
+      `This is the study the last session wrote before its fix, and that fix did not hold. The likeliest mistake is in here, not in the code it then wrote: check where it says the value lives and which mechanism it chose before you trust either. Your own study (step 0c) must say what this one got wrong.`,
+      ...renderBugFixStudyLines(dossier.previousStudy, { bullet: '  - ' }),
+    );
   }
 
   if (dossier.previousSessions.length) {

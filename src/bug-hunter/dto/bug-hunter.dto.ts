@@ -1102,6 +1102,14 @@ export class BugFindingDto {
   postmortem!: Record<string, unknown> | null;
 
   @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      "The latest study a fix session wrote before changing code: how the feature works today, where the value lives, the planned fix, and a second model's review of it. Null until a session has studied the bug. See BugFixStudy.",
+  })
+  study!: Record<string, unknown> | null;
+
+  @ApiProperty({
     nullable: true,
     description:
       'GitHub Actions run doing the fixing. Null until the reconcile task correlates the dispatch to a run.',

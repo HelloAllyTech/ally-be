@@ -27,6 +27,7 @@ const dossier = (over: Partial<FixDossier> = {}): FixDossier => ({
   lineage: { regressionOf: null, rediscoveredCount: 0 },
   previousSessions: [],
   postmortem: null,
+  previousStudy: null,
   similarShipped: [],
   openNeighbours: [],
   notebook: [],

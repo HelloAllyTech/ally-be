@@ -12,6 +12,7 @@ export const DOSSIER_MAX_EVENTS_PER_SESSION = 8;
 /** Event stages that describe what a fix session did, in the order a reader wants them. */
 const SESSION_STAGES = new Set<string>([
   BugHuntEventStage.SESSION_DISPATCHED,
+  BugHuntEventStage.STUDY,
   BugHuntEventStage.FIX_ATTEMPT,
   BugHuntEventStage.TEST_WRITTEN,
   BugHuntEventStage.DOC_UPDATED,

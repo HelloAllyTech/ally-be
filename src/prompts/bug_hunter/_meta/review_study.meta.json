@@ -1,0 +1,5 @@
+{
+  "name": "Bug Hunter — Review Study",
+  "description": "Reads a fix session's study (how the feature works today, where the value lives, the planned fix) before any code changes, and raises the concerns the session must answer — a parallel mechanism, a header nobody sends, a half-fix across repos.",
+  "category": "Bug Hunter"
+}

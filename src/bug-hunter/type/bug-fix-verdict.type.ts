@@ -28,6 +28,8 @@ export const BUG_FIX_VERDICT_CHECKS = [
   'blast_radius',
   /** Frontend: the affected route loaded and looked at. Often skipped in CI, and says so. */
   'what_user_sees',
+  /** The diff against the fixer's study: same files, the mechanism the codebase already uses, a sender for anything read from a request. Skipped only when no study exists. */
+  'study_followed',
   /** Server-computed (OPP-0759): the PR touches a file a person must merge — Bug Hunter's own files, migrations, locales, seeds, snapshots, lockfiles, a stray pr-body.md. */
   'forbidden_files',
 ] as const;

@@ -1,6 +1,7 @@
 import { BugFindingSource, BugFindingSeverity } from '../enum/bug-finding.enum';
 import { BugCaseBudget } from '../type/bug-case-budget.type';
 import { BugFindingMiss } from '../type/bug-finding-miss.type';
+import { BugFixStudy } from '../type/bug-fix-study.type';
 import { FixDossierSession } from './bug-fix-dossier';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 
@@ -56,6 +57,8 @@ export interface BugCaseFile {
   sessions: FixDossierSession[];
   /** The post-mortem the last failed session left behind (OPP-0735). */
   postmortem: Record<string, unknown> | null;
+  /** The latest study a fix session wrote before changing code — see BugFixStudy. Null before any session studied it. */
+  study: BugFixStudy | null;
   lineage: {
     regressionOf: string | null;
     regressed: boolean;
