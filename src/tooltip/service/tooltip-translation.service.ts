@@ -195,19 +195,12 @@ export class TooltipTranslationService {
         languageId,
       );
 
-    if (!translations || translations.length === 0) {
-      return tooltips;
-    }
-
     const translationMap = new Map(translations.map((t) => [t.tooltipId, t]));
 
-    for (const tooltip of tooltips) {
+    return tooltips.map((tooltip) => {
       const translation = translationMap.get(tooltip.id);
-      if (translation) {
-        tooltip.tipText = translation.tipText;
-      }
-    }
-
-    return tooltips;
+      if (translation) return { ...tooltip, tipText: translation.tipText };
+      return tooltip;
+    });
   }
 }

@@ -3,7 +3,6 @@ import {
   Controller,
   DefaultValuePipe,
   Get,
-  Headers,
   Param,
   ParseIntPipe,
   Patch,
@@ -19,7 +18,6 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 import { CreateTooltipDto } from '../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../dto/update-tooltip.dto';
-import { Tooltip } from '../entity/tooltip.entity';
 import { TooltipService } from '../service/tooltip.service';
 
 @ApiTags('Tooltips')
@@ -30,10 +28,8 @@ export class TooltipController {
   @Get('active')
   @Public()
   @ApiOperation({ summary: 'Get all active tooltips (public)' })
-  async getActiveTooltips(
-    @Headers('Accept-Language') language?: string,
-  ): Promise<Tooltip[]> {
-    return this.tooltipService.getActiveTooltips(language);
+  async getActiveTooltips() {
+    return this.tooltipService.getActiveTooltips();
   }
 
   @Get()

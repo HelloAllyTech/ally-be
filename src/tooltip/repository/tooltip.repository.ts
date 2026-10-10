@@ -39,8 +39,11 @@ export class TooltipRepository extends Repository<Tooltip> {
     return qb.getMany();
   }
 
-  async getActiveTooltips(): Promise<Tooltip[]> {
+  async getActiveTooltips(): Promise<
+    Pick<Tooltip, 'id' | 'location' | 'tipText'>[]
+  > {
     return this.createQueryBuilder('tooltip')
+      .select(['tooltip.id', 'tooltip.location', 'tooltip.tipText'])
       .where('tooltip.active = :active', { active: true })
       .orderBy('tooltip.location', 'ASC')
       .getMany();
