@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import isDuplicateKeyException, {
@@ -23,6 +24,7 @@ export class TooltipService {
   constructor(
     private readonly tooltipRepository: TooltipRepository,
     private readonly translationService: TooltipTranslationService,
+    private readonly languageService: SharedLanguageService,
   ) {}
 
   async createTooltip(createDto: CreateTooltipDto): Promise<Tooltip> {
@@ -81,7 +83,24 @@ export class TooltipService {
     return this.tooltipRepository.getTooltips(search, options);
   }
 
-  async getActiveTooltips() {
-    return this.tooltipRepository.getActiveTooltips();
+  async getActiveTooltips(languageCode?: string): Promise<Tooltip[]> {
+    const tooltips = await this.tooltipRepository.getActiveTooltips();
+
+    if (!languageCode) {
+      return tooltips;
+    }
+
+    const lang = await this.languageService.getLanguageByLanguageCode(
+      languageCode.split(',')[0].split(';')[0].trim(),
+    );
+
+    if (!lang) {
+      return tooltips;
+    }
+
+    return this.translationService.getTooltipsWithTranslations(
+      tooltips,
+      lang.id,
+    );
   }
 }
