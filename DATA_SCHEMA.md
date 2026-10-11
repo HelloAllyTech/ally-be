@@ -802,7 +802,7 @@ The loop that A/B tests designer-drafted revisions of a System Skill (`prompts` 
 current best, judged by an LLM against an admin-written rubric, until the best version reaches a
 target score. How it works, its guardrails and how to connect a skill:
 [`docs/skill-experiments.md`](docs/skill-experiments.md). All four tables are hand-written SQL
-(migration `1975830000000`), system-wide like `prompts` (no tenant), camelCase columns, and every
+(migration `1975910000000`), system-wide like `prompts` (no tenant), camelCase columns, and every
 enum column is a CHECK listed in `check-constraints-cover-enums.spec.ts`.
 
 | Table | Base | Key columns | Notes |

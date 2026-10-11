@@ -29,8 +29,8 @@ const VIEW_SKILL_EXPERIMENT = 'view:admin:skill-experiments';
 const EDIT_SKILL_EXPERIMENT = 'edit:admin:skill-experiments';
 const EDIT_PROMPT = 'edit:admin:prompts';
 
-export class CreateSkillExperiments1975830000000 implements MigrationInterface {
-  name = 'CreateSkillExperiments1975830000000';
+export class CreateSkillExperiments1975910000000 implements MigrationInterface {
+  name = 'CreateSkillExperiments1975910000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
