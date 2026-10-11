@@ -47,6 +47,22 @@ import { BugHunterMetricsService } from './service/bug-hunter-metrics.service';
 import { BugFixSessionService } from './service/bug-fix-session.service';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from './service/bug-hunter-miss-classifier.service';
+import { BugFixStudyService } from './service/bug-fix-study.service';
+import { BugCaseBudgetService } from './service/bug-case-budget.service';
+import { BugCaseFileService } from './service/bug-case-file.service';
+import { BugVerifyFixService } from './service/bug-verify-fix.service';
+import { BugVerifyFindingsService } from './service/bug-verify-findings.service';
+import { BugHunterDecisionService } from './service/bug-hunter-decision.service';
+import { BugHunterDecisionReplayService } from './service/bug-hunter-decision-replay.service';
+import { BugFixPlanService } from './service/bug-fix-plan.service';
+import { BugHunterOrchestratorService } from './service/bug-hunter-orchestrator.service';
+import { BugHunterProtectionDriftService } from './service/bug-hunter-protection-drift.service';
+import { BugHunterPrReviewService } from './service/bug-hunter-pr-review.service';
+import { BugHunterScoreboardService } from './service/bug-hunter-scoreboard.service';
+import { BugHunterFinderService } from './service/bug-hunter-finder.service';
+import { BugHunterTodayService } from './service/bug-hunter-today.service';
+import { BugHuntDecision } from './entity/bug-hunt-decision.entity';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
 import { BugHunterModelSettingsService } from './service/bug-hunter-model-settings.service';
@@ -97,6 +113,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
       BugHuntPhaseTiming,
       BugHuntContextLookup,
       BugHunterEvalRun,
+      BugHuntDecision,
       RoadmapOpportunity,
       // Read-only, for resolving reporter and stage-pinner names — see
       // BugFindingService.enrich. Raw repository rather than an import of
@@ -131,6 +148,19 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterTelemetryService,
     BugHunterEvalService,
     BugHunterPolicyService,
+    BugCaseBudgetService,
+    BugCaseFileService,
+    BugVerifyFixService,
+    BugVerifyFindingsService,
+    BugHunterDecisionService,
+    BugHunterDecisionReplayService,
+    BugHunterScoreboardService,
+    BugHunterFinderService,
+    BugFixPlanService,
+    BugHunterOrchestratorService,
+    BugHunterProtectionDriftService,
+    BugHunterPrReviewService,
+    BugHunterTodayService,
     BugHunterDossierService,
     BugHunterMemoryRetirementService,
     BugFindingService,
@@ -146,6 +176,8 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterNotificationService,
     BugFixSessionService,
     BugHunterRepoClassifierService,
+    BugHunterMissClassifierService,
+    BugFixStudyService,
     BugFixSessionSchedulerRegistrationService,
     BugHunterModelSettingsService,
   ],

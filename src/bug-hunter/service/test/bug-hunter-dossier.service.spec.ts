@@ -2,6 +2,8 @@ import {
   BugHunterDossierService,
   groupSessions,
 } from '../bug-hunter-dossier.service';
+import { BugCaseBudgetService } from '../bug-case-budget.service';
+import { BugCaseFileService } from '../bug-case-file.service';
 import { BugFinding } from '../../entity/bug-finding.entity';
 import { BugHuntEvent } from '../../entity/bug-hunt-event.entity';
 import {
@@ -165,10 +167,17 @@ describe('BugHunterDossierService', () => {
     telemetryService = {
       timed: jest.fn((_runId, _kind, fetch) => fetch()),
     };
+    // The dossier now takes sessions, verdicts, lineage and the post-mortem
+    // from the case file (OPP-0775); a real one over the same mocks keeps
+    // every assertion below watching the same inputs it always did.
     service = new BugHunterDossierService(
       findingRepository as never,
-      eventRepository as never,
-      bugFindingService as never,
+      new BugCaseFileService(
+        eventRepository as never,
+        bugFindingService as never,
+        new BugCaseBudgetService({} as never),
+        { listForFinding: jest.fn().mockResolvedValue([]) } as never,
+      ),
       memoryService as never,
       telemetryService as never,
     );
@@ -274,6 +283,56 @@ describe('BugHunterDossierService', () => {
       expect.any(Function),
       { source: 'fix_dossier' },
     );
+  });
+
+  it("carries the independent Verifier's last verdict with its reproduction, apart from the sweep's votes (OPP-0784)", async () => {
+    const dossier = await service.build(
+      finding({
+        metadata: {
+          confidence: 0.8,
+          verifierVotes: [
+            { refuted: false, certainty: 0.9, reason: 'plausible' },
+          ],
+          independentVerification: 'confirmed',
+          findingVerdicts: [
+            {
+              verdict: 'unsure',
+              confidence: 0.5,
+              reproduction: null,
+              refutation: null,
+              wouldBeWrongIf: 'x',
+              by: { engine: 'gemini', model: 'gemini-2.5-pro' },
+              runId: 'v-1',
+              at: '2026-10-07T01:00:00.000Z',
+            },
+            {
+              verdict: 'confirmed',
+              confidence: 0.8,
+              reproduction: 'failing test: 12 keys missing',
+              refutation: 'no guard upstream',
+              wouldBeWrongIf: null,
+              by: { engine: 'gemini', model: 'gemini-2.5-pro' },
+              runId: 'v-2',
+              at: '2026-10-08T01:00:00.000Z',
+            },
+          ],
+        },
+      }),
+      'ally-be',
+      'run-now',
+    );
+    expect(dossier.independent).toEqual({
+      verdict: 'confirmed',
+      reproduction: 'failing test: 12 keys missing',
+      refutation: 'no guard upstream',
+      wouldBeWrongIf: null,
+      by: 'gemini (gemini-2.5-pro)',
+      at: new Date('2026-10-08T01:00:00.000Z'),
+    });
+    // The sweep's own votes stay the votes; the independent verdicts are not counted twice.
+    expect(dossier.verification?.votes).toEqual([
+      { refuted: false, certainty: 0.9, reason: 'plausible' },
+    ]);
   });
 
   it('carries the reporter only for a human-reported bug', async () => {

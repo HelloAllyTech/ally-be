@@ -55,6 +55,13 @@ import {
   BUG_RELEASE_TIMEOUT_MS,
   resolveReleaseTarget,
 } from '../constants/bug-fix-session.constants';
+import { BugCaseBudgetService } from './bug-case-budget.service';
+import { BugFixPlanService } from './bug-fix-plan.service';
+import { BugFixVerdict } from '../type/bug-fix-verdict.type';
+import {
+  FixRetry,
+  orchestratorStateOf,
+} from '../type/bug-hunter-orchestrator.type';
 
 /**
  * The on-demand path: one admin, one bug, one click.
@@ -101,6 +108,8 @@ export class BugFixSessionService {
     private readonly repoClassifier: BugHunterRepoClassifierService,
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
+    private readonly budgetService: BugCaseBudgetService,
+    private readonly fixPlanService: BugFixPlanService,
   ) {}
 
   // ── start a fix session ──────────────────────────────────────────────────
@@ -123,6 +132,7 @@ export class BugFixSessionService {
     findingId: string,
     userId: number,
     repoOverride?: string,
+    force = false,
   ): Promise<BugFinding> {
     const settings = await this.bugHunterService.getSettings();
     if (settings.mode === BugHunterMode.OFF) {
@@ -135,6 +145,10 @@ export class BugFixSessionService {
     if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
       throw new ForbiddenException(this.explainUnstartable(finding.status));
     }
+    // The case file's budget (OPP-0775): a bug that has had its sessions,
+    // attempts, dollars or minutes is not started again by reflex. `force`
+    // is the admin saying they read the post-mortem and want one anyway.
+    await this.budgetService.assertCanStartSession(finding, { force, userId });
 
     let repo = repoOverride ?? finding.repo;
     let classification: RepoClassification | null = null;
@@ -263,11 +277,123 @@ export class BugFixSessionService {
    * case and null in the second, which is the only difference between them and
    * shows up only in the event summary.
    */
+  /**
+   * A fix session Bug Hunter starts on its own, after its independent
+   * verifier confirmed a finding in AI mode (OPP-0780) — the session the
+   * sweep used to start for itself inside its own run. Same budget gate as a
+   * person, with no override: an agent past the budget asks a person.
+   */
+  async startByAgent(
+    findingId: string,
+    actor: 'verifier' | 'answer',
+  ): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
+      throw new ForbiddenException(this.explainUnstartable(finding.status));
+    }
+    if (
+      !finding.repo ||
+      !BUG_FIX_SESSION_REPOS.includes(finding.repo as never)
+    ) {
+      throw new BadRequestException(
+        `"${finding.repo ?? 'no repo'}" is not set up for fix sessions.`,
+      );
+    }
+    await this.budgetService.assertCanStartSession(finding, {
+      force: false,
+      userId: null,
+    });
+    await this.dispatchFix(finding, finding.repo, actor);
+    return this.bugFindingService.getOne(finding.id);
+  }
+
+  /**
+   * An admin answered the question a fix session asked. If that session is
+   * still polling for the answer it reads it itself; if it has already given
+   * up (it waits twenty minutes, then ends with the bug at NEEDS_INPUT), a
+   * fresh session starts here with the answer in its dossier, so answering
+   * is enough and nobody has to also press "Put me on it". Same budget gate
+   * as every agent-started session; a bug past its budget asks a person.
+   */
+  async continueAfterAnswer(findingId: string): Promise<BugFinding | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.NEEDS_INPUT) return null;
+    if (finding.runId) {
+      const run = await this.bugHunterService
+        .getRun(finding.runId)
+        .catch(() => null);
+      const stillPolling =
+        run?.status === BugHuntRunStatus.RUNNING &&
+        Date.now() - run.createdAt.getTime() < BUG_FIX_SESSION_RUN_TIMEOUT_MS;
+      if (stillPolling) return null;
+    }
+    try {
+      return await this.startByAgent(finding.id, 'answer');
+    } catch (error) {
+      this.logger.warn(
+        `[BUG_HUNTER] Answer recorded on finding ${findingId} but no session could start: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * The orchestrator's D7 sends a bug back in (OPP-0783): after the
+   * Verifier refused the PR, or after a session failed. The reason is
+   * written to `metadata.retry` so the fix brief can say why the session is
+   * here again and, for a refusal, which PR branch to continue on; D6 then
+   * plans the model for the attempt inside `dispatchFix`. Same budget gate
+   * as every agent-started session.
+   */
+  async retry(
+    finding: BugFinding,
+    params: Omit<FixRetry, 'attempt' | 'at'>,
+  ): Promise<BugFinding> {
+    if (
+      !finding.repo ||
+      !BUG_FIX_SESSION_REPOS.includes(finding.repo as never)
+    ) {
+      throw new BadRequestException(
+        `"${finding.repo ?? 'no repo'}" is not set up for fix sessions.`,
+      );
+    }
+    await this.budgetService.assertCanStartSession(finding, {
+      force: false,
+      userId: null,
+    });
+    const retry: FixRetry = {
+      ...params,
+      attempt: orchestratorStateOf(finding).retries + 1,
+      at: new Date().toISOString(),
+    };
+    const fresh = await this.bugFindingService.getOne(finding.id);
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(fresh.metadata ?? {}),
+        retry,
+      } as Record<string, any>,
+    });
+    fresh.metadata = { ...(fresh.metadata ?? {}), retry };
+    await this.dispatchFix(fresh, finding.repo, 'orchestrator');
+    return this.bugFindingService.getOne(finding.id);
+  }
+
   private async dispatchFix(
     finding: BugFinding,
     repo: string,
-    startedBy: number | null,
+    startedBy: number | 'verifier' | 'answer' | 'orchestrator' | null,
   ): Promise<void> {
+    // D6 (OPP-0783): which model and approach this attempt runs with, made
+    // before the run exists so the workflow's models call can read it.
+    // Best-effort inside; a plan that cannot be made leaves the default.
+    const retry =
+      startedBy === 'orchestrator'
+        ? ((finding.metadata?.retry as FixRetry | undefined) ?? null)
+        : null;
+    await this.fixPlanService.plan(finding, repo, retry);
+
     // The run row exists before the dispatch so the workflow has a run id to
     // report every step against from its very first call — and so a dispatch
     // that fails still leaves a visible, closed-out record of the attempt
@@ -320,11 +446,33 @@ export class BugFixSessionService {
       stage: startedBy
         ? BugHuntEventStage.SESSION_DISPATCHED
         : BugHuntEventStage.STEP_STARTED,
-      summary: startedBy
-        ? `Fix session started by user ${startedBy} for "${finding.title}".`
-        : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
-      payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
+      summary:
+        startedBy === 'verifier'
+          ? `Fix session started by my Verifier after it confirmed "${finding.title}".`
+          : startedBy === 'answer'
+            ? `Fix session restarted with your answer to its question on "${finding.title}".`
+            : startedBy === 'orchestrator'
+              ? `Fix session sent back in by my orchestrator (${retry?.move ?? 'retry'}, attempt ${retry?.attempt ?? '?'}) after ${
+                  retry?.kind === 'verifier_fail'
+                    ? 'the Verifier refused the last PR'
+                    : retry?.kind === 'conflict'
+                      ? 'the PR fell into conflict with master'
+                      : 'the last session failed'
+                } on "${finding.title}".`
+              : startedBy
+                ? `Fix session started by user ${startedBy} for "${finding.title}".`
+                : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
+      payload: {
+        startedBy,
+        repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        ...(retry ? { retry } : {}),
+        ...(finding.metadata?.fixPlan
+          ? { fixPlan: finding.metadata.fixPlan }
+          : {}),
+      },
     });
+    void this.budgetService.charge(finding.id, 'sessions', 1);
   }
 
   // ── coordinated multi-repo plans ─────────────────────────────────────────
@@ -564,6 +712,99 @@ export class BugFixSessionService {
       payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber, ...branch },
     });
 
+    return this.bugFindingService.getOne(finding.id);
+  }
+
+  /**
+   * The merge Bug Hunter makes itself after the Verifier passed a fix
+   * (OPP-0779) — the same GitHub checks `mergeFinding` insists on for a
+   * person, with the verdict as the actor. Policy has already said this
+   * repo and this diff may self-merge; this only does the merging.
+   */
+  async mergeVerifiedFinding(
+    finding: BugFinding,
+    verdict: BugFixVerdict,
+  ): Promise<BugFinding> {
+    if (finding.status !== BugFindingStatus.PR_OPENED) {
+      throw new ForbiddenException(
+        `Only a fix with an open PR can be merged — this one is ${finding.status}.`,
+      );
+    }
+    if (!finding.repo || !finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request recorded.',
+      );
+    }
+    const prNumber = BugFixSessionService.prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+    const pr = await this.github.getPullRequest(finding.repo, prNumber);
+    if (!pr) {
+      throw new BadRequestException(
+        `Could not read ${finding.prUrl} from GitHub.`,
+      );
+    }
+    if (pr.merged) {
+      await this.bugFindingService.setStatus(finding.id, {
+        status: BugFindingStatus.MERGED,
+      });
+      await this.releaseLinkedRoadmapOpportunity(finding);
+      await this.deleteMergedBranch(finding.repo, pr);
+      return this.bugFindingService.getOne(finding.id);
+    }
+    if (pr.state === 'closed') {
+      throw new ForbiddenException(
+        `${finding.prUrl} was closed without being merged.`,
+      );
+    }
+    if (verdict.prHeadSha && pr.headSha && verdict.prHeadSha !== pr.headSha) {
+      throw new ForbiddenException(
+        `The PR moved since the Verifier read it (${verdict.prHeadSha.slice(0, 7)} → ${pr.headSha.slice(0, 7)}); it needs a fresh verdict.`,
+      );
+    }
+    const rollup = pr.headSha
+      ? await this.github.getCheckRollup(finding.repo, pr.headSha)
+      : null;
+    if (!rollup || rollup.state !== 'success') {
+      throw new ForbiddenException(
+        `This PR's own checks are ${rollup?.state ?? 'unreadable'}; I only merge on green.`,
+      );
+    }
+    const result = await this.github.mergePullRequest(
+      finding.repo,
+      prNumber,
+      `fix: ${finding.title.slice(0, 120)} (#${prNumber})`,
+    );
+    if (!result.merged) {
+      throw new BadRequestException(
+        `GitHub would not merge this PR: ${result.message ?? 'no reason given'}`,
+      );
+    }
+    const decidedAt = new Date();
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.MERGED,
+      decidedAt,
+    });
+    finding.status = BugFindingStatus.MERGED;
+    await this.releaseLinkedRoadmapOpportunity(finding);
+    await this.checkForAndRecordReversals(finding, decidedAt);
+    const branch = await this.deleteMergedBranch(finding.repo, pr);
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.MERGED,
+      summary: `Merged ${finding.prUrl} after the Verifier passed it on ${verdict.by.engine ?? 'another model'}.`,
+      payload: {
+        prUrl: finding.prUrl,
+        mergedBy: 'verifier',
+        prNumber,
+        verdictAt: verdict.at,
+        ...branch,
+      },
+    });
     return this.bugFindingService.getOne(finding.id);
   }
 
@@ -1015,6 +1256,31 @@ export class BugFixSessionService {
             : null;
 
         if (run?.status === 'completed') {
+          if (run.conclusion === 'success' && finding.repo) {
+            const prs = await this.github.listPullRequests(finding.repo);
+            const branchName = `bughunter/fix-${finding.id}`;
+            const pr = prs?.find((pr) => pr.headRef === branchName);
+            if (pr) {
+              await this.findingRepository.update(finding.id, {
+                status: BugFindingStatus.PR_OPENED,
+                prUrl: pr.htmlUrl,
+              });
+              await this.bugHunterService.appendFindingEvent({
+                findingId: finding.id,
+                repo: finding.repo,
+                stage: BugHuntEventStage.SESSION_RECOVERED,
+                summary: `The fix session's GitHub Actions run ended successfully but never reported a result. Found pull request ${BugFixSessionService.prNumberFrom(pr.htmlUrl)} and recovered it.`,
+                payload: {
+                  runId,
+                  conclusion: run.conclusion,
+                  runUrl: run.htmlUrl,
+                  prUrl: pr.htmlUrl,
+                },
+              });
+              continue;
+            }
+          }
+
           await this.findingRepository.update(finding.id, {
             status: BugFindingStatus.FAILED,
           });

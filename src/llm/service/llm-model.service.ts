@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
+import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   canonicalProvider,
   getLlmModels,
@@ -70,7 +71,8 @@ export class LlmModelService {
         model,
         // An empty label would render as a blank picker entry.
         label: dto.label?.trim() || model,
-        supportsTemperature: dto.supportsTemperature ?? true,
+        supportsTemperature:
+          dto.supportsTemperature ?? modelSupportsTemperature(model),
         active: dto.active ?? true,
       }),
     );
@@ -183,7 +185,11 @@ export class LlmModelService {
             ) as LlmModelInfo['provider'],
             model: row.model,
             label: row.label,
-            supportsTemperature: row.supportsTemperature,
+            // The code rule can only narrow a stored flag: a row seeded or
+            // added before a model family dropped temperature must not
+            // re-enable a control the provider will 400 on.
+            supportsTemperature:
+              row.supportsTemperature && modelSupportsTemperature(row.model),
             runtimes: runtimesForProvider(row.provider),
           }))
           // A row whose provider no runtime can execute is unusable — most likely

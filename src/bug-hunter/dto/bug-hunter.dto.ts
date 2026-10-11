@@ -40,6 +40,12 @@ import {
   BUG_HUNTER_METRICS_DEFAULT_DAYS,
   BUG_HUNTER_METRICS_MAX_DAYS,
 } from '../constants/bug-hunter.constants';
+import {
+  BUG_FINDING_MISS_REASONS,
+  BUG_FINDING_MISS_SENSES,
+  BugFindingMissReason,
+  BugFindingMissSense,
+} from '../type/bug-finding-miss.type';
 
 export class BugHuntEventDto {
   @ApiProperty()
@@ -167,6 +173,27 @@ export class StartBugHuntRunDto {
   repo!: string;
 }
 
+export class BugFindingPrRefDto {
+  @ApiProperty()
+  @IsInt()
+  number!: number;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  url!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  headSha!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  commentUrl?: string | null;
+}
+
 export class RawBugFindingDto {
   @ApiProperty({ enum: BugFindingSource })
   @IsEnum(BugFindingSource)
@@ -232,6 +259,16 @@ export class RawBugFindingDto {
   @IsOptional()
   @IsUUID()
   reportedBugId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only from a pr_review run (OPP-0785): the open pull request this finding is about. Stored on the finding; a confirmed finding becomes a review comment there.',
+    type: () => BugFindingPrRefDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BugFindingPrRefDto)
+  pr?: BugFindingPrRefDto;
 }
 
 /**
@@ -333,6 +370,26 @@ export class FixPostmortemDto {
 }
 
 export class PatchBugFindingDto {
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description:
+      "The Verifier's report on an open fix PR (OPP-0779): checks with evidence, scopeExceeded, confidence, summary, wouldBeWrongIf, runId, prUrl, prHeadSha. Pass or fail is computed server-side from the checks.",
+  })
+  @IsOptional()
+  @IsObject()
+  verdict?: Record<string, any>;
+
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description:
+      "The independent verifier's report on a FINDING (OPP-0780): verdict confirmed|refuted|unsure, confidence, reproduction, refutation, wouldBeWrongIf, runId. Acted on server-side: refuted dismisses, unsure holds, confirmed may start a fix in AI mode.",
+  })
+  @IsOptional()
+  @IsObject()
+  findingVerdict?: Record<string, any>;
+
   /**
    * Sent alongside `status: failed` by a fix session that gave up — see
    * FixPostmortemDto. Ignored on other transitions.
@@ -598,6 +655,39 @@ export class UpdateBugHunterSettingsDto {
   mode!: BugHunterMode;
 }
 
+/** Who owns each decision point (OPP-0783). */
+export class DecisionOwnersDto {
+  @ApiProperty({
+    description:
+      'The owner acting on each point right now: the setting over the default; D4 and D8 always the rule.',
+  })
+  owners!: Record<string, 'rule' | 'model'>;
+
+  @ApiProperty({ description: 'The day-one defaults.' })
+  defaults!: Record<string, 'rule' | 'model'>;
+
+  @ApiProperty({ type: [String], description: 'Points no setting can move.' })
+  fixed!: string[];
+
+  @ApiProperty({ description: 'What an admin has set, point by point.' })
+  overrides!: Record<string, string>;
+}
+
+export class UpdateDecisionOwnerDto {
+  @ApiProperty({ enum: ['D1', 'D2', 'D3', 'D5', 'D6', 'D7'] })
+  @IsIn(['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'])
+  point!: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8';
+
+  @ApiPropertyOptional({
+    enum: ['rule', 'model'],
+    nullable: true,
+    description: 'null clears the setting and the default owner acts again.',
+  })
+  @IsOptional()
+  @IsIn(['rule', 'model'])
+  owner?: 'rule' | 'model' | null;
+}
+
 export class BugHunterModelSettingsDto {
   @ApiProperty({
     description:
@@ -612,9 +702,16 @@ export class BugHunterModelSettingsDto {
 
   @ApiProperty({
     description:
-      'Model pinned into the bug-escalation subagent before each run. Ignored when engine is "gemini" — escalation has no Gemini equivalent yet, so a gemini-engine run skips it.',
+      'The stronger model one hard fix may escalate to, handed to OpenCode\'s escalation agent by value at run time; nothing in the repo is rewritten. Ignored when engine is "gemini", which has no subagents.',
   })
   escalationModel!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Only with role=finder: the senses the Finder's D1 chose for this run (OPP-0781). The sweep workflow reads it to know whether to run the script-driven senses itself, such as locale_parity (OPP-0782).",
+    type: [String],
+  })
+  senses?: string[];
 }
 
 export class UpdateBugHunterModelSettingsDto {
@@ -710,6 +807,64 @@ export class SetBugFindingStageDto {
   @ValidateIf((_, value) => value !== null)
   @IsEnum(RoadmapOpportunityStage)
   stage?: RoadmapOpportunityStage | null;
+}
+
+export class BugCaseBudgetDto {
+  @ApiProperty({
+    type: Object,
+    description:
+      'Caps per kind: sessions, attempts, escalations, usd, minutes.',
+  })
+  caps!: Record<string, number>;
+
+  @ApiProperty({ type: Object, description: 'Spend per kind, same keys.' })
+  used!: Record<string, number>;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description: 'The first cap reached, and when; null while under budget.',
+  })
+  exhausted!: { kind: string; at: string } | null;
+
+  @ApiProperty({ nullable: true })
+  overriddenBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  overriddenAt!: string | null;
+}
+
+export class BugFindingMissDto {
+  @ApiProperty({
+    enum: BUG_FINDING_MISS_REASONS,
+    description:
+      'no_sense: a new sense is needed · sense_missed: an existing sense did not flag it · detected_declined: a sense found it and a person declined · detected_not_fixed: found, not fixed or released in time · not_a_miss.',
+  })
+  reason!: BugFindingMissReason;
+
+  @ApiProperty({
+    enum: BUG_FINDING_MISS_SENSES,
+    nullable: true,
+    description:
+      'The sense that would have caught it first, or that failed to. Null for not_a_miss.',
+  })
+  sense!: BugFindingMissSense | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'For detected_*: the earlier finding that was this bug or its cause.',
+  })
+  matchedFindingId!: string | null;
+
+  @ApiProperty({ nullable: true })
+  confidence!: number | null;
+
+  @ApiProperty()
+  rationale!: string;
+
+  @ApiProperty()
+  classifiedAt!: string;
 }
 
 /**
@@ -895,12 +1050,64 @@ export class BugFindingDto {
   rediscoveredCount!: number;
 
   @ApiProperty({
+    type: () => BugFindingMissDto,
+    nullable: true,
+    description:
+      'On a human-reported bug: why Bug Hunter did not find it first and which sense would have. Null until the classifier has run, and on every other source.',
+  })
+  miss!: BugFindingMissDto | null;
+
+  @ApiProperty({
+    type: () => BugCaseBudgetDto,
+    description:
+      "The case file's budget (OPP-0775): caps and spend for sessions, attempts, escalations, dollars and minutes. Defaults with nothing spent on a row that has not been metered yet.",
+  })
+  budget!: BugCaseBudgetDto;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      "The Verifier's latest verdict on this bug's current fix PR (OPP-0779): verdict, confidence, checks with evidence, summary, by, at. Null until a verifier has run.",
+  })
+  latestFixVerdict!: Record<string, any> | null;
+
+  @ApiProperty({
+    enum: ['pending', 'confirmed', 'refuted', 'unsure'],
+    nullable: true,
+    description:
+      'Where an unproven finding stands with the independent verifier (OPP-0780). Null for proven findings, human reports, and findings from before the verifier existed.',
+  })
+  independentVerification!:
+    | 'pending'
+    | 'confirmed'
+    | 'refuted'
+    | 'unsure'
+    | null;
+
+  @ApiPropertyOptional({
+    description:
+      'The open pull request this finding was found on, when a PR review run filed it (OPP-0785), with the URL of the review comment once Bug Hunter has spoken there.',
+    nullable: true,
+    type: () => BugFindingPrRefDto,
+  })
+  pr!: BugFindingPrRefDto | null;
+
+  @ApiProperty({
     type: Object,
     nullable: true,
     description:
       'What the last failed fix session left behind — attempts, the failing check, its root-cause hypothesis and what to try next — plus `recordedAt` and the `runId` that wrote it. Null until a session has failed with one. See FixPostmortemDto.',
   })
   postmortem!: Record<string, unknown> | null;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      "The latest study a fix session wrote before changing code: how the feature works today, where the value lives, the planned fix, and a second model's review of it. Null until a session has studied the bug. See BugFixStudy.",
+  })
+  study!: Record<string, unknown> | null;
 
   @ApiProperty({
     nullable: true,
@@ -1126,6 +1333,15 @@ export class StartBugFixSessionDto {
   @IsOptional()
   @IsString()
   repo?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      "Start even though this bug's budget is spent (OPP-0775). The override is recorded on the budget; the drawer offers it only after showing what the last session left behind.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 export class TriggerBugHuntSweepDto {

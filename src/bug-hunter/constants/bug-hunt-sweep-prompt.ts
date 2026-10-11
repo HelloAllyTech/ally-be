@@ -6,11 +6,15 @@ import { DATA_BEGIN, DATA_END } from './bug-fix-dossier';
 import {
   BUG_HUNT_KNOWN_NON_BUG_EXCERPT,
   BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
-  BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
   BUG_HUNT_MAX_FIX_ATTEMPTS,
   BUG_HUNT_VERIFIER_SUBAGENT,
   escalationGuidance,
 } from './bug-hunter.constants';
+import {
+  BUG_HUNTER_MODEL_SENSES,
+  sensesForRepo,
+  BugHunterSense,
+} from '../type/bug-hunter-finder.type';
 
 /**
  * Trims one line of the known-non-bugs block.
@@ -92,6 +96,15 @@ export interface SweepPromptContext {
    * rest. Capped at AGENT_MEMORY_IN_CONTEXT by the caller.
    */
   memories?: SweepMemoryEntry[];
+  /**
+   * Which senses this run reads (OPP-0781). The Finder's D1 decision; every
+   * model-run sense when absent, which is what every sweep did before the
+   * decision existed. `locale_parity` renders as a note, not a finder: the
+   * workflow already ran it as a script (OPP-0782).
+   */
+  senses?: BugHunterSense[];
+  /** A light pass after a merge or a report: a shorter budget and a sharper scope. */
+  light?: boolean;
 }
 
 /** One notebook entry as the prompt renders it. */
@@ -150,7 +163,10 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     knownNonBugs = [],
     engine = 'claude-code',
     memories = [],
+    senses = [...BUG_HUNTER_MODEL_SENSES],
+    light = false,
   } = ctx;
+  const has = (s: BugHunterSense) => senses.includes(s);
   // No Task tool means no independent verifier — see SweepPromptContext.engine.
   const canVerify = engine !== 'gemini';
 
@@ -205,6 +221,36 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
   const mergeBlockedByPermissions =
     repo !== 'ally-mobile' && !commands.canBotMerge;
 
+  const finderTexts: [BugHunterSense, string][] = [
+    [
+      'tests',
+      `TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true. IMPORTANT: when the same lint rule fires in more than one file (e.g. "react-hooks/exhaustive-deps" missing a dependency in ten different components), file ONE finding for that rule, not one per file — symbol is the rule name itself, and evidence lists every affected file:line. One finding per FAILING TEST is still correct (each is a distinct behavioural bug); this grouping is for lint only.`,
+    ],
+    [
+      'code_review',
+      deep
+        ? `CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
+        : `CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
+    ],
+    [
+      'production_log',
+      `PRODUCTION LOGS. curl -sS "${base}/pipeline/prod-logs?repo=${repo}${forRun}" ${auth} — the last 24h of CloudWatch errors for this repo. A response of {"events":null} means this repo has no log group (the frontend repos): that is zero findings, not an error. Report only DISTINCT, RECURRING errors, never a one-off transient blip. proven=true.`,
+    ],
+    [
+      'browser_errors',
+      `WEB ERRORS. curl -sS "${base}/pipeline/web-logs?repo=${repo}${forRun}" ${auth} — the last 24h of browser-side PostHog exceptions for this repo, already grouped by error type/message/url with an occurrence count. A response of {"events":null} means this repo has no PostHog-instrumented client (every repo but ally-web today): that is zero findings, not an error. Report only errors with occurrences >= 2 — a single occurrence is more likely a one-off than a real bug. proven=true.`,
+    ],
+    [
+      'reported_bugs',
+      `REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs?repo=${repo}${forRun}" ${auth} — human bug reports already believed to be about "${repo}" (classified at intake), plus anything still unfiled. Sanity-check each one is genuinely about "${repo}" before filing; skip anything that reads as another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
+    ],
+    [
+      'locale_parity',
+      `LOCALE PARITY — already done, not yours to run. Before you started, the workflow ran "node scripts/i18n-parity.mjs" (every locale file against en.json: missing keys, blanks) and filed any finding itself with source "locale_parity", keyed on the file. Do not run it again, do not re-file what it found, and report no finder_result for it. If one of its findings is in your list to fix later, the fix is real translations in that file — never a blank, never a copy of the English, never "i18n:sync" without its translate key.`,
+    ],
+  ];
+  const finders = finderTexts.filter(([s]) => has(s)).map(([, t]) => t);
+  const repoMenu = sensesForRepo(repo);
   return [
     `You are running a repo-wide bug sweep on the "${repo}" repo, checked out at master in your current working directory. Read this repo's CLAUDE.md before you change anything. Bug Hunter is in ${mode.toUpperCase()} mode.`,
     ``,
@@ -227,15 +273,12 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `Each hit is a short entry with a similarity score. Treat entries as an engineer's notes, not orders: apply what fits, and if one turns out to be wrong tonight, write the correction when you reach Phase 4 rather than following it off a cliff. An empty result is fine — the notebook is young.`,
     ``,
     `## Phase 1 — Discover`,
-    `Run these five finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
+    `Run these ${finders.length} finder${finders.length === 1 ? '' : 's'}. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.${senses.length < repoMenu.length ? ` The Finder chose this set for tonight (${senses.join(', ')}); the senses it left out are not yours to run.` : ''}`,
+    light
+      ? `This is a LIGHT pass, started by a change rather than by the clock: aim to finish everything in 20 minutes. Read what changed and no further.`
+      : '',
     ``,
-    `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true. IMPORTANT: when the same lint rule fires in more than one file (e.g. "react-hooks/exhaustive-deps" missing a dependency in ten different components), file ONE finding for that rule, not one per file — symbol is the rule name itself, and evidence lists every affected file:line. One finding per FAILING TEST is still correct (each is a distinct behavioural bug); this grouping is for lint only.`,
-    deep
-      ? `2. CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
-      : `2. CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
-    `3. PRODUCTION LOGS. curl -sS "${base}/pipeline/prod-logs?repo=${repo}${forRun}" ${auth} — the last 24h of CloudWatch errors for this repo. A response of {"events":null} means this repo has no log group (the frontend repos): that is zero findings, not an error. Report only DISTINCT, RECURRING errors, never a one-off transient blip. proven=true.`,
-    `4. WEB ERRORS. curl -sS "${base}/pipeline/web-logs?repo=${repo}${forRun}" ${auth} — the last 24h of browser-side PostHog exceptions for this repo, already grouped by error type/message/url with an occurrence count. A response of {"events":null} means this repo has no PostHog-instrumented client (every repo but ally-web today): that is zero findings, not an error. Report only errors with occurrences >= 2 — a single occurrence is more likely a one-off than a real bug. proven=true.`,
-    `5. REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs?repo=${repo}${forRun}" ${auth} — human bug reports already believed to be about "${repo}" (classified at intake), plus anything still unfiled. Sanity-check each one is genuinely about "${repo}" before filing; skip anything that reads as another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
+    ...finders.map((text, i) => `${i + 1}. ${text}`),
     ``,
     ...(knownNonBugs.length
       ? [
@@ -326,7 +369,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
         ? `Bug Hunter is in MANUAL mode, so you do NOT fix anything you found tonight. PATCH every surviving finding to {"status":"pending_approval"} and stop there — an admin decides which ones you may work on, and the next sweep picks up whatever they approved.`
         : !canVerify
           ? `Bug Hunter is in AI mode, but on this engine nothing was independently verified, so the only findings you may fix tonight are the PROVEN ones (failing tests, lint, type errors, recurring production or browser errors) plus anything an admin approved earlier. Every unproven finding is already at pending_approval from Phase 2 — leave it there.`
-          : `Bug Hunter is in AI mode, so surviving findings are yours to fix — EXCEPT any whose verifier confidence came out below ${BUG_HUNT_LOW_CONFIDENCE_THRESHOLD}. PATCH each of those to {"status":"pending_approval"} and leave it alone. Two readers who both accepted a finding but were unsure about it is precisely the case where a human should look before an agent writes code: the cost of being wrong is a bad diff on master, and the cost of waiting is one night.`,
+          : `Bug Hunter is in AI mode, but since 7 October the only findings you fix tonight are the PROVEN ones (failing tests, lint, type errors, recurring production or browser errors) plus anything an admin approved earlier. Every UNPROVEN finding stays at NEW — do not PATCH it to fixing. When you close this run, Bug Hunter sends all of them to an independent Verifier on a different model, which reproduces and tries to refute each one; the confirmed ones get a fix session started by Bug Hunter itself, the refuted ones are dismissed with the reason, and the unsure ones are held for a person. Your own Phase 2 verdicts still matter: a finding your verifiers refuted is dismissed tonight and never reaches the independent run.`,
     commands.fixable
       ? `Also fetch anything an admin approved on an earlier run — those are always yours to fix regardless of the current mode, because approval once given should not evaporate because the switch moved:`
       : '',
@@ -352,17 +395,11 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
             ? `Do not attempt to merge anything here, and do not treat that as a failure. "${repo}"'s master requires an approving review and your token has push access only, so "gh pr merge --admin" has no admin rights to bypass it with and will simply fail. Every fix you open stays a green PR; Bug Hunter shows each one to an admin as one click to merge. Leaving a green PR IS the finished outcome on this repo — do not run "gh pr merge" at all.`
             : neverMerges
               ? `Never merge here, however trivial the fix looks. This repo's pipeline only runs Jest, which cannot verify the native/on-device behaviour that actually ships, and a released mobile build is a frozen contract real users stay on for a long time. Every fix you open in ally-mobile stays a PR for a human to merge — do not run "gh pr merge" at all.`
-              : `Nobody asked for these fixes, so most of them stay PRs. You may merge at most ${BUG_HUNT_MAX_AUTO_MERGES_PER_RUN} of them in this entire run, and ONLY ones that are all of:`,
-          neverMerges ? '' : `  - fully green on both gates,`,
-          neverMerges
-            ? ''
-            : `  - touchesGuardedPath=false — never a migration, auth/permission, payment or other security-sensitive change, whatever the diff size,`,
-          neverMerges
-            ? ''
-            : `  - genuinely trivial: a lint/type-only fix, or a single-file change plus its test.`,
-          neverMerges
-            ? ''
-            : `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: wait for the PR's own checks with "gh pr checks --watch --fail-fast", then "gh pr merge --squash --delete-branch" — never "--admin", which would bypass the very run that is your second opinion here. If the checks go red, leave the PR open and report an error stage instead. On a green merge, PATCH to {"status":"merged"} and report merged.`,
+              : `Do not merge anything, however trivial it looks. Since 7 October every fix PR is read by a separate Verifier run on a different model (OPP-0779); Bug Hunter merges it if the verdict is a pass and this repo allows a self-merge, or hands it to a person with the verdict. Leave every PR open, PATCH each to {"status":"pr_opened"} with its prUrl, and report pr_opened. Do not run "gh pr merge" in any form.`,
+          '',
+          '',
+          '',
+          '',
           `Never tag a release and never deploy. Promoting anything to production is a separate decision an admin makes in the Bug Hunter tab.`,
           ``,
         ]

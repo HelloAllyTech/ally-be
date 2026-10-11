@@ -84,18 +84,28 @@ export class HealthController {
       return {
         redis: { status: 'up', responseTimeMs: Date.now() - startedAt },
       };
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
-      this.logger.error(`Health check: Redis is unreachable — ${reason}`);
-      // Terminus turns a `down` indicator into a 503 for the whole endpoint,
-      // which is the intent: this replica cannot serve.
-      return {
-        redis: {
-          status: 'down',
-          responseTimeMs: Date.now() - startedAt,
-          reason,
-        },
-      };
+    } catch {
+      // First ping failed. Wait a moment and try one more time — a transient
+      // blip should not fail the whole health check.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      try {
+        await this.redis.ping(CHECK_TIMEOUT_MS);
+        return {
+          redis: { status: 'up', responseTimeMs: Date.now() - startedAt },
+        };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        this.logger.error(`Health check: Redis is unreachable — ${reason}`);
+        // Terminus turns a `down` indicator into a 503 for the whole endpoint,
+        // which is the intent: this replica cannot serve.
+        return {
+          redis: {
+            status: 'down',
+            responseTimeMs: Date.now() - startedAt,
+            reason,
+          },
+        };
+      }
     }
   }
 

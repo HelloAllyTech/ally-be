@@ -16,8 +16,6 @@ name: Builder session
 #   GEMINI_API_KEY     — the coding engine. Exported under TWO names below,
 #                        because gemini-cli and opencode disagree about which
 #                        one to read.
-#   ANTHROPIC_API_KEY  — only for a run explicitly dispatched with
-#                        engine=claude-code
 #   ALLY_BE_API_KEY    — equals ally-be's API_KEY, for the pipeline callbacks
 #   BUILDER_GH_TOKEN   — org PAT with contents:write + pull-requests:write on
 #                        every target repo. NOT the default GITHUB_TOKEN: pull
@@ -87,7 +85,6 @@ jobs:
     env:
       ALLY_BE_API_URL: ${{ inputs.api_base_url || vars.ALLY_BE_API_URL }}
       ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       # Only consumed when BUILDER_ENGINE=gemini (install-engine.sh /
       # run-engine.sh). A plain Google AI Studio key, not the Workspace/Vertex
       # OAuth path — that path additionally needs GOOGLE_CLOUD_PROJECT and a
@@ -213,6 +210,13 @@ jobs:
           git config --global user.email "builder@helloally.ai"
           git config --global init.defaultBranch master
 
+      # Node 22 first, then 24 as the default on PATH. ally-be ships on 24;
+      # ally-web pins 22 (.nvmrc) and its jsdom tests fail under 24, so the gate
+      # switches to each repo's pinned Node (scripts/builder/repo-node.sh). It
+      # can only switch to a version installed here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/setup-node@v4
         with:
           node-version: 24

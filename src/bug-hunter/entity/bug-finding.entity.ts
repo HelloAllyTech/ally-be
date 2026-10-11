@@ -313,9 +313,31 @@ export class BugFinding extends BaseWithoutTenantEntity {
    *  - `verificationUnavailable` — true when the engine that found this had
    *    no independent verifier (Gemini has no Task tool). Held for a human;
    *    `BugHunterPolicyService` refuses to let it be fixed in AI mode.
+   *  - `miss` — on a `reported_bug` row only: why Bug Hunter did not find it
+   *    first and which sense would have (`BugFindingMiss`, OPP-0774). Written
+   *    by `BugHunterMissClassifierService` a moment after intake and again
+   *    after a description edit; read by the drawer and the goal metrics.
+   *  - `fixVerdicts` — the Verifier's verdicts on this bug's fix PRs
+   *    (`BugFixVerdict[]`, OPP-0779), newest last; `verifyFix` — the
+   *    dispatch record while a verifier run is in flight, cleared when its
+   *    verdict lands. No pass for the current PR means no self-merge.
+   *  - `independentVerification` + `findingVerdicts` + `verifyFindingsRunId`
+   *    — the independent FINDING verifier (OPP-0780): `pending` from the
+   *    moment the sweep closes until a run on the other vendor confirms,
+   *    refutes or is unsure; the verdicts themselves, newest last. An
+   *    unproven finding is fixed in AI mode only when `confirmed`.
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
+
+  /**
+   * The case file's budget (migration 1975830000000, OPP-0775): caps and
+   * spend for sessions, attempts, escalations, dollars and minutes. Null
+   * reads as defaults with nothing spent — see `withBudgetDefaults`. Owned by
+   * `BugCaseBudgetService`; nothing else writes it.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  budget?: Record<string, any> | null;
 
   // ── reversal tracking (migration 1970200000000) ──────────────────────────
 

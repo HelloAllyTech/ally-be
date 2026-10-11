@@ -6,6 +6,7 @@ import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { User } from 'src/user/entity/user.entity';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
+import { BugHuntEvent } from 'src/bug-hunter/entity/bug-hunt-event.entity';
 
 import { RoadmapAllocation } from './entity/roadmap-allocation.entity';
 import { RoadmapVoteGrant } from './entity/roadmap-vote-grant.entity';
@@ -61,6 +62,7 @@ import { RoadmapVectorService } from './service/roadmap-vector.service';
 import { RoadmapBuilderSchedulerRegistrationService } from './service/roadmap-builder-scheduler-registration.service';
 import { RoadmapVoteGrantSchedulerRegistrationService } from './service/roadmap-vote-grant-scheduler-registration.service';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
 import { RoadmapCollaborationController } from './controller/roadmap-collaboration.controller';
@@ -117,6 +119,9 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
       // Written (not just read) by RoadmapOpportunityService.create() when type=bug — see
       // there. Just the entity, not BugHunterModule, to avoid the circular-import trap.
       BugFinding,
+      // Written by BugHunterMissClassifierService (below) when it records why a
+      // reported bug was not found first — a runless timeline event on the finding.
+      BugHuntEvent,
     ]),
     // AiService — the Weaviate client for duplicate detection.
     AiModule,
@@ -190,6 +195,9 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     // import is needed, same reasoning as BugFinding being registered as just
     // the entity above rather than the whole module.
     BugHunterRepoClassifierService,
+    // Writes the miss record on a reported bug a moment after intake (OPP-0774).
+    // Provided directly for the same reason as the repo classifier above.
+    BugHunterMissClassifierService,
     // realtime
     RoadmapGateway,
   ],

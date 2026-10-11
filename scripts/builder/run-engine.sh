@@ -1070,6 +1070,62 @@ revert_stray_writes() {
 # gated is worth stopping at second zero, not at minute seventeen.
 RESUMED_FROM_REMOTE=0
 
+# ── A failed build's branch is not something to resume ──────────────────────
+#
+# A build that used every attempt without clearing the gate and review leaves
+# its work on builder/<slug>, and "Retry build" used to resume it: skip the
+# coding pass, gate what was there, remediate on top. Session 178e6598 run 2
+# deleted four specs and most of track-enrollment.service.ts to get past the
+# gate, and runs 3 and 4 both resumed that and spent their rounds patching it.
+#
+# So a build that gives up says so on the branch: an empty commit carrying the
+# trailer below. The next build that finds it at the head starts from master.
+# A run that was paused, cancelled or killed leaves no marker, and resumes as
+# before, because its work was interrupted, not judged.
+FAILED_BUILD_TRAILER='Builder-Outcome: failed'
+
+mark_failed_build() {
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    local repo; repo="$(basename "$dir")"
+    local branch; branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    case "$branch" in master | main | '') continue ;; esac
+    git -C "$dir" diff --quiet master...HEAD 2>/dev/null && continue
+
+    git -C "$dir" -c user.name="ally-builder[bot]" -c user.email="builder@helloally.ai" \
+      commit -q --allow-empty -m "chore(builder): this build did not pass the gate and review [skip ci]
+
+Run ${BUILDER_RUN_ID:-unknown} used every attempt. The next build on this
+branch starts again from master instead of resuming this work.
+
+${FAILED_BUILD_TRAILER}" >/dev/null 2>&1 || continue
+    if git -C "$dir" push -q --set-upstream origin "$branch" >/dev/null 2>&1; then
+      echo "${repo}: marked ${branch} as a failed build"
+    fi
+  done
+}
+
+# Delete origin's <branch> when it holds a failed build, so this run starts
+# from master. Only a build run, only a branch this run would have created from
+# the slug, and never one with an open pull request. Any doubt means resume.
+discard_failed_build() {
+  local dir="$1" repo="$2" branch="$3" prs old
+  [ "${BUILDER_MODE:-build}" = build ] || return 1
+  git -C "$dir" fetch --quiet origin "${branch}:refs/remotes/origin/${branch}" \
+    >/dev/null 2>&1 || return 1
+  [ "$branch" = "builder/${BUILDER_BRANCH_SLUG:-}" ] || return 1
+  git -C "$dir" log -1 --format=%B "origin/${branch}" 2>/dev/null \
+    | grep -qxF "$FAILED_BUILD_TRAILER" || return 1
+  prs="$(gh pr list --repo "${GITHUB_REPOSITORY_OWNER:-}/${repo}" --head "$branch" \
+    --state open --json number 2>/dev/null)" || return 1
+  [ "$(printf '%s' "$prs" | jq 'length' 2>/dev/null)" = 0 ] || return 1
+  # Read before the delete, which takes the tracking ref with it.
+  old="$(git -C "$dir" rev-parse --short "origin/${branch}")"
+  git -C "$dir" push -q origin --delete "$branch" >/dev/null 2>&1 || return 1
+  # Recoverable by sha for as long as GitHub keeps unreachable objects.
+  echo "${repo}: ${branch} held a failed build (${old}); starting again from master"
+}
+
 ensure_branches() {
   local target existing
   for dir in repos/*/; do
@@ -1106,6 +1162,9 @@ ensure_branches() {
 
     if git -C "$dir" show-ref --verify --quiet "refs/heads/${target}"; then
       git -C "$dir" checkout "$target" >/dev/null 2>&1
+    elif git -C "$dir" ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1 \
+      && discard_failed_build "$dir" "$repo" "$target"; then
+      git -C "$dir" checkout -b "$target" >/dev/null 2>&1
     elif git -C "$dir" ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1; then
       git -C "$dir" fetch --quiet origin "$target" >/dev/null 2>&1
       git -C "$dir" checkout -b "$target" "origin/${target}" >/dev/null 2>&1
@@ -1527,6 +1586,8 @@ if [ "$verdict" != "pass" ]; then
   # verification — a failing verdict used to fail a run whose PRs were already
   # sitting in the org.
   echo "Gate and review were not both satisfied after ${MAX_CODE_ITERATIONS} attempts." >&2
+  save_work_in_progress "final attempt"
+  mark_failed_build
   report_outcome '{"outcome":"failed","error":"The change did not pass the test gate and independent review within the attempt limit. No pull request was opened; the standing objections are in the run feed."}'
   exit 1
 fi

@@ -24,6 +24,7 @@ describe('BugHunterService.summarizeRuns', () => {
       {} as never,
       {} as never,
       {} as never,
+      { charge: jest.fn(), chargeRun: jest.fn() } as never, // budget (OPP-0775)
     );
     return { service, runRepository };
   };

@@ -2,7 +2,6 @@ import { BugHunterMode } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import {
   BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
-  BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
   BUG_HUNT_VERIFIER_SUBAGENT,
 } from '../bug-hunter.constants';
 import { buildSweepPrompt } from '../bug-hunt-sweep-prompt';
@@ -45,6 +44,59 @@ describe('buildSweepPrompt', () => {
       ['reported bugs', /REPORTED BUGS/],
     ])('includes the %s finder', (_name, pattern) => {
       expect(build()).toMatch(pattern);
+    });
+  });
+
+  describe('the Finder chooses the senses (OPP-0781)', () => {
+    it("renders only the chosen finders, renumbered, and says the rest are not tonight's", () => {
+      const p = build({ senses: ['code_review', 'tests'], light: true });
+      expect(p).toMatch(/Run these 2 finders/);
+      expect(p).toMatch(/1\. TEST\/LINT/);
+      expect(p).toMatch(/2\. CODE REVIEW/);
+      expect(p).not.toMatch(/PRODUCTION LOGS\./);
+      expect(p).not.toMatch(/REPORTED BUGS\./);
+      expect(p).toMatch(
+        /The Finder chose this set for tonight \(code_review, tests\)/,
+      );
+      expect(p).toMatch(/This is a LIGHT pass/);
+    });
+
+    it('runs all five and says nothing about a chosen set when no senses are given', () => {
+      const p = build();
+      expect(p).toMatch(/Run these 5 finders/);
+      expect(p).not.toMatch(/The Finder chose this set/);
+      expect(p).not.toMatch(/LIGHT pass/);
+    });
+
+    it('renders locale_parity as "already done" and counts it as a finder the model must not run (OPP-0782)', () => {
+      const p = build({
+        repo: 'ally-web',
+        senses: ['tests', 'locale_parity'],
+      });
+      expect(p).toMatch(/Run these 2 finders/);
+      expect(p).toMatch(/2\. LOCALE PARITY — already done, not yours to run/);
+      expect(p).toMatch(/scripts\/i18n-parity\.mjs/);
+      expect(p).toMatch(/report no finder_result for it/);
+      // Measured against the repo's own menu (six on ally-web), so a partial set still says so.
+      expect(p).toMatch(
+        /The Finder chose this set for tonight \(tests, locale_parity\)/,
+      );
+    });
+
+    it('does not call a full set partial on a repo whose menu has no locale sense', () => {
+      const p = build({
+        repo: 'ally-be',
+        senses: [
+          'tests',
+          'code_review',
+          'production_log',
+          'browser_errors',
+          'reported_bugs',
+        ],
+      });
+      expect(p).toMatch(/Run these 5 finders/);
+      expect(p).not.toMatch(/The Finder chose this set/);
+      expect(p).not.toMatch(/LOCALE PARITY/);
     });
   });
 
@@ -359,10 +411,18 @@ describe('buildSweepPrompt', () => {
       expect(build()).toMatch(/The LOWER, not the average/i);
     });
 
-    it('holds a low-confidence survivor for a human even in AI mode', () => {
+    it('in AI mode fixes only proven findings tonight and leaves the rest to the independent Verifier (OPP-0780)', () => {
       const p = build({ mode: BugHunterMode.AI });
+      // Phase 2 still scores survivors against the threshold…
       expect(p).toContain(String(BUG_HUNT_LOW_CONFIDENCE_THRESHOLD));
-      expect(p).toMatch(/pending_approval/);
+      // …but Phase 3 no longer fixes unproven ones in the same run.
+      expect(p).toMatch(/only findings you fix tonight are the PROVEN ones/);
+      expect(p).toMatch(/Every UNPROVEN finding stays at NEW/);
+      expect(p).toMatch(/independent Verifier on a different model/);
+      // The hold for a person is the server's move now, not a PATCH the sweep makes.
+      expect(p).not.toMatch(
+        /PATCH each of those to \{"status":"pending_approval"\}/,
+      );
     });
 
     it('still skips verification for proven findings', () => {
@@ -433,17 +493,21 @@ describe('buildSweepPrompt', () => {
   });
 
   describe('merge policy', () => {
-    // ally-ai-learn is the only repo where the bot can actually land a merge
-    // (unprotected master), so it is the only place the auto-merge rules are
-    // reachable — see BUG_HUNT_REPOS.canBotMerge.
+    // ally-ai-learn is the only repo where the bot could land a merge
+    // (unprotected master). Since OPP-0779 even there the sweep does not: a
+    // separate Verifier run reads every PR and Bug Hunter merges on a pass.
     const mergeable = () => build({ repo: 'ally-ai-learn' });
 
-    it('states the per-run auto-merge cap from the shared constant', () => {
-      expect(mergeable()).toContain(String(BUG_HUNT_MAX_AUTO_MERGES_PER_RUN));
+    it('tells every repo, the mergeable one included, not to merge: the Verifier decides', () => {
+      const p = mergeable();
+      expect(p).toMatch(/Do not merge anything, however trivial it looks/);
+      expect(p).toMatch(/Verifier run on a different model/);
+      expect(p).not.toContain('gh pr merge --squash');
+      expect(p).not.toMatch(/you may merge at most/i);
     });
 
-    it('never permits merging a guarded path', () => {
-      expect(mergeable()).toMatch(/touchesGuardedPath=false/);
+    it('still leaves every fix as an open PR the server can act on', () => {
+      expect(mergeable()).toContain('{"status":"pr_opened"}');
     });
 
     it('forbids tagging a release or deploying', () => {
@@ -451,19 +515,8 @@ describe('buildSweepPrompt', () => {
       expect(build()).toMatch(/Never tag a release and never deploy/i);
     });
 
-    it('tells the agent not to merge something borderline', () => {
-      expect(mergeable()).toMatch(/borderline/i);
-    });
-
-    it('merges behind the PR checks, never with --admin', () => {
-      const p = mergeable();
-      expect(p).toContain('gh pr checks --watch');
-      expect(p).toContain('gh pr merge --squash');
-      expect(p).not.toContain('gh pr merge --admin');
-    });
-
-    it('deletes the branch with the merge (OPP-0750)', () => {
-      expect(mergeable()).toContain('gh pr merge --squash --delete-branch');
+    it('never instructs a merge with --admin, anywhere', () => {
+      expect(mergeable()).not.toContain('gh pr merge --admin');
     });
 
     it('tells a protected repo it cannot merge, separately from the mobile rule', () => {

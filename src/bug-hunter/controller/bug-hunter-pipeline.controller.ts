@@ -72,6 +72,24 @@ import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { FixDossier } from '../constants/bug-fix-dossier';
 import { BugHunterDossierService } from '../service/bug-hunter-dossier.service';
+import { BugCaseFileService } from '../service/bug-case-file.service';
+import {
+  BugVerifyFixService,
+  storedVerifier,
+} from '../service/bug-verify-fix.service';
+import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
+import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
+import { BugFixStudyService } from '../service/bug-fix-study.service';
+import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
+import { renderPrBody } from '../constants/bug-pr-body';
+import { buildPrReviewPrompt } from '../constants/bug-pr-review-prompt';
+import { PrReviewTarget } from '../type/bug-hunter-pr-review.type';
+import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
+import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
+import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
+import { prNumberFrom } from '../service/bug-hunter-policy.service';
+import { BugCaseFile } from '../constants/bug-case-file';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
 import {
   BUG_HUNT_REPOS,
@@ -80,6 +98,7 @@ import {
 import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
 import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
 import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
+import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -112,7 +131,13 @@ export class BugHunterPipelineController {
     private readonly policyService: BugHunterPolicyService,
     private readonly memoryService: AgentMemoryService,
     private readonly dossierService: BugHunterDossierService,
+    private readonly caseFileService: BugCaseFileService,
+    private readonly verifyFixService: BugVerifyFixService,
+    private readonly verifyFindingsService: BugVerifyFindingsService,
+    private readonly finderService: BugHunterFinderService,
     private readonly runRepository: BugHuntRunRepository,
+    private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly studyService: BugFixStudyService,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -425,8 +450,84 @@ export class BugHunterPipelineController {
       "platform-wide, same as Builder's.",
   })
   @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
-  async getModels(): Promise<BugHunterModelSettingsDto> {
-    return this.modelSettingsService.get();
+  async getModels(
+    @Query('role') role?: string,
+    @Query('findingId') findingId?: string,
+  ): Promise<BugHunterModelSettingsDto> {
+    const settings = await this.modelSettingsService.get();
+    // The Verifier's model (OPP-0779) was chosen and stored on the finding
+    // at dispatch, so the workflow's first call gets it back here rather
+    // than the platform default.
+    // The Finder's D2 (OPP-0781): the sweep workflow asks by run id.
+    if (role === 'finder' && findingId) {
+      const run = await this.bugHunterService
+        .getRun(findingId)
+        .catch(() => null);
+      const chosen = run?.metadata?.finder?.model;
+      const senses = run?.metadata?.finder?.senses;
+      if (chosen?.engine && chosen?.model) {
+        return {
+          ...settings,
+          engine: chosen.engine,
+          defaultModel: chosen.model,
+          escalationModel: chosen.model,
+          ...(Array.isArray(senses) ? { senses } : {}),
+        };
+      }
+    }
+    // Same for the finding verifier (OPP-0780), whose `finding_id` input is
+    // the verify run's id, because its subject is a sweep, not one bug.
+    if (role === 'verify_findings' && findingId) {
+      const run = await this.bugHunterService
+        .getRun(findingId)
+        .catch(() => null);
+      const counterpart = storedVerifier(
+        run?.metadata?.verifyFindings?.counterpart,
+        settings,
+      );
+      if (counterpart) {
+        return {
+          ...settings,
+          engine: counterpart.engine,
+          defaultModel: counterpart.model,
+          escalationModel: counterpart.model,
+        };
+      }
+    }
+    // The orchestrator's D6 (OPP-0783): the fix workflow asks by finding id
+    // and gets the model the plan chose for this attempt.
+    if (role === 'fix' && findingId) {
+      const finding = await this.bugFindingService
+        .getOne(findingId)
+        .catch(() => null);
+      const plan = finding?.metadata?.fixPlan as FixPlan | undefined;
+      if (plan?.engine && plan?.model) {
+        return {
+          ...settings,
+          engine: plan.engine,
+          defaultModel: plan.model,
+          escalationModel: plan.model,
+        };
+      }
+    }
+    if (role === 'verify_fix' && findingId) {
+      const finding = await this.bugFindingService
+        .getOne(findingId)
+        .catch(() => null);
+      const counterpart = storedVerifier(
+        finding?.metadata?.verifyFix?.counterpart,
+        settings,
+      );
+      if (counterpart) {
+        return {
+          ...settings,
+          engine: counterpart.engine,
+          defaultModel: counterpart.model,
+          escalationModel: counterpart.model,
+        };
+      }
+    }
+    return settings;
   }
 
   @Get('pipeline/sweep-prompt')
@@ -458,6 +559,11 @@ export class BugHunterPipelineController {
         ).join(', ')}.`,
       );
     }
+    // The Finder's plan (OPP-0781): D1 picks the senses, D2 the model, once
+    // per run, here — the first thing the workflow fetches — so the models
+    // call that follows gets the chosen engine.
+    const run = await this.bugHunterService.getRun(runId);
+    const plan = await this.finderService.ensurePlan(run);
     // Read the live mode rather than trusting a workflow input: the switch may
     // have moved between the dispatch and the runner actually starting, and the
     // mode decides whether this sweep is allowed to fix anything.
@@ -466,7 +572,7 @@ export class BugHunterPipelineController {
     // the workflow resolves it from the same settings row a step later, and
     // the prompt has to know it NOW because Gemini has no Task tool, so its
     // Verify phase cannot be the Claude one — see buildSweepPrompt.
-    const { engine } = await this.modelSettingsService.get();
+    const engine = plan.model.engine;
     // What this repo's reviewers already ruled were not bugs. Fetched here
     // rather than baked into the workflow file for the same reason the whole
     // protocol is served rather than copied: it changes every time someone
@@ -512,6 +618,8 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       mode: settings.mode,
       deep: deep === 'true',
+      senses: plan.senses,
+      light: plan.light,
       knownNonBugs,
       engine,
       memories: memories.map((m) => ({
@@ -520,6 +628,31 @@ export class BugHunterPipelineController {
         tags: m.tags,
         repos: m.repos,
       })),
+    });
+  }
+
+  @Get('pipeline/pr-review-prompt')
+  @ApiOperation({
+    summary:
+      'The PR review brief for a pr_review run: review one open pull request on its head, read-only, filing findings linked to it (pipeline only, OPP-0785)',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getPrReviewPrompt(
+    @Query('repo') repo: string,
+    @Query('runId') runId: string,
+  ): Promise<string> {
+    const run = await this.bugHunterService.getRun(runId);
+    const pr = run.metadata?.prReview as PrReviewTarget | undefined;
+    if (!pr?.number || !pr.headSha) {
+      throw new BadRequestException(
+        `Run ${runId} is not a PR review run: it carries no pull request.`,
+      );
+    }
+    return buildPrReviewPrompt({
+      repo: repo ?? run.repo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      pr,
     });
   }
 
@@ -563,6 +696,9 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       dossier,
       engine,
+      // The orchestrator's plan and reason for a retry (OPP-0783).
+      plan: (finding.metadata?.fixPlan as FixPlan | undefined) ?? null,
+      retry: (finding.metadata?.retry as FixRetry | undefined) ?? null,
     });
   }
 
@@ -589,6 +725,135 @@ export class BugHunterPipelineController {
       repo ?? finding.repo ?? '',
       runId,
     );
+  }
+
+  @Get('pipeline/runs/:id/verify-findings-prompt')
+  @ApiOperation({
+    summary:
+      "The independent finding verifier's protocol for one closed sweep's unproven findings, as plain text (pipeline only)",
+    description:
+      'Fetched by `bug-fix-session.yml` when dispatched with mode=verify_findings (OPP-0780). ' +
+      'Lists every unproven finding the sweep kept; the verifier reproduces and tries to refute ' +
+      "each on the Verifier's Gemini model and PATCHes a findingVerdict per finding.",
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getVerifyFindingsPrompt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('repo') repo?: string,
+  ): Promise<string> {
+    const run = await this.bugHunterService.getRun(id);
+    const dispatched = run.metadata?.verifyFindings ?? null;
+    if (!dispatched?.findingIds?.length) {
+      throw new BadRequestException(
+        `Run ${id} is not a verify-findings run, or has no findings to verify.`,
+      );
+    }
+    const findings = (
+      await Promise.all(
+        (dispatched.findingIds as string[]).map((fid) =>
+          this.bugFindingService.getOne(fid).catch(() => null),
+        ),
+      )
+    ).filter((f): f is NonNullable<typeof f> => f != null);
+    return buildVerifyFindingsPrompt({
+      findings,
+      repo: repo ?? run.repo,
+      runId: run.id,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      engine: dispatched.counterpart?.engine ?? 'gemini',
+      model: dispatched.counterpart?.model ?? 'gemini-2.5-pro',
+      sweepEngine: dispatched.sweepEngine ?? null,
+    });
+  }
+
+  @Get('pipeline/findings/:id/verify-prompt')
+  @ApiOperation({
+    summary:
+      "The Verifier's protocol for this finding's open PR, as plain text (pipeline only)",
+    description:
+      'Fetched by `bug-fix-session.yml` when dispatched with mode=verify (OPP-0779). A read-only ' +
+      "checklist over the PR on the Verifier's Gemini model: reproduce at base, pass at head, suite " +
+      'against base, diff against the brief, data-file counts, blast radius. Ends in a verdict PATCH.',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getVerifyFixPrompt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId: string,
+    @Query('repo') repo?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    const targetRepo = repo ?? finding.repo ?? '';
+    if (!finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request to verify.',
+      );
+    }
+    const prNumber = prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+    const dispatched = finding.metadata?.verifyFix ?? null;
+    const caseFile = await this.caseFileService.build(finding, {
+      currentRunId: runId,
+    });
+    return buildVerifyFixPrompt({
+      finding,
+      caseFile,
+      repo: targetRepo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      prUrl: finding.prUrl,
+      prNumber,
+      engine: dispatched?.counterpart?.engine ?? 'gemini',
+      model: dispatched?.counterpart?.model ?? 'gemini-2.5-pro',
+      fixEngine: dispatched?.fixEngine ?? null,
+    });
+  }
+
+  @Get('pipeline/findings/:id/case')
+  @ApiOperation({
+    summary:
+      "One bug's case file, for a stage that wants typed records rather than a rendered brief (pipeline only)",
+    description:
+      'The shared half of the dossier (OPP-0775): verdicts, sessions with structured attempts, ' +
+      'lineage, post-mortem, miss record, budget and totals. `runId` excludes the calling run ' +
+      'from the sessions, since it has done nothing yet.',
+  })
+  async getCaseFile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+  ): Promise<BugCaseFile> {
+    const finding = await this.bugFindingService.getOne(id);
+    return this.caseFileService.build(finding, { currentRunId: runId });
+  }
+
+  @Get('pipeline/findings/:id/pr-body')
+  @ApiOperation({
+    summary:
+      "A fix PR's description, rendered from the case file, with two marker lines for the Fixer to fill (pipeline only)",
+    description:
+      'OPP-0784: the bug as filed, who verified it and how (the independent reproduction verbatim), ' +
+      'every orchestration decision and the cost so far come from the case file; the Fixer replaces ' +
+      'the two markers with the change in words and what it left untouched on purpose. The drawer ' +
+      'reads the same case file, so the PR and the drawer say the same thing. Returns Markdown.',
+  })
+  @Header('Content-Type', 'text/markdown; charset=utf-8')
+  async getPrBody(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    const caseFile = await this.caseFileService.build(finding, {
+      currentRunId: runId,
+    });
+    return renderPrBody(caseFile, {
+      repo: finding.repo ?? 'unknown',
+      adminUrl: this.configService.adminBaseUrl
+        ? `${this.configService.adminBaseUrl.replace(/\/+$/, '')}/bug-hunter?finding=${finding.id}`
+        : null,
+    });
   }
 
   @Post('pipeline/findings/:id/plan')
@@ -684,6 +949,10 @@ export class BugHunterPipelineController {
       body.repo,
       body.findings,
     );
+    // D3 (OPP-0781): verify, hold or drop each new unproven finding. Not
+    // awaited; the sweep carries on and the independent verifier at close
+    // only takes what is still NEW.
+    void this.finderService.triageNew(findings, runId);
     return { items: findings.map(toFindingDto) };
   }
 
@@ -702,11 +971,44 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: PatchBugFindingDto,
   ): Promise<BugFindingDto> {
+    // The Verifier's report (OPP-0779): checks in, verdict computed, stored
+    // on the case file, acted on. A verdict never changes status directly —
+    // the merge or the hand-off is the server's move, not the verifier's.
+    if (body.findingVerdict) {
+      const { findingVerdict, ...rest } = body;
+      await this.verifyFindingsService.recordVerdict(id, findingVerdict);
+      const hasMore = Object.values(rest).some((v) => v !== undefined);
+      if (!hasMore) {
+        return toFindingDto(await this.bugFindingService.getOne(id));
+      }
+      body = rest as PatchBugFindingDto;
+    }
+    if (body.verdict) {
+      const { verdict, ...rest } = body;
+      await this.verifyFixService.recordVerdict(id, verdict);
+      const hasMore = Object.values(rest).some((v) => v !== undefined);
+      if (!hasMore) {
+        return toFindingDto(await this.bugFindingService.getOne(id));
+      }
+      body = rest as PatchBugFindingDto;
+    }
     // The rules the sweep prompt states, enforced where the agent's write
     // arrives — see BugHunterPolicyService. Human routes never pass through
     // here, which is the point: a person's decision is what these defer to.
     await this.policyService.assertTransitionAllowed(id, body);
     const finding = await this.bugFindingService.setStatus(id, body);
+    // A fix reached its PR: the Verifier reads it next (OPP-0779). Not
+    // awaited — the fix session's PATCH is done; `dispatch` swallows its
+    // own failures and leaves the PR for a person if it cannot run.
+    if (body.status === BugFindingStatus.PR_OPENED) {
+      void this.verifyFixService.dispatch(id);
+    }
+    // A session gave up (OPP-0783): the orchestrator's D7 decides whether a
+    // stronger attempt goes in with the post-mortem, or a person is asked.
+    // Not awaited, and it swallows its own failures.
+    if (body.status === BugFindingStatus.FAILED) {
+      void this.orchestrator.onSessionFailed(id);
+    }
     // The agent's own merge path. Its protocol merges with --delete-branch,
     // so this usually finds the branch already gone; it is the backstop for a
     // session that merged and then ran out of time before deleting
@@ -767,8 +1069,23 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: ReportBugHuntEventDto,
   ): Promise<BugHuntEventDto> {
+    // A fix session's study (stage `study`) is more than a timeline line: it
+    // is validated, read by a second model and stored on the finding, and the
+    // event's payload — which this response carries back — is the stored
+    // study WITH that review, so the session reads the concerns in the same
+    // round trip. A study missing a required field is a 400 naming it; the
+    // prompt tells the session to fix the body and post again.
+    let payload = body.payload;
+    if (body.stage === BugHuntEventStage.STUDY && body.findingId) {
+      const finding = await this.bugFindingService.getOne(body.findingId);
+      payload = (await this.studyService.record(
+        finding,
+        id,
+        body.payload,
+      )) as unknown as Record<string, any>;
+    }
     return toEventDto(
-      await this.bugHunterService.appendEvent({ runId: id, ...body }),
+      await this.bugHunterService.appendEvent({ runId: id, ...body, payload }),
     );
   }
 
@@ -849,6 +1166,16 @@ export class BugHunterPipelineController {
       totals,
       errorMessage,
     );
+    // A sweep closed: every unproven finding it kept now goes to the
+    // independent verifier on Gemini (OPP-0780). Not awaited; the
+    // service swallows its own failures and leaves findings pending.
+    if (
+      run.trigger === BugHuntTrigger.SCHEDULED ||
+      run.trigger === BugHuntTrigger.MANUAL ||
+      run.trigger === BugHuntTrigger.PR_REVIEW
+    ) {
+      void this.verifyFindingsService.dispatchForRun(run.id);
+    }
     const { events } = await this.bugHunterService.getRunWithEvents(id);
     return { ...toRunDto(run), events: events.map(toEventDto) };
   }

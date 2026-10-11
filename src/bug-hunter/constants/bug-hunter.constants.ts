@@ -24,6 +24,15 @@ export const BUG_HUNT_MAX_FIX_ATTEMPTS = 2;
  */
 export const BUG_HUNT_TRIVIAL_FIX_MAX_FILES = 2;
 export const BUG_HUNT_TRIVIAL_LINT_FIX_MAX_FILES = 10;
+/**
+ * The most a verified fix may change and still merge itself, on any trigger
+ * (OPP-0759). A sweep's own fixes stay under the stricter trivial-diff rule
+ * above; this is the ceiling for a fix session's self-merge after a Verifier
+ * pass. Anything wider is a reviewed PR. Files a person has to count are
+ * refused outright — see util/bug-person-only-paths.util.ts.
+ */
+export const BUG_HUNT_SELF_MERGE_MAX_FILES = 6;
+export const BUG_HUNT_SELF_MERGE_MAX_LINES = 300;
 
 /**
  * How long the fix agent's escalation-wait loop polls for an admin's answer
@@ -133,6 +142,9 @@ export const BUG_FINDING_DECISION_NOTE_MAX_LENGTH = 500;
 /** Prompt codes under src/prompts/bug_hunter/ — see toPromptCode('bug_hunter', <stem>). */
 export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
+  CLASSIFY_MISS: 'bug_hunter_classify_miss',
+  DECIDE: 'bug_hunter_decide',
+  REVIEW_STUDY: 'bug_hunter_review_study',
 } as const;
 
 /**
@@ -145,6 +157,48 @@ export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 2048;
 export const BUG_HUNTER_CLASSIFY_REPO_TASK_ID = 'bug-hunter-repo-classifier';
 /** Named explicitly so the call never reaches a Claude model (it used to ride ANTHROPIC_AUTOFILL_MODEL). */
 export const BUG_HUNTER_CLASSIFY_REPO_MODEL = 'gemini-2.5-flash';
+
+/**
+ * The miss classifier (OPP-0774): why a human-reported bug was not found
+ * first, and which sense would have caught it. Same cheap model and token
+ * budget reasoning as the repo classifier; a two-sentence JSON answer.
+ */
+export const BUG_HUNTER_CLASSIFY_MISS_MAX_TOKENS = 2048;
+export const BUG_HUNTER_CLASSIFY_MISS_TASK_ID = 'bug-hunter-miss-classifier';
+export const BUG_HUNTER_CLASSIFY_MISS_MODEL = 'gemini-2.5-flash';
+/** How far back the classifier looks for Bug Hunter's own findings on the repo when deciding whether it had already detected the bug. */
+export const BUG_HUNTER_CLASSIFY_MISS_LOOKBACK_DAYS = 21;
+
+/**
+ * The study review — a second model reads a fix session's study before any
+ * code changes (see BugFixStudy). Cheap and on the session's critical path:
+ * the session waits for the answer, so the fast tier and a small budget.
+ */
+export const BUG_HUNTER_REVIEW_STUDY_TASK_ID = 'bug-hunter-study-reviewer';
+export const BUG_HUNTER_REVIEW_STUDY_MODEL = 'gemini-2.5-flash';
+export const BUG_HUNTER_REVIEW_STUDY_MAX_TOKENS = 2048;
+/** Four is enough to say what is wrong; more is a rewrite, which is not the reviewer's job. */
+export const BUG_HUNTER_REVIEW_STUDY_MAX_CONCERNS = 4;
+/** Cap on the own-findings context shown to the classifier; newest first. */
+export const BUG_HUNTER_CLASSIFY_MISS_MAX_CONTEXT_FINDINGS = 40;
+
+/**
+ * The orchestration decider (OPP-0776/0781): picks from a closed menu with a
+ * one-line reason, over the scoreboard. Cheap model; the rule always answers
+ * too, and a model that fails or picks off the menu never blocks a run.
+ */
+export const BUG_HUNTER_DECIDE_MAX_TOKENS = 2048;
+export const BUG_HUNTER_DECIDE_TASK_ID = 'bug-hunter-decider';
+export const BUG_HUNTER_DECIDE_MODEL = 'gemini-2.5-flash';
+/** A light Finder pass after a merge or a report runs at most this often per repo. */
+export const BUG_FINDER_EVENT_DEBOUNCE_MS = 2 * 60 * 60 * 1000;
+/** How far back the report trigger looks for human reports when no run has happened yet. */
+export const BUG_FINDER_REPORT_LOOKBACK_MS = 30 * 60 * 1000;
+/** D3 may drop a finding only when the model is at least this sure; below it the drop becomes a verify. */
+export const BUG_FINDER_TRIAGE_DROP_MIN_CONFIDENCE = 0.8;
+
+/** "Today" on the Work tab's board is the team's day: the sweeps run at 06:00 India. */
+export const BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE = 'Asia/Kolkata';
 
 /**
  * Subagent name for Bug Hunter's model escalation path — defined once per

@@ -14,6 +14,16 @@ import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterService } from './bug-hunter.service';
 import { BugHunterMemoryRetirementService } from './bug-hunter-memory-retirement.service';
+import { BugHunterFinderService } from './bug-hunter-finder.service';
+import {
+  BUG_HUNT_PROTECTION_DRIFT_TASK,
+  BugHunterProtectionDriftService,
+} from './bug-hunter-protection-drift.service';
+import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
+import { BugVerifyFixService } from './bug-verify-fix.service';
+import { BUG_HUNT_PR_RECONCILE_TASK } from '../type/bug-hunter-orchestrator.type';
+import { BUG_HUNT_PR_REVIEW_TASK } from '../type/bug-hunter-pr-review.type';
+import { BugHunterPrReviewService } from './bug-hunter-pr-review.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -22,6 +32,11 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly bugFindingService: BugFindingService,
     private readonly bugHunterService: BugHunterService,
     private readonly memoryRetirement: BugHunterMemoryRetirementService,
+    private readonly finderService: BugHunterFinderService,
+    private readonly protectionDrift: BugHunterProtectionDriftService,
+    private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly verifyFix: BugVerifyFixService,
+    private readonly prReview: BugHunterPrReviewService,
   ) {}
 
   onModuleInit(): void {
@@ -68,6 +83,45 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
       AGENT_MEMORY_RETIRE_TASK,
       async () => {
         await this.memoryRetirement.run();
+      },
+    );
+
+    // The Finder's event triggers (OPP-0781): a light pass after a merge or
+    // a human report, debounced per repo, so lead time is hours rather than
+    // a night.
+    scheduledTaskRegistry.register('5min', 'bug-finder-event-triggers', () =>
+      this.finderService.runEventTriggers(),
+    );
+
+    // Open fix PRs (OPP-0758): a conflicted PR goes back to a session to
+    // rebase, a stale one gets its branch updated, and a head nobody has
+    // judged gets a Verifier. Same cadence as the other reconciles.
+    scheduledTaskRegistry.register(
+      '5min',
+      BUG_HUNT_PR_RECONCILE_TASK,
+      async () => {
+        await this.orchestrator.reconcileOpenPullRequests();
+        await this.verifyFix.reconcileOpenPrs();
+      },
+    );
+
+    // The PR review sense (OPP-0785): every open pull request a person
+    // pushed gets one review run per head, within five minutes.
+    scheduledTaskRegistry.register(
+      '5min',
+      BUG_HUNT_PR_REVIEW_TASK,
+      async () => {
+        await this.prReview.poll();
+      },
+    );
+
+    // Does master protection still match the repo map (OPP-0759)? Daily,
+    // one Problem notice per repo when the answer changes.
+    scheduledTaskRegistry.register(
+      'daily',
+      BUG_HUNT_PROTECTION_DRIFT_TASK,
+      async () => {
+        await this.protectionDrift.run();
       },
     );
 

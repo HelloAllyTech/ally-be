@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -56,42 +57,71 @@ import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHunterNotification } from '../entity/bug-hunter-notification.entity';
 import {
-  BugHunterSettingsDto,
+  AnswerBugFindingDto,
+  BugCaseBudgetDto,
+  BugFindingDetailDto,
+  BugFindingDto,
+  BugFindingMissDto,
+  BugFindingRefDto,
+  BugFixStepDto,
   BugHuntEventDto,
   BugHuntRunDetailDto,
   BugHuntRunDto,
-  TriggerBugHuntSweepDto,
-  BugFindingDto,
-  BugFindingDetailDto,
-  ListBugHuntRunsResponseDto,
   BugHuntRunsSummaryDto,
   BugHuntRunsSummaryQueryDto,
-  ListBugFindingsQueryDto,
-  ListBugFindingsResponseDto,
-  UpdateBugHunterSettingsDto,
-  AnswerBugFindingDto,
-  EditBugFindingDescriptionDto,
-  StartBugFixSessionDto,
-  BugFixStepDto,
-  BugHunterNotificationDto,
-  ListBugHunterNotificationsQueryDto,
-  ListBugHunterNotificationsResponseDto,
-  SetBugFindingStageDto,
-  BugFindingRefDto,
-  RejectBugFindingDto,
   BugHunterMetricsDto,
-  BugHunterOperationsMetricsDto,
   BugHunterMetricsQueryDto,
   BugHunterModelSettingsDto,
+  BugHunterNotificationDto,
+  BugHunterOperationsMetricsDto,
+  BugHunterSettingsDto,
+  DecisionOwnersDto,
+  EditBugFindingDescriptionDto,
+  ListBugFindingsQueryDto,
+  ListBugFindingsResponseDto,
+  ListBugHuntRunsResponseDto,
+  ListBugHunterNotificationsQueryDto,
+  ListBugHunterNotificationsResponseDto,
+  RejectBugFindingDto,
+  SetBugFindingStageDto,
+  StartBugFixSessionDto,
+  TriggerBugHuntSweepDto,
   UpdateBugHunterModelSettingsDto,
+  UpdateBugHunterSettingsDto,
+  UpdateDecisionOwnerDto,
 } from '../dto/bug-hunter.dto';
 import {
+  BUG_HUNTER_METRICS_DEFAULT_DAYS,
+  BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE,
   BUG_HUNT_SSE_PING_INTERVAL_MS,
   BUG_HUNT_SSE_POLL_INTERVAL_MS,
-  BUG_HUNTER_METRICS_DEFAULT_DAYS,
 } from '../constants/bug-hunter.constants';
 import { BugHunterMetricsService } from '../service/bug-hunter-metrics.service';
 import { effectiveStage } from '../util/bug-finding-stage.util';
+import { BugCaseFile } from '../constants/bug-case-file';
+import { BugCaseFileService } from '../service/bug-case-file.service';
+import { withBudgetDefaults } from '../type/bug-case-budget.type';
+import { readBugFixStudy } from '../type/bug-fix-study.type';
+import { latestVerdictFor } from '../type/bug-fix-verdict.type';
+import { independentVerificationOf } from '../type/bug-finding-verdict.type';
+import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
+import {
+  BugHunterScoreboardService,
+  Scoreboard,
+} from '../service/bug-hunter-scoreboard.service';
+import {
+  BugHunterDecisionReplayService,
+  ReplayReport,
+} from '../service/bug-hunter-decision-replay.service';
+import {
+  BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+  BUG_HUNTER_DECISION_POINTS_FIXED,
+} from '../type/bug-hunter-orchestrator.type';
+import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
+import {
+  BugHunterToday,
+  BugHunterTodayService,
+} from '../service/bug-hunter-today.service';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -124,12 +154,17 @@ export class BugHunterController {
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
     private readonly bugFixSessionService: BugFixSessionService,
+    private readonly caseFileService: BugCaseFileService,
+    private readonly decisionService: BugHunterDecisionService,
+    private readonly scoreboardService: BugHunterScoreboardService,
+    private readonly todayService: BugHunterTodayService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly telemetryService: BugHunterTelemetryService,
     private readonly evalService: BugHunterEvalService,
     private readonly memoryService: AgentMemoryService,
+    private readonly replayService: BugHunterDecisionReplayService,
   ) {}
 
   @Get('memory')
@@ -455,6 +490,123 @@ export class BugHunterController {
     return this.toFindingDetailDto(finding, events);
   }
 
+  /**
+   * Same read-only reasoning as `getFinding`: the case file is the drawer's
+   * structured view of the same rows, so a roadmap viewer may read it.
+   */
+  @Get('findings/:id/case')
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @ApiOperation({
+    summary:
+      "One bug's case file: typed records of everything Bug Hunter knows about it (roadmap viewer+)",
+    description:
+      'Verdicts, fix sessions with their structured attempts, lineage, the post-mortem, the miss ' +
+      'record, the budget and running totals (OPP-0775). The same record the fix dossier and the ' +
+      'Verifier read, so what a person sees in the drawer is what the agents were told.',
+  })
+  async getCaseFile(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugCaseFile> {
+    const finding = await this.bugFindingService.getOne(id);
+    return this.caseFileService.build(finding);
+  }
+
+  @Get('findings/:id/decisions')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The decision log for one bug: every orchestration choice, the pick, who owned it, and the pick not taken (OPP-0781)',
+  })
+  async listFindingDecisions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugHuntDecision[]> {
+    await this.bugFindingService.getOne(id);
+    return this.decisionService.listForFinding(id);
+  }
+
+  @Get('runs/:id/decisions')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "The decision log for one run: the Finder's D1 and D2 and every D3 it made (OPP-0781)",
+  })
+  async listRunDecisions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugHuntDecision[]> {
+    await this.bugHunterService.getRun(id);
+    return this.decisionService.listForRun(id);
+  }
+
+  @Get('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Who owns each decision point — the rule or the model — as it stands, with the defaults and which points are fixed (OPP-0783)',
+  })
+  async getDecisionOwners(): Promise<DecisionOwnersDto> {
+    const settings = await this.bugHunterService.getSettings();
+    return {
+      owners: await this.replayService.effectiveOwners(),
+      defaults: BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+      fixed: [...BUG_HUNTER_DECISION_POINTS_FIXED],
+      overrides: (settings.decisionOwners ?? {}) as Record<string, string>,
+    };
+  }
+
+  @Patch('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Hand one decision point to the other owner, or back to its default with owner null (OPP-0783). D4 and D8 are fixed and refuse.',
+  })
+  async setDecisionOwner(
+    @Body() body: UpdateDecisionOwnerDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<DecisionOwnersDto> {
+    if (BUG_HUNTER_DECISION_POINTS_FIXED.includes(body.point)) {
+      throw new BadRequestException(
+        `${body.point} is fixed in code (the Verifier vendor and the merge gate) and cannot change owner.`,
+      );
+    }
+    await this.bugHunterService.setDecisionOwner(
+      body.point,
+      body.owner ?? null,
+      user.id,
+    );
+    return this.getDecisionOwners();
+  }
+
+  @Get('decisions/replay')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The replay: per decision point, how often the owner and the shadow disagreed and who was right, and whether the owner should flip (OPP-0783)',
+  })
+  async getDecisionReplay(@Query('days') days?: string): Promise<ReplayReport> {
+    const window = Number(days);
+    return this.replayService.report(
+      Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
+    );
+  }
+
+  @Get('scoreboard')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'What each sense and model has produced on a repo in the last 90 days: filed, accepted, declined, pending (OPP-0781)',
+  })
+  async getScoreboard(
+    @Query('repo') repo: string,
+    @Query('days') days?: string,
+  ): Promise<Scoreboard> {
+    if (!repo) throw new BadRequestException('repo is required');
+    const window = Number(days);
+    return this.scoreboardService.forRepo(
+      repo,
+      Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
+    );
+  }
+
   @Post('findings/:id/fix-session')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -477,7 +629,12 @@ export class BugHunterController {
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
     return this.toDto(
-      await this.bugFixSessionService.start(id, user.id, body.repo),
+      await this.bugFixSessionService.start(
+        id,
+        user.id,
+        body.repo,
+        body.force === true,
+      ),
     );
   }
 
@@ -665,6 +822,29 @@ export class BugHunterController {
     );
   }
 
+  @Get('today')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "The Work tab's board: what Bug Hunter did today, one row per repo (super-duper-admin)",
+    description:
+      'Since midnight in `timeZone` (default Asia/Kolkata, when the sweeps run): sweeps by ' +
+      'outcome, bugs found, independent-verifier verdicts, fix sessions by who started them, ' +
+      'fix-PR verdicts, PRs open right now, merges, releases and spend. Read from runs, ' +
+      'findings and the event timeline; nothing stored.',
+  })
+  async getToday(
+    @Query('timeZone') timeZone?: string,
+  ): Promise<BugHunterToday> {
+    const zone = timeZone?.trim() || BUG_HUNTER_TODAY_DEFAULT_TIME_ZONE;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    } catch {
+      throw new BadRequestException(`Unknown time zone "${zone}".`);
+    }
+    return this.todayService.today(zone);
+  }
+
   @Get('metrics')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -730,10 +910,11 @@ export class BugHunterController {
   @ApiOperation({
     summary: "Answer a finding's open escalation question (super-duper-admin)",
     description:
-      'Only valid while the finding is NEEDS_INPUT. The fix agent may be ' +
-      'actively polling for this (it waits up to a bounded timeout before ' +
-      "giving up for now) — answering doesn't itself change the status; the " +
-      'pipeline transitions it once it reads the answer.',
+      'Only valid while the finding is NEEDS_INPUT. If the fix agent is still ' +
+      'polling for this (it waits twenty minutes before giving up), it reads ' +
+      'the answer itself and carries on. If it has already given up, a fresh ' +
+      'fix session starts with the answer in its dossier — answering is enough; ' +
+      'nobody has to also press "Put me on it".',
   })
   @ApiResponse({ status: 200, type: BugFindingDto })
   async answerFinding(
@@ -741,9 +922,15 @@ export class BugHunterController {
     @Body() body: AnswerBugFindingDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return this.toDto(
-      await this.bugFindingService.recordAnswer(id, body.answer, user.id),
+    const finding = await this.bugFindingService.recordAnswer(
+      id,
+      body.answer,
+      user.id,
     );
+    // Not awaited: the answer is saved whether or not a session can start,
+    // and `continueAfterAnswer` logs its own refusals.
+    void this.bugFixSessionService.continueAfterAnswer(id);
+    return this.toDto(finding);
   }
 
   @Get('notifications')
@@ -1003,6 +1190,30 @@ export function toSettingsDto(row: BugHunterSettings): BugHunterSettingsDto {
  * number in [0,1] comes back null — a malformed certainty must not render as a
  * confident one.
  */
+/**
+ * The miss record under `metadata.miss` (OPP-0774), or null. Validated at
+ * write time by `toBugFindingMiss`; here only the shape is checked so a
+ * hand-edited or pre-catalogue blob cannot break the drawer.
+ */
+function readMiss(
+  metadata?: Record<string, any> | null,
+): BugFindingMissDto | null {
+  const miss = metadata?.miss;
+  if (!miss || typeof miss !== 'object' || typeof miss.reason !== 'string') {
+    return null;
+  }
+  return {
+    reason: miss.reason,
+    sense: typeof miss.sense === 'string' ? miss.sense : null,
+    matchedFindingId:
+      typeof miss.matchedFindingId === 'string' ? miss.matchedFindingId : null,
+    confidence: typeof miss.confidence === 'number' ? miss.confidence : null,
+    rationale: typeof miss.rationale === 'string' ? miss.rationale : '',
+    classifiedAt:
+      typeof miss.classifiedAt === 'string' ? miss.classifiedAt : '',
+  };
+}
+
 function readConfidence(metadata?: Record<string, any> | null): number | null {
   const raw = metadata?.confidence;
   if (raw == null || raw === '') return null;
@@ -1059,10 +1270,22 @@ export function toFindingDto(
         : null,
     regressed: row.metadata?.regressed === true,
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
+    miss: readMiss(row.metadata),
+    budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
+    independentVerification: independentVerificationOf(row.metadata),
+    pr: (row.metadata?.pr as BugFindingDto['pr'] | undefined) ?? null,
+    latestFixVerdict: latestVerdictFor(
+      row.metadata?.fixVerdicts,
+      row.prUrl ?? null,
+    ) as Record<string, any> | null,
     postmortem:
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)
         : null,
+    study: readBugFixStudy(row.metadata) as unknown as Record<
+      string,
+      unknown
+    > | null,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
     engine: row.engine ?? null,

@@ -13,8 +13,11 @@
 //   lint, typecheck — any failure blocks. Deterministic, fast, and a change
 //     has no business leaving new ones behind. A baseline failure here is
 //     still surfaced, but it does not excuse the check.
+//   integrity       — any failure blocks: check-integrity.mjs refusing a
+//     change that deleted specs or emptied a file. There is no baseline for it.
 //   test            — new failures block; baseline-matching ones are carried
 //     over and reported.
+//   gate-config     — any edit that changes how the checks judge blocks.
 //
 // Prints "passed" or "blocked" on stdout. Writes the events file for the
 // caller to POST.
@@ -37,9 +40,9 @@ const eventsOut = argOf('events-out');
  * The gate runs the repo's own commands in the tree the agent just wrote to,
  * so the agent can edit its own judge — `npm test` is whatever package.json
  * says, and a conftest.py can make pytest exit 0 with every test failing. A
- * pass under those conditions is not evidence, and is reported as untrusted
- * rather than reverted: a build that legitimately splits a config should not
- * be failed for it.
+ * pass under those conditions is not evidence, so any listed file blocks (the
+ * `gate-config` check below). The list has already been narrowed to edits
+ * that change judging, so a dependency bump does not land here.
  */
 const configTouched = (argOf('config-touched') ?? '')
   .split(',')
@@ -67,7 +70,7 @@ if (!current) {
 const baseline = readJson(baselinePath);
 
 /** Checks where a pre-existing failure does not excuse the check. */
-const HARD_CHECKS = new Set(['lint', 'typecheck']);
+const HARD_CHECKS = new Set(['lint', 'typecheck', 'integrity']);
 
 const events = [];
 let blocked = false;
@@ -118,6 +121,35 @@ for (const [kind, result] of Object.entries(current.checks ?? {})) {
       hardGate: isHard,
       baselineKnown: Boolean(baselineCheck),
       outputTail: passed ? null : (result.outputTail ?? null),
+      machine: true,
+    },
+  });
+}
+
+// An edit to the gate's own configuration blocks on its own, whatever the
+// checks said: a pass that the change arranged for itself is not a pass.
+// run-test-gate.sh has already dropped the edits that do not change judging
+// (gate-config-diff.py), so everything listed here does.
+if (configTouched.length > 0) {
+  blocked = true;
+  events.push({
+    type: 'gate_result',
+    stage: 'GATE',
+    payload: {
+      repo,
+      kind: 'gate-config',
+      command: 'edits to the files that configure test, lint and typecheck',
+      passed: false,
+      trusted: true,
+      configTouched,
+      newFailures: configTouched.map(
+        (file) =>
+          `${file} changes how the gate judges this change: revert it to origin/master and make the code pass the checks as they are`,
+      ),
+      preExistingFailures: [],
+      hardGate: true,
+      baselineKnown: false,
+      outputTail: null,
       machine: true,
     },
   });

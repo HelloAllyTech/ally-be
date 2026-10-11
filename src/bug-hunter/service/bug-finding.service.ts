@@ -18,6 +18,7 @@ import {
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { BugHunterRepoClassifierService } from './bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from './bug-hunter-miss-classifier.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
@@ -65,6 +66,8 @@ export interface RawFinding {
   proven?: boolean;
   /** Optional: as `proven`. */
   touchesGuardedPath?: boolean;
+  /** Only from a pr_review run (OPP-0785): the open PR this finding is about. */
+  pr?: { number: number; url: string; headSha: string };
   /**
    * The function, class, route, component or endpoint the bug sits on. Optional
    * because not every finder can name one (a prod-log cluster often cannot), but
@@ -142,6 +145,7 @@ export class BugFindingService {
     // the shared event timeline without a circular provider.
     private readonly bugHunterService: BugHunterService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
+    private readonly missClassifier: BugHunterMissClassifierService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -534,6 +538,15 @@ export class BugFindingService {
           ...(adoptSymbol && !existingOpen.symbol
             ? { symbol: finding.symbol, dedupeKey }
             : {}),
+          // A PR review re-finding an open bug links it to the PR too.
+          ...(finding.pr
+            ? {
+                metadata: {
+                  ...(existingOpen.metadata ?? {}),
+                  pr: { ...(existingOpen.metadata?.pr ?? {}), ...finding.pr },
+                } as Record<string, any>,
+              }
+            : {}),
         });
         results.push(await this.getOne(existingOpen.id));
         continue;
@@ -624,8 +637,13 @@ export class BugFindingService {
           reportedBugId: finding.reportedBugId ?? null,
           dedupeKey,
           status: BugFindingStatus.NEW,
-          ...(regressionOf
-            ? { metadata: { regressionOf: regressionOf.id } }
+          ...(regressionOf || finding.pr
+            ? {
+                metadata: {
+                  ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
+                  ...(finding.pr ? { pr: finding.pr } : {}),
+                },
+              }
             : {}),
         }),
       );
@@ -1099,6 +1117,13 @@ export class BugFindingService {
           }`,
         );
       }
+    }
+
+    // The miss record was written against the old text; a rewrite that adds
+    // the route, the error message or the file can change both the reason and
+    // the sense. Re-run it, fire-and-forget, same as at intake.
+    if (finding.source === BugFindingSource.REPORTED_BUG) {
+      void this.missClassifier.classifyAndRecord(id, 'description_edited');
     }
 
     return this.getOne(id);

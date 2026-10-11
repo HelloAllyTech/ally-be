@@ -1,4 +1,8 @@
 import { BugFindingSeverity, BugFindingSource } from '../enum/bug-finding.enum';
+import {
+  BugFixStudy,
+  renderBugFixStudyLines,
+} from '../type/bug-fix-study.type';
 
 /**
  * Everything already known about a bug, assembled for the session about to
@@ -47,6 +51,18 @@ export interface FixDossier {
     reportedAt: Date;
     context: Record<string, unknown> | null;
   } | null;
+  /**
+   * The independent Verifier's last word on the finding itself (OPP-0780),
+   * with its reproduction verbatim — the Fixer's first test (OPP-0784).
+   */
+  independent: {
+    verdict: 'confirmed' | 'refuted' | 'unsure';
+    reproduction: string | null;
+    refutation: string | null;
+    wouldBeWrongIf: string | null;
+    by: string | null;
+    at: Date | null;
+  } | null;
   /** The Verify phase's verdicts, when the finding went through one. */
   verification: {
     /** The LOWER of the two certainties, 0-1. */
@@ -78,6 +94,12 @@ export interface FixDossier {
   previousSessions: FixDossierSession[];
   /** The post-mortem a failed session left behind, if any (OPP-0735). */
   postmortem: Record<string, unknown> | null;
+  /**
+   * The study an EARLIER session wrote before its fix — how it read the
+   * feature and what it planned. A fix that did not hold usually started from
+   * a study that was wrong somewhere, so the retry reads it first.
+   */
+  previousStudy: BugFixStudy | null;
   /** Fixes that landed in this repo for bugs in the same file or on the same symbol. */
   similarShipped: {
     id: string;
@@ -172,6 +194,29 @@ export const renderFixDossier = (dossier: FixDossier): string => {
     );
   }
 
+  if (dossier.independent) {
+    const ind = dossier.independent;
+    lines.push(
+      `### Independent verification`,
+      `A separate Verifier run${ind.by ? ` on ${ind.by}` : ''} read this finding and ${ind.verdict === 'confirmed' ? 'CONFIRMED' : ind.verdict === 'refuted' ? 'REFUTED' : 'was UNSURE about'} it${ind.at ? ` on ${day(ind.at)}` : ''}.`,
+    );
+    if (ind.reproduction) {
+      lines.push(
+        `  - Its reproduction, which is your first test — turn it into the regression test at step 1 rather than proving the bug again: "${clipDossierText(ind.reproduction, 900)}"`,
+      );
+    }
+    if (ind.refutation) {
+      lines.push(
+        `  - What it tried in order to refute the bug, and ${ind.verdict === 'refuted' ? 'why that held' : 'why that did not hold'}: "${clipDossierText(ind.refutation, 600)}"`,
+      );
+    }
+    if (ind.wouldBeWrongIf) {
+      lines.push(
+        `  - It said its verdict is wrong if: "${clipDossierText(ind.wouldBeWrongIf, 300)}" — check this before you trust the reproduction.`,
+      );
+    }
+  }
+
   const { regressionOf, rediscoveredCount } = dossier.lineage;
   if (regressionOf || rediscoveredCount > 0) {
     lines.push(`### History`);
@@ -226,6 +271,14 @@ export const renderFixDossier = (dossier: FixDossier): string => {
       lines.push(`  - Repo gotcha it hit: ${str('repoGotcha')}`);
   }
 
+  if (dossier.previousStudy) {
+    lines.push(
+      `### How the previous session understood the feature`,
+      `This is the study the last session wrote before its fix, and that fix did not hold. The likeliest mistake is in here, not in the code it then wrote: check where it says the value lives and which mechanism it chose before you trust either. Your own study (step 0c) must say what this one got wrong.`,
+      ...renderBugFixStudyLines(dossier.previousStudy, { bullet: '  - ' }),
+    );
+  }
+
   if (dossier.previousSessions.length) {
     lines.push(
       `### Earlier fix sessions on this bug (newest first)`,
@@ -259,9 +312,22 @@ export const renderFixDossier = (dossier: FixDossier): string => {
 
   if (dossier.reporter) {
     const ctx = dossier.reporter.context ?? {};
-    const facts = ['screen', 'route', 'device', 'os', 'appVersion', 'platform']
+    const facts = [
+      'surface',
+      'screen',
+      'route',
+      'device',
+      'os',
+      'appVersion',
+      'platform',
+      'language',
+      'happenedAt',
+      'frequency',
+      'impact',
+      'identifiers',
+    ]
       .filter((k) => ctx[k] != null && ctx[k] !== '')
-      .map((k) => `${k} ${clipDossierText(ctx[k], 80)}`);
+      .map((k) => `${k} ${clipDossierText(ctx[k], 120)}`);
     lines.push(
       `### Reported by a person`,
       `Filed by ${dossier.reporter.source === 'consumer' ? 'a consumer through the in-app report form' : 'a staff member'} on ${day(dossier.reporter.reportedAt)}${facts.length ? ` — ${facts.join(', ')}` : ''}. Their words are the brief above; the context was captured silently by their client and is evidence about where the bug shows up.`,

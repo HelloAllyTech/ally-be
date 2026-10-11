@@ -17,6 +17,9 @@
 #     still be gated on what THIS change broke, and the alternative — letting
 #     the agent nominate which failures to excuse — is the self-reporting this
 #     gate replaces.
+#   integrity       — HARD gate. A deleted spec or an emptied source file
+#     (check-integrity.mjs). The test check cannot see a failure in a spec
+#     that no longer exists.
 #
 # What gates is the verdict file on disk. Every POST here is telemetry and
 # swallows its errors: a curl outage must never pass or fail a build.
@@ -25,6 +28,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=repo-node.sh
+. "${HERE}/repo-node.sh"
 API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
 API_ROOT="${ALLY_BE_API_URL}/api/v1/builder/pipeline"
 BASELINE_DIR=/tmp/builder-baseline
@@ -45,18 +50,21 @@ mkdir -p "$GATE_DIR"
 # coding benchmark, where test *files* were restored from pristine before each
 # attempt but runner *config* was not, so the config was the way through.
 #
-# The response is deliberately NOT to revert these files. A build whose actual
-# job is to add a test directory, split a config or add a package legitimately
-# changes them, and reverting would fail correct work — replacing a false pass
-# with a false failure is not an improvement.
+# These edits BLOCK. They used to pass as "untrusted", on the view that a build
+# might legitimately split a config and a false failure is no better than a
+# false pass. Session 178e6598 run 3 showed what that buys: gemini-2.5-pro
+# loosened `.eslintrc.js` until lint went quiet, and the gate let it through
+# with a label nobody acted on. An agent that cannot clear its checks reaches
+# for the checks.
 #
-# Instead the gate says so. A pass on a run that edited its own judge is
-# reported as untrusted: the build still proceeds (a human and the verifier
-# read the diff), but nothing downstream may record it as evidence that the
-# code was good. That distinction matters most for the model-selection dataset,
-# where a captured pass would teach exactly the wrong lesson — cheaper models
-# reward-hack more, so the signal degrades in the same direction we would be
-# pushing it.
+# The false failures are kept narrow instead. gate-config-diff.py drops the
+# edits that do not change judging: a dependency added to package.json or
+# pyproject.toml is not an edit to `npm test`. What is left is a change to the
+# judge itself, and a build that genuinely needs one is a build for a person.
+# Nothing reverts the files automatically; the agent is told to undo them.
+#
+# `trusted` stays on the gate_result payload for the dataset and the PR
+# comment, where a pass with an edited judge must never count as evidence.
 #
 # Compared against origin/master rather than the baseline worktree: what
 # matters is whether THIS change touched the judge, not what master looks like.
@@ -214,7 +222,7 @@ for dir in repos/*/; do
     checked_any=true
     log="/tmp/builder-gate-${repo}-${kind}.log"
     started=$(date +%s)
-    if (cd "$dir" && eval "$command") > "$log" 2>&1; then
+    if (cd "$dir" && use_repo_node . && eval "$command") > "$log" 2>&1; then
       passed=true
     else
       passed=false
@@ -229,6 +237,9 @@ for dir in repos/*/; do
     --tally "${GATE_DIR}/${repo}.checks" \
     --repo "$repo" \
     --out "${GATE_DIR}/${repo}.json" || true
+  node "${HERE}/check-integrity.mjs" \
+    --dir "$dir" \
+    --results "${GATE_DIR}/${repo}.json" || true
   # Hashed after the checks, not before: a formatter or codegen a check runs
   # can rewrite the tree, and the next round must compare against what was
   # actually judged.
@@ -250,8 +261,13 @@ for dir in repos/*/; do
   # it. Emits one gate_result event per check plus a repo verdict on stdout.
   config_touched="$(gate_config_touched "$dir")"
   if [ -n "$config_touched" ]; then
-    echo "  note: this change edits the gate's own configuration (${config_touched})." >&2
-    echo "  A pass will be recorded as untrusted; the diff needs a human read." >&2
+    # Unreadable means it counts: the filter only ever narrows the list.
+    config_touched="$(python3 "${HERE}/gate-config-diff.py" "$dir" "$config_touched" 2>/dev/null \
+      || printf '%s' "$config_touched")"
+  fi
+  if [ -n "$config_touched" ]; then
+    echo "  BLOCKED: this change edits how the gate judges it (${config_touched})." >&2
+    echo "  Revert those edits and make the change pass the checks as they are." >&2
   fi
 
   repo_verdict="$(node "${HERE}/gate-verdict.mjs" \

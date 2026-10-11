@@ -1,6 +1,10 @@
 import { buildFixSessionPrompt } from '../bug-fix-prompt';
+import { FixDossier } from '../bug-fix-dossier';
 import { BugFinding } from '../../entity/bug-finding.entity';
-import { BugFindingStatus } from '../../enum/bug-finding.enum';
+import {
+  BugFindingSource,
+  BugFindingStatus,
+} from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { stageMentions } from './stage-mentions';
 
@@ -53,15 +57,19 @@ describe('buildFixSessionPrompt', () => {
 
   // ── merge policy ─────────────────────────────────────────────────────────
 
-  it('tells an ordinary fix to merge behind the PR checks, and not to deploy', () => {
-    // ally-ai-learn is the one repo whose master is unprotected, so it is the
-    // only place the bot can actually land its own work.
+  it('tells an ordinary fix to stop at a green PR for the Verifier, and not to deploy', () => {
+    // ally-ai-learn is the one repo whose master is unprotected, so it was the
+    // only place the bot used to land its own work. Since OPP-0779 the fix
+    // stops at the PR there too; a Verifier run on another model reads it and
+    // Bug Hunter merges on a pass.
     const prompt = build({ repo: 'ally-ai-learn' }, 'ally-ai-learn');
 
-    expect(prompt).toContain('gh pr merge --squash');
-    // OPP-0750: the branch goes with the merge.
-    expect(prompt).toContain('gh pr merge --squash --delete-branch');
+    expect(prompt).toMatch(
+      /9\. Do NOT merge, even though an admin asked for this fix/,
+    );
+    expect(prompt).toMatch(/separate Verifier run on a different model/);
     expect(prompt).toContain('gh pr checks --watch');
+    expect(prompt).not.toContain('gh pr merge --squash');
     expect(prompt).toMatch(/do NOT tag a release or deploy/i);
   });
 
@@ -94,9 +102,9 @@ describe('buildFixSessionPrompt', () => {
     }
   });
 
-  it('tells the one mergeable repo explicitly not to use --admin', () => {
+  it('tells the one mergeable repo not to run gh pr merge in any form', () => {
     expect(build({ repo: 'ally-ai-learn' }, 'ally-ai-learn')).toMatch(
-      /Do NOT use "gh pr merge --admin"/i,
+      /Do NOT run "gh pr merge" in any form/i,
     );
   });
 
@@ -304,6 +312,7 @@ describe('buildFixSessionPrompt', () => {
           createdAt: new Date(),
         },
         reporter: null,
+        independent: null,
         verification: { confidence: 0.62, votes: [] },
         lineage: { regressionOf: null, rediscoveredCount: 0 },
         previousSessions: [
@@ -318,6 +327,7 @@ describe('buildFixSessionPrompt', () => {
           },
         ],
         postmortem: null,
+        previousStudy: null,
         similarShipped: [],
         openNeighbours: [],
         notebook: [],
@@ -343,6 +353,110 @@ describe('buildFixSessionPrompt', () => {
     ]) {
       expect(prompt).toContain(field);
     }
+  });
+
+  describe('the study before the fix (2026-10-10)', () => {
+    it('makes the session study the feature and post it before it edits anything, with the three rules', () => {
+      const prompt = build();
+      const study = prompt.indexOf(
+        '0c. STUDY THE FEATURE BEFORE YOU TOUCH ANYTHING',
+      );
+      const reproduce = prompt.indexOf('1. Reproduce it');
+      expect(study).toBeGreaterThan(-1);
+      expect(study).toBeLessThan(reproduce);
+      expect(prompt).toContain('"stage":"study"');
+      for (const field of [
+        '"feature"',
+        '"howItWorksToday"',
+        '"valueLivesIn":"<database|locale_file|config|code|other_repo|mixed>"',
+        '"workingSibling"',
+        '"rootCause"',
+        '"approach"',
+        '"filesToChange"',
+        '"otherRepos"',
+        '"testPlan"',
+      ]) {
+        expect(prompt).toContain(field);
+      }
+      // Rule 1: content lives where its siblings live, never copied into a locale file.
+      expect(prompt).toContain('never copied into a locale file or a constant');
+      // Rule 2: a request value needs a sender.
+      expect(prompt).toContain('must have a sender');
+      // The review round trip, and the Verifier's use of the latest study.
+      expect(prompt).toContain("a second model's concerns with your study");
+      expect(prompt).toContain('post the study again');
+      expect(prompt).toContain(
+        '3. Apply the minimal fix — the one your study (step 0c) planned',
+      );
+      expect(prompt).toMatch(/Valid stages: study, fix_attempt/);
+      // No "previous study" clause on a first attempt.
+      expect(prompt).not.toContain('previousStudyWasWrongBecause');
+    });
+
+    it("renders the previous session's study and demands to know what it got wrong on a retry", () => {
+      const prompt = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-web',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: {
+          finding: {
+            id: 'finding-1',
+            title: 't',
+            description: 'd',
+            originalDescription: null,
+            file: 'AppTooltip.tsx',
+            symbol: null,
+            source: 'reported_bug' as never,
+            severity: null,
+            proven: false,
+            evidence: null,
+            touchesGuardedPath: false,
+            status: 'approved',
+            createdAt: new Date(),
+          },
+          reporter: null,
+          independent: null,
+          verification: null,
+          lineage: { regressionOf: null, rediscoveredCount: 0 },
+          previousSessions: [],
+          postmortem: null,
+          previousStudy: {
+            feature: 'CMS tooltips',
+            entryPoints: [],
+            howItWorksToday: ['en.json holds the labels', 't() renders them'],
+            valueLivesIn: 'locale_file',
+            workingSibling: null,
+            rootCause: 'keys missing from mr.json',
+            approach: 'add tooltips.* keys to the locale files',
+            filesToChange: ['en.json', 'mr.json'],
+            leaveAlone: [],
+            otherRepos: [],
+            risks: [],
+            testPlan: 'i18n-parity',
+            previousStudyWasWrongBecause: null,
+            recordedAt: '2026-10-10T05:00:00.000Z',
+            runId: 'run-1',
+            review: {
+              concerns: ['tooltips are rows in a table, not locale keys'],
+              model: 'gemini-2.5-flash',
+              at: 'x',
+            },
+          },
+          similarShipped: [],
+          openNeighbours: [],
+          notebook: [],
+        },
+      });
+      expect(prompt).toContain(
+        '### How the previous session understood the feature',
+      );
+      expect(prompt).toContain('The value lives in: the locale JSON files');
+      expect(prompt).toContain(
+        'raised: tooltips are rows in a table, not locale keys',
+      );
+      expect(prompt).toContain('"previousStudyWasWrongBecause"');
+    });
   });
 
   it('makes a failed session leave a post-mortem in the same PATCH as the failed status', () => {
@@ -382,6 +496,200 @@ describe('buildFixSessionPrompt', () => {
 
     expect(prompt).toContain('Show the raw URL as a fallback.');
     expect(prompt).toMatch(/do not ask it again/i);
+  });
+
+  describe('the orchestrator sent this session back in (OPP-0783)', () => {
+    const retry = (over: Record<string, unknown> = {}) => ({
+      kind: 'verifier_fail' as const,
+      move: 'retry_fix' as const,
+      attempt: 1,
+      failures: [
+        'suite: 3 tests red',
+        'data_file_counts: blank values 0 → 385',
+      ],
+      prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+      decisionId: 'dec-D7',
+      at: '2026-10-08T10:00:00Z',
+      ...over,
+    });
+
+    it("renders the Verifier's named failures as data and tells the fixer to continue on the refused PR", () => {
+      const prompt = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry(),
+      });
+      expect(prompt).toMatch(
+        /Why you are here again — attempt 2: the Verifier refused the last PR/,
+      );
+      expect(prompt).toContain('  - suite: 3 tests red');
+      expect(prompt).toContain('  - data_file_counts: blank values 0 → 385');
+      expect(prompt).toMatch(/gh pr checkout 812/);
+      expect(prompt).toMatch(/push to that branch so the same PR updates/);
+      expect(prompt).toMatch(
+        /UNLESS the "Why you are here again" section above names an open PR/,
+      );
+      expect(prompt).not.toMatch(/You are the stronger tier/);
+    });
+
+    it('tells the strong tier it is the strong tier, and reads a failed session through its post-mortem', () => {
+      const escalated = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({ move: 'escalate_model' }),
+      });
+      expect(escalated).toMatch(/You are the stronger tier/);
+
+      const failed = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({
+          kind: 'session_failed',
+          move: 'escalate_model',
+          failures: ['TypeError in RolePlayer'],
+          prUrl: null,
+        }),
+      });
+      expect(failed).toMatch(/attempt 2: the last session failed/);
+      expect(failed).toMatch(/read "tryNext" first/);
+      expect(failed).toContain('TypeError in RolePlayer');
+      expect(failed).not.toMatch(/gh pr checkout/);
+    });
+
+    it('tells a conflict retry to rebase the open PR branch rather than write the fix again (OPP-0758)', () => {
+      const p = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        retry: retry({
+          kind: 'conflict',
+          failures: [
+            'merge conflict: the PR branch no longer merges cleanly into master (head abc1234)',
+          ],
+        }),
+      });
+      expect(p).toMatch(/attempt 2: the PR fell into conflict with master/);
+      expect(p).toMatch(/gh pr checkout 812/);
+      expect(p).toMatch(/git rebase origin\/master/);
+      expect(p).toMatch(/git push --force-with-lease/);
+      expect(p).toMatch(/Open nothing new/);
+    });
+
+    it('carries the D6 approach as a suggestion, and says nothing when there is none', () => {
+      const withPlan = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-2',
+        apiBaseUrl: 'https://api.example.com',
+        plan: {
+          engine: 'gemini',
+          model: 'gemini-2.5-pro',
+          tier: 'strong',
+          approach: 'Add the four keys to mr.json.',
+          attempt: 1,
+          decisionId: 'dec-D6',
+          plannedAt: '2026-10-08T10:00:00Z',
+        },
+      });
+      expect(withPlan).toMatch(
+        /Suggested approach from my orchestrator \(D6.*not an order.*\): Add the four keys to mr\.json\./,
+      );
+      expect(build()).not.toMatch(/Suggested approach/);
+      expect(build()).not.toMatch(/Why you are here again/);
+    });
+  });
+
+  describe('the Fixer narrowed (OPP-0784)', () => {
+    const dossierWith = (
+      independent: FixDossier['independent'],
+    ): FixDossier => ({
+      finding: {
+        id: 'f-1',
+        title: 'Terms link',
+        description: 'd',
+        originalDescription: null,
+        file: 'src/app.ts',
+        symbol: null,
+        source: BugFindingSource.CODE_REVIEW,
+        severity: null,
+        proven: false,
+        evidence: null,
+        touchesGuardedPath: false,
+        status: 'approved',
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+      reporter: null,
+      independent,
+      verification: null,
+      lineage: { regressionOf: null, rediscoveredCount: 0 },
+      previousSessions: [],
+      postmortem: null,
+      previousStudy: null,
+      similarShipped: [],
+      openNeighbours: [],
+      notebook: [],
+    });
+
+    it("starts a verified bug from the Verifier's reproduction instead of proving it again", () => {
+      const p = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-1',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: dossierWith({
+          verdict: 'confirmed',
+          reproduction: 'curl /v1/x returns 500 for an empty body',
+          refutation: null,
+          wouldBeWrongIf: null,
+          by: 'gemini (gemini-2.5-pro)',
+          at: new Date('2026-10-08T01:00:00.000Z'),
+        }),
+      });
+      expect(p).toMatch(/1\. Start from the Verifier's reproduction/);
+      expect(p).toMatch(/do not re-litigate whether the bug is real/);
+      expect(p).not.toMatch(/1\. Reproduce it\./);
+      // and the reproduction itself is in the dossier it points at
+      expect(p).toContain('curl /v1/x returns 500 for an empty body');
+    });
+
+    it('keeps the ordinary reproduce step for an unverified or unsure bug', () => {
+      expect(build()).toMatch(/1\. Reproduce it\./);
+      const unsure = buildFixSessionPrompt({
+        finding: finding(),
+        repo: 'ally-be',
+        runId: 'run-1',
+        apiBaseUrl: 'https://api.example.com',
+        dossier: dossierWith({
+          verdict: 'unsure',
+          reproduction: null,
+          refutation: null,
+          wouldBeWrongIf: 'x',
+          by: null,
+          at: null,
+        }),
+      });
+      expect(unsure).toMatch(/1\. Reproduce it\./);
+    });
+
+    it('renders the PR description from the case file and leaves the Fixer its two paragraphs', () => {
+      const p = build();
+      expect(p).toContain(
+        'curl -sS "https://api.example.com/api/v1/bug-hunter/pipeline/findings/finding-1/pr-body?runId=run-1"',
+      );
+      expect(p).toContain('<!-- fixer: the change, in words -->');
+      expect(p).toContain('<!-- fixer: left untouched on purpose -->');
+      expect(p).toMatch(
+        /gh pr create --title '<the bug, in under 70 characters>' --body-file \/tmp\/pr-body\.md/,
+      );
+      expect(p).toMatch(/do not add a description of your own on top/);
+    });
   });
 
   it('tells the agent to find the file itself when the bug names none', () => {

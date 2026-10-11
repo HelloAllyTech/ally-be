@@ -1,3 +1,4 @@
+import { AvailableLanguageItem } from 'src/common/util/language-availability.util';
 import { Scenarios } from '../entity/scenarios.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { ScenarioCompletionSummary } from './scenario-completion.interface';
@@ -17,4 +18,10 @@ export interface GetScenarioResponse extends Scenarios {
    * session start re-checks both.
    */
   textChatAvailable?: boolean;
+  /**
+   * The languages this scenario has a voice for, in the same shape the
+   * catalog list returns. Set only when GetScenarioByIdOptions.
+   * includeAvailableLanguages is; null when no language is voiced.
+   */
+  availableLanguages?: AvailableLanguageItem[] | null;
 }

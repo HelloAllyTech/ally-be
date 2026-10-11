@@ -327,6 +327,7 @@ export class LearnController {
         // record. The @Public() sibling below deliberately does not.
         includeCompletion: true,
         includeTextChatAvailability: true,
+        includeAvailableLanguages: true,
       },
       languageCode,
     );

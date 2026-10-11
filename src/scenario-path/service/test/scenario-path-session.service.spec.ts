@@ -71,6 +71,7 @@ describe('ScenarioPathSessionService', () => {
 
   const mockSharedLanguageService = {
     getLanguagesByIds: jest.fn(),
+    getActiveScenarioVoices: jest.fn().mockResolvedValue(new Map()),
   };
 
   beforeEach(async () => {

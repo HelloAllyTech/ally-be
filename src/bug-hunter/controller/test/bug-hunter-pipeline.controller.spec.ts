@@ -12,6 +12,12 @@ import { BugHunterEvalService } from '../../service/bug-hunter-eval.service';
 import { BugHunterPolicyService } from '../../service/bug-hunter-policy.service';
 import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
 import { BugHunterDossierService } from '../../service/bug-hunter-dossier.service';
+import { BugCaseFileService } from '../../service/bug-case-file.service';
+import { BugVerifyFixService } from '../../service/bug-verify-fix.service';
+import { BugVerifyFindingsService } from '../../service/bug-verify-findings.service';
+import { BugHunterFinderService } from '../../service/bug-hunter-finder.service';
+import { BugFixStudyService } from '../../service/bug-fix-study.service';
+import { BugHunterOrchestratorService } from '../../service/bug-hunter-orchestrator.service';
 import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
@@ -50,9 +56,27 @@ describe('BugHunterPipelineController', () => {
           useValue: { search: jest.fn(), write: jest.fn() },
         },
         { provide: BugHunterDossierService, useValue: { build: jest.fn() } },
+        { provide: BugCaseFileService, useValue: { build: jest.fn() } },
+        {
+          provide: BugVerifyFixService,
+          useValue: { dispatch: jest.fn(), recordVerdict: jest.fn() },
+        },
+        {
+          provide: BugVerifyFindingsService,
+          useValue: { dispatchForRun: jest.fn(), recordVerdict: jest.fn() },
+        },
+        {
+          provide: BugHunterFinderService,
+          useValue: { ensurePlan: jest.fn(), triageNew: jest.fn() },
+        },
         {
           provide: BugHuntRunRepository,
           useValue: { findOne: jest.fn(), save: jest.fn() },
+        },
+        { provide: BugFixStudyService, useValue: { record: jest.fn() } },
+        {
+          provide: BugHunterOrchestratorService,
+          useValue: { onSessionFailed: jest.fn() },
         },
       ],
     }).compile();

@@ -24,7 +24,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-gate-test-'));
 let passed = 0;
 const failures = [];
 
-function verdictFor({ current, baseline }) {
+function verdictFor({ current, baseline, configTouched }) {
   const currentPath = path.join(tmp, `current-${Math.random()}.json`);
   fs.writeFileSync(currentPath, JSON.stringify(current));
 
@@ -37,6 +37,7 @@ function verdictFor({ current, baseline }) {
     args.push('--baseline', path.join(tmp, 'does-not-exist.json'));
   }
 
+  if (configTouched) args.push('--config-touched', configTouched);
   const eventsPath = path.join(tmp, `events-${Math.random()}.json`);
   args.push('--events-out', eventsPath);
 
@@ -102,6 +103,26 @@ test('a test that was already red does NOT block', () => {
     'src/legacy.spec.ts',
   ]);
   assert.deepEqual(events[0].payload.newFailures, []);
+});
+
+test('an edit to the gate config blocks a run whose checks passed', () => {
+  // Session 178e6598 run 3: lint went quiet because .eslintrc.js was loosened.
+  const { verdict, events } = verdictFor({
+    current: { checks: { lint: check({ passed: true, command: 'npm run lint', outputTail: null }) } },
+    configTouched: '.eslintrc.js',
+  });
+  assert.equal(verdict, 'blocked');
+  const config = events.find((event) => event.payload.kind === 'gate-config');
+  assert.equal(config.payload.passed, false);
+  assert.match(config.payload.newFailures[0], /^\.eslintrc\.js changes how the gate judges/);
+});
+
+test('no config edit, no gate-config check', () => {
+  const { verdict, events } = verdictFor({
+    current: { checks: { test: check({ passed: true, outputTail: null }) } },
+  });
+  assert.equal(verdict, 'passed');
+  assert.equal(events.some((event) => event.payload.kind === 'gate-config'), false);
 });
 
 test('a NEW failure in an already-red suite still blocks', () => {

@@ -21,6 +21,7 @@ import { RoadmapGoalImpactService } from '../roadmap-goal-impact.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
+import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
 import {
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
@@ -150,6 +151,10 @@ describe('RoadmapOpportunityService — owners', () => {
               .fn()
               .mockResolvedValue({ repo: null, rationale: '' }),
           },
+        },
+        {
+          provide: BugHunterMissClassifierService,
+          useValue: { classifyAndRecord: jest.fn().mockResolvedValue(null) },
         },
       ],
     }).compile();

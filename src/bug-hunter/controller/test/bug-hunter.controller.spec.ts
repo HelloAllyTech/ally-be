@@ -87,6 +87,12 @@ describe('BugHunterController', () => {
       {} as never,
       bugFindingService as never,
       bugFixSessionService as never,
+      // Case file service: no case here reads findings/:id/case.
+      {} as never,
+      // Decision log + scoreboard + today board: no case here reads them.
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       // Metrics service: every case here is about routing and gating, and no
       // case calls the metrics route.
@@ -98,6 +104,8 @@ describe('BugHunterController', () => {
       // Eval service: no case here reads the eval set or stores a run.
       {} as never,
       // Memory service: no case here reads or writes the notebook.
+      {} as never,
+      // Replay service: no case here reads decisions/replay or owners.
       {} as never,
     );
   });

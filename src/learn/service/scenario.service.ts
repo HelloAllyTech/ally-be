@@ -188,8 +188,10 @@ import {
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
 import {
+  AvailableLanguageItem,
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
+  getDistinctScenarioVoiceIds,
   getLanguageVoiceIds,
 } from 'src/common/util/language-availability.util';
 import {
@@ -283,7 +285,12 @@ export class ScenarioService {
       });
     let data = fetchedData;
 
-    const languageIds = getDistinctScenarioLanguageIds(data);
+    // Only languages whose voice Studio still shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(data),
+      );
+    const languageIds = getDistinctScenarioLanguageIds(data, activeVoices);
 
     const languages = languageIds.length
       ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
@@ -294,6 +301,7 @@ export class ScenarioService {
     data = data.map((scenario: any) => {
       const languageVoiceIds = getLanguageVoiceIds(
         scenario?.metadata?.languageVoices,
+        activeVoices,
       );
 
       delete scenario?.metadata;
@@ -400,7 +408,11 @@ export class ScenarioService {
       options,
     );
 
-    const languageIds = getDistinctScenarioLanguageIds(scenarios);
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds(scenarios),
+      );
+    const languageIds = getDistinctScenarioLanguageIds(scenarios, activeVoices);
 
     const languages = languageIds.length
       ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
@@ -413,6 +425,7 @@ export class ScenarioService {
 
       const languageVoiceIds = getLanguageVoiceIds(
         item?.scenario_metadata?.languageVoices,
+        activeVoices,
       );
 
       return {
@@ -524,7 +537,43 @@ export class ScenarioService {
       scenario.textChatAvailable = await this.isTextChatAvailable(scenario.id);
     }
 
+    if (options?.includeAvailableLanguages) {
+      scenario.availableLanguages = await this.getVoicedLanguages(scenario.id);
+    }
+
     return scenario;
+  }
+
+  /**
+   * The languages a scenario has a voice for, built exactly as the catalog
+   * list builds them. Read separately for the same reason as
+   * isTextChatAvailable: the learner detail query never selects `metadata`,
+   * and this needs only its `languageVoices` key.
+   */
+  private async getVoicedLanguages(
+    scenarioId: number,
+  ): Promise<AvailableLanguageItem[] | null> {
+    const rows: { languageVoices: Record<string, unknown> | null }[] =
+      await this.scenariosRepository.query(
+        `SELECT "metadata"->'languageVoices' AS "languageVoices"
+         FROM "scenarios" WHERE "id" = $1 LIMIT 1`,
+        [scenarioId],
+      );
+    const languageVoices = rows?.[0]?.languageVoices;
+    // Same rule as the catalog: a language counts only while its voice is an
+    // active catalog voice, which is what Studio shows as configured.
+    const activeVoices =
+      await this.sharedLanguageService.getActiveScenarioVoices(
+        getDistinctScenarioVoiceIds([{ metadata: { languageVoices } }]),
+      );
+    const languageIds = getLanguageVoiceIds(languageVoices, activeVoices);
+    if (!languageIds.length) return null;
+    const languagesMap = buildAvailableLanguagesMap(
+      await this.sharedLanguageService.getLanguagesByIds(languageIds),
+    );
+    return languageIds
+      .map((languageId) => languagesMap.get(languageId))
+      .filter((language): language is AvailableLanguageItem => !!language);
   }
 
   /**

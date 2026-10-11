@@ -38,7 +38,13 @@ export interface BugHunterModelSettings {
   engine: string;
   /** Model the main sweep/fix-session invocation runs on. */
   defaultModel: string;
-  /** Model pinned into `.claude/agents/bug-escalation.md` before each run. Ignored for `gemini`. */
+  /**
+   * The stronger model one hard fix may escalate to. Handed to OpenCode's
+   * escalation agent by value at run time; since 2026-10-09 no workflow
+   * rewrites the committed `.claude/agents/bug-escalation.md` any more (fix
+   * PRs were committing the rewrite). Ignored for `gemini`, which has no
+   * subagents.
+   */
   escalationModel: string;
 }
 

@@ -33,10 +33,28 @@ describe('LlmModelService — catalog editing', () => {
           provider: 'openai',
           model: 'gpt-5.1-mini',
           label: 'GPT-5.1 mini',
-          supportsTemperature: true,
+          // Defaulted from the shared rule: the gpt-5 family 400s on a custom one.
+          supportsTemperature: false,
           active: true,
         }),
       );
+    });
+
+    it('defaults supportsTemperature from the model when the caller omits it', async () => {
+      const { service, repository } = buildService();
+
+      await service.createModel({
+        provider: 'gemini',
+        model: 'gemini-2.5-pro',
+      });
+      await service.createModel({
+        provider: 'gemini',
+        model: 'gemini-3-flash-preview',
+      });
+
+      const saved = repository.save.mock.calls.map(([row]) => row);
+      expect(saved[0].supportsTemperature).toBe(true);
+      expect(saved[1].supportsTemperature).toBe(false);
     });
 
     // The boundary the whole catalog-in-DB decision rests on: a provider with

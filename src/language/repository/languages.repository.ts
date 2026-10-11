@@ -16,6 +16,27 @@ export class LanguagesRepository extends Repository<Languages> {
     });
   }
 
+  /**
+   * Which of `voiceIds` are still active catalog voices, and for which
+   * language. Raw SQL on `scenario_voices` rather than its repository: that
+   * lives in the learn module, which already imports this one.
+   */
+  async getActiveScenarioVoices(
+    voiceIds: string[],
+  ): Promise<{ id: string; languageId: number }[]> {
+    if (!voiceIds.length) return [];
+    const rows: { id: string; languageId: number | string }[] =
+      await this.dataSource.query(
+        `SELECT "id", "languageId" FROM "scenario_voices"
+         WHERE "active" = true AND "id"::text = ANY($1::text[])`,
+        [voiceIds],
+      );
+    return rows.map((row) => ({
+      id: row.id,
+      languageId: Number(row.languageId),
+    }));
+  }
+
   getLanguageByLanguageCode(languageCode: string): Promise<Languages | null> {
     return this.findOne({ where: { translationCode: languageCode } });
   }

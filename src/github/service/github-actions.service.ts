@@ -75,6 +75,36 @@ export interface PullRequestInfo {
    * branch deletion when this is set.
    */
   headIsFork: boolean;
+  /** Lines added and removed, and files changed, as GitHub counts them. Null when GitHub did not say. */
+  additions: number | null;
+  deletions: number | null;
+  changedFiles: number | null;
+}
+
+/**
+ * What a branch's protection requires, read from both the classic
+ * protection API and rulesets (a repo may use either). `source` says which
+ * answered; `none` means neither protects the branch.
+ */
+export interface BranchProtectionSummary {
+  reviewsRequired: number;
+  requiredChecks: string[];
+  source: 'classic' | 'ruleset' | 'both' | 'none';
+}
+
+/** A pull request, as returned by the list-all endpoint. */
+export interface PullRequestFromList {
+  htmlUrl: string;
+  headRef: string | null;
+  /** The rest is what the PR review sense (OPP-0785) needs to decide whether, and which head, to review. */
+  number: number | null;
+  headSha: string | null;
+  baseRef: string | null;
+  authorLogin: string | null;
+  title: string | null;
+  body: string | null;
+  draft: boolean;
+  updatedAt: Date | null;
 }
 
 /** What became of a branch-delete request — see `deleteBranch`. */
@@ -377,11 +407,133 @@ export class GithubActionsService {
           String(data.head.repo.full_name).toLowerCase() !==
             String(data.base.repo.full_name).toLowerCase(),
         ),
+        additions: typeof data?.additions === 'number' ? data.additions : null,
+        deletions: typeof data?.deletions === 'number' ? data.deletions : null,
+        changedFiles:
+          typeof data?.changed_files === 'number' ? data.changed_files : null,
       };
     } catch (error) {
       this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * What a branch's protection requires, from classic protection and from
+   * rulesets together (OPP-0759). A 404 on the classic endpoint means "not
+   * protected that way", not an error. Null only when GitHub cannot be read
+   * at all, which a caller must treat as unknown rather than unprotected.
+   */
+  async getBranchProtection(
+    repo: string,
+    branch = 'master',
+  ): Promise<BranchProtectionSummary | null> {
+    this.requireConfigured();
+    let reviews = 0;
+    const checks = new Set<string>();
+    let classic = false;
+    let ruleset = false;
+    try {
+      try {
+        const { data } = await axios.get(
+          this.url(repo, `branches/${branch}/protection`),
+          { headers: this.headers, timeout: 15_000 },
+        );
+        classic = true;
+        reviews = Math.max(
+          reviews,
+          Number(
+            data?.required_pull_request_reviews
+              ?.required_approving_review_count ?? 0,
+          ) || 0,
+        );
+        for (const c of data?.required_status_checks?.contexts ?? [])
+          checks.add(String(c));
+      } catch (error) {
+        if (
+          (error as { response?: { status?: number } })?.response?.status !==
+          404
+        )
+          throw error;
+      }
+      const { data: rules } = await axios.get(
+        this.url(repo, `rules/branches/${branch}`),
+        { headers: this.headers, timeout: 15_000 },
+      );
+      for (const rule of (rules ?? []) as Record<string, any>[]) {
+        if (rule?.type === 'pull_request') {
+          ruleset = true;
+          reviews = Math.max(
+            reviews,
+            Number(rule?.parameters?.required_approving_review_count ?? 0) || 0,
+          );
+        } else if (rule?.type === 'required_status_checks') {
+          ruleset = true;
+          for (const c of rule?.parameters?.required_status_checks ?? [])
+            if (c?.context) checks.add(String(c.context));
+        }
+      }
+      this.noteAuthOutcome();
+      return {
+        reviewsRequired: reviews,
+        requiredChecks: [...checks].sort(),
+        source:
+          classic && ruleset
+            ? 'both'
+            : classic
+              ? 'classic'
+              : ruleset
+                ? 'ruleset'
+                : 'none',
+      };
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not read ${branch} protection on ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Every open pull request in a repository.
+   *
+   * Only what the Bug Hunter reconcile loop needs: the branch name, to find the
+   * one that belongs to a given bug. O(n) in the number of open PRs, which is
+   * never high enough to be a problem.
+   */
+  async listPullRequests(repo: string): Promise<PullRequestFromList[] | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, `pulls`), {
+        headers: this.headers,
+        timeout: 15_000,
+        params: { state: 'open', per_page: 100 },
+      });
+      this.noteAuthOutcome();
+      return (data ?? []).map((pr: any) => ({
+        htmlUrl: pr?.html_url ? String(pr.html_url) : '',
+        headRef: pr?.head?.ref ? String(pr.head.ref) : null,
+        number: typeof pr?.number === 'number' ? pr.number : null,
+        headSha: pr?.head?.sha ? String(pr.head.sha) : null,
+        baseRef: pr?.base?.ref ? String(pr.base.ref) : null,
+        authorLogin: pr?.user?.login ? String(pr.user.login) : null,
+        title: pr?.title ? String(pr.title) : null,
+        body: typeof pr?.body === 'string' ? pr.body : null,
+        draft: Boolean(pr?.draft),
+        updatedAt: pr?.updated_at ? new Date(pr.updated_at) : null,
+      }));
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not list pull requests in ${repo}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -902,6 +1054,51 @@ export class GithubActionsService {
    * Reply in the thread of a review comment, so the person who raised it sees
    * the answer where they asked rather than as a new top-level comment.
    */
+  /**
+   * Submits a review on a pull request as a COMMENT, never an approval or a
+   * request for changes (OPP-0785): Bug Hunter speaks, the merge stays the
+   * person's. File-level comments carry a path and no line, so a finding
+   * that names a file lands beside it without needing a diff position.
+   * Returns the review's URL, or null when GitHub refused.
+   */
+  async createPullRequestReview(
+    repo: string,
+    number: number,
+    review: {
+      commitId: string;
+      body: string;
+      comments?: { path: string; body: string }[];
+    },
+  ): Promise<string | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, `pulls/${number}/reviews`),
+        {
+          commit_id: review.commitId,
+          event: 'COMMENT',
+          body: review.body,
+          comments: (review.comments ?? []).map((c) => ({
+            path: c.path,
+            body: c.body,
+            subject_type: 'file',
+          })),
+        },
+        { headers: this.headers, timeout: 20_000 },
+      );
+      this.noteAuthOutcome();
+      return data?.html_url ? String(data.html_url) : null;
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not post a review on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
   async replyToReviewComment(
     repo: string,
     number: number,

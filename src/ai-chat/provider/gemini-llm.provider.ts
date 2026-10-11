@@ -4,6 +4,7 @@ import {
   GoogleGenAI,
 } from '@google/genai';
 import { AppConfigService } from 'src/config/config.service';
+import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   LlmProvider,
   LlmMessage,
@@ -24,6 +25,13 @@ const toTokenUsage = (
     (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
   cachedTokens: usage.cachedContentTokenCount ?? undefined,
 });
+
+/** Gemini 3+ deprecated custom sampling, so the temperature is sent only to
+ * models that still take it. */
+const geminiSampling = (config: LlmProviderConfig) =>
+  modelSupportsTemperature(config.model)
+    ? { temperature: config.temperature ?? 0.7 }
+    : {};
 
 /**
  * Gemini coaching-chat provider. Mirrors {@link OpenAiLlmProvider} against the
@@ -94,7 +102,7 @@ export class GeminiLlmProvider implements LlmProvider {
       contents,
       config: {
         systemInstruction,
-        temperature: config.temperature ?? 0.7,
+        ...geminiSampling(config),
         maxOutputTokens: config.maxTokens ?? 1500,
       },
     });
@@ -124,7 +132,7 @@ export class GeminiLlmProvider implements LlmProvider {
       contents,
       config: {
         systemInstruction,
-        temperature: config.temperature ?? 0.7,
+        ...geminiSampling(config),
         maxOutputTokens: config.maxTokens ?? 1500,
       },
     });
