@@ -32,6 +32,11 @@ const caseFile = (over: Partial<BugCaseFile> = {}): BugCaseFile => ({
   sessions: [],
   postmortem: null,
   study: null,
+  chain: {
+    links: [],
+    mergeable: true,
+    blocking: [],
+  },
   lineage: { regressionOf: null, regressed: false, rediscoveredCount: 0 },
   budget: {
     caps: { sessions: 2, attempts: 4, escalations: 1, usd: 15, minutes: 120 },
@@ -66,6 +71,49 @@ const decision = (over: Partial<BugHuntDecision>): BugHuntDecision =>
   }) as BugHuntDecision;
 
 describe('renderPrBody', () => {
+  it('renders the case chain link by link, with its evidence', () => {
+    const body = renderPrBody(
+      caseFile({
+        chain: {
+          links: [
+            {
+              link: 'observed',
+              status: 'present',
+              evidence: "reporter's steps: pick Marathi",
+            },
+            {
+              link: 'reproduced',
+              status: 'present',
+              evidence: 'GET …?languageCode=mr returns English',
+            },
+            { link: 'located', status: 'present', evidence: 'data in ally-be' },
+            {
+              link: 'changed',
+              status: 'broken',
+              evidence: 'the fault is in data and the change is in locale_file',
+            },
+            { link: 'resolved', status: 'missing', evidence: null },
+            { link: 'held', status: 'missing', evidence: null },
+          ],
+          mergeable: false,
+          blocking: ['changed', 'resolved'],
+        },
+      }),
+      { repo: 'ally-web' },
+    );
+    expect(body).toContain('## The chain');
+    expect(body).toContain(
+      "- ✔ **observed** — present: reporter's steps: pick Marathi",
+    );
+    expect(body).toContain(
+      '- ✖ **changed in that mechanism** — broken: the fault is in data',
+    );
+    expect(body).toContain('- ○ **resolved for the reporter** — missing');
+    expect(body.indexOf('## The chain')).toBeLessThan(
+      body.indexOf('## How it works today'),
+    );
+  });
+
   it('shows the study the session wrote before the fix, or says there was none', () => {
     const without = renderPrBody(caseFile(), { repo: 'ally-web' });
     expect(without).toContain('## How it works today, and the plan');

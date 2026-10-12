@@ -32,6 +32,8 @@ export const BUG_FIX_VERDICT_CHECKS = [
   'study_followed',
   /** The diff changes the layer the Verifier located the fault in; a PR for a data or config fault fails here. Skipped when no fault was located. */
   'fault_layer_matches',
+  /** The reporter's own steps (or the finding Verifier's reproduction) re-run at the PR head: the symptom is gone, not only the PR's test green. Required whenever steps exist. */
+  'symptom_resolved',
   /** Server-computed (OPP-0759): the PR touches a file a person must merge — Bug Hunter's own files, migrations, locales, seeds, snapshots, lockfiles, a stray pr-body.md. */
   'forbidden_files',
 ] as const;

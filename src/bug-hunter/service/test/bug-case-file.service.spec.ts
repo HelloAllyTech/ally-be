@@ -198,6 +198,15 @@ describe('BugCaseFileService.build', () => {
     expect(cf.budget.caps).toEqual(BUG_CASE_BUDGET_DEFAULTS);
     expect(cf.decisions).toEqual([]);
     expect(cf.totals).toEqual({ sessions: 1, attempts: 1, verdicts: 0 });
+    expect(cf.chain.links.map((l) => l.link)).toEqual([
+      'observed',
+      'reproduced',
+      'located',
+      'changed',
+      'resolved',
+      'held',
+    ]);
+    expect(cf.chain.mergeable).toBe(false);
   });
 
   it('leaves the current run out of the sessions and uses events handed in rather than fetching', async () => {

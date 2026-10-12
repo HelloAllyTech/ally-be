@@ -23,6 +23,7 @@ import {
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugFindingService } from './bug-finding.service';
 import { BugHunterService } from './bug-hunter.service';
+import { buildCaseChain, chainRefusal } from '../type/bug-case-chain.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 import { independentVerificationOf } from '../type/bug-finding-verdict.type';
 import {
@@ -226,6 +227,24 @@ export class BugHunterPolicyService {
     }
 
     await this.assertTrivialDiff(finding, prUrl);
+    this.assertChainComplete(finding, prUrl);
+  }
+
+  /**
+   * The case chain: a self-merge needs every link from the symptom to the
+   * change — observed, reproduced, located, changed, resolved. A green test
+   * is one link, not the chain. Last, so a size or path refusal keeps its own
+   * reason.
+   */
+  assertChainComplete(finding: BugFinding, prUrl: string | null = null): void {
+    // The PR may arrive on the PATCH before the finding row carries it.
+    const chain = buildCaseChain({
+      ...finding,
+      prUrl: prUrl ?? finding.prUrl ?? null,
+    });
+    if (!chain.mergeable) {
+      throw new ForbiddenException(chainRefusal(chain));
+    }
   }
 
   /**

@@ -61,6 +61,11 @@ const caseFile = (over: Partial<BugCaseFile> = {}): BugCaseFile => ({
   sessions: [],
   postmortem: null,
   study: null,
+  chain: {
+    links: [],
+    mergeable: true,
+    blocking: [],
+  },
   lineage: { regressionOf: null, regressed: false, rediscoveredCount: 0 },
   budget: {
     caps: { sessions: 2, attempts: 4, escalations: 1, usd: 15, minutes: 120 },

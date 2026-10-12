@@ -101,6 +101,13 @@ export function buildVerifyFindingsPrompt({
           ``,
         ]
       : []),
+    ...(hasReports
+      ? []
+      : [
+          `## Name the layer`,
+          `Every verdict also says which layer the fault is in — "faultLayer": code, data, config or unknown — with the repo that owns it. For a sweep finding that is usually "code" and this repo; say so rather than leaving it out, because the fix is merged only when the chain from symptom to change has a located fault in it. If what you find is a missing row or a wrong setting rather than wrong code, say "data" or "config" and name the repair; that finding will go to a person, not a fix session.`,
+          ``,
+        ]),
     `## For each finding, in order`,
     `1. Read the code the finder points at, and its callers. Decide what would have to be true for the bug to be real.`,
     `2. REPRODUCE. Make the bug happen, or show the defect in the code path with a command: a throwaway failing test, a script, a query, a curl against a locally started service, a grep that shows the unguarded input reaching the call. Record exactly what you ran and what it printed. For a finding with source "locale_parity" the reproduction is the same script that filed it: "node scripts/i18n-parity.mjs --json" — quote the counts for that file, and confirm only if they are still non-zero on master.`,
@@ -110,7 +117,7 @@ export function buildVerifyFindingsPrompt({
     `   - "refuted": you found why it is not a bug. Requires a refutation.`,
     `   - "unsure": you could neither reproduce nor refute in the time, or the two conflict. Say what would settle it.`,
     `5. Send the verdict before moving to the next finding, so a run that dies halfway still leaves the ones you finished:`,
-    `   curl -sS -X PATCH "${base}/pipeline/findings/<id>" -H "Content-Type: application/json" ${authHeader} -d '{"findingVerdict":{"runId":"${runId}","verdict":"<confirmed|refuted|unsure>","confidence":<0 to 1>,"reproduction":"<what you ran and what happened, or null>","refutation":"<what you tried to disprove it and why it did or did not hold, or null>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>"${hasReports ? ',"faultLayer":"<code|data|config|unknown>","faultRepo":"<repo that owns the broken layer, or null>","productionEvidence":"<the probe you ran and what it returned>","repair":"<for data or config: the exact repair a person makes; null for code>"' : ''}}}'`,
+    `   curl -sS -X PATCH "${base}/pipeline/findings/<id>" -H "Content-Type: application/json" ${authHeader} -d '{"findingVerdict":{"runId":"${runId}","verdict":"<confirmed|refuted|unsure>","confidence":<0 to 1>,"reproduction":"<what you ran and what happened, or null>","refutation":"<what you tried to disprove it and why it did or did not hold, or null>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>","faultLayer":"<code|data|config|unknown>","faultRepo":"<repo that owns the broken layer, or null>","productionEvidence":"<for a human report: the probe you ran and what it returned; else what showed the layer>","repair":"<for data or config: the exact repair a person makes; null for code>"}}'`,
     `   Then ${`curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"repo":"${repo}","stage":"verify","findingId":"<id>","summary":"<verdict in one line>"}'`}`,
     ``,
     `Bug Hunter acts on each verdict as it lands: a confirmed code fault in AI mode gets a fix session that starts from your reproduction and your fault location; a confirmed data or config fault goes to a person with your repair and never to a fix session; a refuted one is dismissed with your refutation as the reason; an unsure one is held for a person with your note.`,
