@@ -6,8 +6,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 1951000000000 — the CHECK-constrained `bug_hunt_events.stage` column must
  * list every enum value or the first write of the new stage fails at runtime.
  */
-export class AddBugHuntWrongFixStage1975910000000 implements MigrationInterface {
-  name = 'AddBugHuntWrongFixStage1975910000000';
+export class AddBugHuntWrongFixStage1975960000000 implements MigrationInterface {
+  name = 'AddBugHuntWrongFixStage1975960000000';
 
   private readonly stages = [
     'skipped_disabled',
