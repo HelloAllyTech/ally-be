@@ -93,6 +93,14 @@ http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && path.endsWith('/design-scope')) {
+    // The approved design's file list, when the scenario has one.
+    append('GET design-scope');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(process.env.DRYRUN_DESIGN_SCOPE || '{"repos":{}}');
+    return;
+  }
+
   if (req.method === 'GET' && path.endsWith('/repo-commands')) {
     // The test command passes until the marker exists, and the coder shim
     // creates that marker in the gate-block scenario. So the baseline is green
@@ -616,6 +624,7 @@ run_scenario() {
   DRYRUN_PROMPT_FAIL="${DRYRUN_PROMPT_FAIL:-}" \
   DRYRUN_GATE_FAIL="$gate_fail" \
   DRYRUN_STEER_NOTE="${DRYRUN_STEER_NOTE:-}" DRYRUN_STEER_AFTER="${DRYRUN_STEER_AFTER:-0}" \
+  DRYRUN_DESIGN_SCOPE="${DRYRUN_DESIGN_SCOPE:-}" \
     node "${WORK}/server.mjs" &
   SERVER_PID=$!
 
@@ -719,6 +728,21 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = live-steer ]; then
   run_scenario live-steer-off DRYRUN_SELFCHECKED=1
   check "off by default" no \
     "$(grep -q ':attached' /tmp/builder-dryrun-agents 2>/dev/null && echo yes || echo no)"
+fi
+
+# With an approved technical design, the design is the plan: no planner runs,
+# and the build still codes, gates and reviews.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = design-is-plan ]; then
+  DRYRUN_DESIGN_SCOPE='{"repos":{"demo-repo":["file.txt"]}}' \
+    run_scenario design-is-plan DRYRUN_SELFCHECKED=1
+  check "finished the run" 0 "$EXIT_CODE"
+  check "did not run the planner" no "$(has_in_log 'GET plan-prompt')"
+  check "said why" yes \
+    "$(grep -q 'it is the plan. Skipping the planner' "${WORK}/design-is-plan.out" && echo yes || echo no)"
+  check "still reviewed the work" yes "$(has_in_log 'EVENT verification:pass')"
+
+  run_scenario no-design-plans DRYRUN_SELFCHECKED=1
+  check "plans when there is no approved design" yes "$(has_in_log 'GET plan-prompt')"
 fi
 
 # A coder that stops without a passing self-check of its final tree gets one

@@ -261,6 +261,46 @@ describe('BugVerifyFindingsService', () => {
       expect(await service.dispatchForReport('f-4')).toBeNull();
       expect(bugHunterService.startRun).not.toHaveBeenCalled();
     });
+
+    it('locates again a report whose wrong-layer fix was closed, and leaves a pending or running one alone', async () => {
+      // 2026-10-12: a translations bug was "fixed" in the frontend while the
+      // rows were missing in the backend; the PR was closed and the admin
+      // pressed "Put me on it" again. That press must locate, not re-fix.
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.PR_OPENED,
+          metadata: { independentVerification: 'unsure' },
+        }),
+      ];
+      expect((await service.dispatchForReport('f-3'))?.findingIds).toEqual([
+        'f-3',
+      ]);
+      expect(rows[0].metadata).toMatchObject({
+        independentVerification: 'pending',
+      });
+
+      bugHunterService.startRun.mockClear();
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.CANCELLED,
+          metadata: { independentVerification: 'pending' },
+        }),
+      ];
+      expect(await service.dispatchForReport('f-3')).toBeNull();
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.FIXING,
+        }),
+      ];
+      expect(await service.dispatchForReport('f-3')).toBeNull();
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
   });
 
   describe('the held check (link six)', () => {
@@ -464,6 +504,51 @@ describe('BugVerifyFindingsService', () => {
       expect(bugFindingService.setStatus).toHaveBeenCalledWith('f-1', {
         status: BugFindingStatus.PENDING_APPROVAL,
       });
+    });
+
+    it('acts on a re-located report: confirmed reaches D5 from a cancelled session, refuted dismisses a closed-PR one', async () => {
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.CANCELLED,
+          metadata: {
+            independentVerification: 'pending',
+            verifyFindingsRunId: 'verify-1',
+          },
+        }),
+      ];
+      await service.recordVerdict('f-3', {
+        runId: 'verify-1',
+        verdict: 'confirmed',
+        confidence: 0.9,
+        reproduction: 'scenario 111 answers in English for mr',
+        faultLayer: 'code',
+        faultRepo: 'ally-be',
+        productionEvidence: 'GET scenarios/111/public?languageCode=mr',
+      });
+      expect(orchestrator.onFindingConfirmed).toHaveBeenCalledWith('f-3', 0.9);
+
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.PR_OPENED,
+          metadata: {
+            independentVerification: 'pending',
+            verifyFindingsRunId: 'verify-1',
+          },
+        }),
+      ];
+      await service.recordVerdict('f-3', {
+        runId: 'verify-1',
+        verdict: 'refuted',
+        refutation: 'the titles are Marathi at head',
+      });
+      expect(bugFindingService.setStatus).toHaveBeenCalledWith(
+        'f-3',
+        expect.objectContaining({ status: BugFindingStatus.DISMISSED }),
+      );
     });
 
     it('leaves a finding a person already acted on alone, and records nothing for an unusable report', async () => {

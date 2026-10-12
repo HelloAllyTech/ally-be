@@ -124,10 +124,31 @@ export interface BuilderDesignTest {
 }
 
 export interface BuilderDesignReview {
+  /**
+   * 'concerns' exactly when `defects` is non-empty. Derived, not chosen, so a
+   * reviewer that files only scope suggestions cannot mark a sound design as
+   * failing — the first critic on session 880e73e6 flagged "trainers cannot
+   * author rich text in article questions", which the PRD never asked for.
+   */
   verdict: 'pass' | 'concerns';
   notesMd: string;
+  /** What would make the build wrong or a released client break. */
+  defects?: string[];
+  /** Scope the design could widen to; a person's call, not a failure. */
+  suggestions?: string[];
   at: string;
 }
+
+export type BuilderPreviousDesign = Pick<
+  BuilderTechnicalDesign,
+  | 'designMd'
+  | 'scope'
+  | 'contracts'
+  | 'compatibilityMd'
+  | 'testMap'
+  | 'openDecisions'
+  | 'review'
+>;
 
 export interface BuilderTechnicalDesign {
   status: BuilderTechnicalDesignStatus;
@@ -150,6 +171,15 @@ export interface BuilderTechnicalDesign {
   approvedBy: number | null;
   approvedAt: string | null;
   error: string | null;
+  /**
+   * The draft this one replaces, with its reviewer's findings — what a
+   * redraft is asked to fix. Without it a redraft started from nothing and
+   * could repeat exactly what the critic objected to (session 880e73e6's
+   * first design missed the component-template save path and two mobile
+   * readers; the critic found all three). Never nested: a redraft of a
+   * redraft carries only its immediate predecessor.
+   */
+  previous?: BuilderPreviousDesign | null;
 }
 
 /** Progress flags the interviewer sets as it completes each phase. */

@@ -114,6 +114,53 @@ describe('buildDesignPrompt', () => {
   });
 });
 
+/**
+ * A redraft is told what its predecessor got wrong. Session 880e73e6's first
+ * design missed the component-template save path and two mobile readers; the
+ * critic found all three, and a redraft that could not see that would have
+ * been free to miss them again.
+ */
+describe('buildDesignPrompt for a redraft', () => {
+  const previous = design({
+    status: 'review',
+    designMd: 'First draft: derive prompt in track.service only.',
+    review: {
+      verdict: 'concerns',
+      notesMd: 'Missed track-component-template.service.ts:60.',
+      at: '2026-10-12T12:32:55.325Z',
+    },
+  });
+  const redraft = {
+    ...prd,
+    technicalDesign: createDraftingDesign(prd, 'run-2', previous),
+  };
+
+  it("carries the previous draft and the reviewer's findings", () => {
+    const prompt = buildDesignPrompt({
+      sessionId: 'session-1',
+      runId: 'run-2',
+      prd: redraft,
+      repos,
+    });
+    expect(prompt).toContain('This is a redraft');
+    expect(prompt).toContain('Missed track-component-template.service.ts:60.');
+    expect(prompt).toContain(
+      'First draft: derive prompt in track.service only.',
+    );
+    expect(prompt).toContain('### The review (concerns)');
+  });
+
+  it('says nothing about a redraft on a first draft', () => {
+    const prompt = buildDesignPrompt({
+      sessionId: 'session-1',
+      runId: 'run-1',
+      prd: { ...prd, technicalDesign: createDraftingDesign(prd, 'run-1') },
+      repos,
+    });
+    expect(prompt).not.toContain('This is a redraft');
+  });
+});
+
 describe('buildDesignReviewPrompt', () => {
   it('renders the rules, the submitted design and the `design_review` tool', () => {
     const prompt = buildDesignReviewPrompt({

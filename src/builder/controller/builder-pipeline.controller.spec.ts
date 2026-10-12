@@ -432,6 +432,50 @@ describe('BuilderPipelineController', () => {
       expect(stored.status).toBe('review');
     });
 
+    /**
+     * Defects decide the verdict; suggestions never do. The first critic on
+     * session 880e73e6 marked a sound design "concerns" for not adding rich
+     * text to article questions, which the PRD never asked for.
+     */
+    it('derives the verdict from defects, and keeps suggestions apart', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ ...submission, status: 'review' }),
+      );
+
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design-review`)
+        .set('x-api-key', 'test-api-key')
+        // The reviewer's own verdict is overruled by its empty defect list.
+        .send({
+          verdict: 'concerns',
+          defects: [],
+          suggestions: ['Article questions could take rich text too.'],
+        })
+        .expect(201);
+
+      const [, passed] = mockPrdService.setTechnicalDesign.mock.calls[0];
+      expect(passed.review).toEqual({
+        verdict: 'pass',
+        notesMd: '',
+        defects: [],
+        suggestions: ['Article questions could take rich text too.'],
+        at: expect.any(String),
+      });
+
+      mockPrdService.setTechnicalDesign.mockClear();
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design-review`)
+        .set('x-api-key', 'test-api-key')
+        .send({
+          defects: ['ally-be:src/a.ts:9 reads prompt and is not listed'],
+          suggestions: [],
+        })
+        .expect(201);
+
+      const [, failed] = mockPrdService.setTechnicalDesign.mock.calls[0];
+      expect(failed.review.verdict).toBe('concerns');
+    });
+
     it('serves the approved scope per repo', async () => {
       mockPrdService.getOrCreateDoc.mockResolvedValue(
         withDesign({

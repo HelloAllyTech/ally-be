@@ -444,7 +444,11 @@ export class BuilderBuildService {
           createdRunId = run.id;
           await this.prdService.setTechnicalDesign(
             doc,
-            createDraftingDesign(doc.draft, run.id),
+            createDraftingDesign(
+              doc.draft,
+              run.id,
+              doc.draft.technicalDesign ?? null,
+            ),
             userId,
             BuilderPrdVersionAuthor.ADMIN,
             'Drafting the technical design',

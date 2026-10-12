@@ -114,7 +114,11 @@ contract, how a client built before this change keeps working after it.
 sanitizers and renderers the build should use, with their paths. A design
 that has the build write a second one of something is a defect.
 
-**5. Scope each repo to exact files.** \`scope\` lists, per repo, the files
+**5. Draw the scope boundary, then scope each repo to exact files.** When the
+code shows a changed contract reaching surfaces the PRD does not mention, apply
+the platform rule on ambiguity and write the result under a **Scope
+boundaries** heading in \`designMd\`: what is excluded, why nothing breaks,
+and what including it would take. Then list the files. \`scope\` lists, per repo, the files
 the build may change — repo-relative paths, globs where a set is genuinely
 open-ended (\`src/builder/**/test/*.spec.ts\`). This list becomes the build's
 **hard scope check**: a file missing from it is a file the build cannot touch,
@@ -160,10 +164,36 @@ ${context.repoPacks.trim()}
 `.trim()
     : '';
 
+  // A redraft: the last draft and what its reviewer found. Rendered through
+  // the same function the build prompts use, so it reads like the design it
+  // will become.
+  const previous = context.prd.technicalDesign?.previous;
+  const redraftBlock = previous?.designMd?.trim()
+    ? `
+## This is a redraft — fix what the reviewer found
+
+Your previous draft and its independent review are below. Address **every**
+finding: fix it in the design (a missed reader added with its line, a missed
+file added to scope, a test added to the map), or, if a finding is wrong, say
+why with evidence (\`repo:path:line\`) under a "Review response" heading in
+\`designMd\`. Keep what the review did not object to. Check the review's
+claims against the code before acting on them.
+
+### The review (${previous.review?.verdict ?? 'none filed'})
+
+${previous.review?.notesMd?.trim() || '(No review was filed for the previous draft.)'}
+
+### The previous draft
+
+${renderTechnicalDesign({ ...(context.prd.technicalDesign as BuilderTechnicalDesign), ...previous })}
+`.trim()
+    : '';
+
   return [
     renderPlatformRules(context.platformRules),
     intro,
     protocol,
+    redraftBlock,
     packsBlock,
     renderPrd(context.prd),
   ]
@@ -226,15 +256,29 @@ Be concrete. "Readers may be incomplete" is not actionable;
 "\`ally-mobile:src/screens/Quiz.tsx:88\` reads \`prompt\` and is not listed" is.
 Do not raise style preferences or alternatives you merely like better.
 
+**Defects and suggestions are different things.** The PRD's requirements and
+acceptance criteria define the scope. Something the design gets wrong within
+that scope — a missed reader, a broken path, a breaking change, a needed file
+left out, a missing test — is a **defect**. Something the design could also do
+that the requirements do not ask for — another surface that could get the
+feature, another screen that could use it — is a **suggestion**, however
+natural it looks. If the design leaves something out on purpose and says why
+nothing breaks, that is a scope decision, not a defect; raise it as a
+suggestion only if you think a person should reconsider it.
+
 ## Submit with \`design_review\`
 
 \`\`\`json
-{ "verdict": "pass" | "concerns", "notesMd": "Each finding: what is wrong, where (repo:path:line), and what the design should say instead." }
+{
+  "defects": ["What is wrong, where (repo:path:line), and what the design should say instead."],
+  "suggestions": ["Scope the design could widen to, and what that would take."],
+  "notesMd": "Anything else worth a person reading. Optional."
+}
 \`\`\`
 
-\`concerns\` if anything above would make the build wrong or a released client
-break. \`pass\` with notes for anything worth a person's attention that is not.
-Call it exactly once, then stop.
+The verdict follows from \`defects\`: any defect makes it \`concerns\`; none
+makes it \`pass\`. Send empty lists rather than leaving a field out. Call it
+exactly once, then stop.
 
 ## The design under review
 `.trim();

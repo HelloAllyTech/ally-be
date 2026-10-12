@@ -56,8 +56,23 @@ export function productHashOf(doc: BuilderPrdDocument): string {
 export function createDraftingDesign(
   doc: BuilderPrdDocument,
   runId: string | null,
+  replacing?: BuilderTechnicalDesign | null,
 ): BuilderTechnicalDesign {
+  // Only a draft that was actually written is worth handing on; a failed or
+  // never-submitted one has nothing to fix.
+  const previous = replacing?.designMd?.trim()
+    ? {
+        designMd: replacing.designMd,
+        scope: replacing.scope ?? [],
+        contracts: replacing.contracts ?? [],
+        compatibilityMd: replacing.compatibilityMd ?? '',
+        testMap: replacing.testMap ?? [],
+        openDecisions: replacing.openDecisions ?? [],
+        review: replacing.review ?? null,
+      }
+    : (replacing?.previous ?? null);
   return {
+    previous,
     status: 'drafting',
     runId,
     designMd: '',

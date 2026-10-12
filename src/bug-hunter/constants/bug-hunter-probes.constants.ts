@@ -32,8 +32,8 @@ export const productionProbes = (apiBaseUrl: string): ProductionProbe[] => {
     {
       name: 'simulations in a language',
       answers:
-        'whether a simulation has a title and description translated for a language, as the helpline list shows it',
-      how: `curl -sS "${api}/api/v1/learn/scenarios/public?languageCode=<lang>" and compare titles with languageCode=en; identical English text for mr/hi/kn/ta means the scenario has no translation row for that language in the database`,
+        'whether a simulation has a title and description STORED for a language — the same stored translations the logged-in Simulations tab reads (GET /api/v2/learn/scenarios?languageCode=<lang>, which needs a login)',
+      how: `curl -sS "${api}/api/v1/learn/scenarios/public" for ids, then curl -sS "${api}/api/v1/learn/scenarios/<id>/public?languageCode=<lang>" and compare title and description with languageCode=en. Identical English text for a language the scenario is configured for (metadata.languageVoices in ally-be) means scenarios.translations has no entry for that language. Only ally-be writes that entry (persistTranslationsForScenarios in src/learn/service/scenario.service.ts), so the fault is usually that generation never ran for the language — ally-be code plus a backfill — never the frontend. Do NOT judge from the public LIST: /api/v1/learn/scenarios/public ignores languageCode and always answers in English`,
     },
     {
       name: 'tooltips in a language',

@@ -8,7 +8,11 @@ import { prNumberFrom } from './bug-hunter-policy.service';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { faultLocationOf, isDataFault } from '../type/bug-finding-verdict.type';
-import { BugFindingStatus, BugHunterMode } from '../enum/bug-finding.enum';
+import {
+  BUG_FINDING_LOCATE_STATUSES,
+  BugFindingStatus,
+  BugHunterMode,
+} from '../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
@@ -265,11 +269,11 @@ export class BugHunterOrchestratorService {
     confidence: number | null,
   ): Promise<D5Pick | null> {
     const finding = await this.bugFindingService.getOne(findingId);
-    if (
-      finding.status !== BugFindingStatus.NEW &&
-      finding.status !== BugFindingStatus.PENDING_APPROVAL
-    ) {
-      return null; // a person already acted
+    // A re-located report (a closed wrong-layer PR, a failed or cancelled
+    // session) is decided like a fresh one; a session in flight or a fix
+    // already merged means a person acted, and D5 stays out of it.
+    if (!BUG_FINDING_LOCATE_STATUSES.includes(finding.status)) {
+      return null;
     }
 
     // A finding on someone's open pull request (OPP-0785): the author owns

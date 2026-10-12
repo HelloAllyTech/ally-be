@@ -186,8 +186,20 @@ const ONLY_IN_PHASE = {
   design_review: 'design-review',
 };
 
+/**
+ * What the design phases may use at all: their own tool and `note`. The first
+ * live design run (session 880e73e6, 2026-10-12) called `stage` and moved a
+ * session that was not building to CODING; a designer has no stage, todo
+ * list, pull request, question or outcome to report.
+ */
+const DESIGN_PHASE_TOOLS = {
+  design: ['design', 'note'],
+  'design-review': ['design_review', 'note'],
+};
+
 const toolsForPhase = () => {
   const phase = currentPhase();
+  if (DESIGN_PHASE_TOOLS[phase]) return DESIGN_PHASE_TOOLS[phase];
   const own = (name) => !ONLY_IN_PHASE[name] || ONLY_IN_PHASE[name] === phase;
   // Unknown phase: withhold nothing but the phase-owned tools. See above.
   if (!phase || MAY_FINISH_THE_RUN.has(phase)) {
@@ -439,20 +451,51 @@ const TOOLS = {
 
   design_review: {
     description:
-      'File your verdict on the technical design: pass, or concerns with ' +
-      'what is wrong and the evidence (file:line).',
+      'File your review of the technical design. Defects are what would make ' +
+      'the build wrong or a released client break, within the scope the ' +
+      "PRD's requirements set; suggestions are scope the design could widen " +
+      'to. Any defect makes the verdict concerns; none makes it pass.',
     inputSchema: {
       type: 'object',
       properties: {
-        verdict: { type: 'string', enum: ['pass', 'concerns'] },
-        notesMd: { type: 'string', description: 'Your findings, markdown.' },
+        defects: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Each: what is wrong, where (repo:path:line), and what the design should say instead.',
+        },
+        suggestions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Each: scope the design could widen to, and what it would take.',
+        },
+        notesMd: {
+          type: 'string',
+          description: 'Anything else worth a person reading. Optional.',
+        },
       },
-      required: ['verdict', 'notesMd'],
+      required: ['defects', 'suggestions'],
     },
-    handler: async ({ verdict, notesMd }) => {
+    handler: async ({ defects, suggestions, notesMd }) => {
+      const clean = (list) =>
+        (Array.isArray(list) ? list : []).map((item) => String(item).trim()).filter(Boolean);
+      const found = clean(defects);
+      const ideas = clean(suggestions);
+      const verdict = found.length ? 'concerns' : 'pass';
+      // The verdict and a rendered notesMd are sent as well, so an ally-be
+      // from before the split still stores a review a person can read.
+      const rendered = [
+        found.length ? `**Defects**\n\n${found.map((d) => `- ${d}`).join('\n')}` : '',
+        ideas.length ? `**Suggestions**\n\n${ideas.map((d) => `- ${d}`).join('\n')}` : '',
+        String(notesMd ?? '').trim(),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
       const result = await request('POST', 'design-review', {
         verdict,
-        notesMd: String(notesMd ?? ''),
+        defects: found,
+        suggestions: ideas,
+        notesMd: rendered,
       });
       if (!result.ok) {
         return {
@@ -464,7 +507,9 @@ const TOOLS = {
         process.env.BUILDER_DESIGN_REVIEWED || '/tmp/builder-design-reviewed',
         new Date().toISOString(),
       );
-      return { text: `review stored (${verdict})` };
+      return {
+        text: `review stored (${verdict}: ${found.length} defect(s), ${ideas.length} suggestion(s))`,
+      };
     },
   },
 

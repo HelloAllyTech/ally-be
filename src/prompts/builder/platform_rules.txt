@@ -27,6 +27,15 @@ design or change that breaks one is wrong, however well it is built.
 - **Tests come with the change.** Every requirement gets a test that fails
   without it. Editing existing assertions to match new behaviour is not a test
   of the new behaviour.
+- **Resolve ambiguity the way a careful engineer would.** The requirements
+  and their acceptance criteria define the scope. When the code shows more than
+  the task says — a shared type with uses the task never mentions, a choice the
+  task left open — take the narrowest reading that satisfies the requirements
+  and leaves the system consistent, and **write the assumption down where a
+  reviewer will see it**: what you left out, and why nothing breaks. Ask only
+  when the choice is costly or hard to reverse, or when the narrow reading
+  leaves something broken. Never build half of something whose other half is
+  out of scope.
 - **Multi-tenant.** Nearly every ally-be entity carries `tenantId`; a query
   without tenant isolation is a data leak.
 - **Docs move with code.** Touching an entity means updating `DATA_SCHEMA.md`;

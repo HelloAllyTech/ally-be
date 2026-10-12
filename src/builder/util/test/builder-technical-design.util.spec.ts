@@ -71,6 +71,47 @@ const designedPrd = (
   };
 };
 
+describe('createDraftingDesign', () => {
+  it('keeps the draft it replaces, with its review, one level deep', () => {
+    const doc = prd();
+    const first = {
+      ...createDraftingDesign(doc, 'run-1'),
+      status: 'review' as const,
+      designMd: 'First draft.',
+      review: {
+        verdict: 'concerns' as const,
+        notesMd: 'Missed a reader.',
+        at: 'now',
+      },
+    };
+    const second = createDraftingDesign(doc, 'run-2', first);
+    expect(second.status).toBe('drafting');
+    expect(second.designMd).toBe('');
+    expect(second.previous?.designMd).toBe('First draft.');
+    expect(second.previous?.review?.notesMd).toBe('Missed a reader.');
+    expect((second.previous as any)?.previous).toBeUndefined();
+  });
+
+  it('keeps the last real draft when the one it replaces never submitted', () => {
+    const doc = prd();
+    const written = {
+      ...createDraftingDesign(doc, 'run-1'),
+      designMd: 'Real draft.',
+    };
+    const failed = {
+      ...createDraftingDesign(doc, 'run-2', written),
+      status: 'failed' as const,
+    };
+    expect(createDraftingDesign(doc, 'run-3', failed).previous?.designMd).toBe(
+      'Real draft.',
+    );
+  });
+
+  it('has no previous draft the first time', () => {
+    expect(createDraftingDesign(prd(), 'run-1').previous).toBeNull();
+  });
+});
+
 describe('productHashOf', () => {
   it('is the same for the same product whatever the key order', () => {
     const doc = prd();

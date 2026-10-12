@@ -969,19 +969,33 @@ export class BuilderPipelineController {
         `There is no submitted design to review — it is ${design.status}.`,
       );
     }
+    // The verdict follows the defects when they are sent, rather than the
+    // reviewer's own word: see BuilderDesignReview. A runner from before the
+    // split sends only a verdict and notes, which still stand as they are.
+    const defects = dto.defects?.map((item) => item.trim()).filter(Boolean);
+    const suggestions = dto.suggestions
+      ?.map((item) => item.trim())
+      .filter(Boolean);
+    const verdict: 'pass' | 'concerns' = defects
+      ? defects.length
+        ? 'concerns'
+        : 'pass'
+      : (dto.verdict ?? 'pass');
     await this.prdService.setTechnicalDesign(
       doc,
       {
         ...design,
         review: {
-          verdict: dto.verdict,
-          notesMd: dto.notesMd,
+          verdict,
+          notesMd: dto.notesMd ?? '',
+          ...(defects ? { defects } : {}),
+          ...(suggestions ? { suggestions } : {}),
           at: new Date().toISOString(),
         },
       },
       session.createdBy ?? 0,
       BuilderPrdVersionAuthor.AGENT,
-      `Technical design reviewed by run ${run.id}: ${dto.verdict}`,
+      `Technical design reviewed by run ${run.id}: ${verdict}`,
     );
     return { ok: true };
   }
