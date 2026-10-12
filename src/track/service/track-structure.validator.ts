@@ -1048,12 +1048,18 @@ function videoStructuralSignature(item: UpsertTrackItemDto): unknown {
   const video = item.content as VideoContent;
   return {
     source: video.source,
-    interjections: (video.interjections ?? []).map(
-      (interjection: VideoInterjection) => ({
+    interjections: (video.interjections ?? [])
+      .slice()
+      .sort((a, b) => {
+        if (a.timestampSeconds !== b.timestampSeconds) {
+          return a.timestampSeconds - b.timestampSeconds;
+        }
+        return a.id.localeCompare(b.id);
+      })
+      .map((interjection: VideoInterjection) => ({
         id: interjection.id,
         timestampSeconds: interjection.timestampSeconds,
         question: quizQuestionStructuralSignature(interjection.question),
-      }),
-    ),
+      })),
   };
 }
