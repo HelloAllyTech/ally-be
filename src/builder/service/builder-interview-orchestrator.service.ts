@@ -267,7 +267,7 @@ export class BuilderInterviewOrchestratorService {
     dto: CreateBuilderMessageDto,
     userId: number,
   ): AsyncGenerator<BuilderSseFrame> {
-    const session = await this.sessionService.getSession(sessionId, userId);
+    const session = await this.sessionService.getSession(sessionId);
     const doc = await this.prdService.getOrCreateDoc(
       sessionId,
       userId,

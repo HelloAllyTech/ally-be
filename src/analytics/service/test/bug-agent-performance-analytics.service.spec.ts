@@ -21,7 +21,6 @@ describe('BugAgentPerformanceAnalyticsService', () => {
     weeklyRegressionCounts: jest.Mock;
     weeklyQueueToStartLatency: jest.Mock;
     weeklyStageLatencies: jest.Mock;
-    dailyFiledTotals: jest.Mock;
     find: jest.Mock;
   };
   let runRepository: {
@@ -44,7 +43,6 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       runRows?: unknown[];
       escalationRows?: unknown[];
       fallbackRows?: unknown[];
-      filedRows?: unknown[];
       /** Rows the goal block reads: findings in the window, then the merged findings looked up by id. */
       goalFindings?: unknown[];
       goalMergedFindings?: unknown[];
@@ -63,7 +61,6 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       weeklyStageLatencies: jest
         .fn()
         .mockResolvedValue(over.stageLatencyRows ?? []),
-      dailyFiledTotals: jest.fn().mockResolvedValue(over.filedRows ?? []),
       find: jest
         .fn()
         .mockResolvedValueOnce(over.goalFindings ?? [])
@@ -103,67 +100,12 @@ describe('BugAgentPerformanceAnalyticsService', () => {
 
     const result = await service.getPerformance(query());
 
-    expect(result.precision.weekly.map((w) => w.week)).toEqual([
-      WEEK_1,
-      WEEK_2,
-    ]);
-    expect(result.precision.weekly[0]).toEqual({
-      week: WEEK_1,
-      accuracy: null,
-      reversalRate: null,
-      filed: 0,
-      judged: 0,
-    });
+    expect(result.throughput.map((w) => w.week)).toEqual([WEEK_1, WEEK_2]);
+    expect(result.precision.bySource).toEqual([]);
     expect(result.throughput).toHaveLength(2);
     expect(result.speed).toHaveLength(2);
     expect(result.cost).toHaveLength(2);
     expect(result.reliability).toHaveLength(2);
-  });
-
-  it("computes weekly accuracy from that week's outcome rows only", async () => {
-    await setup({
-      outcomeRows: [
-        {
-          week: new Date(WEEK_1),
-          source: 'code_review',
-          repo: 'ally-be',
-          status: 'rejected',
-          decisionReason: 'not_a_bug',
-          count: 1,
-          lowConfidence: 0,
-          unscored: 0,
-          reversed: 0,
-        },
-        {
-          week: new Date(WEEK_1),
-          source: 'test_failure',
-          repo: 'ally-be',
-          status: 'merged',
-          decisionReason: null,
-          count: 4,
-          lowConfidence: 0,
-          unscored: 0,
-          reversed: 0,
-        },
-      ],
-    });
-
-    const result = await service.getPerformance(query());
-
-    // judged = 1 declined-with-reason + 4 approved(merged) = 5; finderErrors = 1 (not_a_bug)
-    expect(result.precision.weekly[0]).toMatchObject({
-      week: WEEK_1,
-      accuracy: 1 - 1 / 5,
-      filed: 5,
-      judged: 5,
-    });
-    // Week 2 saw nothing, so it must read as genuinely empty, not a repeat of week 1.
-    expect(result.precision.weekly[1]).toMatchObject({
-      week: WEEK_2,
-      filed: 0,
-      judged: 0,
-      accuracy: null,
-    });
   });
 
   it('aggregates bySource across the whole window, ignoring week boundaries', async () => {
@@ -316,66 +258,6 @@ describe('BugAgentPerformanceAnalyticsService', () => {
       filedToMergedMedianHours: null,
       mergedToReleasedMedianHours: null,
       queueToStartMedianHours: null,
-    });
-  });
-
-  describe('bugs found per day', () => {
-    it('gap-fills every day in the window with a real zero, oldest first', async () => {
-      await setup();
-
-      const { found } = await service.getPerformance(query());
-
-      expect(found).toHaveLength(14);
-      expect(found[0]).toEqual({ day: FROM, filed: 0, rollingAvg7: null });
-      expect(found[found.length - 1]).toEqual({
-        day: TO,
-        filed: 0,
-        rollingAvg7: 0,
-      });
-    });
-
-    it('reads each day straight through from the repository by its UTC day', async () => {
-      await setup({
-        filedRows: [
-          { day: new Date('2026-01-06T00:00:00.000Z'), filed: 9 },
-          { day: new Date('2026-01-10T00:00:00.000Z'), filed: 4 },
-        ],
-      });
-
-      const { found } = await service.getPerformance(query());
-
-      expect(found.find((d) => d.day === '2026-01-06')?.filed).toBe(9);
-      expect(found.find((d) => d.day === '2026-01-10')?.filed).toBe(4);
-      expect(found.find((d) => d.day === '2026-01-07')?.filed).toBe(0);
-      expect(findingRepository.dailyFiledTotals).toHaveBeenCalledTimes(1);
-    });
-
-    /**
-     * The nightly sweeps make the raw count spiky, so the line a reader
-     * judges the trend from is the trailing seven-day mean — null until
-     * there are seven days to average, rather than a mean over fewer that
-     * would read as a false early plunge.
-     */
-    it('carries a trailing seven-day mean that starts on the seventh day', async () => {
-      await setup({
-        filedRows: [
-          { day: new Date('2026-01-05T00:00:00.000Z'), filed: 7 },
-          { day: new Date('2026-01-11T00:00:00.000Z'), filed: 7 },
-          { day: new Date('2026-01-12T00:00:00.000Z'), filed: 14 },
-        ],
-      });
-
-      const { found } = await service.getPerformance(query());
-
-      expect(found.slice(0, 6).every((d) => d.rollingAvg7 === null)).toBe(true);
-      // 2026-01-11 is day seven: (7 + 0×5 + 7) / 7
-      expect(found[6]).toEqual({ day: '2026-01-11', filed: 7, rollingAvg7: 2 });
-      // 2026-01-12 drops day one's 7 and adds 14: (0×5 + 7 + 14) / 7
-      expect(found[7]).toEqual({
-        day: '2026-01-12',
-        filed: 14,
-        rollingAvg7: 3,
-      });
     });
   });
 

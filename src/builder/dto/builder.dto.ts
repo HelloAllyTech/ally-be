@@ -379,6 +379,16 @@ export class ListBuilderSessionsQueryDto {
   @IsBoolean()
   archived?: boolean = false;
 
+  @ApiPropertyOptional({
+    description:
+      "Only the caller's own sessions. Sessions are shared across Builder users; this narrows the feed back to the ones the caller started.",
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  mine?: boolean = false;
+
   // limit/offset apply only to the archived view — the default feed stays
   // unpaginated.
   @ApiPropertyOptional({

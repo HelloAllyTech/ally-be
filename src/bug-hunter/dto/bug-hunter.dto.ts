@@ -12,7 +12,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
@@ -1510,7 +1509,7 @@ export class BugHuntRunDto {
   createdAt!: Date;
 }
 
-// ── metrics (GET /v1/bug-hunter/metrics) ──────────────────────────────────
+// ── metrics (GET /v1/bug-hunter/metrics/operations, metrics/pipeline) ─────
 
 export class BugHunterMetricsQueryDto {
   @ApiPropertyOptional({
@@ -1527,168 +1526,6 @@ export class BugHunterMetricsQueryDto {
   @Min(1)
   @Max(BUG_HUNTER_METRICS_MAX_DAYS)
   days?: number;
-}
-
-export class BugHunterFunnelDto {
-  @ApiProperty({
-    nullable: true,
-    description:
-      'The source or repo this row aggregates. Null for a finding with no repo yet.',
-  })
-  key!: string | null;
-
-  @ApiProperty()
-  filed!: number;
-
-  @ApiProperty({ description: 'Refuted by the Verify phase.' })
-  dismissed!: number;
-
-  @ApiProperty({ description: 'Declined by a human.' })
-  rejected!: number;
-
-  @ApiProperty({
-    description:
-      'Reached a fix at all — explicitly in Manual mode, implicitly in AI mode.',
-  })
-  approved!: number;
-
-  @ApiProperty({
-    description: 'Reached master. A released fix counts here too.',
-  })
-  merged!: number;
-
-  @ApiProperty()
-  released!: number;
-
-  @ApiProperty({
-    description:
-      'The agent gave up, the release went red, or a human stopped it.',
-  })
-  failed!: number;
-
-  @ApiProperty({
-    description:
-      'Still in the pipeline — neither declined, shipped, nor failed.',
-  })
-  open!: number;
-
-  @ApiProperty({
-    description:
-      'Declines where the finder was judged wrong (not_a_bug / wrong_repo / duplicate).',
-  })
-  finderErrors!: number;
-
-  @ApiProperty({
-    description:
-      'Declines with no reason stored — rows decided before the column existed.',
-  })
-  reasonNotRecorded!: number;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      '1 - finderErrors / judged, where judged counts only findings somebody actually ruled ' +
-      'on. Null when nothing has been judged: 0/0 is not 0% accurate.',
-  })
-  accuracy!: number | null;
-
-  @ApiProperty()
-  lowConfidence!: number;
-
-  @ApiProperty()
-  unscored!: number;
-
-  @ApiProperty({
-    description:
-      'Finder-error dismissals later proven wrong by a same-dedupe-key finding shipping.',
-  })
-  reversed!: number;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      'reversed / finderErrors — a correction to the raw error rate: a reversal means a finding ' +
-      'was incorrectly dismissed by an admin and later shipped under a duplicate report. Null when ' +
-      'nothing has ever been dismissed as a finder error.',
-  })
-  reversalRate!: number | null;
-}
-
-export class BugHunterDeclineDto {
-  @ApiProperty()
-  reason!: string;
-
-  @ApiProperty()
-  count!: number;
-
-  @ApiProperty({
-    description: 'True when this reason means the finder was wrong.',
-  })
-  finderError!: boolean;
-}
-
-export class BugHunterEscalationDto {
-  @ApiProperty({
-    description:
-      "The escalation event's exact summary text. Several escalation paths report a fixed, " +
-      'literal string (e.g. a model-tier bump, a multi-repo plan, suite-still-red-after-cap), ' +
-      'so grouping on this already separates them cleanly; an open product question is genuine ' +
-      'free text and will show up as many small one-off groups.',
-  })
-  summary!: string;
-
-  @ApiProperty()
-  count!: number;
-}
-
-export class BugHunterStageLatencyDto {
-  @ApiProperty({
-    nullable: true,
-    description:
-      'Median, not mean — one stalled bug should not describe the month.',
-  })
-  medianHours!: number | null;
-
-  @ApiProperty({ nullable: true })
-  p90Hours!: number | null;
-
-  @ApiProperty({ description: 'Findings the figures are computed from.' })
-  sampled!: number;
-}
-
-export class BugHunterOperationsTokensDto {
-  @ApiProperty() runs!: number;
-  @ApiProperty() inputTokens!: number;
-  @ApiProperty() outputTokens!: number;
-  @ApiProperty() costUsd!: number;
-}
-
-export class BugHunterOperationsOutcomesDto {
-  @ApiProperty() filed!: number;
-  @ApiProperty() accepted!: number;
-  @ApiProperty() declined!: number;
-  @ApiProperty() undecided!: number;
-}
-
-export class BugHunterOperationsBreadthDto {
-  @ApiProperty({ description: 'Runs that reported breadth at all.' })
-  runs!: number;
-  @ApiProperty() linesInScope!: number;
-  @ApiProperty() filesInScope!: number;
-  @ApiProperty() commits!: number;
-  @ApiProperty({
-    description: "Runs that read the whole repo rather than the day's diff.",
-  })
-  deepRuns!: number;
-}
-
-export class BugHunterOperationsDifficultyDto extends BugHunterOperationsOutcomesDto {
-  @ApiProperty({
-    enum: ['easy', 'hard', 'reported'],
-    description:
-      'Derived: easy = proven by tool output (test, lint, recurring error); hard = agent-found and unproven, so it needed verification; reported = a person filed it, the agent did not spot it.',
-  })
-  difficulty!: 'easy' | 'hard' | 'reported';
 }
 
 export class BugHunterOperationsDayDto {
@@ -1709,66 +1546,6 @@ export class BugHunterOperationsDayDto {
 
   @ApiProperty({ description: 'Of `filed`, still new or pending approval.' })
   undecided!: number;
-
-  @ApiProperty({
-    type: Object,
-    description: '`filed` split by finding source; absent sources had none.',
-  })
-  bySource!: Record<string, number>;
-
-  @ApiProperty({
-    type: Object,
-    description:
-      '`filed` split by how hard the bug was to spot, keyed easy / hard / reported, each a BugHunterOperationsOutcomesDto.',
-  })
-  byDifficulty!: Record<string, BugHunterOperationsOutcomesDto>;
-
-  @ApiProperty({
-    type: BugHunterOperationsBreadthDto,
-    nullable: true,
-    description:
-      'Code scope the sweeps that started that day were shown. Null when no run reported it (telemetry shipped 2026-09-23; fix sessions never post it) — not recorded, not zero.',
-  })
-  breadth!: BugHunterOperationsBreadthDto | null;
-
-  @ApiProperty({
-    type: Object,
-    description:
-      'Tokens spent by runs that started that day, keyed by trigger (scheduled / manual / fix_session), each a BugHunterOperationsTokensDto. In Works-solo mode a sweep finds AND fixes, so sweep tokens cannot be split into discovery and fixing.',
-  })
-  tokens!: Record<string, BugHunterOperationsTokensDto>;
-}
-
-export class BugHunterOperationsSourceDto {
-  @ApiProperty() source!: string;
-  @ApiProperty() filed!: number;
-  @ApiProperty() accepted!: number;
-  @ApiProperty() declined!: number;
-  @ApiProperty() undecided!: number;
-}
-
-export class BugHunterOperationsReporterDto {
-  @ApiProperty({
-    enum: ['agent', 'staff', 'consumer'],
-    description:
-      "agent = every finder plus UX signals; staff / consumer = a human report, split by the linked roadmap row's source.",
-  })
-  reporter!: 'agent' | 'staff' | 'consumer';
-
-  @ApiProperty() filed!: number;
-  @ApiProperty() accepted!: number;
-  @ApiProperty() declined!: number;
-}
-
-export class BugHunterOperationsModelDto {
-  @ApiProperty() model!: string;
-  @ApiProperty() provider!: string;
-  @ApiProperty({ description: 'Distinct runs that used this model at all.' })
-  runs!: number;
-  @ApiProperty() inputTokens!: number;
-  @ApiProperty() outputTokens!: number;
-  @ApiProperty({ description: 'Prompt-cache reads, a subset of inputTokens.' })
-  cacheReadTokens!: number;
 }
 
 export class BugHunterOperationsTotalsDto {
@@ -1776,10 +1553,6 @@ export class BugHunterOperationsTotalsDto {
   @ApiProperty() accepted!: number;
   @ApiProperty() declined!: number;
   @ApiProperty() undecided!: number;
-  @ApiProperty() inputTokens!: number;
-  @ApiProperty() outputTokens!: number;
-  @ApiProperty() costUsd!: number;
-  @ApiProperty() runs!: number;
 }
 
 export class BugHunterOperationsMetricsDto {
@@ -1793,156 +1566,13 @@ export class BugHunterOperationsMetricsDto {
   })
   days!: BugHunterOperationsDayDto[];
 
-  @ApiProperty({ type: [BugHunterOperationsSourceDto] })
-  bySource!: BugHunterOperationsSourceDto[];
-
-  @ApiProperty({
-    type: [BugHunterOperationsDifficultyDto],
-    description: 'Always easy, hard, reported, in that order.',
-  })
-  byDifficulty!: BugHunterOperationsDifficultyDto[];
-
-  @ApiProperty({ type: BugHunterOperationsBreadthDto, nullable: true })
-  breadth!: BugHunterOperationsBreadthDto | null;
-
-  @ApiProperty({ type: [BugHunterOperationsReporterDto] })
-  byReporter!: BugHunterOperationsReporterDto[];
-
-  @ApiProperty({ type: [BugHunterOperationsModelDto] })
-  tokensByModel!: BugHunterOperationsModelDto[];
-
   @ApiProperty({ type: BugHunterOperationsTotalsDto })
   totals!: BugHunterOperationsTotalsDto;
-}
-
-export class BugHunterMetricsDto {
-  @ApiProperty()
-  windowDays!: number;
-
-  @ApiProperty()
-  since!: string;
-
-  @ApiProperty()
-  totalFiled!: number;
-
-  @ApiProperty({ type: BugHunterFunnelDto })
-  overall!: BugHunterFunnelDto;
-
-  @ApiProperty({ type: [BugHunterFunnelDto] })
-  bySource!: BugHunterFunnelDto[];
-
-  @ApiProperty({ type: [BugHunterFunnelDto] })
-  byRepo!: BugHunterFunnelDto[];
-
-  @ApiProperty({ type: [BugHunterDeclineDto] })
-  declines!: BugHunterDeclineDto[];
-
-  @ApiProperty({ type: [BugHunterEscalationDto] })
-  escalations!: BugHunterEscalationDto[];
-
-  @ApiProperty({
-    type: Object,
-    description:
-      'filedToDecided / filedToMerged / mergedToReleased, each a BugHunterStageLatencyDto.',
-  })
-  latency!: Record<string, BugHunterStageLatencyDto>;
-
-  @ApiProperty({
-    type: Object,
-    description:
-      'filed (new findings that are a fix coming back), fixesThatFailed (fixes shipped in ' +
-      'the window that have since returned), and rate = fixesThatFailed / merged.',
-  })
-  regressions!: Record<string, number | null>;
-
-  @ApiProperty({
-    type: Object,
-    description:
-      'totalUsd, runs, fixSessionRuns, fixSessionUsd and perMergedFixUsd. Aggregated in ' +
-      "Postgres over the whole window, unlike the tab's newest-50 client-side sum.",
-  })
-  cost!: Record<string, number | null>;
 }
 
 export class BugHuntRunDetailDto extends BugHuntRunDto {
   @ApiProperty({ type: [BugHuntEventDto] })
   events!: BugHuntEventDto[];
-}
-
-// ── run summary (GET /v1/bug-hunter/runs/summary) ─────────────────────────
-
-export class BugHuntRunsSummaryQueryDto {
-  @ApiPropertyOptional({
-    minimum: 1,
-    maximum: BUG_HUNTER_METRICS_MAX_DAYS,
-    description: 'Days of history to total. Omit for all time.',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(BUG_HUNTER_METRICS_MAX_DAYS)
-  days?: number;
-
-  @ApiPropertyOptional({
-    description:
-      "The reader's IANA time zone (e.g. Asia/Kolkata), used only to bucket the " +
-      'per-day series onto the calendar days they saw. Unknown zones fall back to UTC.',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(/^[A-Za-z0-9_+\-/]+$/)
-  timeZone?: string;
-}
-
-export class BugHuntRunWindowSummaryDto {
-  @ApiProperty() runs!: number;
-  @ApiProperty() costUsd!: number;
-  @ApiProperty() completed!: number;
-  @ApiProperty() failed!: number;
-  @ApiProperty() running!: number;
-  @ApiProperty() skipped!: number;
-  @ApiProperty() found!: number;
-  @ApiProperty() autoMerged!: number;
-  @ApiProperty() prOpened!: number;
-  @ApiProperty() dismissed!: number;
-  @ApiProperty() inputTokens!: number;
-  @ApiProperty() outputTokens!: number;
-  @ApiProperty({
-    description:
-      'Runs that reported both token counts; the token sums are over these only.',
-  })
-  tokensReported!: number;
-}
-
-export class BugHuntRunDayPointDto {
-  @ApiProperty({ description: 'YYYY-MM-DD in the requested time zone.' })
-  date!: string;
-  @ApiProperty() runs!: number;
-  @ApiProperty() costUsd!: number;
-  @ApiProperty() found!: number;
-}
-
-export class BugHuntRunsSummaryDto {
-  @ApiProperty({
-    nullable: true,
-    description: 'The window totalled; null is all time.',
-  })
-  days!: number | null;
-
-  @ApiProperty({ description: 'The zone the series was bucketed in.' })
-  timeZone!: string;
-
-  @ApiProperty({ type: BugHuntRunWindowSummaryDto })
-  window!: BugHuntRunWindowSummaryDto;
-
-  @ApiProperty({
-    type: [BugHuntRunDayPointDto],
-    description:
-      'One point per calendar day for the last fourteen days, oldest first; quiet days are zeros.',
-  })
-  series!: BugHuntRunDayPointDto[];
 }
 
 export class ListBugHuntRunsResponseDto {

@@ -123,19 +123,27 @@ export class BuilderController {
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
-  @ApiOperation({ summary: "List the caller's Builder sessions, newest first" })
+  @ApiOperation({
+    summary:
+      'List Builder sessions (shared across Builder users), newest first',
+  })
   listSessions(
     @Query() query: ListBuilderSessionsQueryDto,
     @CurrentUser() user: TokenUser,
   ) {
+    const createdBy = query.mine ? user.id : undefined;
     if (query.archived) {
-      return this.sessionService.listOwnedArchivedSessions(user.id, {
+      return this.sessionService.listArchivedSessions({
+        createdBy,
         statuses: query.status,
         limit: query.limit ?? 25,
         offset: query.offset ?? 0,
       });
     }
-    return this.sessionService.listOwnedSessions(user.id, query.status);
+    return this.sessionService.listSessions({
+      statuses: query.status,
+      createdBy,
+    });
   }
 
   @Get('sessions/:sessionId')
@@ -260,8 +268,8 @@ export class BuilderController {
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @CurrentUser() user: TokenUser,
   ) {
-    // Ownership check first — the versions table is keyed by doc, not session.
-    await this.sessionService.getSession(sessionId, user.id);
+    // Existence check first — the versions table is keyed by doc, not session.
+    await this.sessionService.getSession(sessionId);
     const doc = await this.prdService.getOrCreateDoc(sessionId, user.id);
     return this.prdVersionRepository.listByDoc(doc.id);
   }
@@ -306,7 +314,7 @@ export class BuilderController {
     @Body() dto: StartBuilderBuildDto,
     @CurrentUser() user: TokenUser,
   ) {
-    const session = await this.sessionService.getSession(sessionId, user.id);
+    const session = await this.sessionService.getSession(sessionId);
     return this.buildService.startBuild(session, user.id, dto);
   }
 
@@ -328,7 +336,7 @@ export class BuilderController {
     @Body() dto: RaiseBuilderBudgetDto,
     @CurrentUser() user: TokenUser,
   ) {
-    const session = await this.sessionService.getSession(sessionId, user.id);
+    const session = await this.sessionService.getSession(sessionId);
     return this.buildService.raiseBudget(session, user.id, dto.budgetUsd);
   }
 
@@ -342,11 +350,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Live spend against the ceiling, and any hold' })
-  async getSessionBudget(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async getSessionBudget(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.buildService.getSessionBudget(sessionId);
   }
 
@@ -374,7 +379,7 @@ export class BuilderController {
     @Body() dto: SteerBuilderRunDto,
     @CurrentUser() user: TokenUser,
   ) {
-    await this.sessionService.getSession(sessionId, user.id);
+    await this.sessionService.getSession(sessionId);
     const active = await this.runRepository.findActiveForSession(sessionId);
     const steer = await this.steerService.add(sessionId, dto.note, {
       runId: active?.id ?? null,
@@ -397,11 +402,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Steering notes on a session, newest first' })
-  async listSteers(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listSteers(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.steerService.listForSession(sessionId);
   }
 
@@ -410,11 +412,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Build runs for a session, oldest first' })
-  async listRuns(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listRuns(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.runRepository.listBySession(sessionId);
   }
 
@@ -428,12 +427,10 @@ export class BuilderController {
   async listRunEvents(
     @Param('runId', ParseUUIDPipe) runId: string,
     @Query('afterSeq') afterSeq: string | undefined,
-    @CurrentUser() user: TokenUser,
   ) {
     const run = await this.buildService.getRunOrFail(runId);
-    // Ownership is on the session, not the run — check it before serving a
-    // transcript that quotes an admin's own half-formed thinking.
-    await this.sessionService.getSession(run.sessionId, user.id);
+    // A run id that resolves to a deleted session must not serve its events.
+    await this.sessionService.getSession(run.sessionId);
     const events = await this.eventService.listByRun(
       runId,
       Math.max(0, Number(afterSeq) || 0),
@@ -453,9 +450,8 @@ export class BuilderController {
   @ApiOperation({ summary: 'Questions the build is waiting on' })
   async listPendingQuestions(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
   ) {
-    await this.sessionService.getSession(sessionId, user.id);
+    await this.sessionService.getSession(sessionId);
     return this.questionService.listPending(sessionId);
   }
 
@@ -472,7 +468,7 @@ export class BuilderController {
     @Body() dto: AnswerBuilderQuestionDto,
     @CurrentUser() user: TokenUser,
   ) {
-    await this.sessionService.getSession(sessionId, user.id);
+    await this.sessionService.getSession(sessionId);
     const result = await this.questionService.answer(
       sessionId,
       questionId,
@@ -491,11 +487,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Pull requests this session opened' })
-  async listPullRequests(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listPullRequests(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.pullRequestService.listBySession(sessionId);
   }
 
@@ -506,11 +499,8 @@ export class BuilderController {
   @ApiOperation({
     summary: 'CI failures and review comments on this session’s PRs',
   })
-  async listPrFeedback(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listPrFeedback(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.pullRequestService.listFeedback(sessionId);
   }
 
@@ -519,11 +509,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: "The agent's reports on its own work" })
-  async listReports(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listReports(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.reportService.listBySession(sessionId);
   }
 
@@ -542,7 +529,7 @@ export class BuilderController {
     @Body() dto: BuilderResearchDto,
     @CurrentUser() user: TokenUser,
   ) {
-    const session = await this.sessionService.getSession(sessionId, user.id);
+    const session = await this.sessionService.getSession(sessionId);
     return this.researchService.run(
       session,
       user.id,
@@ -557,11 +544,8 @@ export class BuilderController {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'The milestone series for an epic session' })
-  async listMilestones(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId, user.id);
+  async listMilestones(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
     return this.epicService.listBySession(sessionId);
   }
 
@@ -577,7 +561,7 @@ export class BuilderController {
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @CurrentUser() user: TokenUser,
   ) {
-    const session = await this.sessionService.getSession(sessionId, user.id);
+    const session = await this.sessionService.getSession(sessionId);
     const doc = await this.prdService.getOrCreateDoc(sessionId, user.id);
     return this.epicService.propose(session, doc.draft);
   }
@@ -594,7 +578,7 @@ export class BuilderController {
     @Body() dto: StartBuilderBuildDto,
     @CurrentUser() user: TokenUser,
   ) {
-    const session = await this.sessionService.getSession(sessionId, user.id);
+    const session = await this.sessionService.getSession(sessionId);
     const milestones = await this.epicService.listBySession(sessionId);
     if (!milestones.length) {
       throw new NotFoundException(

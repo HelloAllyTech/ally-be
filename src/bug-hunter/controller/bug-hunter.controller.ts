@@ -67,9 +67,6 @@ import {
   BugHuntEventDto,
   BugHuntRunDetailDto,
   BugHuntRunDto,
-  BugHuntRunsSummaryDto,
-  BugHuntRunsSummaryQueryDto,
-  BugHunterMetricsDto,
   BugHunterMetricsQueryDto,
   BugHunterModelSettingsDto,
   BugHunterNotificationDto,
@@ -845,31 +842,6 @@ export class BugHunterController {
     return this.todayService.today(zone);
   }
 
-  @Get('metrics')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
-  @ApiOperation({
-    summary:
-      'How often Bug Hunter is right, how fast, and at what cost (super-duper-admin)',
-    description:
-      'The finding-level funnel the tab could not compute in the browser: per source and ' +
-      'per repo, filed → judged → merged → released, with the accuracy rate, the decline ' +
-      'breakdown, stage latencies, the regression rate and cost per merged fix. ' +
-      'Findings are cohorted by DISCOVERY date so every rate shares one denominator, and ' +
-      'accuracy counts only findings somebody actually ruled on — see BugHunterMetricsService ' +
-      'for why both of those matter more here than anywhere else on the page. ' +
-      'Aggregated in Postgres over the whole window, unlike the run scorecard, whose ' +
-      'client-side newest-50 sum silently under-reports a busy month.',
-  })
-  @ApiResponse({ status: 200, type: BugHunterMetricsDto })
-  async getMetrics(
-    @Query() query: BugHunterMetricsQueryDto,
-  ): Promise<BugHunterMetricsDto> {
-    const metrics = await this.metricsService.report(
-      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
-    );
-    return metrics as unknown as BugHunterMetricsDto;
-  }
-
   @Patch('findings/:id/description')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -1060,24 +1032,6 @@ export class BugHunterController {
       limit ? Number(limit) : undefined,
     );
     return { items: runs.map(toRunDto) };
-  }
-
-  @Get('runs/summary')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
-  @ApiOperation({
-    summary: 'Run scorecard totals for a window (super-duper-admin)',
-    description:
-      'Cost, outcomes, the found/merged/PR tallies and token counts over every run in the ' +
-      'window, plus a dense fourteen-day per-day series — aggregated in Postgres. The ' +
-      'scorecard used to sum these in the browser over GET /runs, which is capped at the ' +
-      'newest 50, so "7 days" and "30 days" showed the same figure once the platform ran ' +
-      'more than 50 shifts a week. Declared before runs/:id so "summary" is not read as an id.',
-  })
-  @ApiResponse({ status: 200, type: BugHuntRunsSummaryDto })
-  async summarizeRuns(
-    @Query() query: BugHuntRunsSummaryQueryDto,
-  ): Promise<BugHuntRunsSummaryDto> {
-    return this.bugHunterService.summarizeRuns(query.days, query.timeZone);
   }
 
   @Get('runs/:id')

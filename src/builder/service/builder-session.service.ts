@@ -24,6 +24,10 @@ import {
   BuilderSessionStatus,
 } from '../enum/builder.enum';
 import { BuilderPrdReadiness } from '../type/builder-prd.type';
+
+export type BuilderSessionListItem = BuilderSession & {
+  createdByName: string | null;
+};
 import {
   BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT,
   BUILDER_MAX_SESSIONS_PER_TENANT_PER_MONTH,
@@ -213,59 +217,59 @@ export class BuilderSessionService {
     }
   }
 
-  async getSession(
-    sessionId: string,
-    userId?: number,
-  ): Promise<BuilderSession> {
+  /**
+   * Sessions are shared by everyone with Builder access (the route-level
+   * toggle + VIEW/EDIT_BUILDER gate), not private to their creator: a
+   * non-coder's stuck session has to be openable by someone who can debug
+   * it, read its runs and logs, and carry it on.
+   */
+  async getSession(sessionId: string): Promise<BuilderSession> {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId },
     });
     if (!session) {
       throw new NotFoundException('Builder session not found');
     }
-    // A session is a personal working conversation carrying an admin's own
-    // half-formed thinking — only its creator may read or continue it.
-    if (userId !== undefined && session.createdBy !== userId) {
-      throw new ForbiddenException('Not your Builder session');
-    }
     return session;
   }
 
   /**
-   * The caller's non-archived sessions, newest first — mission control's
-   * default list. Unpaginated, unchanged shape: an archive is a separate,
-   * paginated view (`listOwnedArchivedSessions`), not a param on this one.
+   * Every non-archived session, newest first — mission control's default
+   * list. Unpaginated, unchanged shape: an archive is a separate, paginated
+   * view (`listArchivedSessions`), not a param on this one.
    */
-  listOwnedSessions(
-    userId: number,
-    statuses?: BuilderSessionStatus[],
-  ): Promise<BuilderSession[]> {
-    return this.sessionRepository.find({
+  async listSessions(
+    params: { statuses?: BuilderSessionStatus[]; createdBy?: number } = {},
+  ): Promise<BuilderSessionListItem[]> {
+    const { statuses, createdBy } = params;
+    const sessions = await this.sessionRepository.find({
       where: {
-        createdBy: userId,
+        ...(createdBy !== undefined ? { createdBy } : {}),
         archivedAt: IsNull(),
         ...(statuses?.length ? { status: In(statuses) } : {}),
       },
       order: { updatedAt: 'DESC' },
     });
+    return this.withCreatorNames(sessions);
   }
 
   /**
-   * The caller's archived sessions, newest-archived first, paged. Ordered by
+   * Archived sessions, newest-archived first, paged. Ordered by
    * `archivedAt` rather than `updatedAt`: unarchiving bumps `updatedAt`, which
    * would otherwise reshuffle this list's order every time something leaves it.
    */
-  async listOwnedArchivedSessions(
-    userId: number,
-    params: {
-      statuses?: BuilderSessionStatus[];
-      limit: number;
-      offset: number;
-    },
-  ): Promise<{ sessions: BuilderSession[]; totalCount: number }> {
+  async listArchivedSessions(params: {
+    statuses?: BuilderSessionStatus[];
+    /** Narrow to one user's sessions — the feed's "Mine" filter. */
+    createdBy?: number;
+    limit: number;
+    offset: number;
+  }): Promise<{ sessions: BuilderSessionListItem[]; totalCount: number }> {
     const [sessions, totalCount] = await this.sessionRepository.findAndCount({
       where: {
-        createdBy: userId,
+        ...(params.createdBy !== undefined
+          ? { createdBy: params.createdBy }
+          : {}),
         archivedAt: Not(IsNull()),
         ...(params.statuses?.length ? { status: In(params.statuses) } : {}),
       },
@@ -273,7 +277,20 @@ export class BuilderSessionService {
       take: params.limit,
       skip: params.offset,
     });
-    return { sessions, totalCount };
+    return { sessions: await this.withCreatorNames(sessions), totalCount };
+  }
+
+  /** A shared feed has to say whose session each row is. */
+  private async withCreatorNames(
+    sessions: BuilderSession[],
+  ): Promise<BuilderSessionListItem[]> {
+    const names = await this.sessionRepository.findCreatorNames(
+      sessions.map((session) => session.createdBy),
+    );
+    return sessions.map((session) => ({
+      ...session,
+      createdByName: names.get(session.createdBy) ?? null,
+    }));
   }
 
   /** Session + transcript + PRD + readiness: what the session view resumes from. */
@@ -290,7 +307,7 @@ export class BuilderSessionService {
       createdByName: string | null;
     }
   > {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     const [messages, { doc, readiness }, createdByName] = await Promise.all([
       this.messageRepository.listBySession(sessionId),
       this.prdService.getPrdWithReadiness(sessionId, userId),
@@ -322,7 +339,7 @@ export class BuilderSessionService {
     readiness: BuilderPrdReadiness;
     versionNumber: number;
   }> {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     if (
       session.status === BuilderSessionStatus.BUILDING ||
       session.status === BuilderSessionStatus.WAITING_FOR_INPUT
@@ -393,7 +410,7 @@ export class BuilderSessionService {
       model?: string;
     },
   ): Promise<BuilderSession> {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     const patch: Record<string, any> = { updatedBy: userId };
 
     if (changes.title !== undefined) {
@@ -416,7 +433,7 @@ export class BuilderSessionService {
     if (changes.model !== undefined) patch.model = changes.model;
 
     await this.sessionRepository.update({ id: session.id }, patch);
-    return this.getSession(sessionId, userId);
+    return this.getSession(sessionId);
   }
 
   /**
@@ -429,7 +446,7 @@ export class BuilderSessionService {
     sessionId: string,
     userId: number,
   ): Promise<BuilderSession> {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     if (!BUILDER_ACTIVE_STATUSES.includes(session.status)) {
       throw new BadRequestException(
         `This session is already ${session.status.toLowerCase()}.`,
@@ -450,7 +467,7 @@ export class BuilderSessionService {
     this.logger.info(
       `Builder session ${sessionId} cancelled by user ${userId}`,
     );
-    return this.getSession(sessionId, userId);
+    return this.getSession(sessionId);
   }
 
   /**
@@ -463,7 +480,7 @@ export class BuilderSessionService {
     sessionId: string,
     userId: number,
   ): Promise<BuilderSession> {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     if (session.archivedAt) {
       return session;
     }
@@ -476,7 +493,7 @@ export class BuilderSessionService {
       { id: session.id },
       { archivedAt: new Date(), updatedBy: userId },
     );
-    return this.getSession(sessionId, userId);
+    return this.getSession(sessionId);
   }
 
   /**
@@ -487,7 +504,7 @@ export class BuilderSessionService {
     sessionId: string,
     userId: number,
   ): Promise<BuilderSession> {
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId);
     if (!session.archivedAt) {
       return session;
     }
@@ -495,7 +512,7 @@ export class BuilderSessionService {
       { id: session.id },
       { archivedAt: null, updatedBy: userId },
     );
-    return this.getSession(sessionId, userId);
+    return this.getSession(sessionId);
   }
 
   /**
