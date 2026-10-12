@@ -109,7 +109,7 @@ export function buildVerifyFindingsPrompt({
           `  - "unknown": you could not locate it. A confirmation with an unknown layer is downgraded to unsure, so say what would settle it.`,
           `Production is where the user saw it, so probe production, read-only, before you read code. These calls need no login and write nothing:`,
           ...renderProductionProbes(apiBaseUrl),
-          `A claim about data carries the request you made and what it returned. "The translation is probably missing" is not evidence; "GET /api/v1/learn/scenarios/public?languageCode=mr returns the English title for scenario 2f1c…" is. Then read the code for the path the probe exercised, and only then decide which layer is at fault.`,
+          `A claim about data carries the request you made and what it returned. "The translation is probably missing" is not evidence; "GET /api/v1/learn/scenarios/111/public?languageCode=mr returns the English title although the scenario has a Marathi voice" is. Then read the code for the path the probe exercised, and only then decide which layer is at fault.`,
           ``,
         ]
       : []),
