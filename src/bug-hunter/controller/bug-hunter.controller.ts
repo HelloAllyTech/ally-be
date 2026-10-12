@@ -108,6 +108,11 @@ import {
 } from '../type/bug-finding-verdict.type';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { buildCaseChain } from '../type/bug-case-chain.type';
+import { wrongFixOf } from '../type/bug-wrong-fix.type';
+import {
+  BugHunterWrongFixService,
+  WrongFixSummary,
+} from '../service/bug-hunter-wrong-fix.service';
 import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
 import {
   BugHunterScoreboardService,
@@ -170,6 +175,7 @@ export class BugHunterController {
     private readonly memoryService: AgentMemoryService,
     private readonly replayService: BugHunterDecisionReplayService,
     private readonly verifyFindingsService: BugVerifyFindingsService,
+    private readonly wrongFixService: BugHunterWrongFixService,
   ) {}
 
   @Get('memory')
@@ -318,6 +324,24 @@ export class BugHunterController {
       query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
     );
     return metrics as unknown as BugHunterOperationsMetricsDto;
+  }
+
+  @Get('metrics/wrong-fixes')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The wrong-fix table: fixes that turned out wrong, by which link of the case chain broke (super-duper-admin)',
+    description:
+      'Beside the miss table (why a bug was not found first), this says why a fix did not hold: ' +
+      'refused at the wrong layer, the symptom still there, reverted by a person, the bug back after ' +
+      'release. Counts per link and per source over the window, with the recent rows.',
+  })
+  async getWrongFixes(
+    @Query() query: BugHunterMetricsQueryDto,
+  ): Promise<WrongFixSummary> {
+    return this.wrongFixService.summary(
+      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
+    );
   }
 
   @Get('metrics/pipeline')
@@ -1260,6 +1284,10 @@ export function toFindingDto(
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     independentVerification: independentVerificationOf(row.metadata),
     chain: buildCaseChain(row) as unknown as Record<string, unknown>,
+    wrongFix: wrongFixOf(row.metadata) as unknown as Record<
+      string,
+      unknown
+    > | null,
     faultLocation: faultLocationOf(row.metadata) as unknown as Record<
       string,
       unknown

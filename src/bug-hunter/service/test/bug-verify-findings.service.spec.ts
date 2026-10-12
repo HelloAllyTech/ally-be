@@ -45,6 +45,7 @@ describe('BugVerifyFindingsService', () => {
     onFindingConfirmed: jest.Mock;
   };
   let notifications: { notify: jest.Mock };
+  let wrongFix: { record: jest.Mock };
   let service: BugVerifyFindingsService;
 
   const sweep = {
@@ -128,6 +129,7 @@ describe('BugVerifyFindingsService', () => {
       onFindingConfirmed: jest.fn().mockResolvedValue('fix'),
     };
     notifications = { notify: jest.fn().mockResolvedValue(undefined) };
+    wrongFix = { record: jest.fn().mockResolvedValue(undefined) };
     service = new BugVerifyFindingsService(
       findingRepository as never,
       bugFindingService as never,
@@ -145,6 +147,7 @@ describe('BugVerifyFindingsService', () => {
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       orchestrator as never,
       notifications as never,
+      wrongFix as never,
     );
   });
 
@@ -257,6 +260,73 @@ describe('BugVerifyFindingsService', () => {
       expect(await service.dispatchForReport('f-3')).toBeNull();
       expect(await service.dispatchForReport('f-4')).toBeNull();
       expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the held check (link six)', () => {
+    it('opens a held-check run for a released report and records a symptom that is back as a wrong fix, reopening the bug', async () => {
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.RELEASED,
+          metadata: {},
+        }),
+      ];
+      const d = await service.dispatchHeldCheck('f-3');
+      expect(d?.heldCheck).toBe(true);
+      expect(rows[0].metadata).toMatchObject({ heldCheckRunId: 'verify-1' });
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputs: expect.objectContaining({ mode: 'verify_findings' }),
+        }),
+      );
+      // A second dispatch is a no-op while one is in flight.
+      expect(await service.dispatchHeldCheck('f-3')).toBeNull();
+
+      const back = await service.recordHeldCheck('f-3', {
+        runId: 'verify-1',
+        held: false,
+        evidence: 'GET …?languageCode=mr still returns English titles',
+      });
+      expect(back).toEqual({
+        ok: false,
+        evidence: 'GET …?languageCode=mr still returns English titles',
+      });
+      expect(rows[0].metadata?.heldInProduction).toMatchObject({
+        ok: false,
+        runId: 'verify-1',
+      });
+      expect(wrongFix.record).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'f-3' }),
+        expect.objectContaining({ link: 'held', source: 'held_check' }),
+        { reopen: true },
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: expect.stringContaining('the symptom is back'),
+        }),
+      );
+    });
+
+    it('records a fix that held without reopening anything, and ignores a report with no answer', async () => {
+      rows = [
+        finding({
+          id: 'f-3',
+          status: BugFindingStatus.RELEASED,
+          metadata: { heldCheckRunId: 'verify-1' },
+        }),
+      ];
+      expect(
+        await service.recordHeldCheck('f-3', { evidence: 'no answer' }),
+      ).toBeNull();
+      const held = await service.recordHeldCheck('f-3', {
+        held: true,
+        evidence: 'titles in Marathi',
+      });
+      expect(held?.ok).toBe(true);
+      expect(rows[0].status).toBe(BugFindingStatus.RELEASED);
+      expect(wrongFix.record).not.toHaveBeenCalled();
     });
   });
 

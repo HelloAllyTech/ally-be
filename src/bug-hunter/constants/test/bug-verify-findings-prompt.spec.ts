@@ -57,3 +57,35 @@ describe('buildVerifyFindingsPrompt — locate before fixing', () => {
     expect(p).toContain('"faultLayer":"<code|data|config|unknown>"');
   });
 });
+
+describe('buildVerifyFindingsPrompt — the held check', () => {
+  it("re-runs the reporter's steps against production and reports held true or false", () => {
+    const p = buildVerifyFindingsPrompt({
+      findings: [
+        finding({
+          source: BugFindingSource.REPORTED_BUG,
+          status: 'released' as never,
+          prUrl: 'https://github.com/HelloAllyTech/ally-web/pull/798',
+          description:
+            'Titles stay English.\nSteps: pick Marathi; open Simulations.',
+        }),
+      ],
+      repo: 'ally-web',
+      runId: 'run-h',
+      apiBaseUrl: 'https://api.example.com',
+      engine: 'gemini',
+      model: 'gemini-2.5-pro',
+      sweepEngine: null,
+      heldCheck: true,
+    });
+    expect(p).toContain('closing the loop on a fix that has been RELEASED');
+    expect(p).toContain(
+      "The reporter's steps: pick Marathi; open Simulations.",
+    );
+    expect(p).toContain(
+      'https://api.example.com/api/v1/learn/scenarios/public?languageCode=<lang>',
+    );
+    expect(p).toContain('"heldCheck":{"runId":"run-h","held":<true|false>');
+    expect(p).not.toContain('## For each finding, in order');
+  });
+});

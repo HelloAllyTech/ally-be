@@ -763,6 +763,7 @@ export class BugHunterPipelineController {
       engine: dispatched.counterpart?.engine ?? 'gemini',
       model: dispatched.counterpart?.model ?? 'gemini-2.5-pro',
       sweepEngine: dispatched.sweepEngine ?? null,
+      heldCheck: dispatched.heldCheck === true,
     });
   }
 
@@ -974,6 +975,16 @@ export class BugHunterPipelineController {
     // The Verifier's report (OPP-0779): checks in, verdict computed, stored
     // on the case file, acted on. A verdict never changes status directly —
     // the merge or the hand-off is the server's move, not the verifier's.
+    // The post-release check (link six): the symptom gone or back, nothing else.
+    if (body.heldCheck) {
+      const { heldCheck, ...rest } = body;
+      await this.verifyFindingsService.recordHeldCheck(id, heldCheck);
+      const hasMore = Object.values(rest).some((v) => v !== undefined);
+      if (!hasMore) {
+        return toFindingDto(await this.bugFindingService.getOne(id));
+      }
+      body = rest as PatchBugFindingDto;
+    }
     if (body.findingVerdict) {
       const { findingVerdict, ...rest } = body;
       await this.verifyFindingsService.recordVerdict(id, findingVerdict);

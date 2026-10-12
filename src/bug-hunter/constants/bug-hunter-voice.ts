@@ -261,6 +261,32 @@ export const faultIsNotCode = (
     `I will not start a fix session on this; it needs a person's hands on the ${layer}.`,
 });
 
+/** A person reverted a Bug Hunter PR on master. */
+export const fixReverted = (
+  findingTitle: string,
+  repo: string,
+  by: Maybe<string>,
+  prNumber: string,
+): BugHunterMessage => ({
+  title: `My fix was reverted: ${findingTitle}`,
+  body:
+    `${by ?? 'Someone'} reverted my PR #${prNumber} on ${repo}. I have reopened the bug, written down which link of the chain broke, and the next attempt reads that first. ` +
+    `If you know why it was wrong, add one line to the bug's description — I read it at the start of the next attempt.`,
+});
+
+/** The post-release check found the reporter's symptom again. */
+export const fixDidNotHoldInProduction = (
+  findingTitle: string,
+  repo: Maybe<string>,
+  evidence: Maybe<string>,
+): BugHunterMessage => ({
+  title: `Released, but the symptom is back: ${findingTitle}`,
+  body:
+    `An hour after the release on ${repo ?? 'an unassigned repo'} I re-ran the reporter's steps against production and the symptom is still there. ` +
+    (evidence ? `What I saw: ${evidence} ` : '') +
+    `I have reopened the bug and recorded the broken link; the next attempt starts from that, not from the symptom.`,
+});
+
 export const fixDidNotHold = (
   findingTitle: string,
   repo: Maybe<string>,

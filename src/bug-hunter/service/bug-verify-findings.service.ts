@@ -24,7 +24,11 @@ import {
 } from '../type/bug-finding-verdict.type';
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
-import { faultIsNotCode } from '../constants/bug-hunter-voice';
+import {
+  faultIsNotCode,
+  fixDidNotHoldInProduction,
+} from '../constants/bug-hunter-voice';
+import { BugHunterWrongFixService } from './bug-hunter-wrong-fix.service';
 import { BugHunterEngine } from '../type/bug-hunter-model-settings.type';
 import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
@@ -42,6 +46,8 @@ export interface VerifyFindingsDispatch {
   sweepModel: string | null;
   counterpart: { engine: BugHunterEngine; model: string };
   dispatchedAt: string;
+  /** A post-release check (link six), not a verdict on whether the bug is real. */
+  heldCheck?: boolean;
 }
 
 /**
@@ -70,6 +76,7 @@ export class BugVerifyFindingsService {
     private readonly configService: AppConfigService,
     private readonly orchestrator: BugHunterOrchestratorService,
     private readonly notificationService: BugHunterNotificationService,
+    private readonly wrongFixService: BugHunterWrongFixService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the findings pending, which is the safe side. */
@@ -297,6 +304,154 @@ export class BugVerifyFindingsService {
       payload: { kind: 'findings', dispatched, locateFirst: true },
     });
     return dispatched;
+  }
+
+  /**
+   * Link six, held after release (see BugHunterHeldWatchService): one
+   * Verifier run that re-runs the reporter's steps against production an
+   * hour after the release and says whether the symptom is gone. Nothing
+   * is fixed and nothing merges from this run; it only closes the loop.
+   */
+  async dispatchHeldCheck(
+    findingId: string,
+  ): Promise<VerifyFindingsDispatch | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.RELEASED) return null;
+    if (finding.metadata?.heldInProduction || finding.metadata?.heldCheckRunId)
+      return null;
+    const repo = finding.repo;
+    const commands = repo ? repoCommands(repo) : null;
+    if (!repo || !commands?.fixable) return null;
+
+    const settings = await this.modelSettingsService.get();
+    const counterpart = verifierFor(settings);
+    const run = await this.bugHunterService.startRun(
+      BugHuntTrigger.VERIFY_FINDINGS,
+      repo,
+    );
+    const dispatched: VerifyFindingsDispatch = {
+      sweepRunId: finding.runId ?? run.id,
+      findingIds: [finding.id],
+      sweepEngine: null,
+      sweepModel: null,
+      counterpart,
+      dispatchedAt: new Date().toISOString(),
+      heldCheck: true,
+    };
+    await this.bugHunterService.setRunMetadata(run.id, {
+      verifyFindings: dispatched,
+    });
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(finding.metadata ?? {}),
+        heldCheckRunId: run.id,
+      } as Record<string, any>,
+    });
+    try {
+      await this.github.dispatchWorkflow({
+        repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        ref: BUG_FIX_SESSION_DEFAULT_REF,
+        inputs: {
+          finding_id: run.id,
+          run_id: run.id,
+          repo,
+          api_base_url: this.configService.publicApiBaseUrl,
+          mode: 'verify_findings',
+        },
+      });
+    } catch (error) {
+      await this.bugHunterService.closeRun(
+        run.id,
+        BugHuntRunStatus.FAILED,
+        {
+          foundCount: 0,
+          autoMergedCount: 0,
+          prOpenedCount: 0,
+          dismissedCount: 0,
+        },
+        error instanceof Error ? error.message : String(error),
+      );
+      await this.findingRepository.update(finding.id, {
+        metadata: {
+          ...(finding.metadata ?? {}),
+          heldCheckRunId: null,
+        } as Record<string, any>,
+      });
+      throw error;
+    }
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo,
+      stage: BugHuntEventStage.VERIFY,
+      summary: `Checking that the fix held: an independent verifier on ${counterpart.engine} (${counterpart.model}) is re-running the reporter's steps against production.`,
+      payload: { kind: 'held', dispatched },
+    });
+    return dispatched;
+  }
+
+  /** The held check's PATCH: the symptom gone or back in production, with what was seen. */
+  async recordHeldCheck(
+    findingId: string,
+    raw: Record<string, unknown>,
+  ): Promise<{ ok: boolean; evidence: string | null } | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (typeof raw.held !== 'boolean') {
+      this.logger.warn(
+        `[BUG_HUNTER] Held check for ${findingId} did not say held true or false; nothing recorded.`,
+      );
+      return null;
+    }
+    const evidence =
+      typeof raw.evidence === 'string' && raw.evidence.trim()
+        ? raw.evidence.trim().slice(0, 1200)
+        : null;
+    const result = {
+      ok: raw.held,
+      evidence,
+      at: new Date().toISOString(),
+      runId:
+        typeof raw.runId === 'string'
+          ? raw.runId
+          : (finding.metadata?.heldCheckRunId ?? null),
+    };
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(finding.metadata ?? {}),
+        heldInProduction: result,
+      } as Record<string, any>,
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.VERIFY,
+      summary: result.ok
+        ? `The fix held: the reporter's steps no longer show the symptom in production${evidence ? ` (${clip(evidence)})` : ''}.`
+        : `The fix did not hold: the symptom is back in production${evidence ? ` (${clip(evidence)})` : ''}.`,
+      payload: { kind: 'held', result },
+    });
+    if (!result.ok) {
+      await this.wrongFixService.record(
+        finding,
+        {
+          link: 'held',
+          source: 'held_check',
+          reason: evidence ?? 'the symptom is back in production',
+          prUrl: finding.prUrl ?? null,
+          sha: null,
+          by: null,
+        },
+        { reopen: true },
+      );
+      await this.notificationService.notify({
+        level: BugHunterNotificationLevel.ACTION_NEEDED,
+        ...fixDidNotHoldInProduction(finding.title, finding.repo, evidence),
+        findingId: finding.id,
+        runId: result.runId ?? undefined,
+        repo: finding.repo,
+      });
+    }
+    return { ok: result.ok, evidence };
   }
 
   /** The verifier's PATCH for one finding. Returns the stored verdict, or null when unusable. */
