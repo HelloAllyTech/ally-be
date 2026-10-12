@@ -246,6 +246,21 @@ export const findingReleased = (
  * It states the days deliberately: "I fixed this eleven days ago" is the fact
  * that makes a reader stop, and it is not recoverable from the row.
  */
+/** The Verifier located a human report's fault in data or config: a person repairs it, not a fix session. */
+export const faultIsNotCode = (
+  findingTitle: string,
+  layer: string,
+  repair: Maybe<string>,
+  evidence: Maybe<string>,
+): BugHunterMessage => ({
+  title: `This one is a ${layer} problem, not a code bug: ${findingTitle}`,
+  body:
+    `I checked production before touching any code, and the code is doing what it was told — the ${layer} behind it is wrong. ` +
+    (repair ? `The repair: ${repair} ` : '') +
+    (evidence ? `What I saw: ${evidence} ` : '') +
+    `I will not start a fix session on this; it needs a person's hands on the ${layer}.`,
+});
+
 export const fixDidNotHold = (
   findingTitle: string,
   repo: Maybe<string>,

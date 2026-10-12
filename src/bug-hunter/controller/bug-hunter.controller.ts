@@ -10,6 +10,7 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
+import { BugFindingSource } from '../enum/bug-finding.enum';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -100,7 +101,11 @@ import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
 import { readBugFixStudy } from '../type/bug-fix-study.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
-import { independentVerificationOf } from '../type/bug-finding-verdict.type';
+import {
+  faultLocationOf,
+  independentVerificationOf,
+} from '../type/bug-finding-verdict.type';
+import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
 import {
   BugHunterScoreboardService,
@@ -162,6 +167,7 @@ export class BugHunterController {
     private readonly evalService: BugHunterEvalService,
     private readonly memoryService: AgentMemoryService,
     private readonly replayService: BugHunterDecisionReplayService,
+    private readonly verifyFindingsService: BugVerifyFindingsService,
   ) {}
 
   @Get('memory')
@@ -625,6 +631,25 @@ export class BugHunterController {
     @Body() body: StartBugFixSessionDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
+    // Locate before fixing: a human report nobody has located yet goes to
+    // the Verifier first, not to a fix session. `force` is the admin saying
+    // they know the layer and want the session anyway.
+    if (body.force !== true) {
+      const finding = await this.bugFindingService.getOne(id);
+      if (
+        finding.source === BugFindingSource.REPORTED_BUG &&
+        independentVerificationOf(finding.metadata) !== 'confirmed'
+      ) {
+        if (body.repo && !finding.repo) {
+          await this.bugFindingService.setRepo(id, body.repo);
+        }
+        const dispatched =
+          await this.verifyFindingsService.dispatchForReport(id);
+        if (dispatched) {
+          return this.toDto(await this.bugFindingService.getOne(id));
+        }
+      }
+    }
     return this.toDto(
       await this.bugFixSessionService.start(
         id,
@@ -1227,6 +1252,10 @@ export function toFindingDto(
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     independentVerification: independentVerificationOf(row.metadata),
+    faultLocation: faultLocationOf(row.metadata) as unknown as Record<
+      string,
+      unknown
+    > | null,
     pr: (row.metadata?.pr as BugFindingDto['pr'] | undefined) ?? null,
     latestFixVerdict: latestVerdictFor(
       row.metadata?.fixVerdicts,

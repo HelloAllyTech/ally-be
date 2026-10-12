@@ -99,6 +99,7 @@ describe('renderFixDossier', () => {
           refutation:
             'Looked for a re-registration on reconnect; there is none.',
           wouldBeWrongIf: 'ioredis replays pending commands itself.',
+          fault: null,
           by: 'gemini (gemini-2.5-pro)',
           at: new Date('2026-10-08T01:00:00.000Z'),
         },
@@ -128,6 +129,7 @@ describe('renderFixDossier', () => {
           reproduction: null,
           refutation: 'A guard upstream rejects that input.',
           wouldBeWrongIf: null,
+          fault: null,
           by: null,
           at: null,
         },

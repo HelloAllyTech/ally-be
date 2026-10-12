@@ -1,6 +1,8 @@
 import { BugFinding } from '../entity/bug-finding.entity';
 import { DATA_BEGIN, DATA_END, clipDossierText } from './bug-fix-dossier';
 import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
+import { BugFindingSource } from '../enum/bug-finding.enum';
+import { renderProductionProbes } from './bug-hunter-probes.constants';
 
 export interface VerifyFindingsPromptContext {
   findings: BugFinding[];
@@ -37,6 +39,9 @@ export function buildVerifyFindingsPrompt({
   const base = `${apiBaseUrl}/api/v1/bug-hunter`;
   const reportUrl = `${base}/runs/${runId}/report`;
   const closeUrl = `${base}/runs/${runId}/close`;
+  const hasReports = findings.some(
+    (f) => f.source === BugFindingSource.REPORTED_BUG,
+  );
 
   const list = findings
     .map((f, i) => {
@@ -54,7 +59,7 @@ export function buildVerifyFindingsPrompt({
           ? `   Finder's evidence: ${clipDossierText(f.evidence, 500)}`
           : '',
         f.source
-          ? `   Source sense: ${f.source}${f.severity ? `, severity ${f.severity}` : ''}`
+          ? `   Source sense: ${f.source}${f.severity ? `, severity ${f.severity}` : ''}${f.source === BugFindingSource.REPORTED_BUG ? ' — A HUMAN REPORT: locate the fault before you judge it (see below)' : ''}`
           : '',
         typeof f.metadata?.confidence === 'number'
           ? `   The sweep's own verifiers scored it ${f.metadata.confidence} — a claim to test, not a fact.`
@@ -68,7 +73,7 @@ export function buildVerifyFindingsPrompt({
     .join('\n');
 
   return [
-    `You are Bug Hunter's independent Verifier for findings. A nightly sweep of "${repo}"${sweepEngine ? ` running on ${sweepEngine}` : ''} reported the bugs below and kept them after its own checks. You are running on ${engine} (${model}) — a different model, on purpose. Nothing a sweep finds reaches a person's queue or a fix session until you have tried to reproduce it and tried to refute it. Your job is to make each finding either stand on evidence or fall.`,
+    `You are Bug Hunter's independent Verifier for findings. ${hasReports ? `A person reported the bug${findings.length === 1 ? '' : 's'} below against "${repo}".` : `A nightly sweep of "${repo}"${sweepEngine ? ` running on ${sweepEngine}` : ''} reported the bugs below and kept them after its own checks.`} You are running on ${engine} (${model}) — a different model, on purpose. Nothing a sweep finds reaches a person's queue or a fix session until you have tried to reproduce it and tried to refute it. Your job is to make each finding either stand on evidence or fall.`,
     ``,
     `## Rules`,
     `- READ-ONLY toward the repo. You may run commands, run tests, and write a THROWAWAY test file to reproduce a bug, but you commit nothing, push nothing, open nothing. Delete any file you created before you close (git checkout -- . && git clean -fd on anything you added).`,
@@ -82,6 +87,20 @@ export function buildVerifyFindingsPrompt({
     list,
     DATA_END,
     ``,
+    ...(hasReports
+      ? [
+          `## Human reports: locate the fault before anything else`,
+          `A person saw a symptom. The symptom says nothing about which layer is broken, and a fix session that starts from the symptom fixes the nearest code. Twice this week that was the wrong layer: untranslated screens whose cause was rows missing from production data, "fixed" in the frontend. So for every human report your verdict names the layer and carries production evidence:`,
+          `  - "code": the source in a repo does the wrong thing, and you can show the line or the path. Say which repo — it may not be "${repo}".`,
+          `  - "data": the code is right and a row is missing, blank or wrong in production — a translation never created, a tooltip with no text in that language, a record with the wrong value. Name the exact repair a person should make. Do NOT propose a code change for a data fault.`,
+          `  - "config": a setting, flag, environment value or deployment is wrong. Name the repair.`,
+          `  - "unknown": you could not locate it. A confirmation with an unknown layer is downgraded to unsure, so say what would settle it.`,
+          `Production is where the user saw it, so probe production, read-only, before you read code. These calls need no login and write nothing:`,
+          ...renderProductionProbes(apiBaseUrl),
+          `A claim about data carries the request you made and what it returned. "The translation is probably missing" is not evidence; "GET /api/v1/learn/scenarios/public?languageCode=mr returns the English title for scenario 2f1c…" is. Then read the code for the path the probe exercised, and only then decide which layer is at fault.`,
+          ``,
+        ]
+      : []),
     `## For each finding, in order`,
     `1. Read the code the finder points at, and its callers. Decide what would have to be true for the bug to be real.`,
     `2. REPRODUCE. Make the bug happen, or show the defect in the code path with a command: a throwaway failing test, a script, a query, a curl against a locally started service, a grep that shows the unguarded input reaching the call. Record exactly what you ran and what it printed. For a finding with source "locale_parity" the reproduction is the same script that filed it: "node scripts/i18n-parity.mjs --json" — quote the counts for that file, and confirm only if they are still non-zero on master.`,
@@ -91,10 +110,10 @@ export function buildVerifyFindingsPrompt({
     `   - "refuted": you found why it is not a bug. Requires a refutation.`,
     `   - "unsure": you could neither reproduce nor refute in the time, or the two conflict. Say what would settle it.`,
     `5. Send the verdict before moving to the next finding, so a run that dies halfway still leaves the ones you finished:`,
-    `   curl -sS -X PATCH "${base}/pipeline/findings/<id>" -H "Content-Type: application/json" ${authHeader} -d '{"findingVerdict":{"runId":"${runId}","verdict":"<confirmed|refuted|unsure>","confidence":<0 to 1>,"reproduction":"<what you ran and what happened, or null>","refutation":"<what you tried to disprove it and why it did or did not hold, or null>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>"}}'`,
+    `   curl -sS -X PATCH "${base}/pipeline/findings/<id>" -H "Content-Type: application/json" ${authHeader} -d '{"findingVerdict":{"runId":"${runId}","verdict":"<confirmed|refuted|unsure>","confidence":<0 to 1>,"reproduction":"<what you ran and what happened, or null>","refutation":"<what you tried to disprove it and why it did or did not hold, or null>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>"${hasReports ? ',"faultLayer":"<code|data|config|unknown>","faultRepo":"<repo that owns the broken layer, or null>","productionEvidence":"<the probe you ran and what it returned>","repair":"<for data or config: the exact repair a person makes; null for code>"' : ''}}}'`,
     `   Then ${`curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"repo":"${repo}","stage":"verify","findingId":"<id>","summary":"<verdict in one line>"}'`}`,
     ``,
-    `Bug Hunter acts on each verdict as it lands: a confirmed finding in AI mode gets a fix session; a refuted one is dismissed with your refutation as the reason; an unsure one is held for a person with your note.`,
+    `Bug Hunter acts on each verdict as it lands: a confirmed code fault in AI mode gets a fix session that starts from your reproduction and your fault location; a confirmed data or config fault goes to a person with your repair and never to a fix session; a refuted one is dismissed with your refutation as the reason; an unsure one is held for a person with your note.`,
     ``,
     `## Close`,
     `Exactly once, after the last verdict: curl -sS -X POST "${closeUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"status":"completed","foundCount":0,"autoMergedCount":0,"prOpenedCount":0,"dismissedCount":<number you refuted>}'. Then say in one sentence how many you confirmed, refuted and left unsure, and STOP: run no further command. If something stopped you from verifying at all (the repo would not install, every command failed), report stage "error" with what stopped you, close with {"status":"failed",...} and stop — a finding left pending is better than a guessed verdict.`,

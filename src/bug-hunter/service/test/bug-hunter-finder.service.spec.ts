@@ -112,6 +112,7 @@ describe('BugHunterFinderService', () => {
       { hasLogGroup: () => true, hasExternalSignal: () => true } as never,
       github as never,
       sweepService as never,
+      { dispatchForReport: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 

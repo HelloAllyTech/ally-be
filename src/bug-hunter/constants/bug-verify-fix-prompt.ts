@@ -4,6 +4,7 @@ import { DATA_BEGIN, DATA_END, clipDossierText } from './bug-fix-dossier';
 import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
 import { BUG_FIX_VERDICT_REQUIRED_CHECKS } from '../type/bug-fix-verdict.type';
 import { renderBugFixStudyLines } from '../type/bug-fix-study.type';
+import { faultLocationOf } from '../type/bug-finding-verdict.type';
 
 export interface VerifyFixPromptContext {
   finding: BugFinding;
@@ -58,6 +59,7 @@ export function buildVerifyFixPrompt({
   const attempts = caseFile.sessions.flatMap((s) => s.attempts);
   const lastAttempt = attempts[attempts.length - 1];
   const study = caseFile.study;
+  const fault = faultLocationOf(finding.metadata);
   const clientRepos =
     repo === 'ally-be'
       ? 'ally-web, ally-mobile'
@@ -86,6 +88,9 @@ export function buildVerifyFixPrompt({
       : '',
     caseFile.reporter
       ? `Reported by a ${caseFile.reporter.source} user${caseFile.reporter.name ? ` (${caseFile.reporter.name})` : ''} on ${caseFile.reporter.reportedAt.toISOString().slice(0, 10)}.`
+      : '',
+    fault
+      ? `The independent Verifier located the fault in ${fault.layer}${fault.repo ? ` (${fault.repo})` : ''}${fault.evidence ? `: ${clipDossierText(fault.evidence, 600)}` : ''}`
       : '',
     lastAttempt
       ? `The fix session's own account of its last attempt: hypothesis "${clipDossierText(lastAttempt.hypothesis ?? '', 200)}", changed ${lastAttempt.changedFiles.length} file(s), check "${lastAttempt.check ?? '?'}" ${lastAttempt.result ?? '?'}. Treat this as a claim to test, not a fact.`
@@ -117,6 +122,9 @@ export function buildVerifyFixPrompt({
     isFrontend
       ? `7. what_user_sees. If a browser is available in this environment, start the app, load the affected route and describe what you see; attach a screenshot path. If no browser is available, skip with reason "no browser in CI" — do not pretend.`
       : `7. what_user_sees. This repo is a service, not a screen: skip with reason "backend repo" unless the fix changes something a client renders, in which case describe the response before and after with a curl or a test.`,
+    fault
+      ? `9. fault_layer_matches. The Verifier located the fault in ${fault.layer}${fault.repo ? ` in ${fault.repo}` : ''}. ${fault.layer === 'code' ? `Confirm the diff changes that code path${fault.repo && fault.repo !== repo ? ` — it was located in ${fault.repo}, and this PR is in ${repo}, so unless the located path is served from here this PR cannot fix it` : ''}.` : `This is a ${fault.layer} fault: no diff in this repo can fix it${fault.repair ? ` (repair: ${clipDossierText(fault.repair, 200)})` : ''}. A PR here is the wrong layer, ok=false, whatever the tests say.`} Evidence: the located path against the hunks that touch it.`
+      : `9. fault_layer_matches. No fault location on file — skip with reason "no fault located".`,
     study
       ? `8. study_followed. Compare the diff with the fixer's study above, three ways. (a) Files: the files the diff touches against "Files to change" — an extra file is scope creep for check 4; a named file left untouched means the plan was not carried out. (b) Mechanism: find the working sibling the study names (or find one yourself: the same kind of value shown correctly elsewhere in this repo) and confirm the fix changes the same kind of place. A locale key or a constant for text that lives in a database table an admin edits, a new header beside the parameter every other endpoint uses, or a second code path beside the existing one is ok=false whatever the tests say — it is the wrong fix, not a risky one. (c) Senders: anything the diff reads from a request — a header, a query parameter, a flag, a language code — must be sent by a client. git grep this repo; when the client is another Ally repo, run gh search code "<the header or parameter name>" --repo HelloAllyTech/<repo> for ${clientRepos}. No sender is ok=false: the bug will still show. Also ok=false when a hunk removes or hard-codes an accessibility attribute, a translation call, a permission check or an existing fallback to make the change compile or a test pass. Evidence names the sibling you compared against and the sender you found.`
       : `8. study_followed. The case file has no study for this fix — the session predates the study step. Skip with reason "no study on file", but do its mechanism half inside check 4: find the same kind of value shown correctly elsewhere in this repo and confirm the fix changes the same kind of place (not a locale key for database content, not a header no client sends — check the sender with git grep, or gh search code --repo HelloAllyTech/<repo> for ${clientRepos}).`,
@@ -124,7 +132,7 @@ export function buildVerifyFixPrompt({
     `## Report`,
     `First, report progress once: ${report('verify', 'verifier checks complete')}.`,
     `Then send the verdict. Bug Hunter computes pass or fail from your checks — a pass needs every required check ok and scopeExceeded=false — so report what you found, not what you hope:`,
-    `curl -sS -X PATCH "${findingUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"verdict":{"runId":"${runId}","prUrl":"${prUrl}","prHeadSha":"<head sha>","confidence":<0 to 1>,"scopeExceeded":<true|false>,"summary":"<one or two sentences a reviewer reads first>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>","checks":[{"name":"repro_at_base_fails","ok":<true|false>,"evidence":"<command and result>"},{"name":"repro_at_head_passes","ok":<true|false>,"evidence":"..."},{"name":"suite","ok":<true|false>,"evidence":"..."},{"name":"diff_vs_brief","ok":<true|false>,"evidence":"..."},{"name":"data_file_counts","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"blast_radius","ok":<true|false>,"evidence":"..."},{"name":"what_user_sees","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"study_followed","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"}]}}'`,
+    `curl -sS -X PATCH "${findingUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"verdict":{"runId":"${runId}","prUrl":"${prUrl}","prHeadSha":"<head sha>","confidence":<0 to 1>,"scopeExceeded":<true|false>,"summary":"<one or two sentences a reviewer reads first>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>","checks":[{"name":"repro_at_base_fails","ok":<true|false>,"evidence":"<command and result>"},{"name":"repro_at_head_passes","ok":<true|false>,"evidence":"..."},{"name":"suite","ok":<true|false>,"evidence":"..."},{"name":"diff_vs_brief","ok":<true|false>,"evidence":"..."},{"name":"data_file_counts","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"blast_radius","ok":<true|false>,"evidence":"..."},{"name":"what_user_sees","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"study_followed","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"fault_layer_matches","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"}]}}'`,
     `Bug Hunter records the verdict on the bug's case file, posts it on the PR, and either merges (a pass, where this repo allows a self-merge), hands the PR to a person with your verdict attached, or asks for another fix attempt with your named failures.`,
     ``,
     `## Close`,

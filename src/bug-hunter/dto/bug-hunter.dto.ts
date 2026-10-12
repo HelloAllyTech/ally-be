@@ -1077,6 +1077,14 @@ export class BugFindingDto {
     description:
       'Where an unproven finding stands with the independent verifier (OPP-0780). Null for proven findings, human reports, and findings from before the verifier existed.',
   })
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      'Where the independent verifier located the fault — layer (code, data, config, unknown), the repo that owns it, the production evidence and, for data or config, the repair a person makes. Null until a verifier has located it.',
+  })
+  faultLocation!: Record<string, unknown> | null;
+
   independentVerification!:
     | 'pending'
     | 'confirmed'

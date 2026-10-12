@@ -44,6 +44,7 @@ describe('BugVerifyFindingsService', () => {
     recordVerifierChoice: jest.Mock;
     onFindingConfirmed: jest.Mock;
   };
+  let notifications: { notify: jest.Mock };
   let service: BugVerifyFindingsService;
 
   const sweep = {
@@ -126,6 +127,7 @@ describe('BugVerifyFindingsService', () => {
       recordVerifierChoice: jest.fn().mockResolvedValue(undefined),
       onFindingConfirmed: jest.fn().mockResolvedValue('fix'),
     };
+    notifications = { notify: jest.fn().mockResolvedValue(undefined) };
     service = new BugVerifyFindingsService(
       findingRepository as never,
       bugFindingService as never,
@@ -142,6 +144,7 @@ describe('BugVerifyFindingsService', () => {
       } as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       orchestrator as never,
+      notifications as never,
     );
   });
 
@@ -208,6 +211,55 @@ describe('BugVerifyFindingsService', () => {
     });
   });
 
+  describe('dispatchForReport (locate before fixing)', () => {
+    it('opens one verifier run for a human report with a repo, marks it pending, and says it is locating the fault', async () => {
+      const d = await service.dispatchForReport('f-3');
+      expect(d?.findingIds).toEqual(['f-3']);
+      expect(bugHunterService.startRun).toHaveBeenCalledWith(
+        BugHuntTrigger.VERIFY_FINDINGS,
+        'ally-web',
+      );
+      expect(rows.find((r) => r.id === 'f-3')?.metadata).toMatchObject({
+        independentVerification: 'pending',
+        verifyFindingsRunId: 'verify-1',
+      });
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputs: expect.objectContaining({
+            mode: 'verify_findings',
+            finding_id: 'verify-1',
+          }),
+        }),
+      );
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'f-3',
+          stage: BugHuntEventStage.VERIFY,
+          payload: expect.objectContaining({ locateFirst: true }),
+        }),
+      );
+    });
+
+    it('does nothing for a sweep finding, a report already judged, or a report with no repo', async () => {
+      expect(await service.dispatchForReport('f-1')).toBeNull();
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          metadata: { independentVerification: 'confirmed' },
+        }),
+        finding({
+          id: 'f-4',
+          source: BugFindingSource.REPORTED_BUG,
+          repo: null,
+        }),
+      ];
+      expect(await service.dispatchForReport('f-3')).toBeNull();
+      expect(await service.dispatchForReport('f-4')).toBeNull();
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
+  });
+
   describe('recordVerdict', () => {
     beforeEach(() => {
       rows = [
@@ -257,6 +309,59 @@ describe('BugVerifyFindingsService', () => {
           counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
         }),
       );
+    });
+
+    it('holds a confirmed report with no located layer for a person, and tells a person about a data fault instead of fixing it', async () => {
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          metadata: {
+            independentVerification: 'pending',
+            verifyFindingsRunId: 'verify-1',
+          },
+        }),
+      ];
+      await service.recordVerdict('f-3', {
+        runId: 'verify-1',
+        verdict: 'confirmed',
+        confidence: 0.9,
+        reproduction: 'the titles stay English',
+      });
+      expect(rows.find((r) => r.id === 'f-3')?.metadata).toMatchObject({
+        independentVerification: 'unsure',
+      });
+      expect(orchestrator.onFindingConfirmed).not.toHaveBeenCalled();
+
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          metadata: {
+            independentVerification: 'pending',
+            verifyFindingsRunId: 'verify-1',
+          },
+        }),
+      ];
+      await service.recordVerdict('f-3', {
+        runId: 'verify-1',
+        verdict: 'confirmed',
+        confidence: 0.9,
+        reproduction: 'GET scenarios/public?languageCode=mr returns English',
+        faultLayer: 'data',
+        faultRepo: 'ally-be',
+        productionEvidence: 'no scenario_translations row for mr',
+        repair: 'Publish Marathi translations for the four public scenarios.',
+      });
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'f-3',
+          title: expect.stringContaining('data problem, not a code bug'),
+          body: expect.stringContaining('Publish Marathi translations'),
+        }),
+      );
+      // D5 still records the (vetoed) decision: the orchestrator is asked.
+      expect(orchestrator.onFindingConfirmed).toHaveBeenCalledWith('f-3', 0.9);
     });
 
     it('dismisses a refuted finding with the refutation as the reason, by verification', async () => {

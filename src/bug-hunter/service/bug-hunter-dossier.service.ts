@@ -122,6 +122,7 @@ export class BugHunterDossierService {
           reproduction: lastIndependent.reproduction ?? null,
           refutation: lastIndependent.refutation ?? null,
           wouldBeWrongIf: lastIndependent.wouldBeWrongIf ?? null,
+          fault: lastIndependent.fault ?? null,
           by: lastIndependent.by?.engine
             ? `${lastIndependent.by.engine}${lastIndependent.by.model ? ` (${lastIndependent.by.model})` : ''}`
             : null,

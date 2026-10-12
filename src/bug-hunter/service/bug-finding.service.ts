@@ -1037,6 +1037,21 @@ export class BugFindingService {
    *    leaving it alone is what lets tonight's sweep re-find this same bug and
    *    touch this row rather than opening a duplicate beside it.
    */
+  /**
+   * A person named the repo for a report that arrived without one (the
+   * fix dialog's picker), so the fault-locating Verifier knows where to run.
+   */
+  async setRepo(findingId: string, repo: string): Promise<void> {
+    await this.findingRepository.update(findingId, { repo });
+    await this.bugHunterService.appendFindingEvent({
+      findingId,
+      repo,
+      stage: BugHuntEventStage.FINDER_RESULT,
+      summary: `A person set the repo to ${repo}.`,
+      payload: { classifiedRepo: repo, byPerson: true },
+    });
+  }
+
   async editDescription(
     id: string,
     description: string,

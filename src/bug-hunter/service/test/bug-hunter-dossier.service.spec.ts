@@ -325,6 +325,7 @@ describe('BugHunterDossierService', () => {
       verdict: 'confirmed',
       reproduction: 'failing test: 12 keys missing',
       refutation: 'no guard upstream',
+      fault: null,
       wouldBeWrongIf: null,
       by: 'gemini (gemini-2.5-pro)',
       at: new Date('2026-10-08T01:00:00.000Z'),

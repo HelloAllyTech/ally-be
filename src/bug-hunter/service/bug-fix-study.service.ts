@@ -24,6 +24,43 @@ import {
   renderBugFixStudyLines,
   toBugFixStudy,
 } from '../type/bug-fix-study.type';
+import {
+  BugFaultLocation,
+  faultLocationOf,
+  isDataFault,
+} from '../type/bug-finding-verdict.type';
+
+/**
+ * Exported for the spec: the sentence that refuses a study which puts the
+ * value in a layer the Verifier has already ruled out, or null when the two
+ * agree (or no fault was located).
+ */
+export const studyContradictsFault = (
+  study: Pick<BugFixStudy, 'valueLivesIn'>,
+  fault: BugFaultLocation | null,
+): string | null => {
+  if (!fault || fault.layer === 'unknown') return null;
+  const evidence = fault.evidence ? ` Its evidence: ${fault.evidence}` : '';
+  if (isDataFault(fault)) {
+    if (
+      study.valueLivesIn === 'database' ||
+      study.valueLivesIn === 'config' ||
+      study.valueLivesIn === 'mixed' ||
+      study.valueLivesIn === 'other_repo'
+    ) {
+      return null;
+    }
+    return (
+      `The independent Verifier located this fault in production ${fault.layer}, not in code, and your study says the value lives in ${study.valueLivesIn}.${evidence}` +
+      (fault.repair ? ` The repair it named: ${fault.repair}.` : '') +
+      ` A code change cannot fix a missing or wrong ${fault.layer === 'data' ? 'row' : 'setting'}. Post the study again with valueLivesIn matching the Verifier, and if the fix is not code at all, stop and escalate with the repair instead of writing one.`
+    );
+  }
+  if (fault.layer === 'code' && study.valueLivesIn === 'database') {
+    return `The independent Verifier located this fault in code${fault.repo ? ` in ${fault.repo}` : ''}, and your study says the value lives in the database.${evidence} Post the study again against the code path the Verifier named.`;
+  }
+  return null;
+};
 
 /**
  * Records the study a fix session writes before it touches code, and has a
@@ -59,6 +96,13 @@ export class BugFixStudyService {
       throw new BadRequestException(
         `The study is missing: ${parsed.missing.join('; ')}. Post it again with every required field.`,
       );
+    }
+    // The Verifier already located the fault in production; a study that
+    // puts the value somewhere else is the wrong-layer fix about to happen.
+    const fault = faultLocationOf(finding.metadata);
+    const contradiction = studyContradictsFault(parsed.study, fault);
+    if (contradiction) {
+      throw new BadRequestException(contradiction);
     }
     const review = await this.review(finding, parsed.study);
     const study: BugFixStudy = { ...parsed.study, review };

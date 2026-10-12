@@ -208,6 +208,30 @@ describe('BugHunterOrchestratorService', () => {
       expect(lastDecision('D5').veto).toMatchObject({ by: 'safety' });
     });
 
+    it('vetoes a fix session when the Verifier located the fault in data, naming the repair', async () => {
+      current = finding({
+        metadata: {
+          findingVerdicts: [
+            {
+              verdict: 'confirmed',
+              fault: {
+                layer: 'data',
+                repo: 'ally-be',
+                evidence: 'no mr row',
+                repair: 'Publish the Marathi translations.',
+              },
+            },
+          ],
+        },
+      });
+      expect(await service.onFindingConfirmed('f-1', 0.9)).toBe('ask_human');
+      expect(lastDecision('D5').veto).toMatchObject({
+        by: 'safety',
+        reason: expect.stringContaining('located the fault in production data'),
+      });
+      expect(fixSession.startByAgent).not.toHaveBeenCalled();
+    });
+
     it("a finding on someone's open PR gets a review comment, never a fix session (OPP-0785)", async () => {
       current = finding({
         metadata: {

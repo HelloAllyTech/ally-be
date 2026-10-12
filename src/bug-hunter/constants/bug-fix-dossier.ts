@@ -60,6 +60,13 @@ export interface FixDossier {
     reproduction: string | null;
     refutation: string | null;
     wouldBeWrongIf: string | null;
+    /** Where the Verifier located the fault, with its production evidence and repair. */
+    fault: {
+      layer: string;
+      repo: string | null;
+      evidence: string | null;
+      repair: string | null;
+    } | null;
     by: string | null;
     at: Date | null;
   } | null;
@@ -213,6 +220,11 @@ export const renderFixDossier = (dossier: FixDossier): string => {
     if (ind.wouldBeWrongIf) {
       lines.push(
         `  - It said its verdict is wrong if: "${clipDossierText(ind.wouldBeWrongIf, 300)}" — check this before you trust the reproduction.`,
+      );
+    }
+    if (ind.fault) {
+      lines.push(
+        `  - It LOCATED THE FAULT in ${ind.fault.layer}${ind.fault.repo ? ` (${ind.fault.repo})` : ''}${ind.fault.evidence ? ` — production evidence: "${clipDossierText(ind.fault.evidence, 600)}"` : ''}. Your study's "valueLivesIn" must agree with this; a study that puts the value in another layer is refused.${ind.fault.repair ? ` Repair it named: "${clipDossierText(ind.fault.repair, 300)}".` : ''}`,
       );
     }
   }

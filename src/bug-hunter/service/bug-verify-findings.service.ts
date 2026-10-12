@@ -19,8 +19,12 @@ import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import {
   BugFindingVerdict,
+  isDataFault,
   toBugFindingVerdict,
 } from '../type/bug-finding-verdict.type';
+import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
+import { faultIsNotCode } from '../constants/bug-hunter-voice';
 import { BugHunterEngine } from '../type/bug-hunter-model-settings.type';
 import { BugFindingService } from './bug-finding.service';
 import { BugFixSessionService } from './bug-fix-session.service';
@@ -65,6 +69,7 @@ export class BugVerifyFindingsService {
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly configService: AppConfigService,
     private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly notificationService: BugHunterNotificationService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the findings pending, which is the safe side. */
@@ -192,6 +197,108 @@ export class BugVerifyFindingsService {
     }
   }
 
+  /**
+   * Locate before fixing: one Verifier run for ONE human report, as soon as
+   * the report has a repo — from the Finder's five-minute trigger, or from an
+   * admin pressing "Put me on it" on a report nobody has located yet. The
+   * brief tells the Verifier to probe production and name the layer at
+   * fault; a confirmed code fault then goes to D5 like any sweep finding, a
+   * data or config fault goes to a person with the repair, and a fix session
+   * never starts from the symptom alone. Returns null when nothing was
+   * dispatched (already judged or pending, no repo, repo not fixable).
+   */
+  async dispatchForReport(
+    findingId: string,
+  ): Promise<VerifyFindingsDispatch | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.source !== BugFindingSource.REPORTED_BUG) return null;
+    if (
+      finding.status !== BugFindingStatus.NEW &&
+      finding.status !== BugFindingStatus.PENDING_APPROVAL
+    ) {
+      return null;
+    }
+    if (finding.metadata?.independentVerification) return null;
+    const repo = finding.repo;
+    const commands = repo ? repoCommands(repo) : null;
+    if (!repo || !commands?.fixable) return null;
+
+    const settings = await this.modelSettingsService.get();
+    const counterpart = verifierFor(settings);
+    const run = await this.bugHunterService.startRun(
+      BugHuntTrigger.VERIFY_FINDINGS,
+      repo,
+    );
+    const dispatched: VerifyFindingsDispatch = {
+      sweepRunId: finding.runId ?? run.id,
+      findingIds: [finding.id],
+      sweepEngine: null,
+      sweepModel: null,
+      counterpart,
+      dispatchedAt: new Date().toISOString(),
+    };
+    await this.bugHunterService.setRunMetadata(run.id, {
+      verifyFindings: dispatched,
+    });
+    void this.orchestrator.recordVerifierChoice({
+      repo,
+      runId: run.id,
+      findingId: finding.id,
+      subject: 'finding',
+      producer: { engine: null, model: null },
+      counterpart,
+    });
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(finding.metadata ?? {}),
+        independentVerification: 'pending',
+        verifyFindingsRunId: run.id,
+      } as Record<string, any>,
+    });
+    try {
+      await this.github.dispatchWorkflow({
+        repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        ref: BUG_FIX_SESSION_DEFAULT_REF,
+        inputs: {
+          finding_id: run.id,
+          run_id: run.id,
+          repo,
+          api_base_url: this.configService.publicApiBaseUrl,
+          mode: 'verify_findings',
+        },
+      });
+    } catch (error) {
+      await this.bugHunterService.closeRun(
+        run.id,
+        BugHuntRunStatus.FAILED,
+        {
+          foundCount: 0,
+          autoMergedCount: 0,
+          prOpenedCount: 0,
+          dismissedCount: 0,
+        },
+        error instanceof Error ? error.message : String(error),
+      );
+      await this.findingRepository.update(finding.id, {
+        metadata: {
+          ...(finding.metadata ?? {}),
+          independentVerification: null,
+          verifyFindingsRunId: null,
+        } as Record<string, any>,
+      });
+      throw error;
+    }
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo,
+      stage: BugHuntEventStage.VERIFY,
+      summary: `Locating the fault before any fix: an independent verifier on ${counterpart.engine} (${counterpart.model}) is reproducing this report against production and will say whether the fault is in code, data or configuration.`,
+      payload: { kind: 'findings', dispatched, locateFirst: true },
+    });
+    return dispatched;
+  }
+
   /** The verifier's PATCH for one finding. Returns the stored verdict, or null when unusable. */
   async recordVerdict(
     findingId: string,
@@ -214,6 +321,7 @@ export class BugVerifyFindingsService {
         model: run?.model ?? dispatched?.counterpart.model ?? null,
       },
       runId,
+      reported: finding.source === BugFindingSource.REPORTED_BUG,
     });
     if (!verdict) {
       this.logger.warn(
@@ -253,7 +361,7 @@ export class BugVerifyFindingsService {
       stage: BugHuntEventStage.VERIFY,
       summary:
         verdict.verdict === 'confirmed'
-          ? `Independent verifier confirmed this${verdict.reproduction ? `: ${clip(verdict.reproduction)}` : ''}`
+          ? `Independent verifier confirmed this${verdict.fault ? ` and located the fault in ${verdict.fault.layer}${verdict.fault.repo ? ` (${verdict.fault.repo})` : ''}` : ''}${verdict.reproduction ? `: ${clip(verdict.reproduction)}` : ''}`
           : verdict.verdict === 'refuted'
             ? `Independent verifier refuted this${verdict.refutation ? `: ${clip(verdict.refutation)}` : ''}`
             : `Independent verifier was unsure${verdict.wouldBeWrongIf ? `: ${clip(verdict.wouldBeWrongIf)}` : ''}`,
@@ -309,9 +417,27 @@ export class BugVerifyFindingsService {
       return;
     }
 
+    // Confirmed with the fault outside the code: no fix session can repair a
+    // row or a setting. D5 records the veto; the person gets the repair.
+    if (isDataFault(verdict.fault)) {
+      await this.notificationService.notify({
+        level: BugHunterNotificationLevel.ACTION_NEEDED,
+        ...faultIsNotCode(
+          finding.title,
+          verdict.fault!.layer,
+          verdict.fault!.repair,
+          verdict.fault!.evidence,
+        ),
+        findingId: finding.id,
+        runId: verdict.runId ?? undefined,
+        repo: finding.repo,
+      });
+    }
+
     // Confirmed. The orchestrator's D5 (OPP-0783) decides whether the fix
     // starts now or waits for a person; mode, confidence, budget and policy
-    // veto inside it, and every answer is a decision row.
+    // veto inside it (a located data or config fault is a veto), and every
+    // answer is a decision row.
     try {
       await this.orchestrator.onFindingConfirmed(finding.id, confidence);
     } catch (error) {

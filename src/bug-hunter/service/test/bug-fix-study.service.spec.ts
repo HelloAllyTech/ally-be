@@ -5,7 +5,10 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { BugFinding } from '../../entity/bug-finding.entity';
-import { BugFixStudyService } from '../bug-fix-study.service';
+import {
+  BugFixStudyService,
+  studyContradictsFault,
+} from '../bug-fix-study.service';
 
 const finding = (over: Partial<BugFinding> = {}): BugFinding =>
   ({
@@ -101,6 +104,52 @@ describe('BugFixStudyService', () => {
     });
     const many = await service.record(finding(), 'run-1', study);
     expect(many.review?.concerns).toHaveLength(4);
+  });
+
+  it('refuses a study that puts the value in a layer the Verifier ruled out, and accepts one that agrees', async () => {
+    const located = finding({
+      metadata: {
+        findingVerdicts: [
+          {
+            verdict: 'confirmed',
+            fault: {
+              layer: 'data',
+              repo: 'ally-be',
+              evidence:
+                'GET /learn/scenarios/public?languageCode=mr returns English titles',
+              repair:
+                'Publish Marathi translations for the four public scenarios.',
+            },
+          },
+        ],
+      },
+    });
+    await expect(
+      service.record(located, 'run-1', {
+        ...study,
+        valueLivesIn: 'locale_file',
+      }),
+    ).rejects.toThrow(
+      /located this fault in production data.*valueLivesIn matching the Verifier/,
+    );
+    expect(update).not.toHaveBeenCalled();
+
+    complete.mockResolvedValue({ text: '{"concerns":[]}' });
+    const ok = await service.record(located, 'run-1', {
+      ...study,
+      valueLivesIn: 'database',
+    });
+    expect(ok.valueLivesIn).toBe('database');
+
+    expect(
+      studyContradictsFault(
+        { valueLivesIn: 'database' },
+        { layer: 'code', repo: 'ally-web', evidence: null, repair: null },
+      ),
+    ).toMatch(/located this fault in code/);
+    expect(
+      studyContradictsFault({ valueLivesIn: 'locale_file' }, null),
+    ).toBeNull();
   });
 
   it('records a study without a reviewer when the prompt is missing', async () => {

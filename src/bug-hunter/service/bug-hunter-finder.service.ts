@@ -36,6 +36,7 @@ import {
 import { BugHunterEngine } from '../type/bug-hunter-model-settings.type';
 import { BugFindingService } from './bug-finding.service';
 import { BugHuntSweepService } from './bug-hunt-sweep.service';
+import { BugVerifyFindingsService } from './bug-verify-findings.service';
 import { BugHunterDecisionService } from './bug-hunter-decision.service';
 import { BugHunterFinderDataService } from './bug-hunter-finder-data.service';
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
@@ -78,6 +79,7 @@ export class BugHunterFinderService {
     private readonly finderData: BugHunterFinderDataService,
     private readonly github: GithubActionsService,
     private readonly sweepService: BugHuntSweepService,
+    private readonly verifyFindings: BugVerifyFindingsService,
   ) {}
 
   /**
@@ -361,6 +363,20 @@ export class BugHunterFinderService {
             take: 10,
           })
         ).filter((f) => f.createdAt >= since && !f.metadata?.finderTriggered);
+        // Locate before fixing: every fresh report with a repo gets its own
+        // Verifier run first, whatever the light pass below turns up.
+        for (const r of reports) {
+          if (r.metadata?.independentVerification) continue;
+          try {
+            await this.verifyFindings.dispatchForReport(r.id);
+          } catch (error) {
+            this.logger.warn(
+              `[BUG_HUNTER] Finder: could not dispatch the fault-locating verifier for report ${r.id}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
         let kind: FinderTriggerKind | null = null;
         if (reports.length) kind = 'report';
         else if (lastAt && (await this.github.hasCommitsSince(repo, lastAt)))

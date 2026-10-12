@@ -7,6 +7,7 @@ import { repoCommands } from '../constants/bug-hunt-repos.constants';
 import { prNumberFrom } from './bug-hunter-policy.service';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import { BugFinding } from '../entity/bug-finding.entity';
+import { faultLocationOf, isDataFault } from '../type/bug-finding-verdict.type';
 import { BugFindingStatus, BugHunterMode } from '../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
@@ -603,6 +604,16 @@ export class BugHunterOrchestratorService {
       return {
         by: 'safety',
         reason: `confidence ${confidence.toFixed(2)} is below the ${BUG_HUNT_LOW_CONFIDENCE_THRESHOLD} bar`,
+      };
+    }
+    // The Verifier located the fault outside the code: a fix session would
+    // change the nearest source and leave the row or the setting wrong. The
+    // repair goes to a person.
+    const fault = faultLocationOf(finding.metadata);
+    if (isDataFault(fault)) {
+      return {
+        by: 'safety',
+        reason: `the Verifier located the fault in production ${fault!.layer}${fault!.repair ? ` — repair: ${fault!.repair}` : ''}; a code fix would not touch it`,
       };
     }
     try {
