@@ -122,8 +122,8 @@ export interface DailyFiledCount {
   /**
    * Whether the finder had mechanical proof (a failing test, a lint error, a
    * recurring log event) or inferred the bug by reading. The operations view
-   * folds this with `source` into an easy-to-spot / hard-to-spot / reported
-   * split — see `BugHunterMetricsService.difficultyOf`.
+   * split. Kept on the row for the analytics that still read it; the
+   * operations view sums across it.
    */
   proven: boolean;
   filed: number;
@@ -134,19 +134,6 @@ export interface DailyFiledCount {
   /** Still new or pending approval. */
   undecided: number;
 }
-
-/**
- * Who a finding came from, collapsed to three parties — see `reporterCounts`.
- * `agent` is every finder plus UX signals; `staff` and `consumer` are the two
- * ways a human files a bug (RoadmapOpportunitySource).
- */
-export interface ReporterCount {
-  reporter: 'agent' | 'staff' | 'consumer';
-  filed: number;
-  accepted: number;
-  declined: number;
-}
-
 /** How long findings sat between two lifecycle stamps, in hours. */
 export interface StageLatency {
   /** Median, not mean: one bug that sat for three weeks should not describe the other twenty. */
@@ -701,85 +688,6 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   // ── metrics (see BugHunterMetricsService) ────────────────────────────────
-
-  /**
-   * Every finding created in the window, tallied by source, repo, status and
-   * decision reason, with the low-confidence split alongside.
-   *
-   * ONE grouped query rather than a count per cell. The alternative — a
-   * `count()` per (source × repo × status) — is 7 × 6 × 17 round trips to
-   * render one panel, and every one of them would have to agree on the same
-   * window boundary to be addable.
-   *
-   * Windowed on `createdAt`, i.e. cohorted by DISCOVERY rather than by
-   * decision, and that choice is the whole honesty of the report: a bug found
-   * on the 1st and rejected on the 20th belongs to the 1st's cohort, so
-   * "filed" and "of those, declined" share a denominator and a rate over them
-   * means something. Grouping by decision date instead would divide this
-   * month's decisions by this month's discoveries, which are different bugs.
-   */
-  outcomeCounts(since: Date): Promise<FindingOutcomeCount[]> {
-    return (
-      this.createQueryBuilder('f')
-        .select('f.source', 'source')
-        .addSelect('f.repo', 'repo')
-        .addSelect('f.status', 'status')
-        .addSelect('f.decision_reason', 'decisionReason')
-        .addSelect(
-          'COUNT(*) FILTER (WHERE f."createdAt" >= :since)::int',
-          'count',
-        )
-        // `metadata->>'confidence'` is text; NULLIF guards a stored empty string
-        // and the ::numeric cast is safe only because the writer is our own
-        // PATCH handler, which validates it as a number first.
-        .addSelect(
-          `COUNT(*) FILTER (
-           WHERE f."createdAt" >= :since
-             AND NULLIF(f.metadata->>'confidence', '') IS NOT NULL
-             AND (f.metadata->>'confidence')::numeric < :threshold
-         )::int`,
-          'lowConfidence',
-        )
-        .addSelect(
-          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
-          'unscored',
-        )
-        // Windowed on `createdAt` like every other count here, and that is the
-        // point: `reversed` is the numerator of `reversalRate`, whose
-        // denominator (`finderErrors`) is derived from `count`. Both have to
-        // range over the SAME population or the rate is a ratio of two
-        // different cohorts — it can exceed 100% (reversals from rows whose
-        // `createdAt` has aged out of the denominator) or read "—" while
-        // reversals plainly exist (denominator empty, numerator not). So this
-        // asks "of the findings filed in this window, how many finder-error
-        // declines have since been proven wrong", over one cohort.
-        //
-        // The cost is lag, and it is honest lag: the decline suppression
-        // window (`BUG_FINDING_DECLINE_SUPPRESSION_MS`, 30 days) means a
-        // same-dedupe finding cannot ship — and so cannot reverse the
-        // decline — until more than 30 days after it, so a reversal only ever
-        // shows up in a report window wide enough to contain both ends. Read
-        // the reversal rate over 90 days or more; a 30-day window will
-        // legitimately show none, because none of that cohort's declines could
-        // have been reversed yet.
-        .addSelect(
-          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND f.reversed_at IS NOT NULL)::int`,
-          'reversed',
-        )
-        // Child steps excluded for the same reason the table hides them: a
-        // coordinated three-repo fix is ONE bug, and counting its steps would
-        // inflate both the numerator and the denominator unevenly.
-        .where('f.parentFindingId IS NULL')
-        .andWhere('f."createdAt" >= :since', { since })
-        .setParameter('threshold', BUG_HUNT_LOW_CONFIDENCE_THRESHOLD)
-        .groupBy('f.source')
-        .addGroupBy('f.repo')
-        .addGroupBy('f.status')
-        .addGroupBy('f.decision_reason')
-        .getRawMany<FindingOutcomeCount>()
-    );
-  }
-
   /**
    * New findings per calendar day and source, with where each cohort stands
    * now — the operations panel's "what I turn up, day by day".
@@ -821,52 +729,6 @@ export class BugFindingRepository extends Repository<BugFinding> {
       .orderBy('day', 'ASC')
       .getRawMany<DailyFiledCount>();
   }
-
-  /**
-   * Findings in the window by who raised them: the agent, a staff member, or
-   * a consumer through the in-app report form.
-   *
-   * The split lives on the linked roadmap row (`roadmap_opportunities.source`),
-   * not on the finding, because a reported bug is the reporter's own words and
-   * that row is its home. A `reported_bug` finding whose roadmap row is gone
-   * (deleted, or never linked) is counted as staff, which is that column's
-   * own default and what every pre-consumer-form row was.
-   */
-  async reporterCounts(since: Date): Promise<ReporterCount[]> {
-    const rows = await this.manager.query<
-      Array<{
-        reporter: ReporterCount['reporter'];
-        filed: string;
-        accepted: string;
-        declined: string;
-      }>
-    >(
-      `
-      SELECT
-        CASE
-          WHEN f.source = 'reported_bug' AND o.source = 'consumer' THEN 'consumer'
-          WHEN f.source = 'reported_bug' THEN 'staff'
-          ELSE 'agent'
-        END AS reporter,
-        COUNT(*) AS filed,
-        COUNT(*) FILTER (WHERE f.status = ANY($2)) AS accepted,
-        COUNT(*) FILTER (WHERE f.status = ANY($3)) AS declined
-      FROM bug_findings f
-      LEFT JOIN roadmap_opportunities o ON o.id = f.reported_bug_id
-      WHERE f.parent_finding_id IS NULL
-        AND f."createdAt" >= $1
-      GROUP BY 1
-      `,
-      [since, FINDING_ACCEPTED_STATUSES, FINDING_DECLINED_STATUSES],
-    );
-    return rows.map((row) => ({
-      reporter: row.reporter,
-      filed: Number(row.filed),
-      accepted: Number(row.accepted),
-      declined: Number(row.declined),
-    }));
-  }
-
   /**
    * `outcomeCounts`'s exact cells, bucketed by the calendar week a finding
    * was filed — the raw material a week-over-week precision/reversal-rate
@@ -915,44 +777,6 @@ export class BugFindingRepository extends Repository<BugFinding> {
       .orderBy('week', 'ASC')
       .getRawMany<WeeklyFindingOutcomeCount>();
   }
-
-  /**
-   * Distinct top-level findings filed per UTC calendar day, every source and
-   * every repo together, minus the ones that turned out not to be bugs — the
-   * raw material for the Bug Agent tab's "bugs found per day" trend, whose
-   * whole purpose is to show the count going DOWN as the codebases get
-   * cleaner. A finding later dismissed (verifier refuted it) or rejected (a
-   * human did) is excluded by its CURRENT status, so a day's count can fall
-   * after the fact as its findings are ruled on; that is the right reading
-   * for "real bugs found", and the operations panel's stacked chart is the
-   * one that shows the declined share. Day-bucketed (not week like its
-   * siblings) because the sweeps are nightly, so a day is the natural grain
-   * and a week would hide a change for seven days. Only days with at least
-   * one finding come back; the service gap-fills zeros, since a quiet night
-   * is a real zero and the trend must draw it. Distinct from `dailyFiledCounts`
-   * below, the operations panel's per-source/per-proven split with an open
-   * end: this is one total per day over a half-open window.
-   */
-  async dailyFiledTotals(
-    start: Date,
-    end: Date,
-  ): Promise<Array<{ day: Date; filed: number }>> {
-    const rows = await this.manager.query<Array<{ day: Date; filed: string }>>(
-      `
-      SELECT date_trunc('day', f."createdAt") AS day, COUNT(*) AS filed
-      FROM bug_findings f
-      WHERE f.parent_finding_id IS NULL
-        AND f."createdAt" >= $1
-        AND f."createdAt" < $2
-        AND f.status <> ALL($3::text[])
-      GROUP BY 1
-      ORDER BY 1
-      `,
-      [start, end, FINDING_DECLINED_STATUSES],
-    );
-    return rows.map((row) => ({ day: row.day, filed: Number(row.filed) }));
-  }
-
   /**
    * `regressionCounts`'s two cohorts, bucketed by calendar week — the
    * `regressions` cohort by discovery week, `regressedFixes` by the week the
@@ -1160,154 +984,6 @@ export class BugFindingRepository extends Repository<BugFinding> {
       sampled: Number(row.sampled),
     }));
   }
-
-  /**
-   * How long findings took to go from filed to merged, and from merged to
-   * released.
-   *
-   * The merge moment is read from the finding's own event timeline
-   * (`bug_hunt_events`, stage `merged`) because there is no `merged_at`
-   * column — the row records `releasedAt` and `decidedAt` and nothing in
-   * between. Using the event rather than adding a column keeps this a read of
-   * data the pipeline already writes on every merge path, including the ones
-   * that never touch a status handler.
-   *
-   * Median and p90 rather than a mean: a single bug that sat unmerged over a
-   * holiday weekend would otherwise describe the whole month.
-   */
-  async stageLatencies(since: Date): Promise<{
-    filedToMerged: StageLatency;
-    mergedToReleased: StageLatency;
-    filedToDecided: StageLatency;
-  }> {
-    const rows = await this.manager.query<
-      Array<{
-        filed_to_merged_median: string | null;
-        filed_to_merged_p90: string | null;
-        filed_to_merged_n: string;
-        merged_to_released_median: string | null;
-        merged_to_released_p90: string | null;
-        merged_to_released_n: string;
-        filed_to_decided_median: string | null;
-        filed_to_decided_p90: string | null;
-        filed_to_decided_n: string;
-      }>
-    >(
-      `
-      WITH scoped AS (
-        SELECT
-          f.id,
-          f."createdAt"      AS filed_at,
-          f.decided_at       AS decided_at,
-          f.released_at      AS released_at,
-          (
-            SELECT MIN(e."createdAt")
-            FROM bug_hunt_events e
-            WHERE e.finding_id = f.id AND e.stage = 'merged'
-          ) AS merged_at
-        FROM bug_findings f
-        WHERE f.parent_finding_id IS NULL
-          AND f."createdAt" >= $1
-      ),
-      hours AS (
-        SELECT
-          EXTRACT(EPOCH FROM (merged_at - filed_at)) / 3600      AS filed_to_merged,
-          EXTRACT(EPOCH FROM (released_at - merged_at)) / 3600   AS merged_to_released,
-          EXTRACT(EPOCH FROM (decided_at - filed_at)) / 3600     AS filed_to_decided
-        FROM scoped
-      )
-      SELECT
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY filed_to_merged)
-          FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0)   AS filed_to_merged_median,
-        percentile_cont(0.9) WITHIN GROUP (ORDER BY filed_to_merged)
-          FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0)   AS filed_to_merged_p90,
-        COUNT(*) FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0) AS filed_to_merged_n,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY merged_to_released)
-          FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_median,
-        percentile_cont(0.9) WITHIN GROUP (ORDER BY merged_to_released)
-          FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_p90,
-        COUNT(*) FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_n,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY filed_to_decided)
-          FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0)  AS filed_to_decided_median,
-        percentile_cont(0.9) WITHIN GROUP (ORDER BY filed_to_decided)
-          FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0)  AS filed_to_decided_p90,
-        COUNT(*) FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0) AS filed_to_decided_n
-      FROM hours
-      `,
-      [since],
-    );
-
-    // A negative interval would mean a merge event stamped before the finding
-    // it belongs to, which is clock skew rather than a fast fix — filtered out
-    // in SQL above rather than clamped here, so it lowers `sampled` visibly
-    // instead of silently reporting zero hours.
-    const row = rows[0];
-    const latency = (
-      median: string | null,
-      p90: string | null,
-      n: string | undefined,
-    ): StageLatency => ({
-      medianHours: median == null ? null : Number(median),
-      p90Hours: p90 == null ? null : Number(p90),
-      sampled: Number(n ?? 0),
-    });
-
-    return {
-      filedToMerged: latency(
-        row?.filed_to_merged_median ?? null,
-        row?.filed_to_merged_p90 ?? null,
-        row?.filed_to_merged_n,
-      ),
-      mergedToReleased: latency(
-        row?.merged_to_released_median ?? null,
-        row?.merged_to_released_p90 ?? null,
-        row?.merged_to_released_n,
-      ),
-      filedToDecided: latency(
-        row?.filed_to_decided_median ?? null,
-        row?.filed_to_decided_p90 ?? null,
-        row?.filed_to_decided_n,
-      ),
-    };
-  }
-
-  /**
-   * Findings in the window that are a shipped fix coming undone, and the ones
-   * whose own fix later failed.
-   *
-   * Two numbers rather than one because they answer different questions and
-   * sit in different cohorts: `regressions` counts NEW findings that turned
-   * out to be returns (this month's bad news), `regressedFixes` counts fixes
-   * SHIPPED in the window that have since come back (this month's work that
-   * did not hold). Dividing the second by merges in the same window is the
-   * only honest regression rate.
-   */
-  async regressionCounts(
-    since: Date,
-  ): Promise<{ regressions: number; regressedFixes: number }> {
-    const [row] = await this.manager.query<
-      Array<{ regressions: string; regressed_fixes: string }>
-    >(
-      `
-      SELECT
-        COUNT(*) FILTER (
-          WHERE f.metadata ? 'regressionOf' AND f."createdAt" >= $1
-        ) AS regressions,
-        COUNT(*) FILTER (
-          WHERE (f.metadata->>'regressed')::boolean IS TRUE
-            AND COALESCE(f.released_at, f."updatedAt") >= $1
-        ) AS regressed_fixes
-      FROM bug_findings f
-      WHERE f.parent_finding_id IS NULL
-      `,
-      [since],
-    );
-    return {
-      regressions: Number(row?.regressions ?? 0),
-      regressedFixes: Number(row?.regressed_fixes ?? 0),
-    };
-  }
-
   async listPaginated(filter: ListBugFindingsFilter): Promise<{
     items: BugFinding[];
     count: number;
