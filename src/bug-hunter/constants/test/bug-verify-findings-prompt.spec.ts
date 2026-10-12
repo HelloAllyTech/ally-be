@@ -35,7 +35,7 @@ describe('buildVerifyFindingsPrompt — locate before fixing', () => {
     expect(p).toContain('A HUMAN REPORT: locate the fault before you judge it');
     expect(p).toContain('https://api.example.com/i18n/manifest.json');
     expect(p).toContain(
-      'https://api.example.com/api/v1/learn/scenarios/public?languageCode=<lang>',
+      'https://api.example.com/api/v1/learn/scenarios/<id>/public?languageCode=<lang>',
     );
     expect(p).toContain(
       'https://api.example.com/api/v1/tooltips/active?languageCode=<lang>',
@@ -83,7 +83,7 @@ describe('buildVerifyFindingsPrompt — the held check', () => {
       "The reporter's steps: pick Marathi; open Simulations.",
     );
     expect(p).toContain(
-      'https://api.example.com/api/v1/learn/scenarios/public?languageCode=<lang>',
+      'https://api.example.com/api/v1/learn/scenarios/<id>/public?languageCode=<lang>',
     );
     expect(p).toContain('"heldCheck":{"runId":"run-h","held":<true|false>');
     expect(p).not.toContain('## For each finding, in order');

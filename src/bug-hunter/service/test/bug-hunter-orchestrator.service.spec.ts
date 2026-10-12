@@ -149,6 +149,18 @@ describe('BugHunterOrchestratorService', () => {
       .pop();
 
   describe('D5 — a confirmed finding', () => {
+    it('decides a re-located report like a fresh one, and stays out once a session is running', async () => {
+      // A report whose wrong-layer fix was closed sits at CANCELLED (or
+      // PR_OPENED); its second, located verdict must reach D5.
+      current = finding({ status: BugFindingStatus.CANCELLED });
+      expect(await service.onFindingConfirmed('f-1', 0.85)).toBe('fix');
+      expect(fixSession.startByAgent).toHaveBeenCalledWith('f-1', 'verifier');
+      fixSession.startByAgent.mockClear();
+      current = finding({ status: BugFindingStatus.FIXING });
+      expect(await service.onFindingConfirmed('f-1', 0.85)).toBeNull();
+      expect(fixSession.startByAgent).not.toHaveBeenCalled();
+    });
+
     it('fix: starts the session by the verifier and remembers the move', async () => {
       expect(await service.onFindingConfirmed('f-1', 0.85)).toBe('fix');
       expect(fixSession.startByAgent).toHaveBeenCalledWith('f-1', 'verifier');

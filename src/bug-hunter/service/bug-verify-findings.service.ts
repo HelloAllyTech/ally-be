@@ -10,6 +10,7 @@ import {
 } from '../constants/bug-fix-session.constants';
 import { repoCommands } from '../constants/bug-hunt-repos.constants';
 import {
+  BUG_FINDING_LOCATE_STATUSES,
   BugFindingDecisionReason,
   BugFindingSource,
   BugFindingStatus,
@@ -219,13 +220,13 @@ export class BugVerifyFindingsService {
   ): Promise<VerifyFindingsDispatch | null> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (finding.source !== BugFindingSource.REPORTED_BUG) return null;
-    if (
-      finding.status !== BugFindingStatus.NEW &&
-      finding.status !== BugFindingStatus.PENDING_APPROVAL
-    ) {
-      return null;
-    }
-    if (finding.metadata?.independentVerification) return null;
+    if (!BUG_FINDING_LOCATE_STATUSES.includes(finding.status)) return null;
+    // Pending: a Verifier is on it. Confirmed: the fault is already named,
+    // and the fix session reads it. Unsure or never judged: locate (again) —
+    // an admin pressing "Put me on it" after a wrong fix, or after rewriting
+    // the brief, wants the fault found, not the symptom fixed a second time.
+    const judged = finding.metadata?.independentVerification;
+    if (judged === 'pending' || judged === 'confirmed') return null;
     const repo = finding.repo;
     const commands = repo ? repoCommands(repo) : null;
     if (!repo || !commands?.fixable) return null;
@@ -533,12 +534,12 @@ export class BugVerifyFindingsService {
     confidence: number | null,
   ): Promise<void> {
     const finding = await this.bugFindingService.getOne(findingId);
-    if (
-      finding.status !== BugFindingStatus.NEW &&
-      finding.status !== BugFindingStatus.PENDING_APPROVAL
-    ) {
-      return; // a person already acted on it
-    }
+    // A session in flight, a merged or released fix, a terminal decision: a
+    // person (or a session) acted while the Verifier ran, and the verdict
+    // is recorded but changes nothing. Every status locate-first dispatches
+    // from — a fresh report, a failed or cancelled session, a closed PR —
+    // is acted on, so a re-located report moves like a new one.
+    if (!BUG_FINDING_LOCATE_STATUSES.includes(finding.status)) return;
 
     if (verdict.verdict === 'refuted') {
       await this.bugFindingService.setStatus(finding.id, {

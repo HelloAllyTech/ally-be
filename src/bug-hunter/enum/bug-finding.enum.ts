@@ -238,6 +238,21 @@ export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
 ];
 
 /**
+ * Statuses from which a human report may be LOCATED — sent to the Verifier to
+ * name the layer at fault — and from which a verdict may act on the finding.
+ * The same list as the one a fix session starts from, on purpose: locating
+ * is what happens before a fix session, so wherever "Put me on it" is
+ * offered, locate-first is offered too. Until 2026-10-12 only NEW and
+ * PENDING_APPROVAL qualified, so a report that had already been "fixed" once
+ * in the wrong layer (its PR closed, the bug back at PR_OPENED or CANCELLED)
+ * went straight to a second fix session from the same symptom — the exact
+ * case locate-first exists for. QUEUED and FIXING stay out (a session is
+ * running), as do the terminal and released statuses (a person acted).
+ */
+export const BUG_FINDING_LOCATE_STATUSES: BugFindingStatus[] =
+  BUG_FINDING_FIX_SESSION_START_STATUSES;
+
+/**
  * Statuses an admin may rewrite the description from.
  *
  * The same list as BUG_FINDING_FIX_SESSION_START_STATUSES, and deliberately
