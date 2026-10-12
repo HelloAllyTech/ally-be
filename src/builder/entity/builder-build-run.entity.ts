@@ -45,6 +45,14 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 40 })
   engine!: string;
 
+  /**
+   * The PRD version this run was dispatched from. A new build from a
+   * different version starts its own branch instead of resuming this one's
+   * (`branchSlugForBuild`). Null for runs dispatched before it was recorded.
+   */
+  @Column({ type: 'int', nullable: true })
+  prdVersion?: number | null;
+
   /** The coder-tier model. Planner and verifier ride their own columns. */
   @Column({ type: 'varchar', length: 80 })
   model!: string;

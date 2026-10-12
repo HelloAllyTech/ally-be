@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
   forwardRef,
 } from '@nestjs/common';
-import { In } from 'typeorm';
+import { In, IsNull, Like } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -139,6 +139,41 @@ export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
   BuilderSessionStatus.CANCELLED,
 ];
 
+/**
+ * The gate verdicts that describe the tree as it stands: one per (repo, kind)
+ * from the newest gate round only.
+ *
+ * Each run of the gate tags its results with a `round`. Reading the latest
+ * result per (repo, kind) across the whole run instead kept a check's verdict
+ * alive after the check stopped running: a `gate-config` failure is only ever
+ * posted while config is touched, so reverting the edit never produced the
+ * pass that would replace it, and a repo the coder later left unchanged kept
+ * its old failures. Both stayed in the remediation prompt and kept
+ * `hasPassingGate` false for the rest of the run.
+ *
+ * Results posted before rounds existed carry none, and fall back to the latest
+ * per (repo, kind).
+ */
+export const latestGateResults = (
+  events: { type: string; payload?: Record<string, any> | null }[],
+): Record<string, any>[] => {
+  const gates = events.filter(
+    (event) => event.type === BuilderEventType.GATE_RESULT,
+  );
+  const newestRound = [...gates].reverse().find((event) => event.payload?.round)
+    ?.payload?.round;
+  const inScope = newestRound
+    ? gates.filter((event) => event.payload?.round === newestRound)
+    : gates;
+  const byKey = new Map<string, Record<string, any>>();
+  for (const event of inScope) {
+    const repo = String(event.payload?.repo ?? '');
+    const kind = String(event.payload?.kind ?? '');
+    if (repo && kind) byKey.set(`${repo}:${kind}`, event.payload ?? {});
+  }
+  return [...byKey.values()];
+};
+
 @Injectable()
 export class BuilderBuildService {
   private readonly logger = LoggerService.getInstance(BuilderBuildService.name);
@@ -266,6 +301,13 @@ export class BuilderBuildService {
       },
     );
 
+    // Unreadable means "as before": resume the previous branch. Sizing already
+    // tolerates an unreadable PRD the same way (classifySession).
+    const prdVersion = await this.prdService
+      .getOrCreateDoc(session.id, session.createdBy)
+      .then((doc) => doc.versionNumber)
+      .catch(() => null);
+
     return this.dispatchRun({
       session: { ...session, model: models.coder },
       mode: BuilderRunMode.BUILD,
@@ -273,8 +315,63 @@ export class BuilderBuildService {
       repos,
       models,
       milestoneId: milestone?.id ?? undefined,
-      branchSlugOverride: milestone?.branchSlug,
+      branchSlugOverride:
+        milestone?.branchSlug ??
+        (await this.branchSlugForBuild(session, prdVersion)),
+      prdVersion,
     });
+  }
+
+  /**
+   * The branch family a new build of this session pushes to.
+   *
+   * Starting a build again after a stop resumes the branch the last run left
+   * behind: the runner finds `builder/<slug>` on the remote and gates what is
+   * there before coding anything. That is right when the PRD is the one that
+   * work was written from, and wrong when it is not. On 2026-10-12 session
+   * 880e73e6 was stopped because its PRD prescribed a breaking rename, the PRD
+   * was rewritten, and the next build gated and remediated the rename anyway —
+   * it never ran a coding pass against the new PRD.
+   *
+   * So a build from a different PRD version starts its own branch,
+   * `<slug>-v<version>`, and the old one is left untouched. Same version, or a
+   * previous run from before versions were recorded: the previous run's
+   * branch, as before. An open pull request on the previous branch keeps it
+   * too, so a rebuild can never open a competing set.
+   */
+  private async branchSlugForBuild(
+    session: BuilderSession,
+    prdVersion: number | null,
+  ): Promise<string> {
+    const previous = await this.runRepository.findOne({
+      where: {
+        sessionId: session.id,
+        mode: In([BuilderRunMode.BUILD, BuilderRunMode.RESUME]),
+        milestoneId: IsNull(),
+      },
+      order: { sequence: 'DESC' },
+    });
+    if (!previous) return session.slug;
+
+    const previousSlug = previous.branchSlug || session.slug;
+    if (
+      prdVersion == null ||
+      previous.prdVersion == null ||
+      previous.prdVersion === prdVersion
+    ) {
+      return previousSlug;
+    }
+
+    const openOnPrevious = await this.pullRequestRepository.count({
+      where: {
+        sessionId: session.id,
+        branch: Like(`builder/${previousSlug}%`),
+        state: 'open',
+      },
+    });
+    if (openOnPrevious > 0) return previousSlug;
+
+    return `${session.slug}-v${prdVersion}`;
   }
 
   /**
@@ -690,6 +787,11 @@ export class BuilderBuildService {
       repos: session.repos ?? [],
       resumeOfRunId: pausedRun.id,
       branches: pausedRun.branches ?? undefined,
+      // The paused run's branch family, not the session's: a build from a
+      // later PRD version, or a milestone, pushes somewhere other than
+      // `builder/<slug>`, and resuming onto the default would start over.
+      branchSlugOverride: pausedRun.branchSlug,
+      prdVersion: pausedRun.prdVersion ?? null,
       models: {
         ...models,
         planner: pausedRun.plannerModel ?? models.planner,
@@ -1015,6 +1117,7 @@ export class BuilderBuildService {
     pullRequestId?: string;
     milestoneId?: string;
     branchSlugOverride?: string;
+    prdVersion?: number | null;
   }): Promise<BuilderBuildRun> {
     // Only the session is needed here — everything else in `params` is passed
     // straight through to `dispatchRunLocked`, which does the destructuring.
@@ -1057,6 +1160,7 @@ export class BuilderBuildService {
     pullRequestId?: string;
     milestoneId?: string;
     branchSlugOverride?: string;
+    prdVersion?: number | null;
   }): Promise<BuilderBuildRun> {
     const { session, mode, userId, repos, models } = params;
     const sequence = await this.runRepository.nextSequence(session.id);
@@ -1087,6 +1191,7 @@ export class BuilderBuildService {
         // A milestone pushes to its own branch family (`<slug>-m2`), so the
         // slices stay separately reviewable rather than piling into one branch.
         branchSlug: params.branchSlugOverride ?? session.slug,
+        prdVersion: params.prdVersion ?? null,
         branches: params.branches ?? null,
         pullRequestId: params.pullRequestId ?? null,
         milestoneId: params.milestoneId ?? null,
@@ -1341,27 +1446,22 @@ export class BuilderBuildService {
     verifierNotes: string | null;
     lastVerifyRound: number;
   }> {
-    const events = await this.eventRepository.listByRun(runId, 0, 2000);
+    const events = await this.eventRepository.listByRunOfTypes(runId, [
+      BuilderEventType.PLAN,
+      BuilderEventType.GATE_RESULT,
+      BuilderEventType.VERIFICATION,
+    ]);
 
     let planMd: string | null = null;
     let verifierNotes: string | null = null;
     let lastVerifyRound = 0;
     let objections: any[] = [];
-    // Latest result per (repo, kind): a remediation round re-runs the gate, and
-    // only the newest verdict for a check describes the tree as it stands.
-    const gateByKey = new Map<string, any>();
 
     for (const event of events) {
       switch (event.type) {
         case BuilderEventType.PLAN:
           planMd = String(event.payload?.text ?? planMd ?? '') || planMd;
           break;
-        case BuilderEventType.GATE_RESULT: {
-          const repo = String(event.payload?.repo ?? '');
-          const kind = String(event.payload?.kind ?? '');
-          if (repo && kind) gateByKey.set(`${repo}:${kind}`, event.payload);
-          break;
-        }
         case BuilderEventType.VERIFICATION: {
           const round = Number(event.payload?.round ?? 0);
           // Keep the newest round's verdict; an older one describes code that
@@ -1381,7 +1481,7 @@ export class BuilderBuildService {
       }
     }
 
-    const gateResults = [...gateByKey.values()];
+    const gateResults = latestGateResults(events);
     const gateFailures = gateResults
       .filter((result) => result?.passed === false)
       .map((result) => ({
@@ -1446,22 +1546,20 @@ export class BuilderBuildService {
    * is: a run cannot claim it changed nothing while having edited files.
    */
   async touchedNoFiles(runId: string): Promise<boolean> {
-    const events = await this.eventRepository.listByRun(runId, 0, 2000);
-    return !events.some((event) => event.type === BuilderEventType.FILE_EDIT);
+    const edit = await this.eventRepository.latestOfType(
+      runId,
+      BuilderEventType.FILE_EDIT,
+    );
+    return !edit;
   }
 
   async hasPassingGate(runId: string): Promise<boolean> {
-    const events = await this.eventRepository.listByRun(runId, 0, 2000);
-    const gateByKey = new Map<string, boolean>();
-    for (const event of events) {
-      if (event.type !== BuilderEventType.GATE_RESULT) continue;
-      const repo = String(event.payload?.repo ?? '');
-      const kind = String(event.payload?.kind ?? '');
-      if (!repo || !kind) continue;
-      gateByKey.set(`${repo}:${kind}`, event.payload?.passed === true);
-    }
-    if (!gateByKey.size) return false;
-    return [...gateByKey.values()].every(Boolean);
+    const events = await this.eventRepository.listByRunOfTypes(runId, [
+      BuilderEventType.GATE_RESULT,
+    ]);
+    const results = latestGateResults(events);
+    if (!results.length) return false;
+    return results.every((result) => result?.passed === true);
   }
 
   /**

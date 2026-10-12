@@ -55,7 +55,11 @@ describe('BuilderBuildService', () => {
     findLatest: jest.Mock;
     isLatestForSession: jest.Mock;
   };
-  let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
+  let eventRepository: {
+    listByRun: jest.Mock;
+    listByRunOfTypes: jest.Mock;
+    latestOfType: jest.Mock;
+  };
   let pullRequestRepository: {
     increment: jest.Mock;
     findOne: jest.Mock;
@@ -115,6 +119,7 @@ describe('BuilderBuildService', () => {
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
+      listByRunOfTypes: jest.fn().mockResolvedValue([]),
       latestOfType: jest.fn().mockResolvedValue(null),
     };
     pullRequestRepository = {
@@ -621,6 +626,73 @@ describe('BuilderBuildService', () => {
         { id: 'run-1' },
         expect.objectContaining({ status: BuilderRunStatus.FAILED }),
       );
+    });
+  });
+
+  describe('branch for a new build', () => {
+    // A previous build/resume run on this session, as branchSlugForBuild
+    // looks it up; every other findOne keeps the default.
+    const previousRun = (run: Record<string, unknown> | null) =>
+      runRepository.findOne.mockImplementation(async (query: any) =>
+        query?.where?.mode ? run : undefined,
+      );
+    const dispatchedSlug = () =>
+      github.dispatchWorkflow.mock.calls[0][0].inputs.branch_slug;
+
+    beforeEach(() => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: { requirements: [], technicalPlan: '' },
+        versionNumber: 4,
+      });
+    });
+
+    it('uses the session slug for the first build, and records the PRD version', async () => {
+      previousRun(null);
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedSlug()).toBe(readySession().slug);
+      expect(runRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ prdVersion: 4 }),
+      );
+    });
+
+    it('resumes the previous branch when the PRD has not changed', async () => {
+      previousRun({ branchSlug: 'add-a-thing', prdVersion: 4 });
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedSlug()).toBe('add-a-thing');
+    });
+
+    /**
+     * Session 880e73e6, 2026-10-12: stopped because its PRD prescribed a
+     * breaking rename, PRD rewritten, rebuilt — and the rebuild gated and
+     * remediated the old rename instead of coding the new PRD.
+     */
+    it('starts its own branch when the PRD changed since the last run', async () => {
+      previousRun({ branchSlug: 'add-a-thing', prdVersion: 3 });
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedSlug()).toBe(`${readySession().slug}-v4`);
+    });
+
+    it('keeps the previous branch while it has an open pull request', async () => {
+      previousRun({ branchSlug: 'add-a-thing', prdVersion: 3 });
+      pullRequestRepository.count.mockResolvedValue(1);
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedSlug()).toBe('add-a-thing');
+    });
+
+    it('keeps resuming runs dispatched before versions were recorded', async () => {
+      previousRun({ branchSlug: 'add-a-thing', prdVersion: null });
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedSlug()).toBe('add-a-thing');
     });
   });
 
@@ -1317,11 +1389,20 @@ describe('BuilderBuildService', () => {
       type: BuilderEventType.GATE_RESULT,
       payload: { repo, kind, passed },
     });
+    const roundEvent = (
+      round: string,
+      repo: string,
+      kind: string,
+      passed: boolean,
+    ) => ({
+      type: BuilderEventType.GATE_RESULT,
+      payload: { round, repo, kind, passed },
+    });
 
     it('is false when a run recorded no gate at all', async () => {
       // The case that mattered: testing used to be prompt-instructed, so a run
       // that never ran a suite could still self-report success.
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         { type: BuilderEventType.TEXT, payload: { text: 'all tests pass!' } },
       ]);
 
@@ -1329,7 +1410,7 @@ describe('BuilderBuildService', () => {
     });
 
     it('is true when every check the gate ran passed', async () => {
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         gateEvent('ally-be', 'test', true),
         gateEvent('ally-be', 'lint', true),
       ]);
@@ -1338,7 +1419,7 @@ describe('BuilderBuildService', () => {
     });
 
     it('is false when any check failed', async () => {
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         gateEvent('ally-be', 'test', true),
         gateEvent('ally-be', 'lint', false),
       ]);
@@ -1347,18 +1428,53 @@ describe('BuilderBuildService', () => {
     });
 
     it('reads the newest verdict per check, so a remediated failure counts as fixed', async () => {
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         gateEvent('ally-be', 'test', false),
         gateEvent('ally-be', 'test', true),
       ]);
 
       await expect(service.hasPassingGate('run-1')).resolves.toBe(true);
     });
+
+    /**
+     * A `gate-config` failure is only posted while config is touched, so
+     * reverting the edit never produced the pass that would replace it — and
+     * the run could never complete, however clean its tree. Each gate run is
+     * a round, and only the newest round describes the tree.
+     */
+    it('reads only the newest gate round, so a check that stopped running cannot hold it', async () => {
+      eventRepository.listByRunOfTypes.mockResolvedValue([
+        roundEvent('r1', 'ally-be', 'gate-config', false),
+        roundEvent('r1', 'ally-be', 'test', false),
+        roundEvent('r1', 'ally-web', 'lint', false),
+        roundEvent('r2', 'ally-be', 'test', true),
+        roundEvent('r2', 'ally-be', 'lint', true),
+      ]);
+
+      await expect(service.hasPassingGate('run-1')).resolves.toBe(true);
+    });
+
+    it('fails on a failure in the newest round', async () => {
+      eventRepository.listByRunOfTypes.mockResolvedValue([
+        roundEvent('r1', 'ally-be', 'test', true),
+        roundEvent('r2', 'ally-be', 'test', false),
+      ]);
+
+      await expect(service.hasPassingGate('run-1')).resolves.toBe(false);
+    });
+
+    it('asks only for gate results, from the whole run', async () => {
+      await service.hasPassingGate('run-1');
+
+      expect(eventRepository.listByRunOfTypes).toHaveBeenCalledWith('run-1', [
+        BuilderEventType.GATE_RESULT,
+      ]);
+    });
   });
 
   describe('getRunPhaseContext', () => {
     it('hands the remediation prompt the failures and objections to fix', async () => {
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         {
           type: BuilderEventType.PLAN,
           payload: { text: '## Approach\nDo it.' },
@@ -1407,7 +1523,7 @@ describe('BuilderBuildService', () => {
       // A remediation round re-runs both, and an older verdict describes code
       // that no longer exists — feeding it back would have the coder chasing
       // failures it already fixed.
-      eventRepository.listByRun.mockResolvedValue([
+      eventRepository.listByRunOfTypes.mockResolvedValue([
         {
           type: BuilderEventType.GATE_RESULT,
           payload: {
@@ -1436,6 +1552,43 @@ describe('BuilderBuildService', () => {
       expect(context.gateFailures).toEqual([]);
       expect(context.objections).toEqual([{ summary: 'second' }]);
       expect(context.lastVerifyRound).toBe(2);
+    });
+
+    it("drops an older round's failures for a repo the newest round did not gate", async () => {
+      // The repo went back to unchanged, so the newest gate skipped it. Its
+      // old failure describes a tree that no longer exists.
+      eventRepository.listByRunOfTypes.mockResolvedValue([
+        {
+          type: BuilderEventType.GATE_RESULT,
+          payload: {
+            round: 'r1',
+            repo: 'ally-web',
+            kind: 'lint',
+            passed: false,
+          },
+        },
+        {
+          type: BuilderEventType.GATE_RESULT,
+          payload: {
+            round: 'r2',
+            repo: 'ally-be',
+            kind: 'test',
+            passed: false,
+            newFailures: ['now'],
+          },
+        },
+      ]);
+
+      const context = await service.getRunPhaseContext('run-1');
+
+      expect(context.gateFailures).toEqual([
+        expect.objectContaining({
+          repo: 'ally-be',
+          kind: 'test',
+          newFailures: ['now'],
+        }),
+      ]);
+      expect(context.gateSummary).not.toContain('ally-web');
     });
   });
 

@@ -18,7 +18,11 @@ import { BuilderBuildService } from '../builder-build.service';
  */
 describe('BuilderBuildService.touchedNoFiles', () => {
   const build = (events: { type: BuilderEventType }[]) => {
-    const eventRepository = { listByRun: jest.fn().mockResolvedValue(events) };
+    const eventRepository = {
+      latestOfType: jest.fn((_runId: string, type: BuilderEventType) =>
+        Promise.resolve(events.filter((e) => e.type === type).pop() ?? null),
+      ),
+    };
     const service = Object.create(
       BuilderBuildService.prototype,
     ) as BuilderBuildService;

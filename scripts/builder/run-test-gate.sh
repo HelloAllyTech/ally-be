@@ -34,6 +34,9 @@ API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
 API_ROOT="${ALLY_BE_API_URL}/api/v1/builder/pipeline"
 BASELINE_DIR=/tmp/builder-baseline
 GATE_DIR=/tmp/builder-gate
+# One id per run of this script, on every verdict it posts; ally-be keeps only
+# the newest round's (latestGateResults in builder-build.service.ts).
+GATE_ROUND="$(date +%s)-$$"
 mkdir -p "$GATE_DIR"
 
 # ── Is the judge still the judge? ───────────────────────────────────────────
@@ -275,7 +278,8 @@ for dir in repos/*/; do
     --current "${GATE_DIR}/${repo}.json" \
     --baseline "${BASELINE_DIR}/${repo}.json" \
     --config-touched "$config_touched" \
-    --events-out "${GATE_DIR}/${repo}.events.json" 2>/dev/null || echo blocked)"
+    --events-out "${GATE_DIR}/${repo}.events.json" \
+    --round "$GATE_ROUND" 2>/dev/null || echo blocked)"
 
   [ -f "${GATE_DIR}/${repo}.events.json" ] && \
     post_gate_event "${GATE_DIR}/${repo}.events.json"

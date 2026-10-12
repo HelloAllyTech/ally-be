@@ -35,6 +35,11 @@ const currentPath = argOf('current');
 const baselinePath = argOf('baseline');
 const eventsOut = argOf('events-out');
 /**
+ * Which run of the gate this is. ally-be reads only the newest round's
+ * verdicts, so a check that stopped running cannot leave a stale one behind.
+ */
+const round = argOf('round');
+/**
  * Runner-config files this change touched, comma-separated.
  *
  * The gate runs the repo's own commands in the tree the agent just wrote to,
@@ -122,6 +127,7 @@ for (const [kind, result] of Object.entries(current.checks ?? {})) {
       baselineKnown: Boolean(baselineCheck),
       outputTail: passed ? null : (result.outputTail ?? null),
       machine: true,
+      ...(round ? { round } : {}),
     },
   });
 }
@@ -151,6 +157,7 @@ if (configTouched.length > 0) {
       baselineKnown: false,
       outputTail: null,
       machine: true,
+      ...(round ? { round } : {}),
     },
   });
 }

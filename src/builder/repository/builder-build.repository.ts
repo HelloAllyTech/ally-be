@@ -161,6 +161,24 @@ export class BuilderBuildEventRepository extends Repository<BuilderBuildEvent> {
   }
 
   /**
+   * Every event of the given types on a run, oldest first.
+   *
+   * For readers that need a few kinds of event from the whole run. `listByRun`
+   * pages from the start, so a long run's newest gate verdicts sat past its
+   * limit and were silently never read.
+   */
+  listByRunOfTypes(
+    runId: string,
+    types: string[],
+  ): Promise<BuilderBuildEvent[]> {
+    return this.createQueryBuilder('event')
+      .where('event.runId = :runId', { runId })
+      .andWhere('event.type IN (:...types)', { types })
+      .orderBy('event.seq', 'ASC')
+      .getMany();
+  }
+
+  /**
    * The newest event of one type on a run.
    *
    * Used to read a run's mid-run budget hold back out of the log rather than
