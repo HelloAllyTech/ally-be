@@ -1,6 +1,7 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
 import { buildPromptHeader, renderPrd } from './builder-build-prompt';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The remediation pass: the **coder re-invoked** with what the machine gate
@@ -39,6 +40,11 @@ export interface VerifierObjection {
 }
 
 export interface RemediatePromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -186,6 +192,7 @@ ${context.planMd}
 
   return [
     header,
+    renderPlatformRules(context.platformRules),
     gateBlock,
     objectionsBlock,
     protocol,

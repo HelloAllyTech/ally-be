@@ -1,5 +1,9 @@
-import { BuilderPrdDocument } from '../type/builder-prd.type';
+import {
+  BuilderPrdDocument,
+  BuilderTechnicalDesign,
+} from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The build protocol, rendered per run and fetched by the runner over HTTP.
@@ -15,6 +19,11 @@ import { BuilderRepoDefinition } from './builder-repos.constants';
  */
 
 export interface BuildPromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   /**
    * Tunable conduct guidance from prompt management. Null when the row and the
    * file are both missing, in which case DEFAULT_CODER_GUIDANCE is used — never
@@ -245,7 +254,84 @@ ${prd.testPlanMd}
 
 ## End-to-end checks
 ${prd.e2ePlanMd}
+${renderApprovedDesign(prd)}
 `.trim();
+};
+
+/**
+ * The approved technical design, appended to the PRD for every build phase.
+ *
+ * Only once approved. A design in review is a draft a person has not agreed
+ * to, and a build reading it would treat the designer's guesses as settled.
+ * The PRD's own technical plan above it is a sketch; where the two disagree,
+ * this is the one that was checked against the code and approved.
+ */
+const renderApprovedDesign = (prd: BuilderPrdDocument): string => {
+  const design = prd.technicalDesign;
+  if (!design || design.status !== 'approved') return '';
+
+  return `
+## Technical design (approved)
+
+Written with the code checked out, critiqued, and approved by a person. Where
+it and the technical plan above disagree, follow this. The scope below is the
+build's hard scope check: a change outside it fails the gate.
+
+${renderTechnicalDesign(design)}
+`;
+};
+
+/**
+ * A technical design as markdown, whatever its status. Shared by the approved
+ * block above and the design critic, which reads the submission before anyone
+ * has approved it.
+ */
+export const renderTechnicalDesign = (
+  design: BuilderTechnicalDesign,
+): string => {
+  const scope = (design.scope ?? [])
+    .map(
+      (entry) =>
+        `- **${entry.repo}**\n${(entry.files ?? [])
+          .map((file) => `  - \`${file}\``)
+          .join('\n')}`,
+    )
+    .join('\n');
+  const contracts = (design.contracts ?? [])
+    .map(
+      (contract) =>
+        `- **${contract.name}** — ${contract.change}\n  Readers:\n${(
+          contract.readers ?? []
+        )
+          .map((reader) => `  - \`${reader}\``)
+          .join('\n')}`,
+    )
+    .join('\n');
+  const tests = (design.testMap ?? [])
+    .map(
+      (test) =>
+        `- **${test.requirementId}** — \`${test.repo}:${test.file}\`: ${test.asserts}`,
+    )
+    .join('\n');
+  const decisions = (design.openDecisions ?? [])
+    .map((decision) => `- ${decision}`)
+    .join('\n');
+
+  return `
+${design.designMd || '(no design written)'}
+
+### Scope — the files this build may change
+${scope || '(none)'}
+
+### Contracts changed, and who reads them
+${contracts || '(none — no stored field, API field, enum or table changes)'}
+
+### Compatibility
+${design.compatibilityMd || '(no changed contracts)'}
+
+### Test map
+${tests || '(none)'}
+${decisions ? `\n### Open decisions\n${decisions}\n` : ''}`.trim();
 };
 
 export const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
@@ -588,6 +674,7 @@ ${context.exemplars.join('\n\n')}
 
   return [
     header,
+    renderPlatformRules(context.platformRules),
     protocol,
     milestoneBlock,
     resumeBlock,

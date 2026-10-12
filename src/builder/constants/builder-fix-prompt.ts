@@ -1,6 +1,7 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
 import { buildPromptHeader, renderPrd } from './builder-build-prompt';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The fix pass: act on what happened to a pull request after Builder opened it
@@ -32,6 +33,11 @@ export interface FixFeedbackItem {
 }
 
 export interface FixPromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -193,7 +199,13 @@ a review comment is asking for something in scope or something new — but the
 feedback above is the work, not the PRD.
 `.trim();
 
-  return [header, feedbackBlock, protocol, renderPrd(context.prd)]
+  return [
+    header,
+    renderPlatformRules(context.platformRules),
+    feedbackBlock,
+    protocol,
+    renderPrd(context.prd),
+  ]
     .filter(Boolean)
     .join('\n\n---\n\n');
 }

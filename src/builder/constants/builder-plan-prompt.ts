@@ -1,6 +1,7 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
 import { buildPromptHeader, renderPrd } from './builder-build-prompt';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The planning pass: a **separate, stronger-model invocation** that reads the
@@ -20,6 +21,11 @@ import { buildPromptHeader, renderPrd } from './builder-build-prompt';
  */
 
 export interface PlanPromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -185,6 +191,7 @@ follow, what will break, and the workstream map.
 
   return [
     header,
+    renderPlatformRules(context.platformRules),
     protocol,
     lengthBlock,
     resumeBlock,

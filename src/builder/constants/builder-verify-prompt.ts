@@ -1,5 +1,6 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The verification pass, run as a **second engine invocation with a fresh
@@ -16,6 +17,11 @@ import { BuilderRepoDefinition } from './builder-repos.constants';
  */
 
 export interface VerifyPromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   prd: BuilderPrdDocument;
   repos: BuilderRepoDefinition[];
   /** Which review round this is; later rounds are told what was raised. */
@@ -86,6 +92,11 @@ write to the tree is reverted before the next phase runs. Do not try to fix
 what you find — a reviewer who patches the diff is no longer reviewing it.
 Report it and let the coding agent, which gets re-invoked with your objections,
 do the fixing.
+
+${renderPlatformRules(context.platformRules)}
+
+A change that breaks one of these rules is a blocking objection, however well
+it is built.
 
 ${roundNote}
 

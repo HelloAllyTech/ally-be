@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   FEATURE_TOGGLES,
@@ -16,6 +16,11 @@ import {
 } from '../enum/builder.enum';
 import { BUILDER_LESSONS_IN_CONTEXT } from '../constants/builder.constants';
 import { BUILDER_REPOS } from '../constants/builder-repos.constants';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { loadPlatformRules } from '../constants/builder-platform-rules';
+
+/** How long a looked-up rules text is reused before asking again. */
+const PLATFORM_RULES_TTL_MS = 60_000;
 
 /**
  * One rendered lesson line.
@@ -52,10 +57,37 @@ export class BuilderKnowledgeService {
     BuilderKnowledgeService.name,
   );
 
+  private platformRulesCache: { text: string; expiresAt: number } | null = null;
+
   constructor(
     private readonly repoMapRepository: BuilderRepoMapRepository,
     private readonly lessonRepository: BuilderLessonRepository,
+    // Optional so a context without prompt management (a unit test, a script)
+    // still gets the compiled rules rather than failing to construct.
+    @Optional() private readonly promptSharedService?: PromptSharedService,
   ) {}
+
+  /**
+   * The platform rules every Builder agent gets — the interviewer, the
+   * research pass and every runner phase read them through here, so one edit
+   * in prompt management reaches all of them.
+   *
+   * Memoised for a minute: the interviewer asks on every turn and the runner
+   * on every phase, for text that changes when a person edits a prompt.
+   * Never empty — see loadPlatformRules.
+   */
+  async platformRules(): Promise<string> {
+    const now = Date.now();
+    if (this.platformRulesCache && this.platformRulesCache.expiresAt > now) {
+      return this.platformRulesCache.text;
+    }
+    const text = await loadPlatformRules(this.promptSharedService);
+    this.platformRulesCache = {
+      text,
+      expiresAt: now + PLATFORM_RULES_TTL_MS,
+    };
+    return text;
+  }
 
   /**
    * The cacheable context block: what each repo is, what we know about its

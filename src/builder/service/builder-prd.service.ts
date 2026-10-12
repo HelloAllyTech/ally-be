@@ -19,8 +19,13 @@ import {
   BuilderPrdReadiness,
   BuilderPrdReadinessSection,
   BuilderPrdRepoPlan,
+  BuilderTechnicalDesign,
   createEmptyPrdDocument,
 } from '../type/builder-prd.type';
+import {
+  BuilderDesignReadiness,
+  computeDesignReadiness,
+} from '../util/builder-technical-design.util';
 import {
   createPrdNormaliseDiagnostics,
   normalisePrdDocument,
@@ -127,6 +132,22 @@ export class BuilderPrdService {
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
   ): Promise<BuilderPrdMutationResult> {
+    // The technical design is not the interviewer's or the admin editor's to
+    // write. It is drafted by a designer run with the code checked out and
+    // approved by a person; a patch that could edit it would let an approved
+    // design say something nobody approved, and the build is held to it.
+    // Refused rather than silently dropped, so the writer knows.
+    const designOp = (Array.isArray(ops) ? ops : []).findIndex((op) =>
+      String(op?.path ?? '').startsWith('/technicalDesign'),
+    );
+    if (designOp >= 0) {
+      throw new BadRequestException(
+        `PRD patch failed at operation ${designOp}: /technicalDesign cannot be edited ` +
+          'here. The technical design is drafted by the designer run and approved ' +
+          'from the PRD panel — change the PRD and redraft it instead.',
+      );
+    }
+
     // Fail fast against the caller's already-loaded draft so an obviously bad
     // patch (unknown path, etc.) never opens a transaction. The authoritative
     // application happens inside persistDraftMutation against whatever draft
@@ -142,6 +163,30 @@ export class BuilderPrdService {
       throw error;
     }
     return this.persistDraftMutation(doc, ops, userId, author, changeSummary);
+  }
+
+  /**
+   * Replace the technical design, the one write path that may.
+   *
+   * Goes through the same transaction and version trail as every other
+   * mutation, so a design submission, a failure and an approval each leave a
+   * snapshot — the record of what was approved is the PRD version it was
+   * approved in.
+   */
+  async setTechnicalDesign(
+    doc: BuilderPrdDoc,
+    design: BuilderTechnicalDesign | null,
+    userId: number,
+    author: BuilderPrdVersionAuthor,
+    changeSummary?: string,
+  ): Promise<BuilderPrdMutationResult> {
+    return this.persistMutation(
+      doc,
+      (current) => ({ ...current, technicalDesign: design }),
+      userId,
+      author,
+      changeSummary,
+    );
   }
 
   /**
@@ -161,6 +206,39 @@ export class BuilderPrdService {
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
   ): Promise<BuilderPrdMutationResult> {
+    return this.persistMutation(
+      doc,
+      (current) => {
+        let next: BuilderPrdDocument;
+        try {
+          next = applyJsonPatch(current, ops);
+        } catch (error) {
+          if (error instanceof JsonPatchError) {
+            throw new BadRequestException(
+              `PRD patch failed at operation ${error.opIndex ?? 0}: ${error.message}`,
+            );
+          }
+          throw error;
+        }
+        // Whatever the ops did at the root, the design is carried over from
+        // the stored draft. applyPatch refuses ops addressed to it; this is
+        // what stops a whole-document replace from doing the same thing by
+        // the back door.
+        return { ...next, technicalDesign: current.technicalDesign ?? null };
+      },
+      userId,
+      author,
+      changeSummary,
+    );
+  }
+
+  private async persistMutation(
+    doc: BuilderPrdDoc,
+    mutate: (current: BuilderPrdDocument) => BuilderPrdDocument,
+    userId: number,
+    author: BuilderPrdVersionAuthor,
+    changeSummary?: string,
+  ): Promise<BuilderPrdMutationResult> {
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -175,17 +253,7 @@ export class BuilderPrdService {
           });
           const nextVersionNumber = current.versionNumber + 1;
 
-          let nextDraft: BuilderPrdDocument;
-          try {
-            nextDraft = applyJsonPatch(current.draft, ops);
-          } catch (error) {
-            if (error instanceof JsonPatchError) {
-              throw new BadRequestException(
-                `PRD patch failed at operation ${error.opIndex ?? 0}: ${error.message}`,
-              );
-            }
-            throw error;
-          }
+          const nextDraft = mutate(current.draft);
 
           // Every write goes through here, so this is the one place that can
           // promise the stored document matches its declared shape — the
@@ -486,8 +554,16 @@ export class BuilderPrdService {
   async getPrdWithReadiness(
     sessionId: string,
     userId: number,
-  ): Promise<{ doc: BuilderPrdDoc; readiness: BuilderPrdReadiness }> {
+  ): Promise<{
+    doc: BuilderPrdDoc;
+    readiness: BuilderPrdReadiness;
+    designReadiness: BuilderDesignReadiness;
+  }> {
     const doc = await this.getOrCreateDoc(sessionId, userId);
-    return { doc, readiness: this.computeReadiness(doc.draft) };
+    return {
+      doc,
+      readiness: this.computeReadiness(doc.draft),
+      designReadiness: computeDesignReadiness(doc.draft),
+    };
   }
 }

@@ -76,6 +76,82 @@ export interface BuilderPrdTechnicalPlan {
   apiMd: string;
 }
 
+/**
+ * The technical design: how the PRD will be built, written with the code in
+ * front of it.
+ *
+ * Exists because the PRD's own `technicalPlan` is written by the in-process
+ * interviewer, which has code search but no checkout — and on 2026-10-12
+ * (session 880e73e6) that plan renamed a persisted JSON key with a migration
+ * and broke every released mobile client that read it. The technical plan is
+ * now a sketch; this is the document the build is held to, drafted by a
+ * read-only designer run on the runner with every target repo cloned, checked
+ * by a cold critic, and approved by a person.
+ *
+ * Stored on the PRD document rather than in its own table so it is versioned
+ * with the PRD it was designed from, by the same version trail. It is not the
+ * interviewer's to write: `update_prd` and the admin PATCH both refuse any op
+ * under `/technicalDesign`.
+ */
+export type BuilderTechnicalDesignStatus =
+  | 'drafting'
+  | 'review'
+  | 'approved'
+  | 'failed';
+
+export interface BuilderDesignScope {
+  repo: string;
+  /**
+   * Repo-relative paths or globs the build may change. Becomes the build's
+   * hard scope check, so a file missing here is a file the build cannot touch.
+   */
+  files: string[];
+}
+
+/** One stored field, API field, enum or table the change touches. */
+export interface BuilderDesignContract {
+  name: string;
+  change: string;
+  /** Every place that reads it, as "repo:path:line". */
+  readers: string[];
+}
+
+export interface BuilderDesignTest {
+  requirementId: string;
+  repo: string;
+  file: string;
+  asserts: string;
+}
+
+export interface BuilderDesignReview {
+  verdict: 'pass' | 'concerns';
+  notesMd: string;
+  at: string;
+}
+
+export interface BuilderTechnicalDesign {
+  status: BuilderTechnicalDesignStatus;
+  /** The DESIGN run drafting it; only that run may submit to it. */
+  runId: string | null;
+  designMd: string;
+  scope: BuilderDesignScope[];
+  contracts: BuilderDesignContract[];
+  compatibilityMd: string;
+  testMap: BuilderDesignTest[];
+  /** Anything the PRD did not decide. Each one blocks approval. */
+  openDecisions: string[];
+  review: BuilderDesignReview | null;
+  /**
+   * `productHashOf` of the PRD it was designed from. A PRD edited after the
+   * design was drafted no longer matches, and the design is stale.
+   */
+  productHash: string;
+  draftedAt: string | null;
+  approvedBy: number | null;
+  approvedAt: string | null;
+  error: string | null;
+}
+
 /** Progress flags the interviewer sets as it completes each phase. */
 export interface BuilderPrdUiState {
   interview?: Record<string, boolean>;
@@ -135,6 +211,8 @@ export interface BuilderPrdDocument {
   /** Questions the agent could not resolve; each one blocks readiness. */
   openQuestions: string[];
   ui?: BuilderPrdUiState;
+  /** Null until an admin drafts one. See BuilderTechnicalDesign. */
+  technicalDesign?: BuilderTechnicalDesign | null;
 }
 
 /** One row of the readiness rubric shown beside the document. */
@@ -191,5 +269,6 @@ export function createEmptyPrdDocument(
     e2ePlanMd: '',
     openQuestions: [],
     ui: { interview: {} },
+    technicalDesign: null,
   };
 }

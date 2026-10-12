@@ -130,6 +130,12 @@ export enum BuilderRunMode {
    * rewrites it, and then nothing independent has looked at the result.
    */
   REVIEW = 'review',
+  /**
+   * Write the PRD's technical design with every target repo checked out,
+   * read-only. Never moves the session: a design is drafted from PRD_READY and
+   * the session stays there until a build starts from the approved design.
+   */
+  DESIGN = 'design',
 }
 
 /** What arrived on a pull request after Builder opened it. */

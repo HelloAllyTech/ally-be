@@ -101,9 +101,10 @@ export class BuilderResearchService {
     );
     const { provider: providerName, model } = this.resolveModel();
     const provider = this.agentLlmFactory.create(providerName, model);
-    const context = await this.knowledgeService.buildContextBlock(
-      session.repos ?? undefined,
-    );
+    const [context, platformRules] = await Promise.all([
+      this.knowledgeService.buildContextBlock(session.repos ?? undefined),
+      this.knowledgeService.platformRules(),
+    ]);
 
     // The read-only research tools plus `update_prd`. `ask_admin` is
     // deliberately absent: nobody is watching this run, and a question it
@@ -134,7 +135,9 @@ export class BuilderResearchService {
         // every iteration of this loop — so it is marked and kept last. The
         // system prompt ahead of it is small and equally stable.
         system: [
-          { text: RESEARCH_SYSTEM_PROMPT },
+          // Rules beside the instructions: a research pass patches the
+          // technical plan, and is held to the same platform as anything else.
+          { text: `${RESEARCH_SYSTEM_PROMPT}\n\n${platformRules}` },
           { text: context, cache: true },
         ],
         messages: messages as any,

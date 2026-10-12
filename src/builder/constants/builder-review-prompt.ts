@@ -1,6 +1,7 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
 import { buildPromptHeader, renderPrd } from './builder-build-prompt';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The review pass: read an open pull request Builder raised, and say what is
@@ -36,6 +37,11 @@ import { buildPromptHeader, renderPrd } from './builder-build-prompt';
  */
 
 export interface ReviewPromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -186,7 +192,12 @@ cannot see. Do not file findings to have something to say.
 ## The PRD this was built from
 `.trim();
 
-  return [header, protocol, renderPrd(context.prd)]
+  return [
+    header,
+    renderPlatformRules(context.platformRules),
+    protocol,
+    renderPrd(context.prd),
+  ]
     .filter(Boolean)
     .join('\n\n---\n\n');
 }

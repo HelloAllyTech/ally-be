@@ -845,9 +845,10 @@ export class BuilderInterviewOrchestratorService {
     repos?: string[],
     exemplars: string[] = [],
   ): Promise<AgentSystemBlock[]> {
-    const [instructions, context] = await Promise.all([
+    const [instructions, context, platformRules] = await Promise.all([
       this.buildSystemPrompt(),
       this.knowledgeService.buildContextBlock(repos, exemplars),
+      this.knowledgeService.platformRules(),
     ]);
     // Typed, not `any[]`. These used to be Anthropic's own shape
     // (`cache_control: ephemeral`) written straight into the request; the
@@ -855,8 +856,13 @@ export class BuilderInterviewOrchestratorService {
     // as it can. Returning the old shape through an `any` would have compiled
     // cleanly and silently stopped caching anything, which is the failure this
     // whole split exists to prevent.
+    // The platform rules ride the instructions block: as stable as it is,
+    // so they cost no extra cache breakpoint, and read before the context so
+    // the technical plan is written knowing them. The plan that renamed a
+    // persisted key in session 880e73e6 was written by this agent, which had
+    // never been told released clients lag the backend.
     return [
-      { text: instructions, cache: true },
+      { text: `${instructions}\n\n${platformRules}`, cache: true },
       { text: context, cache: true },
     ];
   }

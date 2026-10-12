@@ -15,6 +15,7 @@ import { BuilderSessionRepository } from '../repository/builder-session.reposito
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
 import { BuilderPullRequestRepository } from '../repository/builder-build.repository';
 import { BuilderPrdService } from './builder-prd.service';
+import { BuilderDesignReadiness } from '../util/builder-technical-design.util';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderBuildService } from './builder-build.service';
 import {
@@ -282,16 +283,19 @@ export class BuilderSessionService {
       prd: Record<string, any>;
       prdVersionNumber: number;
       readiness: BuilderPrdReadiness;
+      /** Whether the technical design can be approved and built from. */
+      designReadiness: BuilderDesignReadiness;
       /** For the exported PRD's header only — never part of the build's context. */
       createdByName: string | null;
     }
   > {
     const session = await this.getSession(sessionId);
-    const [messages, { doc, readiness }, createdByName] = await Promise.all([
-      this.messageRepository.listBySession(sessionId),
-      this.prdService.getPrdWithReadiness(sessionId, userId),
-      this.sessionRepository.findCreatorName(session.createdBy),
-    ]);
+    const [messages, { doc, readiness, designReadiness }, createdByName] =
+      await Promise.all([
+        this.messageRepository.listBySession(sessionId),
+        this.prdService.getPrdWithReadiness(sessionId, userId),
+        this.sessionRepository.findCreatorName(session.createdBy),
+      ]);
     return {
       ...session,
       createdByName,
@@ -299,6 +303,7 @@ export class BuilderSessionService {
       prd: doc.draft as unknown as Record<string, any>,
       prdVersionNumber: doc.versionNumber,
       readiness,
+      designReadiness,
     };
   }
 

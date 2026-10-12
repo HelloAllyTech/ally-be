@@ -319,6 +319,41 @@ export class BuilderController {
   }
 
   /**
+   * Draft the technical design from the ready PRD: a read-only designer run
+   * with the session's repos checked out. The session's status does not move.
+   */
+  @Post('sessions/:sessionId/design')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Draft the technical design (read-only designer run)',
+  })
+  async startDesign(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId);
+    return this.buildService.startDesign(session, user.id);
+  }
+
+  @Post('sessions/:sessionId/design/approve')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Approve the technical design in review; builds are held to it from here',
+  })
+  async approveDesign(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId);
+    return this.buildService.approveDesign(session, user.id);
+  }
+
+  /**
    * Raise the session's ceiling — including while a build is running, which is
    * the case this exists for.
    *

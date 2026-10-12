@@ -1,6 +1,7 @@
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderRepoDefinition } from './builder-repos.constants';
 import { buildPromptHeader, renderPrd } from './builder-build-prompt';
+import { renderPlatformRules } from './builder-platform-rules';
 
 /**
  * The finalise pass: E2E where it proves something, then push, pull requests,
@@ -18,6 +19,11 @@ import { buildPromptHeader, renderPrd } from './builder-build-prompt';
  */
 
 export interface FinalisePromptContext {
+  /**
+   * The platform rules, from prompt management. Rendered near the top so they
+   * frame everything below; absent → the compiled default, never nothing.
+   */
+  platformRules?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -226,7 +232,13 @@ ${context.guidance?.trim() || DEFAULT_FINALISE_GUIDANCE}
     .filter(Boolean)
     .join('\n\n---\n\n');
 
-  return [header, protocol, evidenceBlock, renderPrd(context.prd)]
+  return [
+    header,
+    renderPlatformRules(context.platformRules),
+    protocol,
+    evidenceBlock,
+    renderPrd(context.prd),
+  ]
     .filter(Boolean)
     .join('\n\n---\n\n');
 }

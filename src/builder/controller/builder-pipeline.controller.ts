@@ -40,6 +40,12 @@ import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
 import { buildFixPrompt } from '../constants/builder-fix-prompt';
 import { buildReviewPrompt } from '../constants/builder-review-prompt';
 import {
+  buildDesignPrompt,
+  buildDesignReviewPrompt,
+} from '../constants/builder-design-prompt';
+import { computeDesignReadiness } from '../util/builder-technical-design.util';
+import { BuilderTechnicalDesign } from '../type/builder-prd.type';
+import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
   BUILDER_MAX_CODE_ITERATIONS,
@@ -55,6 +61,7 @@ import {
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
 import {
+  BuilderPrdVersionAuthor,
   BuilderRunMode,
   BuilderRunStatus,
   BuilderStage,
@@ -74,6 +81,8 @@ import {
   UpsertBuilderRepoMapDto,
   RecordBuilderReviewFindingsDto,
   RecordBuilderRunModelDto,
+  SubmitBuilderDesignDto,
+  SubmitBuilderDesignReviewDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -143,18 +152,35 @@ export class BuilderPipelineController {
     @Param('runId', ParseUUIDPipe) runId: string,
   ): Promise<string> {
     const { run, session, doc, repos } = await this.loadRunContext(runId);
+    const platformRules = await this.knowledgeService.platformRules();
+
+    // A design run writes the technical design and nothing else: read-only,
+    // every target repo checked out, and its output goes through the
+    // `design` tool rather than a branch.
+    if (run.mode === BuilderRunMode.DESIGN) {
+      return buildDesignPrompt({
+        platformRules,
+        sessionId: session.id,
+        runId: run.id,
+        prd: doc.draft,
+        repos,
+        repoPacks: await this.knowledgeService.renderRepoPacks(
+          session.repos ?? undefined,
+        ),
+      });
+    }
 
     // A fix run's work is a list of complaints about an open pull request, not
     // a PRD to implement, so it gets its own protocol from the same URL — the
     // runner does not need to know which kind of run it is fetching for.
     if (run.mode === BuilderRunMode.FIX) {
-      return this.renderFixPrompt(run, session, doc, repos);
+      return this.renderFixPrompt(run, session, doc, repos, platformRules);
     }
 
     // Same URL, third protocol. A review run reads a finished diff and files
     // findings; it never writes to the branch.
     if (run.mode === BuilderRunMode.REVIEW) {
-      return this.renderReviewPrompt(run, session, doc, repos);
+      return this.renderReviewPrompt(run, session, doc, repos, platformRules);
     }
 
     const lessons = await this.knowledgeService.listLessonTexts(
@@ -190,6 +216,7 @@ export class BuilderPipelineController {
     const milestone = await this.resolveMilestoneBlock(run);
 
     return buildBuildPrompt({
+      platformRules,
       guidance: await this.guidance(BUILDER_PROMPTS.CODER_GUIDANCE),
       sessionId: session.id,
       runId: run.id,
@@ -254,6 +281,7 @@ export class BuilderPipelineController {
     session: BuilderSession,
     doc: { draft: BuilderPrdDocument },
     repos: typeof BUILDER_REPOS,
+    platformRules: string,
   ): Promise<string> {
     if (!run.pullRequestId) {
       throw new BadRequestException(
@@ -270,6 +298,7 @@ export class BuilderPipelineController {
     const settings = await this.settingsService.get();
 
     return buildFixPrompt({
+      platformRules,
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -328,6 +357,7 @@ export class BuilderPipelineController {
     session: BuilderSession,
     doc: { draft: BuilderPrdDocument },
     repos: typeof BUILDER_REPOS,
+    platformRules: string,
   ): Promise<string> {
     if (!run.pullRequestId) {
       throw new BadRequestException(
@@ -339,6 +369,7 @@ export class BuilderPipelineController {
     );
 
     return buildReviewPrompt({
+      platformRules,
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -422,6 +453,7 @@ export class BuilderPipelineController {
     );
 
     return buildPlanPrompt({
+      platformRules: await this.knowledgeService.platformRules(),
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -449,6 +481,7 @@ export class BuilderPipelineController {
     const phase = await this.buildService.getRunPhaseContext(run.id);
 
     return buildRemediatePrompt({
+      platformRules: await this.knowledgeService.platformRules(),
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -476,6 +509,7 @@ export class BuilderPipelineController {
     const phase = await this.buildService.getRunPhaseContext(run.id);
 
     return buildFinalisePrompt({
+      platformRules: await this.knowledgeService.platformRules(),
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -542,6 +576,7 @@ export class BuilderPipelineController {
         : undefined;
 
     return buildVerifyPrompt({
+      platformRules: await this.knowledgeService.platformRules(),
       prd: doc.draft,
       repos,
       round: requestedRound,
@@ -698,6 +733,36 @@ export class BuilderPipelineController {
     // no exceptions and gets none — one fewer condition to be wrong about, and
     // it holds for a run whose mode is missing entirely.
     const session = await this.sessionService.getSession(run.sessionId);
+
+    // The one exception to the rule above, because a design run never posts
+    // a stage: it moves no session, so `currentStage` is whatever the last
+    // build left behind and says nothing about this run. Its evidence is the
+    // design itself — a `done` with no submission from this run is refused
+    // the same way a build's `done` with no gate is, and for the same reason.
+    if (run.mode === BuilderRunMode.DESIGN) {
+      if (dto.outcome === 'done') {
+        const doc = await this.prdService.getOrCreateDoc(
+          session.id,
+          session.createdBy,
+        );
+        const design = doc.draft.technicalDesign;
+        if (!design || design.runId !== run.id || design.status !== 'review') {
+          throw new ConflictException(
+            'No design submitted from this run. Call `design` with the full ' +
+              'design first; the run is done once it has accepted one.',
+          );
+        }
+      }
+      await this.buildService.settleRun(
+        run,
+        dto.outcome === 'done'
+          ? BuilderRunStatus.SUCCEEDED
+          : BuilderRunStatus.FAILED,
+        dto.outcome === 'done' ? null : (dto.error ?? 'The design run failed.'),
+      );
+      return { ok: true };
+    }
+
     const tooEarlyToFinish =
       session.currentStage === BuilderStage.SETUP ||
       session.currentStage === BuilderStage.PLANNING;
@@ -778,6 +843,176 @@ export class BuilderPipelineController {
       await this.reportService.composeSessionReport(run.sessionId);
     }
     return { ok: true };
+  }
+
+  /**
+   * The design run for this session, and the design it is drafting.
+   *
+   * Refuses anything else: a design is only ever written by the run the
+   * drafting record names, so a stale designer from a superseded draft — or
+   * a build run calling the wrong tool — cannot overwrite the current one.
+   */
+  private async loadDesignRun(runId: string) {
+    const context = await this.loadRunContext(runId);
+    if (context.run.mode !== BuilderRunMode.DESIGN) {
+      throw new BadRequestException(
+        `Run ${runId} is a ${context.run.mode} run, not a design run.`,
+      );
+    }
+    const design = context.doc.draft.technicalDesign;
+    if (!design || design.runId !== context.run.id) {
+      throw new ConflictException(
+        'This run is not the one drafting the current technical design — a ' +
+          'newer draft has replaced it. Stop.',
+      );
+    }
+    return { ...context, design };
+  }
+
+  @Get('runs/:runId/design-review-prompt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary: 'The cold critique of a submitted technical design (read-only)',
+  })
+  async getDesignReviewPrompt(
+    @Param('runId', ParseUUIDPipe) runId: string,
+  ): Promise<string> {
+    const { run, session, doc, repos, design } =
+      await this.loadDesignRun(runId);
+    return buildDesignReviewPrompt({
+      platformRules: await this.knowledgeService.platformRules(),
+      sessionId: session.id,
+      runId: run.id,
+      prd: doc.draft,
+      repos,
+      design,
+    });
+  }
+
+  /**
+   * The designer's submission, behind the `design` MCP tool.
+   *
+   * Answers with what still blocks approval rather than a bare ok, because
+   * the designer is the one reader able to fix most of it, in this same run.
+   * The "not in review" blocker is left out — this call is what puts it there.
+   */
+  @Post('runs/:runId/design')
+  @ApiOperation({
+    summary: 'Submit the technical design; returns what still blocks approval',
+  })
+  async submitDesign(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: SubmitBuilderDesignDto,
+  ) {
+    const { run, session, doc, design } = await this.loadDesignRun(runId);
+    if (design.status === 'approved') {
+      throw new ConflictException(
+        'This technical design is already approved; it cannot be resubmitted.',
+      );
+    }
+
+    // Fields picked one by one, not spread: the body is model-written and
+    // the global pipe does not strip unknown keys.
+    const next: BuilderTechnicalDesign = {
+      ...design,
+      status: 'review',
+      designMd: dto.designMd,
+      scope: dto.scope.map((entry) => ({
+        repo: entry.repo.trim(),
+        files: entry.files.map((file) => file.trim()).filter(Boolean),
+      })),
+      contracts: dto.contracts.map((contract) => ({
+        name: contract.name,
+        change: contract.change,
+        readers: contract.readers
+          .map((reader) => reader.trim())
+          .filter(Boolean),
+      })),
+      compatibilityMd: dto.compatibilityMd,
+      testMap: dto.testMap.map((test) => ({
+        requirementId: test.requirementId.trim(),
+        repo: test.repo,
+        file: test.file,
+        asserts: test.asserts,
+      })),
+      openDecisions: dto.openDecisions
+        .map((decision) => decision.trim())
+        .filter(Boolean),
+      draftedAt: new Date().toISOString(),
+      error: null,
+    };
+    const { doc: saved } = await this.prdService.setTechnicalDesign(
+      doc,
+      next,
+      session.createdBy ?? 0,
+      BuilderPrdVersionAuthor.AGENT,
+      `Technical design submitted by run ${run.id}`,
+    );
+
+    const readiness = computeDesignReadiness(saved.draft, {
+      ignoreStatus: true,
+    });
+    return { ok: true, blockers: readiness.blockers };
+  }
+
+  @Post('runs/:runId/design-review')
+  @ApiOperation({
+    summary: "The critic's verdict on the submitted technical design",
+  })
+  async submitDesignReview(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: SubmitBuilderDesignReviewDto,
+  ) {
+    const { run, session, doc, design } = await this.loadDesignRun(runId);
+    if (design.status !== 'review') {
+      throw new ConflictException(
+        `There is no submitted design to review — it is ${design.status}.`,
+      );
+    }
+    await this.prdService.setTechnicalDesign(
+      doc,
+      {
+        ...design,
+        review: {
+          verdict: dto.verdict,
+          notesMd: dto.notesMd,
+          at: new Date().toISOString(),
+        },
+      },
+      session.createdBy ?? 0,
+      BuilderPrdVersionAuthor.AGENT,
+      `Technical design reviewed by run ${run.id}: ${dto.verdict}`,
+    );
+    return { ok: true };
+  }
+
+  /**
+   * The files a build may change, per repo, from the session's approved
+   * design — the build's hard scope check. Empty when there is no approved
+   * design, which the runner reads as "no design scope", not "no files".
+   */
+  @Get('runs/:runId/design-scope')
+  @ApiOperation({
+    summary: "The approved design's file scope, per repo, for the scope gate",
+  })
+  async getDesignScope(@Param('runId', ParseUUIDPipe) runId: string) {
+    const { doc } = await this.loadRunContext(runId);
+    const design = doc.draft.technicalDesign;
+    const repos: Record<string, string[]> = {};
+    if (design?.status === 'approved') {
+      for (const entry of design.scope ?? []) {
+        repos[entry.repo] = [...(repos[entry.repo] ?? []), ...entry.files];
+      }
+    }
+    return { repos };
+  }
+
+  /** The platform rules on their own, for anything on the runner that wants them. */
+  @Get('platform-rules')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({ summary: 'The standing platform rules every agent gets' })
+  getPlatformRules(): Promise<string> {
+    return this.knowledgeService.platformRules();
   }
 
   /**

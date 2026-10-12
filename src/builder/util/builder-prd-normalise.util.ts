@@ -402,5 +402,15 @@ export function normalisePrdDocument(
       raw.ui !== null && typeof raw.ui === 'object' && !Array.isArray(raw.ui)
         ? (raw.ui as BuilderPrdDocument['ui'])
         : empty.ui,
+    // Written only by the design endpoints, which validate it on the way in,
+    // so it is carried through whole rather than coerced field by field. Named
+    // here anyway so a document that never had one reads as `null` — the
+    // shape every reader checks for — rather than as a missing key.
+    technicalDesign:
+      raw.technicalDesign !== null &&
+      typeof raw.technicalDesign === 'object' &&
+      !Array.isArray(raw.technicalDesign)
+        ? (raw.technicalDesign as BuilderPrdDocument['technicalDesign'])
+        : null,
   };
 }

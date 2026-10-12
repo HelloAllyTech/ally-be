@@ -34,10 +34,17 @@ import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
+import { BuilderTechnicalDesign } from '../type/builder-prd.type';
+import {
+  computeDesignReadiness,
+  createDraftingDesign,
+  productHashOf,
+} from '../util/builder-technical-design.util';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderEventType,
   BuilderMilestoneStatus,
+  BuilderPrdVersionAuthor,
   BuilderQuestionStatus,
   BuilderRunMode,
   BuilderRunStatus,
@@ -269,6 +276,8 @@ export class BuilderBuildService {
       );
     }
 
+    await this.assertDesignApproved(session);
+
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
@@ -320,6 +329,233 @@ export class BuilderBuildService {
         (await this.branchSlugForBuild(session, prdVersion)),
       prdVersion,
     });
+  }
+
+  /**
+   * A build is held to an approved technical design written from this PRD.
+   *
+   * Only first builds and milestones. Resume, fix and review runs continue
+   * work that already passed this gate, and refusing them because the PRD
+   * was edited since would strand a paused run's questions and an open pull
+   * request's review comments behind a redraft nobody asked for.
+   */
+  private async assertDesignApproved(session: BuilderSession): Promise<void> {
+    const doc = await this.prdService.getOrCreateDoc(
+      session.id,
+      session.createdBy,
+    );
+    const design = doc.draft.technicalDesign;
+    if (!design || design.status !== 'approved') {
+      throw new BadRequestException(
+        'Approve the technical design before building — draft it from the PRD panel.',
+      );
+    }
+    if (productHashOf(doc.draft) !== design.productHash) {
+      throw new BadRequestException(
+        'The PRD changed after the technical design was approved — redraft and approve it again.',
+      );
+    }
+  }
+
+  /**
+   * Draft the technical design: a read-only designer run on the runner, with
+   * every repo the session targets checked out.
+   *
+   * The session does not move. A design is drafted from a ready PRD and the
+   * session stays PRD_READY (or wherever it was) until a build starts; the
+   * design's own status carries its progress. Giving it a session status
+   * would put it on every list filter, the archive rules and the start-build
+   * check, for a run that changes no code.
+   */
+  async startDesign(
+    session: BuilderSession,
+    userId: number,
+  ): Promise<BuilderBuildRun> {
+    const settings = await this.settingsService.get();
+    if (!settings.enabled) {
+      throw new BadRequestException(
+        'Builder is switched off for this environment. Turn it on in Builder settings first.',
+      );
+    }
+    if (!this.github.isConfigured) {
+      throw new ServiceUnavailableException(
+        'GITHUB_TOKEN is not configured on this environment, so the design run cannot be dispatched.',
+      );
+    }
+
+    const doc = await this.prdService.getOrCreateDoc(
+      session.id,
+      session.createdBy,
+    );
+    if (!this.prdService.computeReadiness(doc.draft).ready) {
+      throw new BadRequestException(
+        'The PRD is not ready yet — settle its open blockers before drafting the technical design.',
+      );
+    }
+
+    const repos = session.repos ?? [];
+    if (!repos.length) {
+      throw new BadRequestException(
+        'No repos chosen — the designer has nothing to read.',
+      );
+    }
+
+    if (await this.runRepository.countBlockingRuns(session.id)) {
+      throw new BadRequestException(
+        'This session already has a run in flight or waiting on an answer. Let it finish first.',
+      );
+    }
+
+    await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
+    this.assertWithinBudget(session, settings.maxRunnerMinutes);
+
+    const models = this.resolveModels(session, settings);
+    await this.assertModelsAreReal(models);
+
+    let createdRunId: string | null = null;
+    try {
+      return await this.dispatchRun({
+        session,
+        mode: BuilderRunMode.DESIGN,
+        userId,
+        repos,
+        models,
+        // Written between the row and the dispatch, so the design names its
+        // run before the runner can call back about it — the pipeline only
+        // accepts a submission from the run the design says is drafting it.
+        onCreated: async (run) => {
+          createdRunId = run.id;
+          await this.prdService.setTechnicalDesign(
+            doc,
+            createDraftingDesign(doc.draft, run.id),
+            userId,
+            BuilderPrdVersionAuthor.ADMIN,
+            'Drafting the technical design',
+          );
+        },
+      });
+    } catch (error) {
+      // A dispatch that never left leaves a design claiming to be drafted by
+      // a run that will never run. Marked failed so the panel offers a retry
+      // rather than a spinner. Only when this call got as far as writing one:
+      // a refusal before that (the dispatch lock, say) has a design that
+      // belongs to someone else's start.
+      if (createdRunId) {
+        await this.markDesignEnded(
+          session,
+          createdRunId,
+          BuilderRunStatus.FAILED,
+          error instanceof Error ? error.message : String(error),
+        ).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A person agreeing to the design. Refused unless it is in review, clears
+   * every blocker, and was drafted from the PRD as it stands now.
+   */
+  async approveDesign(
+    session: BuilderSession,
+    userId: number,
+  ): Promise<BuilderTechnicalDesign> {
+    const doc = await this.prdService.getOrCreateDoc(
+      session.id,
+      session.createdBy,
+    );
+    const design = doc.draft.technicalDesign;
+    if (!design) {
+      throw new BadRequestException(
+        'There is no technical design to approve — draft one from the PRD panel.',
+      );
+    }
+    if (design.status !== 'review') {
+      throw new BadRequestException(
+        design.status === 'approved'
+          ? 'This technical design is already approved.'
+          : `Only a design in review can be approved — this one is ${design.status}.`,
+      );
+    }
+    const readiness = computeDesignReadiness(doc.draft);
+    if (readiness.stale) {
+      throw new BadRequestException(
+        'The PRD changed after this design was drafted — redraft it before approving.',
+      );
+    }
+    if (!readiness.ready) {
+      throw new BadRequestException(
+        `The design is not ready to approve: ${readiness.blockers.join(' ')}`,
+      );
+    }
+
+    const approved: BuilderTechnicalDesign = {
+      ...design,
+      status: 'approved',
+      approvedBy: userId,
+      approvedAt: new Date().toISOString(),
+    };
+    await this.prdService.setTechnicalDesign(
+      doc,
+      approved,
+      userId,
+      BuilderPrdVersionAuthor.ADMIN,
+      'Approved the technical design',
+    );
+
+    // The build clones `session.repos` and nothing else, so a design that
+    // found the change also belongs in a repo the session never named would
+    // otherwise be approved for files the build cannot reach. Widened, never
+    // narrowed: a repo the admin chose stays chosen.
+    const current = session.repos ?? [];
+    const needed = (approved.scope ?? []).map((entry) => entry.repo);
+    const union = [...new Set([...current, ...needed])];
+    if (union.length !== current.length) {
+      await this.sessionRepository.update(
+        { id: session.id },
+        { repos: union, updatedBy: userId },
+      );
+    }
+
+    return approved;
+  }
+
+  /**
+   * Record that a design run ended without a design to show for it.
+   *
+   * Only touches the design its own run is drafting, and only while it is
+   * still drafting: a submission that already reached review stays there
+   * whatever the run did afterwards, and a newer redraft is never failed by
+   * an older run finishing late.
+   */
+  private async markDesignEnded(
+    session: BuilderSession,
+    runId: string,
+    status: BuilderRunStatus,
+    error: string | null,
+  ): Promise<void> {
+    const doc = await this.prdService.getOrCreateDoc(
+      session.id,
+      session.createdBy,
+    );
+    const design = doc.draft.technicalDesign;
+    if (!design || design.status !== 'drafting') return;
+    if (design.runId !== runId) return;
+
+    const reason =
+      error ??
+      (status === BuilderRunStatus.SUCCEEDED
+        ? 'The design run finished without submitting a design.'
+        : status === BuilderRunStatus.CANCELLED
+          ? 'The design run was cancelled.'
+          : 'The design run failed.');
+    await this.prdService.setTechnicalDesign(
+      doc,
+      { ...design, status: 'failed', error: reason },
+      session.createdBy ?? 0,
+      BuilderPrdVersionAuthor.AGENT,
+      'The technical design run ended without a design',
+    );
   }
 
   /**
@@ -403,6 +639,10 @@ export class BuilderBuildService {
 
     try {
       const settings = await this.settingsService.get();
+      // Every milestone builds from the same approved design. One edited
+      // between milestones is stale for the rest of the series, and the
+      // refusal lands on the milestone as its reason for waiting.
+      await this.assertDesignApproved(session);
       this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
@@ -1118,6 +1358,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Runs after the row exists and before the workflow is dispatched. */
+    onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
     // Only the session is needed here — everything else in `params` is passed
     // straight through to `dispatchRunLocked`, which does the destructuring.
@@ -1161,6 +1403,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Runs after the row exists and before the workflow is dispatched. */
+    onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
     const { session, mode, userId, repos, models } = params;
     const sequence = await this.runRepository.nextSequence(session.id);
@@ -1201,6 +1445,7 @@ export class BuilderBuildService {
     );
 
     try {
+      if (params.onCreated) await params.onCreated(run);
       await this.github.dispatchWorkflow({
         repo: BUILDER_WORKFLOW_REPO,
         workflow: BUILDER_WORKFLOW_FILE,
@@ -1230,13 +1475,17 @@ export class BuilderBuildService {
           completedAt: new Date(),
         },
       );
-      await this.sessionRepository.update(
-        { id: session.id },
-        {
-          status: BuilderSessionStatus.FAILED,
-          error: `Could not start the build: ${message}`,
-        },
-      );
+      // A design run never moves the session, failing included: the PRD is
+      // as ready as it was, and the design records its own failure.
+      if (mode !== BuilderRunMode.DESIGN) {
+        await this.sessionRepository.update(
+          { id: session.id },
+          {
+            status: BuilderSessionStatus.FAILED,
+            error: `Could not start the build: ${message}`,
+          },
+        );
+      }
       throw new ServiceUnavailableException(
         `Could not start the build: ${message}`,
       );
@@ -1597,6 +1846,20 @@ export class BuilderBuildService {
       );
     });
 
+    if (run.mode === BuilderRunMode.DESIGN) {
+      const session = await this.sessionRepository.findOne({
+        where: { id: run.sessionId },
+      });
+      if (session) {
+        await this.markDesignEnded(
+          session,
+          run.id,
+          BuilderRunStatus.CANCELLED,
+          null,
+        ).catch(() => undefined);
+      }
+    }
+
     let githubRunId = run.githubRunId;
     if (!githubRunId && this.github.isConfigured) {
       // Not correlated yet — one best-effort lookup inline rather than waiting
@@ -1889,6 +2152,15 @@ export class BuilderBuildService {
       'runnerMinutes',
       runnerMinutes,
     );
+
+    // A design run never moves the session, whatever its outcome — like a
+    // review, it changes no code, and the session is PRD_READY before and
+    // after it. Its outcome belongs to the design, which says whether it
+    // reached review or failed getting there.
+    if (run.mode === BuilderRunMode.DESIGN) {
+      await this.markDesignEnded(session, run.id, status, error);
+      return;
+    }
 
     // Only the run's own outcome moves the session; a session already
     // cancelled by a human stays cancelled.

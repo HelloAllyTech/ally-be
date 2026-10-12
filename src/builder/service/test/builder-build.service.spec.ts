@@ -13,6 +13,27 @@ import {
   BUILDER_BUDGET_HOLD_POLL_SECONDS,
   BUILDER_BUDGET_HOLD_SECONDS,
 } from '../../constants/builder.constants';
+import { createDraftingDesign } from '../../util/builder-technical-design.util';
+
+/**
+ * A build is held to an approved technical design. Every test here that is
+ * not about that gate gets one for free: a doc whose draft does not mention
+ * `technicalDesign` at all comes back with an approved design drafted from
+ * that same draft. A test about the gate sets it explicitly — `null` included.
+ */
+const withApprovedDesign = (doc: any) => {
+  if (!doc?.draft || doc.draft.technicalDesign !== undefined) return doc;
+  return {
+    ...doc,
+    draft: {
+      ...doc.draft,
+      technicalDesign: {
+        ...createDraftingDesign(doc.draft, 'design-run'),
+        status: 'approved',
+      },
+    },
+  };
+};
 
 const readySession = (overrides: Record<string, any> = {}) => ({
   id: 'session-1',
@@ -86,7 +107,11 @@ describe('BuilderBuildService', () => {
   };
   let llmUsage: { record: jest.Mock };
   let llmModelsRepository: { find: jest.Mock };
-  let prdService: { getOrCreateDoc: jest.Mock };
+  let prdService: {
+    getOrCreateDoc: jest.Mock;
+    setTechnicalDesign: jest.Mock;
+    computeReadiness: jest.Mock;
+  };
 
   beforeEach(() => {
     github = {
@@ -174,6 +199,8 @@ describe('BuilderBuildService', () => {
       getOrCreateDoc: jest
         .fn()
         .mockResolvedValue({ draft: { requirements: [], technicalPlan: '' } }),
+      setTechnicalDesign: jest.fn().mockResolvedValue({}),
+      computeReadiness: jest.fn().mockReturnValue({ ready: true }),
     };
 
     service = new BuilderBuildService(
@@ -209,7 +236,14 @@ describe('BuilderBuildService', () => {
       exemplarService as any,
       epicService as any,
       llmUsage as any,
-      prdService as any,
+      {
+        getOrCreateDoc: (...args: any[]) =>
+          prdService.getOrCreateDoc(...args).then(withApprovedDesign),
+        setTechnicalDesign: (...args: any[]) =>
+          prdService.setTechnicalDesign(...args),
+        computeReadiness: (...args: any[]) =>
+          prdService.computeReadiness(...args),
+      } as any,
     );
   });
 
@@ -368,7 +402,11 @@ describe('BuilderBuildService', () => {
     });
 
     it('plans at the default tier when the PRD cannot be read', async () => {
-      prdService.getOrCreateDoc.mockRejectedValue(new Error('gone'));
+      // The design gate reads it first and finds an approved design; the
+      // sizing read after it is the one that fails.
+      prdService.getOrCreateDoc
+        .mockResolvedValueOnce({ draft: { requirements: [] } })
+        .mockRejectedValue(new Error('gone'));
 
       await service.startBuild(readySession() as any, 1);
 
@@ -1941,6 +1979,287 @@ describe('BuilderBuildService', () => {
       ]);
 
       expect(await service.dispatchFixRun(pr as never)).toBeNull();
+    });
+  });
+
+  /**
+   * The technical design stage. Session 880e73e6 shipped a plan that renamed
+   * a persisted JSON key with a migration, written by an interviewer with no
+   * checkout; a build is now held to a design written with the code in front
+   * of it and approved by a person.
+   */
+  describe('technical design', () => {
+    /** A ready PRD with a design in the given state, drafted from itself. */
+    const designedDoc = (design: Record<string, any> | null) => {
+      const draft: any = {
+        requirements: [{ id: 'R1' }],
+        technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'x' }] },
+      };
+      return {
+        id: 'doc-1',
+        draft: {
+          ...draft,
+          technicalDesign: design && {
+            ...createDraftingDesign(draft, 'design-run'),
+            ...design,
+          },
+        },
+      };
+    };
+    const reviewable = {
+      status: 'review',
+      designMd: 'Add an optional key beside the old one. '.repeat(10),
+      scope: [{ repo: 'ally-web', files: ['src/pages/Quiz.tsx'] }],
+      contracts: [],
+      compatibilityMd: '',
+      testMap: [
+        {
+          requirementId: 'R1',
+          repo: 'ally-web',
+          file: 'src/pages/Quiz.test.tsx',
+          asserts: 'renders it',
+        },
+      ],
+      openDecisions: [],
+    };
+
+    describe('startBuild requires an approved, current design', () => {
+      it('refuses with no design', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(designedDoc(null));
+
+        await expect(
+          service.startBuild(readySession() as any, 1),
+        ).rejects.toThrow(/Approve the technical design before building/);
+        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+        expect(sessionRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a design still in review', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(designedDoc(reviewable));
+
+        await expect(
+          service.startBuild(readySession() as any, 1),
+        ).rejects.toThrow(/Approve the technical design before building/);
+      });
+
+      it('refuses an approved design the PRD has moved on from', async () => {
+        const doc = designedDoc({ ...reviewable, status: 'approved' });
+        doc.draft.requirements.push({ id: 'R2' });
+        prdService.getOrCreateDoc.mockResolvedValue(doc);
+
+        await expect(
+          service.startBuild(readySession() as any, 1),
+        ).rejects.toThrow(
+          /PRD changed after the technical design was approved/,
+        );
+        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      });
+
+      it('builds from an approved, current design', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(
+          designedDoc({ ...reviewable, status: 'approved' }),
+        );
+
+        await service.startBuild(readySession() as any, 1);
+
+        expect(github.dispatchWorkflow).toHaveBeenCalled();
+      });
+    });
+
+    describe('startDesign', () => {
+      beforeEach(() => {
+        prdService.getOrCreateDoc.mockResolvedValue(designedDoc(null));
+      });
+
+      it('refuses a PRD that is not ready', async () => {
+        prdService.computeReadiness.mockReturnValue({ ready: false });
+
+        await expect(
+          service.startDesign(readySession() as any, 1),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      });
+
+      it('refuses while the session has a run in flight', async () => {
+        runRepository.countBlockingRuns.mockResolvedValue(1);
+
+        await expect(
+          service.startDesign(readySession() as any, 1),
+        ).rejects.toThrow(/already has a run in flight/);
+      });
+
+      it('dispatches a design run and names it on a fresh drafting design', async () => {
+        const run = await service.startDesign(readySession() as any, 7);
+
+        expect(run.mode).toBe(BuilderRunMode.DESIGN);
+        expect(github.dispatchWorkflow.mock.calls[0][0].inputs.mode).toBe(
+          'design',
+        );
+        const [, design] = prdService.setTechnicalDesign.mock.calls[0];
+        expect(design).toEqual(
+          expect.objectContaining({
+            status: 'drafting',
+            runId: 'run-1',
+            designMd: '',
+            review: null,
+            approvedBy: null,
+          }),
+        );
+        // Written before the dispatch, so the runner can never call back
+        // about a design that does not name it yet.
+        expect(
+          prdService.setTechnicalDesign.mock.invocationCallOrder[0],
+        ).toBeLessThan(github.dispatchWorkflow.mock.invocationCallOrder[0]);
+      });
+
+      it('does not move the session', async () => {
+        await service.startDesign(readySession() as any, 7);
+
+        expect(sessionRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('fails the design, not the session, when the dispatch throws', async () => {
+        github.dispatchWorkflow.mockRejectedValue(new Error('GitHub down'));
+        // The second read sees the drafting design the first call wrote.
+        prdService.getOrCreateDoc
+          .mockResolvedValueOnce(designedDoc(null))
+          .mockResolvedValue(
+            designedDoc({ status: 'drafting', runId: 'run-1' }),
+          );
+
+        await expect(
+          service.startDesign(readySession() as any, 7),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+        expect(sessionRepository.update).not.toHaveBeenCalled();
+        const [, failed] = prdService.setTechnicalDesign.mock.calls[1];
+        expect(failed).toEqual(
+          expect.objectContaining({ status: 'failed', runId: 'run-1' }),
+        );
+      });
+    });
+
+    describe('approveDesign', () => {
+      it('approves a ready design in review and widens the session repos', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(designedDoc(reviewable));
+
+        const approved = await service.approveDesign(readySession() as any, 7);
+
+        expect(approved).toEqual(
+          expect.objectContaining({ status: 'approved', approvedBy: 7 }),
+        );
+        expect(prdService.setTechnicalDesign).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ status: 'approved' }),
+          7,
+          expect.anything(),
+          expect.any(String),
+        );
+        // The build clones session.repos; the design found ally-web too.
+        expect(sessionRepository.update).toHaveBeenCalledWith(
+          { id: 'session-1' },
+          { repos: ['ally-be', 'ally-web'], updatedBy: 7 },
+        );
+      });
+
+      it('refuses a design that is not in review', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(
+          designedDoc({ ...reviewable, status: 'drafting' }),
+        );
+
+        await expect(
+          service.approveDesign(readySession() as any, 7),
+        ).rejects.toThrow(/Only a design in review/);
+      });
+
+      it('refuses a stale design', async () => {
+        const doc = designedDoc(reviewable);
+        doc.draft.requirements.push({ id: 'R2' });
+        prdService.getOrCreateDoc.mockResolvedValue(doc);
+
+        await expect(
+          service.approveDesign(readySession() as any, 7),
+        ).rejects.toThrow(/PRD changed after this design was drafted/);
+        expect(prdService.setTechnicalDesign).not.toHaveBeenCalled();
+      });
+
+      it('refuses a design with blockers, saying which', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(
+          designedDoc({ ...reviewable, openDecisions: ['Rename it?'] }),
+        );
+
+        await expect(
+          service.approveDesign(readySession() as any, 7),
+        ).rejects.toThrow(/open decision/);
+      });
+    });
+
+    describe('settling a design run', () => {
+      const designRun = {
+        id: 'design-run',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.DESIGN,
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+
+      it('never moves the session, whatever the outcome', async () => {
+        sessionRepository.findOne.mockResolvedValue(
+          readySession({ status: BuilderSessionStatus.PRD_READY }),
+        );
+        prdService.getOrCreateDoc.mockResolvedValue(designedDoc(reviewable));
+
+        for (const status of [
+          BuilderRunStatus.SUCCEEDED,
+          BuilderRunStatus.FAILED,
+          BuilderRunStatus.CANCELLED,
+          BuilderRunStatus.TIMED_OUT,
+        ]) {
+          await service.settleRun(designRun as any, status, null);
+        }
+
+        expect(sessionRepository.update).not.toHaveBeenCalled();
+        expect(notificationService.buildFailed).not.toHaveBeenCalled();
+        // A design that reached review stays there.
+        expect(prdService.setTechnicalDesign).not.toHaveBeenCalled();
+      });
+
+      it('marks its own drafting design failed, with the reason', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(
+          designedDoc({ status: 'drafting', runId: 'design-run' }),
+        );
+
+        await service.settleRun(
+          designRun as any,
+          BuilderRunStatus.TIMED_OUT,
+          'ran out of time',
+        );
+
+        expect(prdService.setTechnicalDesign).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            status: 'failed',
+            error: 'ran out of time',
+          }),
+          expect.anything(),
+          expect.anything(),
+          expect.any(String),
+        );
+      });
+
+      it('leaves a newer draft alone when an older design run ends', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue(
+          designedDoc({ status: 'drafting', runId: 'a-newer-run' }),
+        );
+
+        await service.settleRun(
+          designRun as any,
+          BuilderRunStatus.FAILED,
+          'boom',
+        );
+
+        expect(prdService.setTechnicalDesign).not.toHaveBeenCalled();
+      });
     });
   });
 });

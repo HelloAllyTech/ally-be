@@ -307,6 +307,11 @@ export const BUILDER_PROMPTS = {
    */
   CODER_GUIDANCE: 'builder_coder_guidance',
   FINALISE_GUIDANCE: 'builder_finalise_guidance',
+  /**
+   * Standing rules every Builder agent gets, ahead of its own instructions.
+   * Compiled default: DEFAULT_PLATFORM_RULES in builder-platform-rules.ts.
+   */
+  PLATFORM_RULES: 'builder_platform_rules',
 } as const;
 
 /* ── Notifications ──────────────────────────────────────────────────────── */

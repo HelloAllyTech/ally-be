@@ -109,7 +109,10 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
           .fn()
           .mockReturnValue({ score: 40, ready: false, blockers: [] }),
       } as any,
-      { buildContextBlock: jest.fn().mockResolvedValue('context') } as any,
+      {
+        buildContextBlock: jest.fn().mockResolvedValue('context'),
+        platformRules: jest.fn().mockResolvedValue('## Platform rules'),
+      } as any,
       toolsService as any,
       messageRepository as any,
       { record: jest.fn() } as any,
@@ -234,8 +237,10 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     await drain();
 
     const system = sentRequests[0].system;
+    // The platform rules ride the instructions block rather than a third
+    // span: just as stable, and no extra cache breakpoint.
     expect(system).toEqual([
-      { text: 'Interview them.', cache: true },
+      { text: 'Interview them.\n\n## Platform rules', cache: true },
       { text: 'context', cache: true },
     ]);
     // The PRD and the admin's message ride in `messages`, after the cached

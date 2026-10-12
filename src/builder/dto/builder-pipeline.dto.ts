@@ -331,3 +331,121 @@ export class AckBuilderSteersDto {
   @MaxLength(32)
   phase?: string;
 }
+
+/* ── Technical design ───────────────────────────────────────────────────── */
+
+/*
+ * Strict on shape, unlike the event DTOs above. The `design` tool is the
+ * designer's only output and it calls it as many times as it likes, so a
+ * refusal costs one more call rather than lost work — and a design stored in
+ * the wrong shape would be approved, then fail the build's scope check.
+ */
+
+export class BuilderDesignScopeDto {
+  @ApiProperty({ description: 'A Builder repo name, e.g. ally-be' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  repo!: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Repo-relative paths or globs the build may change',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  files!: string[];
+}
+
+export class BuilderDesignContractDto {
+  @ApiProperty({ description: 'The field, enum, table or API it names' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  name!: string;
+
+  @ApiProperty({ description: 'What changes about it' })
+  @IsString()
+  @MaxLength(4_000)
+  change!: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Every reader, as "repo:path:line"',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  readers!: string[];
+}
+
+export class BuilderDesignTestDto {
+  @ApiProperty({ description: 'The PRD requirement id, e.g. R1' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  requirementId!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(100)
+  repo!: string;
+
+  @ApiProperty({ description: 'Repo-relative test file' })
+  @IsString()
+  @MaxLength(500)
+  file!: string;
+
+  @ApiProperty({ description: 'The observable behaviour the test asserts' })
+  @IsString()
+  @MaxLength(2_000)
+  asserts!: string;
+}
+
+export class SubmitBuilderDesignDto {
+  @ApiProperty({ description: 'The design itself, markdown' })
+  @IsString()
+  @MaxLength(60_000)
+  designMd!: string;
+
+  @ApiProperty({ type: [BuilderDesignScopeDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BuilderDesignScopeDto)
+  scope!: BuilderDesignScopeDto[];
+
+  @ApiProperty({ type: [BuilderDesignContractDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BuilderDesignContractDto)
+  contracts!: BuilderDesignContractDto[];
+
+  @ApiProperty({ description: 'How released clients keep working' })
+  @IsString()
+  @MaxLength(20_000)
+  compatibilityMd!: string;
+
+  @ApiProperty({ type: [BuilderDesignTestDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BuilderDesignTestDto)
+  testMap!: BuilderDesignTestDto[];
+
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(2_000, { each: true })
+  openDecisions!: string[];
+}
+
+export class SubmitBuilderDesignReviewDto {
+  @ApiProperty({ enum: ['pass', 'concerns'] })
+  @IsIn(['pass', 'concerns'])
+  verdict!: 'pass' | 'concerns';
+
+  @ApiProperty({ description: 'The findings, markdown' })
+  @IsString()
+  @MaxLength(30_000)
+  notesMd!: string;
+}

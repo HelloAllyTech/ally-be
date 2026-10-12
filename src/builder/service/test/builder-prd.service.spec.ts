@@ -559,4 +559,118 @@ describe('BuilderPrdService', () => {
       );
     });
   });
+
+  /**
+   * The technical design is drafted by a designer run and approved by a
+   * person; the build is held to it. A patch from the interviewer or the
+   * admin's section editor that could edit it would let an approved design
+   * say something nobody approved.
+   */
+  describe('the technical design is not patchable', () => {
+    const designed = () => ({
+      id: 'doc-1',
+      sessionId: 'session-1',
+      draft: {
+        ...createEmptyPrdDocument(),
+        technicalDesign: { status: 'approved', designMd: 'approved words' },
+      },
+      versionNumber: 3,
+    });
+
+    it.each([
+      ['replace', '/technicalDesign'],
+      ['replace', '/technicalDesign/status'],
+      ['add', '/technicalDesign/scope/-'],
+      ['remove', '/technicalDesign'],
+    ])('refuses %s %s, naming the operation', async (op, path) => {
+      const attempt = service.applyPatch(
+        designed() as any,
+        [
+          { op: 'replace', path: '/summary', value: 'fine' },
+          { op: op as any, path, value: 'approved' },
+        ],
+        1,
+        BuilderPrdVersionAuthor.AGENT,
+      );
+
+      await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
+      await expect(attempt).rejects.toThrow(
+        /operation 1: \/technicalDesign cannot be edited here/,
+      );
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('carries the stored design through a whole-document replace', async () => {
+      const versionRepo = {
+        create: jest.fn((v) => v),
+        save: jest.fn(async (v) => v),
+      };
+      const docRepo = {
+        findOneOrFail: jest.fn().mockResolvedValue(designed()),
+        update: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (work: any) =>
+        work({
+          getRepository: (entity: any) =>
+            entity?.name === 'BuilderPrdVersion' ? versionRepo : docRepo,
+        }),
+      );
+
+      await service.applyPatch(
+        designed() as any,
+        [
+          {
+            op: 'replace',
+            path: '',
+            value: {
+              ...createEmptyPrdDocument('Rewritten'),
+              technicalDesign: null,
+            },
+          },
+        ],
+        1,
+        BuilderPrdVersionAuthor.ADMIN,
+      );
+
+      const written = docRepo.update.mock.calls[0][1].draft;
+      expect(written.title).toBe('Rewritten');
+      expect(written.technicalDesign).toEqual(
+        expect.objectContaining({ designMd: 'approved words' }),
+      );
+    });
+
+    it('writes it through setTechnicalDesign, with a version like any edit', async () => {
+      const versionRepo = {
+        create: jest.fn((v) => v),
+        save: jest.fn(async (v) => v),
+      };
+      const docRepo = {
+        findOneOrFail: jest.fn().mockResolvedValue(designed()),
+        update: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (work: any) =>
+        work({
+          getRepository: (entity: any) =>
+            entity?.name === 'BuilderPrdVersion' ? versionRepo : docRepo,
+        }),
+      );
+
+      await service.setTechnicalDesign(
+        designed() as any,
+        { status: 'failed', error: 'gone' } as any,
+        9,
+        BuilderPrdVersionAuthor.AGENT,
+        'failed',
+      );
+
+      expect(versionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          versionNumber: 4,
+          content: expect.objectContaining({
+            technicalDesign: { status: 'failed', error: 'gone' },
+          }),
+        }),
+      );
+    });
+  });
 });

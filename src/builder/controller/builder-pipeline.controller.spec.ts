@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { v4 as uuidv4 } from 'uuid';
 import { BuilderPipelineController } from './builder-pipeline.controller';
@@ -24,12 +24,15 @@ import {
   BuilderBuildRunRepository,
   BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
+import { createDraftingDesign } from '../util/builder-technical-design.util';
 
 describe('BuilderPipelineController', () => {
   let app: INestApplication;
   let mockBuilderBuildService: Partial<BuilderBuildService>;
 
   let mockBuilderSessionService: { getSession: jest.Mock };
+  let mockPrdService: Record<string, jest.Mock>;
+  let mockKnowledgeService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     // Defaults to a stage a run may legitimately finish from, so the
@@ -39,6 +42,16 @@ describe('BuilderPipelineController', () => {
         id: 'session-1',
         currentStage: BuilderStage.FINALISING,
       }),
+    };
+    mockPrdService = {
+      getOrCreateDoc: jest.fn(),
+      setTechnicalDesign: jest.fn(),
+    };
+    mockKnowledgeService = {
+      platformRules: jest
+        .fn()
+        .mockResolvedValue('## Platform rules\n\nBe additive.'),
+      renderRepoPacks: jest.fn().mockResolvedValue(''),
     };
     mockBuilderBuildService = {
       getRunOrFail: jest.fn().mockResolvedValue({
@@ -82,8 +95,8 @@ describe('BuilderPipelineController', () => {
         { provide: BuilderSettingsService, useValue: {} },
         { provide: BuilderExemplarService, useValue: {} },
         { provide: BuilderEpicService, useValue: {} },
-        { provide: BuilderKnowledgeService, useValue: {} },
-        { provide: BuilderPrdService, useValue: {} },
+        { provide: BuilderKnowledgeService, useValue: mockKnowledgeService },
+        { provide: BuilderPrdService, useValue: mockPrdService },
         { provide: BuilderSessionService, useValue: mockBuilderSessionService },
         { provide: BuilderBuildRunRepository, useValue: {} },
         { provide: BuilderQuestionRepository, useValue: {} },
@@ -91,6 +104,8 @@ describe('BuilderPipelineController', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    // As main.ts has it, so the design DTOs are validated here as in prod.
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
   });
 
@@ -250,5 +265,255 @@ describe('BuilderPipelineController', () => {
       mockRun,
       dto,
     );
+  });
+
+  /**
+   * The technical design's runner half. The designer submits through the
+   * `design` tool, the critic through `design_review`, and builds read the
+   * approved scope back for their scope gate.
+   */
+  describe('technical design', () => {
+    const designRunId = uuidv4();
+    const draft: any = {
+      title: 'Rich prompts',
+      requirements: [{ id: 'R1', title: 'Bold', acceptanceCriteria: ['x'] }],
+      technicalPlan: { repos: [], dataModelMd: '', apiMd: '' },
+    };
+    const withDesign = (design: Record<string, any> | null) => ({
+      id: 'doc-1',
+      draft: {
+        ...draft,
+        technicalDesign: design && {
+          ...createDraftingDesign(draft, designRunId),
+          ...design,
+        },
+      },
+    });
+    const submission = {
+      designMd: 'Add an optional promptHtml beside prompt. '.repeat(10),
+      scope: [{ repo: 'ally-be', files: ['src/quiz/**/*.ts'] }],
+      contracts: [
+        {
+          name: 'payload.promptHtml',
+          change: 'new optional key',
+          readers: ['ally-mobile:src/screens/Quiz.tsx:88'],
+        },
+      ],
+      compatibilityMd: 'prompt is unchanged.',
+      testMap: [
+        {
+          requirementId: 'R1',
+          repo: 'ally-be',
+          file: 'src/quiz/test/quiz.spec.ts',
+          asserts: 'stores it',
+        },
+      ],
+      openDecisions: [],
+    };
+
+    beforeEach(() => {
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
+        id: designRunId,
+        sessionId: 'session-1',
+        mode: BuilderRunMode.DESIGN,
+      });
+      mockBuilderSessionService.getSession.mockResolvedValue({
+        id: 'session-1',
+        createdBy: 4,
+        repos: ['ally-be'],
+        // Whatever the last build left behind; a design run never posts one.
+        currentStage: BuilderStage.SETUP,
+      });
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ status: 'drafting' }),
+      );
+      mockPrdService.setTechnicalDesign.mockImplementation(
+        async (_doc, design) => ({
+          doc: { draft: { ...draft, technicalDesign: design } },
+        }),
+      );
+    });
+
+    it('stores a submission in review and answers with what still blocks', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design`)
+        .set('x-api-key', 'test-api-key')
+        .send({ ...submission, openDecisions: ['Rename prompt?'] })
+        .expect(201);
+
+      // Status is left out: this call is what puts the design in review.
+      expect(response.body).toEqual({
+        ok: true,
+        blockers: [expect.stringMatching(/1 open decision/)],
+      });
+      const [, stored] = mockPrdService.setTechnicalDesign.mock.calls[0];
+      expect(stored).toEqual(
+        expect.objectContaining({
+          status: 'review',
+          runId: designRunId,
+          designMd: submission.designMd,
+          openDecisions: ['Rename prompt?'],
+          draftedAt: expect.any(String),
+        }),
+      );
+      // Kept from the drafting record, not taken from the body.
+      expect(stored.productHash).toBe(
+        createDraftingDesign(draft, designRunId).productHash,
+      );
+    });
+
+    it('answers with no blockers once the design is complete', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design`)
+        .set('x-api-key', 'test-api-key')
+        .send(submission)
+        .expect(201);
+
+      expect(response.body).toEqual({ ok: true, blockers: [] });
+    });
+
+    it('refuses a submission in the wrong shape', async () => {
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design`)
+        .set('x-api-key', 'test-api-key')
+        .send({ ...submission, scope: [{ files: ['x.ts'] }] })
+        .expect(400);
+
+      expect(mockPrdService.setTechnicalDesign).not.toHaveBeenCalled();
+    });
+
+    it('refuses a submission from a run that is not a design run', async () => {
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
+        id: designRunId,
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+      });
+
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design`)
+        .set('x-api-key', 'test-api-key')
+        .send(submission)
+        .expect(400);
+
+      expect(mockPrdService.setTechnicalDesign).not.toHaveBeenCalled();
+    });
+
+    it('refuses a submission from a design run a newer draft replaced', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ status: 'drafting', runId: 'a-newer-run' }),
+      );
+
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design`)
+        .set('x-api-key', 'test-api-key')
+        .send(submission)
+        .expect(409);
+
+      expect(mockPrdService.setTechnicalDesign).not.toHaveBeenCalled();
+    });
+
+    it("stores the critic's verdict on the submitted design", async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ ...submission, status: 'review' }),
+      );
+
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/design-review`)
+        .set('x-api-key', 'test-api-key')
+        .send({ verdict: 'concerns', notesMd: 'Missed a reader.' })
+        .expect(201);
+
+      const [, stored] = mockPrdService.setTechnicalDesign.mock.calls[0];
+      expect(stored.review).toEqual({
+        verdict: 'concerns',
+        notesMd: 'Missed a reader.',
+        at: expect.any(String),
+      });
+      expect(stored.status).toBe('review');
+    });
+
+    it('serves the approved scope per repo', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({
+          ...submission,
+          status: 'approved',
+          scope: [
+            { repo: 'ally-be', files: ['src/a.ts'] },
+            { repo: 'ally-web', files: ['src/b.tsx'] },
+          ],
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/builder/pipeline/runs/${designRunId}/design-scope`)
+        .set('x-api-key', 'test-api-key')
+        .expect(200);
+
+      expect(response.body).toEqual({
+        repos: { 'ally-be': ['src/a.ts'], 'ally-web': ['src/b.tsx'] },
+      });
+    });
+
+    it('serves no scope for a design nobody approved', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ ...submission, status: 'review' }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/builder/pipeline/runs/${designRunId}/design-scope`)
+        .set('x-api-key', 'test-api-key')
+        .expect(200);
+
+      expect(response.body).toEqual({ repos: {} });
+    });
+
+    it('renders the design prompt with the rules, the PRD and the tool contract', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/builder/pipeline/runs/${designRunId}/prompt`)
+        .set('x-api-key', 'test-api-key')
+        .expect(200);
+
+      expect(response.text).toContain('Be additive.');
+      expect(response.text).toContain('# PRD — Rich prompts');
+      expect(response.text).toContain('`design`');
+    });
+
+    it('serves the platform rules on their own', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/builder/pipeline/platform-rules')
+        .set('x-api-key', 'test-api-key')
+        .expect(200);
+
+      expect(response.text).toContain('Be additive.');
+    });
+
+    /**
+     * A design run never posts a stage, so `currentStage` is whatever the last
+     * build left — SETUP here — and must not refuse it. It has no gate either.
+     */
+    it('completes a design run that submitted, from any stage, with no gate', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ ...submission, status: 'review' }),
+      );
+
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/complete`)
+        .set('x-api-key', 'test-api-key')
+        .send({ outcome: 'done' })
+        .expect(201);
+
+      expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
+      expect(mockBuilderBuildService.hasPassingGate).not.toHaveBeenCalled();
+    });
+
+    it('refuses done from a design run that never submitted a design', async () => {
+      await request(app.getHttpServer())
+        .post(`/builder/pipeline/runs/${designRunId}/complete`)
+        .set('x-api-key', 'test-api-key')
+        .send({ outcome: 'done' })
+        .expect(409);
+
+      expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
+    });
   });
 });
