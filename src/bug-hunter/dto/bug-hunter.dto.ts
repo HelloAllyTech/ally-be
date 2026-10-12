@@ -389,6 +389,16 @@ export class PatchBugFindingDto {
   @IsObject()
   findingVerdict?: Record<string, any>;
 
+  @ApiProperty({
+    required: false,
+    type: Object,
+    description:
+      'The post-release check (link six of the case chain): {held: true|false, evidence, runId}. A false reopens the bug with the broken link recorded.',
+  })
+  @IsOptional()
+  @IsObject()
+  heldCheck?: Record<string, any>;
+
   /**
    * Sent alongside `status: failed` by a fix session that gave up — see
    * FixPostmortemDto. Ignored on other transitions.
@@ -1091,6 +1101,14 @@ export class BugFindingDto {
       'The case chain: six links from the symptom to the change — observed, reproduced, located, changed, resolved, held — each present, weak, missing or broken with one line of evidence, plus `mergeable` and the `blocking` links. See BugCaseChain.',
   })
   chain!: Record<string, unknown>;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    description:
+      'The wrong-fix record, when a fix turned out wrong: the chain link that broke, the source (verifier, regression, revert, held_check), the reason, the PR. Null otherwise. See BugWrongFix.',
+  })
+  wrongFix!: Record<string, unknown> | null;
 
   independentVerification!:
     | 'pending'

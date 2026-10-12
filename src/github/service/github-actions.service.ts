@@ -862,6 +862,35 @@ export class GithubActionsService {
    * night wastes some tokens; a sweep that silently never runs because this
    * call started failing loses findings with nobody watching for it.
    */
+  /**
+   * The commits on master since `since`, newest first, up to one page: sha,
+   * message, author login. The revert watch reads these for `Revert "…"`
+   * titles. Throws on a GitHub error — the caller decides what a blind
+   * read means, and here it means "try again next hour".
+   */
+  async listCommitsSince(
+    repo: string,
+    since: Date,
+  ): Promise<{ sha: string; message: string; authorLogin: string | null }[]> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, 'commits'), {
+        headers: this.headers,
+        params: { sha: 'master', since: since.toISOString(), per_page: 100 },
+        timeout: 20_000,
+      });
+      this.noteAuthOutcome();
+      return ((data ?? []) as any[]).map((c) => ({
+        sha: String(c?.sha ?? ''),
+        message: String(c?.commit?.message ?? ''),
+        authorLogin: c?.author?.login ? String(c.author.login) : null,
+      }));
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      throw error;
+    }
+  }
+
   async hasCommitsSince(repo: string, since: Date): Promise<boolean> {
     this.requireConfigured();
     try {

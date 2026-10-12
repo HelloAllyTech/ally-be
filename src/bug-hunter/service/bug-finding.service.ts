@@ -16,6 +16,7 @@ import {
 } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterWrongFixService } from './bug-hunter-wrong-fix.service';
 import { BugHunterService } from './bug-hunter.service';
 import { BugHunterRepoClassifierService } from './bug-hunter-repo-classifier.service';
 import { BugHunterMissClassifierService } from './bug-hunter-miss-classifier.service';
@@ -146,6 +147,7 @@ export class BugFindingService {
     private readonly bugHunterService: BugHunterService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
     private readonly missClassifier: BugHunterMissClassifierService,
+    private readonly wrongFixService: BugHunterWrongFixService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -708,6 +710,19 @@ export class BugFindingService {
         summary: `The fix for this did not hold — the same bug was found again as ${regression.id}.`,
         payload: { regressedByFindingId: regression.id, runId },
       });
+
+      await this.wrongFixService.record(
+        original,
+        {
+          link: 'held',
+          source: 'regression',
+          reason: `A sweep found the same bug again ${daysSinceFix} day${daysSinceFix === 1 ? '' : 's'} after the fix shipped (new finding ${regression.id}).`,
+          prUrl: original.prUrl ?? null,
+          sha: null,
+          by: null,
+        },
+        { reopen: false },
+      );
 
       await this.notificationService.notify({
         level: BugHunterNotificationLevel.ACTION_NEEDED,

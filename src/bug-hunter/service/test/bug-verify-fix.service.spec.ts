@@ -169,6 +169,7 @@ describe('BugVerifyFixService', () => {
       } as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       orchestrator as never,
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 

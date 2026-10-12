@@ -55,6 +55,10 @@ export interface ScoreboardFixRow {
   failed: number;
   passVerdicts: number;
   failVerdicts: number;
+  /** Released and re-checked in production with the symptom gone — link six of the chain. The number D6 should learn from. */
+  held: number;
+  /** Fixes that turned out wrong: refused at the wrong layer, reverted, regressed or found back in production. */
+  cameBack: number;
 }
 
 const ACCEPTED: ReadonlySet<string> = new Set([
@@ -235,6 +239,8 @@ export class BugHunterScoreboardService {
         failed: 0,
         passVerdicts: 0,
         failVerdicts: 0,
+        held: 0,
+        cameBack: 0,
       });
       row.sessions += 1;
       const f = byRun.get(run.id);
@@ -245,6 +251,10 @@ export class BugHunterScoreboardService {
       }
       if (!f) continue;
       if (SHIPPED.has(f.status)) row.merged += 1;
+      if (f.metadata?.heldInProduction?.ok === true) row.held += 1;
+      if (f.metadata?.wrongFix || f.metadata?.regressed === true) {
+        row.cameBack += 1;
+      }
       const verdicts = Array.isArray(f.metadata?.fixVerdicts)
         ? (f.metadata!.fixVerdicts as { verdict?: string }[])
         : [];

@@ -109,6 +109,7 @@ describe('BugHunterController', () => {
       {} as never,
       // Verify-findings service: the locate-first gate on fix-session; no case here starts one on a report.
       { dispatchForReport: jest.fn().mockResolvedValue(null) } as never,
+      { summary: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 

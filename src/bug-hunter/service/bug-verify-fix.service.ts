@@ -40,6 +40,7 @@ import {
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
 import { BugFixSessionService } from './bug-fix-session.service';
 import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
+import { BugHunterWrongFixService } from './bug-hunter-wrong-fix.service';
 
 /**
  * What the verifier run needs to know about itself, stored on the finding at
@@ -119,6 +120,7 @@ export class BugVerifyFixService {
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly configService: AppConfigService,
     private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly wrongFixService: BugHunterWrongFixService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the PR open for a person, which is what happened before this existed. */
@@ -311,8 +313,43 @@ export class BugVerifyFixService {
     });
 
     await this.commentOnPr(finding, verdict, failures);
+    await this.recordWrongLayer(finding, verdict);
     await this.actOnVerdict(finding, verdict, failures);
     return verdict;
+  }
+
+  /**
+   * The two refusals that mean the fix is the wrong fix, not a flawed one:
+   * the change in a layer the Verifier ruled out, or the symptom still there
+   * at the head. Both go in the wrong-fix table with the link that broke.
+   */
+  private async recordWrongLayer(
+    finding: BugFinding,
+    verdict: BugFixVerdict,
+  ): Promise<void> {
+    if (verdict.verdict !== 'fail') return;
+    const failed = (name: string) =>
+      verdict.checks.find((c) => c.name === name && c.ok === false) ?? null;
+    const layer = failed('fault_layer_matches');
+    const symptom = failed('symptom_resolved');
+    const hit = layer
+      ? { link: 'changed' as const, check: layer }
+      : symptom
+        ? { link: 'resolved' as const, check: symptom }
+        : null;
+    if (!hit) return;
+    await this.wrongFixService.record(
+      finding,
+      {
+        link: hit.link,
+        source: 'verifier',
+        reason: hit.check.evidence ?? `${hit.check.name} failed`,
+        prUrl: verdict.prUrl ?? finding.prUrl ?? null,
+        sha: null,
+        by: verdict.by.model ?? verdict.by.engine ?? null,
+      },
+      { reopen: false },
+    );
   }
 
   /**

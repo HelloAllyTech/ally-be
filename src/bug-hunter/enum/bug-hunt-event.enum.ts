@@ -89,6 +89,13 @@ export enum BugHuntEventStage {
    * reversed, not just an aggregate rate on the scorecard.
    */
   REVERSED = 'reversed',
+  /**
+   * A fix turned out wrong — the Verifier refused it at the wrong layer, the
+   * bug came back, a person reverted the PR, or the post-release check found
+   * the symptom again. The payload names the chain link that broke; see
+   * BugWrongFix.
+   */
+  WRONG_FIX = 'wrong_fix',
 
   /**
    * The reconcile loop found a pull request for a fix session that had

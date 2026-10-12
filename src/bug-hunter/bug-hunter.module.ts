@@ -49,6 +49,8 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
 import { BugHunterMissClassifierService } from './service/bug-hunter-miss-classifier.service';
 import { BugFixStudyService } from './service/bug-fix-study.service';
+import { BugHunterWrongFixService } from './service/bug-hunter-wrong-fix.service';
+import { BugHunterHeldWatchService } from './service/bug-hunter-held-watch.service';
 import { BugCaseBudgetService } from './service/bug-case-budget.service';
 import { BugCaseFileService } from './service/bug-case-file.service';
 import { BugVerifyFixService } from './service/bug-verify-fix.service';
@@ -178,6 +180,8 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterRepoClassifierService,
     BugHunterMissClassifierService,
     BugFixStudyService,
+    BugHunterWrongFixService,
+    BugHunterHeldWatchService,
     BugFixSessionSchedulerRegistrationService,
     BugHunterModelSettingsService,
   ],

@@ -146,6 +146,7 @@ describe('BugFindingService.persistFindings', () => {
       bugHunterService(),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 
@@ -217,6 +218,7 @@ describe('BugFindingService.persistFindings', () => {
         bugHunterService({ appendFindingEvent: events }),
         classifier(),
         missClassifier(),
+        { record: jest.fn().mockResolvedValue(undefined) } as never,
       );
       repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
 
@@ -444,6 +446,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
       bugHunterService(),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 
@@ -554,6 +557,7 @@ describe('BugFindingService.setStatus — a failed session’s post-mortem', () 
       { appendFindingEvent: jest.fn() } as unknown as BugHunterService,
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await service.setStatus('finding-1', {
@@ -616,6 +620,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       hunterService as unknown as BugHunterService,
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   };
 
@@ -815,6 +820,7 @@ describe('BugFindingService.editDescription', () => {
       (miss = {
         classifyAndRecord: jest.fn().mockResolvedValue(null),
       }) as unknown as BugHunterMissClassifierService,
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   };
 
@@ -1041,6 +1047,7 @@ describe('BugFindingService.setStage', () => {
       hunter as unknown as BugHunterService,
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   };
 
@@ -1184,6 +1191,7 @@ describe('BugFindingService.enrich', () => {
         bugHunterService(),
         classifier(),
         missClassifier(),
+        { record: jest.fn().mockResolvedValue(undefined) } as never,
       ),
     };
   };
@@ -1313,6 +1321,7 @@ describe('BugFindingService.enrich', () => {
       bugHunterService({ getRunsByIds }),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     const enriched = await service.enrich([
@@ -1358,6 +1367,7 @@ describe('BugFindingService.reject', () => {
       bugHunterService({ appendFindingEvent: events }),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, repo, events };
   };
@@ -1444,6 +1454,7 @@ describe('BugFindingService.setStatus — a declined bug stays declined', () => 
       bugHunterService(),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   };
 
@@ -1501,6 +1512,7 @@ describe('BugFindingService.setStatus — verifier confidence', () => {
       bugHunterService(),
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, repo };
   };
@@ -1573,6 +1585,7 @@ describe('BugFindingService.recordPreExistingFailure', () => {
       {} as never,
       classifier(),
       missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 

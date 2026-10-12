@@ -24,6 +24,10 @@ import { BugVerifyFixService } from './bug-verify-fix.service';
 import { BUG_HUNT_PR_RECONCILE_TASK } from '../type/bug-hunter-orchestrator.type';
 import { BUG_HUNT_PR_REVIEW_TASK } from '../type/bug-hunter-pr-review.type';
 import { BugHunterPrReviewService } from './bug-hunter-pr-review.service';
+import {
+  BUG_HUNT_HELD_WATCH_TASK,
+  BugHunterHeldWatchService,
+} from './bug-hunter-held-watch.service';
 
 @Injectable()
 export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
@@ -37,6 +41,7 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly orchestrator: BugHunterOrchestratorService,
     private readonly verifyFix: BugVerifyFixService,
     private readonly prReview: BugHunterPrReviewService,
+    private readonly heldWatch: BugHunterHeldWatchService,
   ) {}
 
   onModuleInit(): void {
@@ -123,6 +128,13 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
       async () => {
         await this.protectionDrift.run();
       },
+    );
+
+    // Link six of the case chain: a person reverting a Bug Hunter PR on
+    // master reopens the bug with the lesson written; a released fix for a
+    // human report is re-checked against production an hour later.
+    scheduledTaskRegistry.register('hourly', BUG_HUNT_HELD_WATCH_TASK, () =>
+      this.heldWatch.run(),
     );
 
     scheduledTaskRegistry.register(
