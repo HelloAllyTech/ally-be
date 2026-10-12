@@ -163,6 +163,10 @@ tenants/groups.
 | `course_discussions` | BaseEntity | `id` (uuid), `trackId`, `trackItemId` (FK → `track_items`, cascade), `isLocked`, `lockedById`, `lockedAt`, `createdById` | **One learner discussion per (course item, organisation)** — uniq `(trackItemId, tenant_id)`. Courses are shared across tenants; their discussions are not. Created lazily on the first post or a moderator's lock. `isLocked` stops new posts and replies anywhere on the item. See [`docs/course-discussions.md`](docs/course-discussions.md) |
 | `course_discussion_posts` | BaseEntity | `id` (uuid), `discussionId` (FK, cascade), `trackItemId`, `authorId`, `parentPostId` (self-FK, null = top-level), `rootPostId` (the top-level post a reply sits under), `depth` (1–3, CHECK), `content` (plain text ≤4000), `isEdited`, `editedAt`, `editedById` (≠ `authorId` ⇒ moderator edit), `isDeletedByAuthor`, `isLocked` (thread lock, top-level only), `deletedById`, `deletedAt` | Posts and replies. An author deleting a post that still has replies blanks `content` and sets `isDeletedByAuthor` (a placeholder); every other delete is soft (`deletedAt`), and a moderator delete soft-deletes the whole subtree. Learner-authored free text — treat as sensitive. Idx `(discussionId, createdAt)` and `(parentPostId)`, both partial on live rows |
 
+**Operational Endpoints**
+
+- `POST /learn/scenarios/translate-all`: An admin-only endpoint to re-translate all active scenarios. This is useful for backfilling translations after a code change or when new languages are added.
+
 ### 3.3 Scenario *runtime* — sessions & telemetry (`learn`)
 
 This is where most **analytics** about training performance live.
