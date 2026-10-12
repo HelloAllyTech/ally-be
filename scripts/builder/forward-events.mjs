@@ -140,7 +140,31 @@ const normaliseOpencode = (record) => {
       }
     }
 
-    if (!events.length) {
+    // opencode's own checklist. The lead keeps its plan with `todowrite`, not
+    // our `todo` tool, and the build page's checklist is driven by `todo`
+    // events alone — so on a multi-agent run it stayed empty while the lead
+    // worked through a list nobody could see. Same whole-list shape as ours;
+    // cancelled items are dropped rather than shown as done.
+    if (name === 'todowrite' && Array.isArray(input.todos)) {
+      const STATUS = { pending: 'pending', in_progress: 'in_progress', completed: 'done' };
+      events.push({
+        type: 'todo',
+        payload: {
+          // Numbered by position in the full list, before cancelled items
+          // drop out, so an item's id does not change when one above it is
+          // cancelled.
+          items: input.todos
+            .map((todo, index) => ({
+              id: String(todo?.id ?? index + 1),
+              text: truncate(String(todo?.content ?? '')),
+              status: STATUS[todo?.status],
+            }))
+            .filter((item) => item.status),
+        },
+      });
+    }
+
+    if (!events.length || events.every((event) => event.type === 'todo')) {
       events.push({
         type: 'tool_call',
         payload: {

@@ -212,6 +212,18 @@ LEAD_PREAMBLE=/tmp/builder-lead-preamble.md
     /tmp/builder-team.md "${HERE}/opencode/lead.md"
 } > "$LEAD_PREAMBLE"
 
+# Stacks, the product library every repo's AGENTS.md tells its agents to
+# consult. Those AGENTS.md files are loaded into every phase (instructions,
+# above), so without the server each agent was told to call a tool it did not
+# have. The bridge reads STACKS_API_KEY from the environment opencode starts it
+# in (builder-session.yml sets it), so no key is written into this file.
+STACKS_BRIDGE="${HERE}/../../.claude/stacks-bridge.mjs"
+STACKS_MCP='{}'
+if [ -f "$STACKS_BRIDGE" ] && [ -n "${STACKS_API_KEY:-}" ]; then
+  STACKS_MCP="$(jq -nc --arg bridge "$STACKS_BRIDGE" \
+    '{stacks: {type: "local", command: ["node", $bridge], enabled: true}}')"
+fi
+
 jq -n \
   --arg mcp "$MCP_SERVER" \
   --arg helper_env "${BUILDER_HELPER_ENV}" \
@@ -220,17 +232,22 @@ jq -n \
   --argjson builder_steps "${BUILDER_AGENT_STEPS:-300}" \
   --argjson reviewer_steps "${BUILDER_REVIEWER_STEPS:-150}" \
   --argjson lead_steps "${BUILDER_LEAD_STEPS:-150}" \
-  --argjson team "${TEAM_JSON:-{\}}" '
+  --argjson team "${TEAM_JSON:-{\}}" \
+  --argjson stacks "$STACKS_MCP" '
 {
   "$schema": "https://opencode.ai/config.json",
-  mcp: {
+  mcp: ({
     builder: {
       type: "local",
       command: ["node", $mcp],
       enabled: true,
       environment: { BUILDER_HELPER_ENV: $helper_env }
     }
-  },
+  } + $stacks),
+  # Loop detection is an "ask" by default, and --auto answers every ask with
+  # yes, so it never fired: a coder once called complete_run 23 times in a
+  # row. Denied, a repeated identical call is refused and the model is told.
+  permission: { doom_loop: "deny" },
   instructions: $instructions,
   formatter: {
     prettier: { disabled: true },
@@ -1574,7 +1591,20 @@ BASELINE_PID=$!
 echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}."
 echo "::group::plan (${PLANNER_MODEL})"
 post_stage PLANNING
-if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
+# An approved technical design is the plan: the designer already read the
+# code, named every file the build may change and the test for every
+# requirement, and a person approved it. A planner exploring the same code
+# again cost a phase and could disagree with what was approved. The design
+# reaches the coder through the PRD (renderPrd) and the scope gate through
+# /tmp/builder-design-scope.json.
+if jq -e '(.repos // {}) | length > 0' /tmp/builder-design-scope.json >/dev/null 2>&1 &&
+   [ "${BUILDER_PLAN_WITH_DESIGN:-0}" != 1 ]; then
+  echo "An approved technical design exists; it is the plan. Skipping the planner."
+  curl -sS -X POST "${API}/events" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+    -d '{"events":[{"type":"text","stage":"PLANNING","payload":{"text":"Planning skipped: the approved technical design is the plan."}}]}' \
+    >/dev/null 2>&1 || true
+elif fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
   set_agent_phase plan
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \

@@ -129,6 +129,23 @@ await test('an opencode write surfaces as a file edit, not an opaque tool call',
   assert.equal(edit.payload.operation, 'write');
 });
 
+// The lead keeps its plan with opencode's own todowrite; the build page's
+// checklist reads `todo` events only, so it stayed empty on multi-agent runs.
+await test("opencode's todowrite reaches the checklist as a todo event", async () => {
+  const { events } = await runForwarder([
+    '{"type":"tool_use","part":{"type":"tool","tool":"todowrite","state":{"status":"completed","input":{"todos":[{"id":"a","content":"Backend","status":"completed","priority":"high"},{"id":"b","content":"Web","status":"in_progress","priority":"high"},{"id":"c","content":"Dropped idea","status":"cancelled","priority":"low"},{"content":"Mobile","status":"pending","priority":"high"}]},"output":"[]"}}}',
+  ]);
+
+  const todo = events.find((event) => event.type === 'todo');
+  assert.deepEqual(todo.payload.items, [
+    { id: 'a', text: 'Backend', status: 'done' },
+    { id: 'b', text: 'Web', status: 'in_progress' },
+    { id: '4', text: 'Mobile', status: 'pending' },
+  ]);
+  // Still shown as a call in the feed, as before.
+  assert.ok(events.some((event) => event.type === 'tool_call' && event.payload.name === 'todowrite'));
+});
+
 await test('a refusal from a read-only agent is shown, not hidden', async () => {
   // What the spike actually saw when a denied agent reached for bash: the tool
   // is not offered at all, and opencode answers with a completed `invalid`
