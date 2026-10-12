@@ -124,7 +124,7 @@ export class BuilderSession extends BaseWithoutTenantEntity {
 
   /**
    * Owning tenant, or NULL when a platform admin ran the session. Carried for
-   * cost attribution; a session is private to its creator either way.
+   * cost attribution only; sessions are shared by everyone with Builder access.
    */
   @Index('idx_builder_sessions_tenant_id')
   @Column({ name: 'tenant_id', type: 'varchar', nullable: true })
@@ -134,9 +134,8 @@ export class BuilderSession extends BaseWithoutTenantEntity {
   metadata?: Record<string, any> | null;
 
   /**
-   * Set when the creator archives the session from their feed. Null = active.
-   * Archiving only ever hides a session from that admin's own default feed
-   * view — it does not touch status, and never cascades to the PRD,
+   * Set when someone archives the session. Null = active. Sessions are shared,
+   * so archiving hides it from every Builder user's default feed view — it does not touch status, and never cascades to the PRD,
    * transcript, runs, events, PRs or reports underneath it.
    */
   @Column({ type: 'timestamp', nullable: true })

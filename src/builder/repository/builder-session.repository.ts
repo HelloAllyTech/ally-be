@@ -54,4 +54,18 @@ export class BuilderSessionRepository extends Repository<BuilderSession> {
     );
     return rows[0]?.label ?? null;
   }
+
+  /** `findCreatorName` for a whole list in one query, keyed by user id. */
+  async findCreatorNames(
+    userIds: number[],
+  ): Promise<Map<number, string | null>> {
+    const ids = [...new Set(userIds.filter(Boolean))];
+    if (!ids.length) return new Map();
+    const rows: { id: number; label: string | null }[] =
+      await this.dataSource.query(
+        `SELECT id, COALESCE(NULLIF(TRIM(name), ''), email) AS label FROM users WHERE id = ANY($1)`,
+        [ids],
+      );
+    return new Map(rows.map((row) => [Number(row.id), row.label]));
+  }
 }

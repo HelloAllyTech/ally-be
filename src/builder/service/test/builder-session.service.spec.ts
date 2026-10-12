@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { In, IsNull, Not } from 'typeorm';
 import { BuilderSessionService } from '../builder-session.service';
 import { BuilderSessionStatus } from '../../enum/builder.enum';
@@ -15,6 +15,7 @@ describe('BuilderSessionService', () => {
     findOne: jest.Mock;
     update: jest.Mock;
     slugExists: jest.Mock;
+    findCreatorNames: jest.Mock;
   };
   let prdService: {
     getOrCreateDoc: jest.Mock;
@@ -34,6 +35,7 @@ describe('BuilderSessionService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       slugExists: jest.fn().mockResolvedValue(false),
+      findCreatorNames: jest.fn().mockResolvedValue(new Map()),
     };
     settingsService = {
       get: jest.fn().mockResolvedValue({ defaultBudgetUsd: null }),
@@ -181,14 +183,22 @@ describe('BuilderSessionService', () => {
   });
 
   describe('getSession', () => {
-    it("refuses another admin's session", async () => {
+    it("serves another admin's session — sessions are shared across Builder users", async () => {
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
         createdBy: 2,
       });
 
-      await expect(service.getSession('session-1', 1)).rejects.toBeInstanceOf(
-        ForbiddenException,
+      await expect(service.getSession('session-1')).resolves.toMatchObject({
+        id: 'session-1',
+      });
+    });
+
+    it('404s a session that does not exist', async () => {
+      sessionRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getSession('session-1')).rejects.toBeInstanceOf(
+        NotFoundException,
       );
     });
   });
@@ -365,22 +375,35 @@ describe('BuilderSessionService', () => {
     });
   });
 
-  describe('listOwnedSessions', () => {
-    it('never returns an archived row from the default feed', async () => {
-      sessionRepository.find.mockResolvedValue([]);
+  describe('listSessions', () => {
+    it("lists everyone's non-archived sessions, each with its creator's name", async () => {
+      sessionRepository.find.mockResolvedValue([
+        { id: 'session-1', createdBy: 7 },
+        { id: 'session-2', createdBy: 8 },
+      ]);
+      sessionRepository.findCreatorNames.mockResolvedValue(
+        new Map([[7, 'Asha Rao']]),
+      );
 
-      await service.listOwnedSessions(7);
+      const result = await service.listSessions();
 
       expect(sessionRepository.find).toHaveBeenCalledWith({
-        where: { createdBy: 7, archivedAt: IsNull() },
+        where: { archivedAt: IsNull() },
         order: { updatedAt: 'DESC' },
       });
+      expect(result).toEqual([
+        { id: 'session-1', createdBy: 7, createdByName: 'Asha Rao' },
+        { id: 'session-2', createdBy: 8, createdByName: null },
+      ]);
     });
 
-    it('adds the status filter alongside the archive filter', async () => {
+    it('narrows to one creator and status for the "Mine" filter', async () => {
       sessionRepository.find.mockResolvedValue([]);
 
-      await service.listOwnedSessions(7, [BuilderSessionStatus.COMPLETED]);
+      await service.listSessions({
+        statuses: [BuilderSessionStatus.COMPLETED],
+        createdBy: 7,
+      });
 
       expect(sessionRepository.find).toHaveBeenCalledWith({
         where: {
@@ -393,26 +416,31 @@ describe('BuilderSessionService', () => {
     });
   });
 
-  describe('listOwnedArchivedSessions', () => {
+  describe('listArchivedSessions', () => {
     it('pages only archived rows, newest-archived first', async () => {
       sessionRepository.findAndCount.mockResolvedValue([
-        [{ id: 'session-1' }],
+        [{ id: 'session-1', createdBy: 7 }],
         1,
       ]);
+      sessionRepository.findCreatorNames.mockResolvedValue(
+        new Map([[7, 'Asha Rao']]),
+      );
 
-      const result = await service.listOwnedArchivedSessions(7, {
+      const result = await service.listArchivedSessions({
         limit: 12,
         offset: 0,
       });
 
       expect(sessionRepository.findAndCount).toHaveBeenCalledWith({
-        where: { createdBy: 7, archivedAt: Not(IsNull()) },
+        where: { archivedAt: Not(IsNull()) },
         order: { archivedAt: 'DESC' },
         take: 12,
         skip: 0,
       });
       expect(result).toEqual({
-        sessions: [{ id: 'session-1' }],
+        sessions: [
+          { id: 'session-1', createdBy: 7, createdByName: 'Asha Rao' },
+        ],
         totalCount: 1,
       });
     });
@@ -475,17 +503,19 @@ describe('BuilderSessionService', () => {
       expect(result).toEqual(expect.objectContaining({ archivedAt }));
     });
 
-    it("refuses another admin's session", async () => {
+    it("archives another admin's session — the feed is shared", async () => {
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
         createdBy: 2,
         status: BuilderSessionStatus.COMPLETED,
       });
 
-      await expect(
-        service.archiveSession('session-1', 1),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(sessionRepository.update).not.toHaveBeenCalled();
+      await service.archiveSession('session-1', 1);
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ archivedAt: expect.any(Date), updatedBy: 1 }),
+      );
     });
 
     it('touches only the session row — no message, PRD or build side effects', async () => {
@@ -528,7 +558,7 @@ describe('BuilderSessionService', () => {
       expect(sessionRepository.update).not.toHaveBeenCalled();
     });
 
-    it("refuses another admin's session", async () => {
+    it("unarchives another admin's session — the feed is shared", async () => {
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
         createdBy: 2,
@@ -536,10 +566,12 @@ describe('BuilderSessionService', () => {
         archivedAt: new Date('2026-01-01'),
       });
 
-      await expect(
-        service.unarchiveSession('session-1', 1),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(sessionRepository.update).not.toHaveBeenCalled();
+      await service.unarchiveSession('session-1', 1);
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        { archivedAt: null, updatedBy: 1 },
+      );
     });
   });
 });
