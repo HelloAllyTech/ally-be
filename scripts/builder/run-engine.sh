@@ -61,6 +61,7 @@ export BUILDER_HELPER_ENV
 ALLY_BE_API_URL='${ALLY_BE_API_URL}'
 BUILDER_RUN_ID='${BUILDER_RUN_ID}'
 ALLY_BE_API_KEY='${ALLY_BE_API_KEY}'
+BUILDER_WORKSPACE='${PWD}'
 ENVEOF
 )
 chmod 600 "$BUILDER_HELPER_ENV"
@@ -713,13 +714,22 @@ wrote_tool_calls_as_text() {
 # after a writing phase, so "did it change anything" is a comparison rather
 # than a guess from the transcript.
 tree_fingerprint() {
-  local dir
+  "${HERE}/tree-fingerprint.sh"
+}
+
+# Did the coder's last self-check pass, on exactly the tree it left? A tree
+# with nothing changed against master has nothing to check.
+self_check_covers_tree() {
+  local stamp="${BUILDER_SELFCHECK_STAMP:-/tmp/builder-selfcheck.stamp}" dir changed=0
   for dir in repos/*/; do
     [ -d "$dir/.git" ] || continue
-    printf '%s %s\n' "$dir" "$(git -C "$dir" rev-parse HEAD 2>/dev/null)"
-    git -C "$dir" status --porcelain 2>/dev/null
-    git -C "$dir" diff 2>/dev/null
-  done | git hash-object --stdin
+    if ! git -C "$dir" diff --quiet master 2>/dev/null ||
+       [ -n "$(git -C "$dir" ls-files --others --exclude-standard 2>/dev/null | head -1)" ]; then
+      changed=1
+    fi
+  done
+  [ "$changed" = 1 ] || return 0
+  [ "$(cat "$stamp" 2>/dev/null)" = "pass $(tree_fingerprint)" ]
 }
 
 # Did the phase stop mid-sentence? Its last words are empty, or end on a
@@ -872,7 +882,11 @@ run_agent() {
     case "$AGENT_PHASE" in code | fix) tree_before="$(tree_fingerprint)" ;; esac
     # node-shims first: the agent's own `node`/`npm`/`npx` follow the .nvmrc
     # of the repo it is standing in, as the gate's always have (node-shims/_shim).
+    #
+    # The shell tool's own limit is two minutes a command by default, and a
+    # self-check runs test suites; twenty is under every phase's wall clock.
     PATH="${HERE}/node-shims:${PATH}" \
+    OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS="${BUILDER_SHELL_TIMEOUT_MS:-1200000}" \
       ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
       ${oc_session[@]+"${oc_session[@]}"} \
       --model "$oc_model" \
@@ -1450,6 +1464,32 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
         echo "Coding session is ${OPENCODE_CODER_SESSION}; later attempts continue it."
     fi
 
+    # ── Did it check what it is handing over? ─────────────────────────────
+    #
+    # One more turn in the same conversation when the coder stopped without a
+    # passing `self-check` of its final tree. Session 880e73e6 run 3's last
+    # round ended "I have fixed all the errors" with ally-mobile's tests and
+    # ally-web's lint still failing; the gate found both and the attempt was
+    # spent. A turn is cheaper than an attempt, and it is not counted as one.
+    if [ -n "${OPENCODE_CODER_SESSION:-}" ] && ! self_check_covers_tree; then
+      echo "The coder stopped without a passing self-check of its final changes; one more turn to run it."
+      cat > /tmp/builder-selfcheck-nudge.txt <<'NUDGE'
+You stopped without a passing `self-check` of your final changes.
+
+Run `self-check` now, with no argument, so it checks every repo you changed —
+typecheck, lint, tests, and the scope and tests-added checks, exactly as the
+gate will after you stop. Give the shell command a long timeout; tests take
+minutes.
+
+Fix what it reports and run it again. Stop when it passes, or when every
+remaining failure is one your change did not cause — and then say which, and
+why, in a `note`. Do not edit an unrelated test or snapshot to make it pass.
+NUDGE
+      run_agent /tmp/builder-selfcheck-nudge.txt "${RESULTS_DIR}/code-${attempt}-check.json" \
+        "$attempt_model" builder "$CODE_TIMEOUT"
+      report_phase_cost "code-${attempt}-check" "$attempt_model" "${RESULTS_DIR}/code-${attempt}-check.json"
+    fi
+
     # Get it off the runner before anything else can go wrong.
     #
     # The coder commits as it works; the push used to wait for fix, finalise or
@@ -1522,6 +1562,16 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
       printf 'the reason holds; a test or snapshot edited to quiet an unrelated check is\n'
       printf 'a blocking objection.\n\n'
       jq -r '"- `\(.repo)/\(.path)` — \(.reason)"' /tmp/builder-scope-changes.jsonl 2>/dev/null || true
+    } >> /tmp/builder-verify-prompt.txt
+  fi
+
+  if [ -s /tmp/builder-untested.txt ]; then
+    {
+      printf '\n\n## Code changed without a new test\n\n'
+      printf 'The gate does not block these repos on it. Check the PRD test plan: a\n'
+      printf 'requirement it names a test for, with no such test here, is a blocking\n'
+      printf 'objection.\n\n'
+      sed 's/^/- /' /tmp/builder-untested.txt
     } >> /tmp/builder-verify-prompt.txt
   fi
 

@@ -75,7 +75,7 @@ if (!current) {
 const baseline = readJson(baselinePath);
 
 /** Checks where a pre-existing failure does not excuse the check. */
-const HARD_CHECKS = new Set(['lint', 'typecheck', 'integrity', 'scope']);
+const HARD_CHECKS = new Set(['lint', 'typecheck', 'integrity', 'scope', 'tests']);
 
 const events = [];
 let blocked = false;

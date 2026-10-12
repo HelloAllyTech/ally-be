@@ -37,6 +37,23 @@ GATE_DIR=/tmp/builder-gate
 # One id per run of this script, on every verdict it posts; ally-be keeps only
 # the newest round's (latestGateResults in builder-build.service.ts).
 GATE_ROUND="$(date +%s)-$$"
+# Repos that changed code without a test, where that does not block
+# (check-tests-added.mjs). Rewritten each round; the verify prompt shows it.
+UNTESTED_NOTES=/tmp/builder-untested.txt
+
+# ── Self-check: the same checks, run by the coder on its own tree ───────────
+#
+# GATE_SELF_CHECK=1 (the `self-check` helper) runs exactly these checks but
+# posts nothing, keeps its results apart from the real gate's (so it can never
+# feed the real gate's reuse of an unchanged tree), computes no baseline (a
+# full suite is the gate's job), and prints each check's failures for the
+# agent to read. GATE_ONLY_REPO narrows it to one repo.
+SELF_CHECK="${GATE_SELF_CHECK:-0}"
+if [ "$SELF_CHECK" = 1 ]; then
+  GATE_DIR=/tmp/builder-selfcheck
+  UNTESTED_NOTES=/tmp/builder-selfcheck-untested.txt
+fi
+: > "$UNTESTED_NOTES"
 mkdir -p "$GATE_DIR"
 
 # ── Is the judge still the judge? ───────────────────────────────────────────
@@ -136,6 +153,7 @@ checked_any=false
 
 for dir in repos/*/; do
   repo="$(basename "$dir")"
+  [ -n "${GATE_ONLY_REPO:-}" ] && [ "$repo" != "$GATE_ONLY_REPO" ] && continue
   [ -d "$dir/.git" ] || continue
 
   # Only repos this run actually changed. `master...HEAD` is why the clones are
@@ -223,7 +241,7 @@ for dir in repos/*/; do
   while IFS=$'\t' read -r kind command; do
     [ -n "${kind:-}" ] || continue
     checked_any=true
-    log="/tmp/builder-gate-${repo}-${kind}.log"
+    log="/tmp/builder-$([ "$SELF_CHECK" = 1 ] && echo selfcheck || echo gate)-${repo}-${kind}.log"
     started=$(date +%s)
     if (cd "$dir" && use_repo_node . && eval "$command") > "$log" 2>&1; then
       passed=true
@@ -256,11 +274,17 @@ for dir in repos/*/; do
     --dir "$dir" \
     --repo "$repo" \
     --results "${GATE_DIR}/${repo}.json" || true
+  node "${HERE}/check-tests-added.mjs" \
+    --dir "$dir" \
+    --repo "$repo" \
+    --results "${GATE_DIR}/${repo}.json" \
+    --notes "$UNTESTED_NOTES" || true
 
   # A baseline is only needed to excuse a failure, so it is computed only when
   # there is one to excuse. The happy path — which is most runs — never pays for
   # a full suite at all.
-  if grep -q $'^test\tfalse\t' "${GATE_DIR}/${repo}.checks" 2>/dev/null \
+  if [ "$SELF_CHECK" != 1 ] \
+    && grep -q $'^test\tfalse\t' "${GATE_DIR}/${repo}.checks" 2>/dev/null \
     && [ ! -f "${BASELINE_DIR}/${repo}.json" ]; then
     echo "  test failed; computing a baseline to see whether it is ours"
     "${HERE}/capture-baseline.sh" --repo "$repo" --full || \
@@ -288,8 +312,16 @@ for dir in repos/*/; do
     --events-out "${GATE_DIR}/${repo}.events.json" \
     --round "$GATE_ROUND" 2>/dev/null || echo blocked)"
 
-  [ -f "${GATE_DIR}/${repo}.events.json" ] && \
+  if [ "$SELF_CHECK" = 1 ]; then
+    # What the agent reads: each failing check and what it named. A baseline
+    # from an earlier real gate round, if there is one, has already excused
+    # pre-existing test failures; without one, every failure is listed.
+    jq -r '.events[].payload | select(.passed == false)
+      | "  FAILED \(.kind): " + ((.newFailures // []) | .[0:15] | join("\n    "))' \
+      "${GATE_DIR}/${repo}.events.json" 2>/dev/null || true
+  elif [ -f "${GATE_DIR}/${repo}.events.json" ]; then
     post_gate_event "${GATE_DIR}/${repo}.events.json"
+  fi
 
   if [ "$repo_verdict" != "passed" ]; then
     blocked=true

@@ -161,8 +161,9 @@ origin/master -- <path>\` for anything the change did not need. Declare a file
 with \`scope_change\` only when the planned change genuinely needs it — never a
 test or snapshot edited to make an unrelated check pass.
 
-**6. Re-run what you touched.** The gate runs again after you finish, but a
-failure you could have seen here costs another whole attempt.
+**6. Run \`self-check\` before you stop.** No argument: it runs the gate's own
+checks on every changed repo and prints what failed. The gate runs again after
+you finish, but a failure you could have seen here costs another whole attempt.
 
 **7. Keep the todo list honest** with \`todo\`, and post a short summary of
 what you changed and what you rejected with \`note text "…"\`.

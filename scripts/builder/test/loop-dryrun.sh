@@ -181,6 +181,33 @@ done
 phase="${prompt#PROMPT:}"
 [ -n "$phase" ] || phase="build"
 
+# The follow-up turn run-engine.sh gives a coder that stopped without a passing
+# self-check. A well-behaved coder runs it, which leaves the stamp; a
+# DRYRUN_SELFCHECK=ignore one does nothing, to prove the turn is not repeated.
+if printf '%s' "$*" | grep -q 'without a passing `self-check`'; then
+  echo selfcheck-turn >> /tmp/builder-dryrun-selfcheck-turns
+  if [ "${DRYRUN_SELFCHECK:-run}" = run ]; then
+    printf 'pass %s\n' "$("${DRYRUN_SCRIPTS}/tree-fingerprint.sh")" > /tmp/builder-selfcheck.stamp
+  fi
+  echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_dryrun"}'
+  echo '{"type":"text","part":{"type":"text","text":"Ran self-check; it passes."},"sessionID":"ses_dryrun"}'
+  echo '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":3,"input":2,"output":1,"cache":{"read":0}},"cost":0.1},"sessionID":"ses_dryrun"}'
+  exit 0
+fi
+
+# A coder that runs the real self-check helper (agent-helpers is on PATH, as
+# it is for the real engine): the gate's checks, nothing posted.
+if [ "${DRYRUN_RUN_SELFCHECK:-}" = 1 ] && [ "$phase" = "build" ]; then
+  self-check > /tmp/builder-dryrun-selfcheck.out 2>&1
+  echo "$?" > /tmp/builder-dryrun-selfcheck.rc
+fi
+
+# A coder that ran self-check itself before stopping: the stamp matches the
+# tree it leaves, so no follow-up turn is needed.
+if [ "${DRYRUN_SELFCHECKED:-}" = 1 ] && [ "$phase" = "build" ]; then
+  printf 'pass %s\n' "$("${DRYRUN_SCRIPTS}/tree-fingerprint.sh")" > /tmp/builder-selfcheck.stamp
+fi
+
 # Which verify round this is, so a scenario can fail the first and pass the
 # second (the remediation path).
 verify_round=1
@@ -476,7 +503,9 @@ run_scenario() {
         /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it \
         /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md \
         /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions \
-        /tmp/builder-dryrun-stall-count /tmp/builder-scope-changes.jsonl
+        /tmp/builder-dryrun-stall-count /tmp/builder-scope-changes.jsonl \
+        /tmp/builder-selfcheck.stamp /tmp/builder-dryrun-selfcheck-turns \
+        /tmp/builder-dryrun-selfcheck.out /tmp/builder-dryrun-selfcheck.rc
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -535,6 +564,7 @@ run_scenario() {
       ALLY_BE_API_KEY=test-key \
       BUILDER_RUN_ID=11111111-1111-1111-1111-111111111111 \
       BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v"}' \
+      DRYRUN_SCRIPTS="$SCRIPTS" \
       "$@" \
       "${SCRIPTS}/run-engine.sh" "${WORK}/run/build-prompt.txt"
   ) > "${WORK}/${name}.out" 2>&1
@@ -571,6 +601,38 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = happy ]; then
   check "verifier billed" yes "$(has_in_log 'COST verify-1:')"
   check "stages posted in order" "PLANNING CODING GATE VERIFYING FINALISING" \
     "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+fi
+
+# A coder that stops without a passing self-check of its final tree gets one
+# more turn in the same conversation to run it — one, whatever it does with it.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = self-check ]; then
+  run_scenario self-check-run
+  check "gave the coder a self-check turn" 1 "$(wc -l < /tmp/builder-dryrun-selfcheck-turns | tr -d ' ')"
+  check "billed it as its own phase" yes "$(has_in_log 'COST code-1-check:')"
+  check "said why in the log" yes \
+    "$(grep -q 'without a passing self-check' "${WORK}/self-check-run.out" && echo yes || echo no)"
+
+  run_scenario self-check-ignored DRYRUN_SELFCHECK=ignore
+  check "still only one turn when it is ignored" 1 "$(wc -l < /tmp/builder-dryrun-selfcheck-turns | tr -d ' ')"
+  check "and the run carries on to the gate" yes "$(has_in_log 'EVENT gate_result:true')"
+
+  run_scenario self-checked DRYRUN_SELFCHECKED=1
+  check "no extra turn when it already checked" no \
+    "$([ -s /tmp/builder-dryrun-selfcheck-turns ] && echo yes || echo no)"
+fi
+
+# The helper itself: the gate's own commands, on the coder's tree, posting no
+# verdict — the real gate's gate_result events are the only ones in the log.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = self-check-helper ]; then
+  run_scenario self-check-helper DRYRUN_RUN_SELFCHECK=1
+  check "self-check passed" 0 "$(cat /tmp/builder-dryrun-selfcheck.rc 2>/dev/null)"
+  check "it ran the repo's checks" yes \
+    "$(grep -q 'gate: demo-repo' /tmp/builder-dryrun-selfcheck.out && echo yes || echo no)"
+  check "it left a passing stamp, so no follow-up turn" no \
+    "$([ -s /tmp/builder-dryrun-selfcheck-turns ] && echo yes || echo no)"
+  # One real round posts four: lint, test, integrity, scope. A self-check that
+  # posted would double it.
+  check "it posted no verdict of its own" 4 "$(count_in_log 'EVENT gate_result:true')"
 fi
 
 # ── 2. remediation ──────────────────────────────────────────────────────────

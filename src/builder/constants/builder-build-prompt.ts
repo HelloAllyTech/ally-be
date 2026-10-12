@@ -157,6 +157,8 @@ note plan notes.md         # A milestone: plan, test_output, verification, …
                            #   unquoted string also works.
 ask questions.json         # Pause and ask: {"questions":[…],"branches":{…}}
 budget                     # What is left of this session's spend ceiling
+self-check                 # Run the gate's own checks on your changes now.
+                           #   Long-running: give it a long timeout.
 prs prs.json               # {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
 report report.md           # Your write-up, as plain markdown.
                            #   Do NOT hand-assemble JSON around it — the
@@ -423,6 +425,13 @@ context on every turn, and a coding pass runs well over a hundred turns:
 - Do not re-read a file you have already read unless you changed it.
 
 Post what you ran and what it said with \`note test_output "…"\`.
+
+**Before you stop, run \`self-check\`** with no argument. It runs exactly what
+the gate runs after you — every changed repo's typecheck, lint and tests on that
+repo's own Node, plus the scope and tests-added checks — and prints what failed.
+Give the shell command a long timeout. Stopping without a passing self-check of
+your final changes gets you one more turn to run it; a failure the gate finds
+instead costs a whole attempt.
 
 Fix what you broke. If a test was already failing before your change, say so
 in your report rather than fixing it silently — an unrelated fix buried in a

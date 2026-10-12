@@ -160,6 +160,10 @@ jobs:
       - name: Scope check
         run: node scripts/builder/test/check-scope.test.mjs
 
+      # A change to code arrives with a new test (hard for ally-be).
+      - name: Tests-added check
+        run: node scripts/builder/test/check-tests-added.test.mjs
+
       # The agent's node/npm/npx follow the repo's .nvmrc. Run on its default
       # Node, ally-web's specs fail for reasons that are not the change.
       - name: Agent Node per repo
