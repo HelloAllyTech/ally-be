@@ -79,6 +79,13 @@ import {
 } from '../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
+import { BugFixStudyService } from '../service/bug-fix-study.service';
+import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
+import { renderPrBody } from '../constants/bug-pr-body';
+import { buildPrReviewPrompt } from '../constants/bug-pr-review-prompt';
+import { PrReviewTarget } from '../type/bug-hunter-pr-review.type';
+import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
 import { buildVerifyFindingsPrompt } from '../constants/bug-verify-findings-prompt';
 import { buildVerifyFixPrompt } from '../constants/bug-verify-fix-prompt';
 import { prNumberFrom } from '../service/bug-hunter-policy.service';
@@ -129,6 +136,8 @@ export class BugHunterPipelineController {
     private readonly verifyFindingsService: BugVerifyFindingsService,
     private readonly finderService: BugHunterFinderService,
     private readonly runRepository: BugHuntRunRepository,
+    private readonly orchestrator: BugHunterOrchestratorService,
+    private readonly studyService: BugFixStudyService,
   ) {}
 
   @Get('pipeline/memory/search')
@@ -455,12 +464,14 @@ export class BugHunterPipelineController {
         .getRun(findingId)
         .catch(() => null);
       const chosen = run?.metadata?.finder?.model;
+      const senses = run?.metadata?.finder?.senses;
       if (chosen?.engine && chosen?.model) {
         return {
           ...settings,
           engine: chosen.engine,
           defaultModel: chosen.model,
           escalationModel: chosen.model,
+          ...(Array.isArray(senses) ? { senses } : {}),
         };
       }
     }
@@ -480,6 +491,22 @@ export class BugHunterPipelineController {
           engine: counterpart.engine,
           defaultModel: counterpart.model,
           escalationModel: counterpart.model,
+        };
+      }
+    }
+    // The orchestrator's D6 (OPP-0783): the fix workflow asks by finding id
+    // and gets the model the plan chose for this attempt.
+    if (role === 'fix' && findingId) {
+      const finding = await this.bugFindingService
+        .getOne(findingId)
+        .catch(() => null);
+      const plan = finding?.metadata?.fixPlan as FixPlan | undefined;
+      if (plan?.engine && plan?.model) {
+        return {
+          ...settings,
+          engine: plan.engine,
+          defaultModel: plan.model,
+          escalationModel: plan.model,
         };
       }
     }
@@ -604,6 +631,31 @@ export class BugHunterPipelineController {
     });
   }
 
+  @Get('pipeline/pr-review-prompt')
+  @ApiOperation({
+    summary:
+      'The PR review brief for a pr_review run: review one open pull request on its head, read-only, filing findings linked to it (pipeline only, OPP-0785)',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getPrReviewPrompt(
+    @Query('repo') repo: string,
+    @Query('runId') runId: string,
+  ): Promise<string> {
+    const run = await this.bugHunterService.getRun(runId);
+    const pr = run.metadata?.prReview as PrReviewTarget | undefined;
+    if (!pr?.number || !pr.headSha) {
+      throw new BadRequestException(
+        `Run ${runId} is not a PR review run: it carries no pull request.`,
+      );
+    }
+    return buildPrReviewPrompt({
+      repo: repo ?? run.repo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      pr,
+    });
+  }
+
   @Get('pipeline/findings/:id/fix-prompt')
   @ApiOperation({
     summary:
@@ -644,6 +696,9 @@ export class BugHunterPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       dossier,
       engine,
+      // The orchestrator's plan and reason for a retry (OPP-0783).
+      plan: (finding.metadata?.fixPlan as FixPlan | undefined) ?? null,
+      retry: (finding.metadata?.retry as FixRetry | undefined) ?? null,
     });
   }
 
@@ -772,6 +827,33 @@ export class BugHunterPipelineController {
   ): Promise<BugCaseFile> {
     const finding = await this.bugFindingService.getOne(id);
     return this.caseFileService.build(finding, { currentRunId: runId });
+  }
+
+  @Get('pipeline/findings/:id/pr-body')
+  @ApiOperation({
+    summary:
+      "A fix PR's description, rendered from the case file, with two marker lines for the Fixer to fill (pipeline only)",
+    description:
+      'OPP-0784: the bug as filed, who verified it and how (the independent reproduction verbatim), ' +
+      'every orchestration decision and the cost so far come from the case file; the Fixer replaces ' +
+      'the two markers with the change in words and what it left untouched on purpose. The drawer ' +
+      'reads the same case file, so the PR and the drawer say the same thing. Returns Markdown.',
+  })
+  @Header('Content-Type', 'text/markdown; charset=utf-8')
+  async getPrBody(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    const caseFile = await this.caseFileService.build(finding, {
+      currentRunId: runId,
+    });
+    return renderPrBody(caseFile, {
+      repo: finding.repo ?? 'unknown',
+      adminUrl: this.configService.adminBaseUrl
+        ? `${this.configService.adminBaseUrl.replace(/\/+$/, '')}/bug-hunter?finding=${finding.id}`
+        : null,
+    });
   }
 
   @Post('pipeline/findings/:id/plan')
@@ -921,6 +1003,12 @@ export class BugHunterPipelineController {
     if (body.status === BugFindingStatus.PR_OPENED) {
       void this.verifyFixService.dispatch(id);
     }
+    // A session gave up (OPP-0783): the orchestrator's D7 decides whether a
+    // stronger attempt goes in with the post-mortem, or a person is asked.
+    // Not awaited, and it swallows its own failures.
+    if (body.status === BugFindingStatus.FAILED) {
+      void this.orchestrator.onSessionFailed(id);
+    }
     // The agent's own merge path. Its protocol merges with --delete-branch,
     // so this usually finds the branch already gone; it is the backstop for a
     // session that merged and then ran out of time before deleting
@@ -981,8 +1069,23 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: ReportBugHuntEventDto,
   ): Promise<BugHuntEventDto> {
+    // A fix session's study (stage `study`) is more than a timeline line: it
+    // is validated, read by a second model and stored on the finding, and the
+    // event's payload — which this response carries back — is the stored
+    // study WITH that review, so the session reads the concerns in the same
+    // round trip. A study missing a required field is a 400 naming it; the
+    // prompt tells the session to fix the body and post again.
+    let payload = body.payload;
+    if (body.stage === BugHuntEventStage.STUDY && body.findingId) {
+      const finding = await this.bugFindingService.getOne(body.findingId);
+      payload = (await this.studyService.record(
+        finding,
+        id,
+        body.payload,
+      )) as unknown as Record<string, any>;
+    }
     return toEventDto(
-      await this.bugHunterService.appendEvent({ runId: id, ...body }),
+      await this.bugHunterService.appendEvent({ runId: id, ...body, payload }),
     );
   }
 
@@ -1068,7 +1171,8 @@ export class BugHunterPipelineController {
     // service swallows its own failures and leaves findings pending.
     if (
       run.trigger === BugHuntTrigger.SCHEDULED ||
-      run.trigger === BugHuntTrigger.MANUAL
+      run.trigger === BugHuntTrigger.MANUAL ||
+      run.trigger === BugHuntTrigger.PR_REVIEW
     ) {
       void this.verifyFindingsService.dispatchForRun(run.id);
     }

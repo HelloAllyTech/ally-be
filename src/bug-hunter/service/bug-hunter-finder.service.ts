@@ -31,6 +31,7 @@ import {
   FinderPlan,
   FinderTriggerKind,
   senseOfSource,
+  sensesForRepo,
 } from '../type/bug-hunter-finder.type';
 import { BugHunterEngine } from '../type/bug-hunter-model-settings.type';
 import { BugFindingService } from './bug-finding.service';
@@ -41,11 +42,16 @@ import { BugHunterModelSettingsService } from './bug-hunter-model-settings.servi
 import { BugHunterScoreboardService } from './bug-hunter-scoreboard.service';
 import { BugHunterService } from './bug-hunter.service';
 
-/** The senses a light pass starts from, per trigger, when the rule decides. */
+/**
+ * The senses a light pass starts from, per trigger, when the rule decides.
+ * Narrowed to the repo's menu before use. `locale_parity` rides along on a
+ * merge because it costs no model time and a merge is exactly when a locale
+ * file goes out of step.
+ */
 const RULE_SENSES: Record<FinderTriggerKind, BugHunterSense[]> = {
   scheduled: [...BUG_HUNTER_SENSES],
   manual: [...BUG_HUNTER_SENSES],
-  merge: ['code_review', 'tests'],
+  merge: ['code_review', 'tests', 'locale_parity'],
   report: ['reported_bugs', 'code_review'],
 };
 
@@ -93,10 +99,12 @@ export class BugHunterFinderService {
     const lastCompleted = await this.runRepository
       .findLastCompleted(run.repo)
       .catch(() => null);
+    const menu = sensesForRepo(run.repo);
     const context = {
       trigger,
       light,
       repo: run.repo,
+      hasLocaleFiles: menu.includes('locale_parity'),
       hasLogGroup: this.finderData.hasLogGroup(run.repo),
       hasExternalSignal: this.finderData.hasExternalSignal(run.repo),
       hoursSinceLastSweep: lastCompleted
@@ -117,14 +125,14 @@ export class BugHunterFinderService {
       question: 'senses',
       repo: run.repo,
       runId: run.id,
-      menu: [...BUG_HUNTER_SENSES],
+      menu,
       context,
       modelOwned: true,
-      rule: () => [...RULE_SENSES[trigger]],
+      rule: () => RULE_SENSES[trigger].filter((s) => menu.includes(s)),
       validate: (raw) => {
         if (!Array.isArray(raw)) return null;
         const picked = raw.filter((s): s is BugHunterSense =>
-          BUG_HUNTER_SENSES.includes(s as never),
+          menu.includes(s as never),
         );
         return picked.length ? [...new Set(picked)] : null;
       },

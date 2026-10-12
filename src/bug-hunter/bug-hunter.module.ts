@@ -48,11 +48,17 @@ import { BugFixSessionService } from './service/bug-fix-session.service';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
 import { BugHunterMissClassifierService } from './service/bug-hunter-miss-classifier.service';
+import { BugFixStudyService } from './service/bug-fix-study.service';
 import { BugCaseBudgetService } from './service/bug-case-budget.service';
 import { BugCaseFileService } from './service/bug-case-file.service';
 import { BugVerifyFixService } from './service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from './service/bug-verify-findings.service';
 import { BugHunterDecisionService } from './service/bug-hunter-decision.service';
+import { BugHunterDecisionReplayService } from './service/bug-hunter-decision-replay.service';
+import { BugFixPlanService } from './service/bug-fix-plan.service';
+import { BugHunterOrchestratorService } from './service/bug-hunter-orchestrator.service';
+import { BugHunterProtectionDriftService } from './service/bug-hunter-protection-drift.service';
+import { BugHunterPrReviewService } from './service/bug-hunter-pr-review.service';
 import { BugHunterScoreboardService } from './service/bug-hunter-scoreboard.service';
 import { BugHunterFinderService } from './service/bug-hunter-finder.service';
 import { BugHunterTodayService } from './service/bug-hunter-today.service';
@@ -147,8 +153,13 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugVerifyFixService,
     BugVerifyFindingsService,
     BugHunterDecisionService,
+    BugHunterDecisionReplayService,
     BugHunterScoreboardService,
     BugHunterFinderService,
+    BugFixPlanService,
+    BugHunterOrchestratorService,
+    BugHunterProtectionDriftService,
+    BugHunterPrReviewService,
     BugHunterTodayService,
     BugHunterDossierService,
     BugHunterMemoryRetirementService,
@@ -166,6 +177,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugFixSessionService,
     BugHunterRepoClassifierService,
     BugHunterMissClassifierService,
+    BugFixStudyService,
     BugFixSessionSchedulerRegistrationService,
     BugHunterModelSettingsService,
   ],

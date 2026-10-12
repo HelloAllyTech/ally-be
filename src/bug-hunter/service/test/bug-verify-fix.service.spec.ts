@@ -82,7 +82,7 @@ describe('storedVerifier', () => {
 });
 
 describe('BugVerifyFixService', () => {
-  let findingRepository: { update: jest.Mock };
+  let findingRepository: { update: jest.Mock; find: jest.Mock };
   let bugFindingService: { getOne: jest.Mock };
   let bugHunterService: {
     getRun: jest.Mock;
@@ -95,10 +95,16 @@ describe('BugVerifyFixService', () => {
     getPullRequest: jest.Mock;
     dispatchWorkflow: jest.Mock;
     createIssueComment: jest.Mock;
+    listPullRequestFiles: jest.Mock;
   };
   let notifications: { notify: jest.Mock };
   let policy: { assertMayMerge: jest.Mock };
   let fixSession: { mergeVerifiedFinding: jest.Mock };
+  let orchestrator: {
+    recordVerifierChoice: jest.Mock;
+    onFixRefused: jest.Mock;
+    recordMergeGate: jest.Mock;
+  };
   let service: BugVerifyFixService;
   let current: BugFinding;
 
@@ -109,6 +115,7 @@ describe('BugVerifyFixService', () => {
         current = { ...current, ...patch } as BugFinding;
         return Promise.resolve();
       }),
+      find: jest.fn().mockImplementation(() => Promise.resolve([current])),
     };
     bugFindingService = {
       getOne: jest.fn().mockImplementation(() => Promise.resolve(current)),
@@ -130,11 +137,20 @@ describe('BugVerifyFixService', () => {
         .mockResolvedValue({ headSha: 'head-1', merged: false, state: 'open' }),
       dispatchWorkflow: jest.fn().mockResolvedValue(new Date()),
       createIssueComment: jest.fn().mockResolvedValue('c'),
+      listPullRequestFiles: jest.fn().mockResolvedValue({
+        files: ['src/a.ts', 'src/a.spec.ts'],
+        truncated: false,
+      }),
     };
     notifications = { notify: jest.fn() };
     policy = { assertMayMerge: jest.fn().mockResolvedValue(undefined) };
     fixSession = {
       mergeVerifiedFinding: jest.fn().mockResolvedValue(undefined),
+    };
+    orchestrator = {
+      recordVerifierChoice: jest.fn().mockResolvedValue(undefined),
+      onFixRefused: jest.fn().mockResolvedValue('ask_human'),
+      recordMergeGate: jest.fn().mockResolvedValue(undefined),
     };
     service = new BugVerifyFixService(
       findingRepository as never,
@@ -152,6 +168,7 @@ describe('BugVerifyFixService', () => {
         }),
       } as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
+      orchestrator as never,
     );
   });
 
@@ -215,6 +232,15 @@ describe('BugVerifyFixService', () => {
         },
       });
       expect(await service.dispatch('f-1')).toBeNull();
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
+
+    it('reconciles open PRs: a head without a verdict gets a Verifier, a judged head does not (OPP-0758)', async () => {
+      await service.reconcileOpenPrs();
+      expect(bugHunterService.startRun).toHaveBeenCalledTimes(1);
+
+      bugHunterService.startRun.mockClear();
+      await service.reconcileOpenPrs(); // a verifier is now pending on this head
       expect(bugHunterService.startRun).not.toHaveBeenCalled();
     });
 
@@ -295,7 +321,7 @@ describe('BugVerifyFixService', () => {
       );
     });
 
-    it('refuses a fix with a failed check, names the failure to the admin, and never merges', async () => {
+    it('refuses a fix with a failed check, hands it to the orchestrator with the named failure, and never merges', async () => {
       const verdict = await service.recordVerdict('f-1', {
         checks: [
           ...okChecks,
@@ -315,14 +341,79 @@ describe('BugVerifyFixService', () => {
       );
       expect(policy.assertMayMerge).not.toHaveBeenCalled();
       expect(fixSession.mergeVerifiedFinding).not.toHaveBeenCalled();
-      expect(notifications.notify).toHaveBeenCalledWith(
+      // D7 (OPP-0783) owns what happens next, including the notification.
+      expect(orchestrator.onFixRefused).toHaveBeenCalledWith(
+        'f-1',
+        expect.objectContaining({ verdict: 'fail' }),
+        expect.arrayContaining([
+          'data_file_counts: blank values 0 → 385 in mr.json',
+        ]),
+      );
+      expect(notifications.notify).not.toHaveBeenCalled();
+      expect(orchestrator.recordMergeGate).not.toHaveBeenCalled();
+    });
+
+    it('records D8 on a pass: merge where policy allows, hand over where it refuses (OPP-0783)', async () => {
+      await service.recordVerdict('f-1', { checks: okChecks });
+      expect(orchestrator.recordMergeGate).toHaveBeenCalledWith(
+        expect.objectContaining({ allowed: true }),
+      );
+
+      orchestrator.recordMergeGate.mockClear();
+      policy.assertMayMerge.mockRejectedValue(
+        new ForbiddenException('ally-web never self-merges'),
+      );
+      current = finding();
+      await service.recordVerdict('f-1', { checks: okChecks });
+      expect(orchestrator.recordMergeGate).toHaveBeenCalledWith(
         expect.objectContaining({
-          level: BugHunterNotificationLevel.ACTION_NEEDED,
-          title: expect.stringContaining('Verifier refused my fix'),
-          body: expect.stringContaining(
-            'data_file_counts: blank values 0 → 385 in mr.json',
-          ),
+          allowed: false,
+          reason: 'ally-web never self-merges',
         }),
+      );
+    });
+
+    it('records D4 when it dispatches the Verifier (OPP-0783)', async () => {
+      await service.dispatch('f-1');
+      expect(orchestrator.recordVerifierChoice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'fix',
+          runId: 'run-verify',
+          counterpart: { engine: 'gemini', model: 'gemini-2.5-pro' },
+        }),
+      );
+    });
+
+    it('fails a pass itself when the PR touches a file a person must merge, and names the file (OPP-0759)', async () => {
+      github.listPullRequestFiles.mockResolvedValue({
+        files: [
+          'src/health/controller/health.controller.ts',
+          '.claude/agents/bug-escalation.md',
+          'pr-body.md',
+        ],
+        truncated: false,
+      });
+      const verdict = await service.recordVerdict('f-1', { checks: okChecks });
+      expect(verdict?.verdict).toBe('fail');
+      const forbidden = verdict?.checks.find(
+        (c) => c.name === 'forbidden_files',
+      );
+      expect(forbidden?.ok).toBe(false);
+      expect(forbidden?.evidence).toContain(
+        '.claude/agents/bug-escalation.md (Bug Hunter agent files)',
+      );
+      expect(forbidden?.evidence).toContain(
+        'pr-body.md (a PR body written into the repo)',
+      );
+      expect(fixSession.mergeVerifiedFinding).not.toHaveBeenCalled();
+      expect(orchestrator.onFixRefused).toHaveBeenCalledWith(
+        'f-1',
+        expect.objectContaining({ verdict: 'fail' }),
+        expect.arrayContaining([
+          expect.stringContaining(
+            'forbidden_files: files a fix must not touch',
+          ),
+        ]),
       );
     });
 

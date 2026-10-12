@@ -11,7 +11,8 @@ import {
   escalationGuidance,
 } from './bug-hunter.constants';
 import {
-  BUG_HUNTER_SENSES,
+  BUG_HUNTER_MODEL_SENSES,
+  sensesForRepo,
   BugHunterSense,
 } from '../type/bug-hunter-finder.type';
 
@@ -97,8 +98,9 @@ export interface SweepPromptContext {
   memories?: SweepMemoryEntry[];
   /**
    * Which senses this run reads (OPP-0781). The Finder's D1 decision; every
-   * sense when absent, which is what every sweep did before the decision
-   * existed.
+   * model-run sense when absent, which is what every sweep did before the
+   * decision existed. `locale_parity` renders as a note, not a finder: the
+   * workflow already ran it as a script (OPP-0782).
    */
   senses?: BugHunterSense[];
   /** A light pass after a merge or a report: a shorter budget and a sharper scope. */
@@ -161,7 +163,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     knownNonBugs = [],
     engine = 'claude-code',
     memories = [],
-    senses = [...BUG_HUNTER_SENSES],
+    senses = [...BUG_HUNTER_MODEL_SENSES],
     light = false,
   } = ctx;
   const has = (s: BugHunterSense) => senses.includes(s);
@@ -242,8 +244,13 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
       'reported_bugs',
       `REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs?repo=${repo}${forRun}" ${auth} — human bug reports already believed to be about "${repo}" (classified at intake), plus anything still unfiled. Sanity-check each one is genuinely about "${repo}" before filing; skip anything that reads as another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
     ],
+    [
+      'locale_parity',
+      `LOCALE PARITY — already done, not yours to run. Before you started, the workflow ran "node scripts/i18n-parity.mjs" (every locale file against en.json: missing keys, blanks) and filed any finding itself with source "locale_parity", keyed on the file. Do not run it again, do not re-file what it found, and report no finder_result for it. If one of its findings is in your list to fix later, the fix is real translations in that file — never a blank, never a copy of the English, never "i18n:sync" without its translate key.`,
+    ],
   ];
   const finders = finderTexts.filter(([s]) => has(s)).map(([, t]) => t);
+  const repoMenu = sensesForRepo(repo);
   return [
     `You are running a repo-wide bug sweep on the "${repo}" repo, checked out at master in your current working directory. Read this repo's CLAUDE.md before you change anything. Bug Hunter is in ${mode.toUpperCase()} mode.`,
     ``,
@@ -266,7 +273,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `Each hit is a short entry with a similarity score. Treat entries as an engineer's notes, not orders: apply what fits, and if one turns out to be wrong tonight, write the correction when you reach Phase 4 rather than following it off a cliff. An empty result is fine — the notebook is young.`,
     ``,
     `## Phase 1 — Discover`,
-    `Run these ${finders.length} finder${finders.length === 1 ? '' : 's'}. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.${senses.length < BUG_HUNTER_SENSES.length ? ` The Finder chose this set for tonight (${senses.join(', ')}); the senses it left out are not yours to run.` : ''}`,
+    `Run these ${finders.length} finder${finders.length === 1 ? '' : 's'}. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.${senses.length < repoMenu.length ? ` The Finder chose this set for tonight (${senses.join(', ')}); the senses it left out are not yours to run.` : ''}`,
     light
       ? `This is a LIGHT pass, started by a change rather than by the clock: aim to finish everything in 20 minutes. Read what changed and no further.`
       : '',

@@ -16,10 +16,15 @@ import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import {
+  describePersonOnlyPaths,
+  personOnlyPaths,
+} from '../util/bug-person-only-paths.util';
+import {
   BugFixVerdict,
   latestVerdictFor,
   namedFailures,
   toBugFixVerdict,
+  withServerChecks,
 } from '../type/bug-fix-verdict.type';
 import {
   BugHunterModelSettings,
@@ -34,6 +39,7 @@ import {
 } from './bug-hunter-policy.service';
 import { BugHunterModelSettingsService } from './bug-hunter-model-settings.service';
 import { BugFixSessionService } from './bug-fix-session.service';
+import { BugHunterOrchestratorService } from './bug-hunter-orchestrator.service';
 
 /**
  * What the verifier run needs to know about itself, stored on the finding at
@@ -112,6 +118,7 @@ export class BugVerifyFixService {
     private readonly fixSessionService: BugFixSessionService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
     private readonly configService: AppConfigService,
+    private readonly orchestrator: BugHunterOrchestratorService,
   ) {}
 
   /** Best-effort: a verifier that cannot be dispatched leaves the PR open for a person, which is what happened before this existed. */
@@ -168,6 +175,18 @@ export class BugVerifyFixService {
           verifyFix: dispatched,
         } as Record<string, any>,
       });
+      // D4 (OPP-0783): which Verifier — fixed by rule, recorded all the same.
+      void this.orchestrator.recordVerifierChoice({
+        repo: finding.repo,
+        runId: run.id,
+        findingId: finding.id,
+        subject: 'fix',
+        producer: {
+          engine: fixRun?.engine ?? null,
+          model: fixRun?.model ?? null,
+        },
+        counterpart,
+      });
 
       try {
         await this.github.dispatchWorkflow({
@@ -218,6 +237,23 @@ export class BugVerifyFixService {
     }
   }
 
+  /**
+   * Every five minutes, every open fix PR whose head has no verdict and no
+   * verifier in flight gets one (OPP-0758). A head can change without a
+   * `pr_opened` PATCH: GitHub updated the branch, a retry pushed to it, a
+   * person pushed a fix-up. `dispatch` already no-ops when the head is
+   * judged or being judged, so this is cheap when nothing moved.
+   */
+  async reconcileOpenPrs(): Promise<void> {
+    const open = await this.findingRepository.find({
+      where: { status: BugFindingStatus.PR_OPENED },
+      select: ['id'],
+    });
+    for (const f of open) {
+      await this.dispatch(f.id);
+    }
+  }
+
   /** The verifier's PATCH. Returns the stored verdict, or null when the report was unusable. */
   async recordVerdict(
     findingId: string,
@@ -231,7 +267,7 @@ export class BugVerifyFixService {
     const run = runId
       ? await this.bugHunterService.getRun(runId).catch(() => null)
       : null;
-    const verdict = toBugFixVerdict(raw, {
+    const reported = toBugFixVerdict(raw, {
       by: {
         engine: run?.engine ?? pending?.counterpart.engine ?? null,
         model: run?.model ?? pending?.counterpart.model ?? null,
@@ -244,12 +280,13 @@ export class BugVerifyFixService {
           : (pending?.prHeadSha ?? null),
       runId,
     });
-    if (!verdict) {
+    if (!reported) {
       this.logger.warn(
         `[BUG_HUNTER] Verifier report for finding ${findingId} had no checks; nothing recorded.`,
       );
       return null;
     }
+    const verdict = await this.withForbiddenFiles(finding, reported);
 
     const verdicts = Array.isArray(finding.metadata?.fixVerdicts)
       ? (finding.metadata!.fixVerdicts as BugFixVerdict[])
@@ -278,6 +315,36 @@ export class BugVerifyFixService {
     return verdict;
   }
 
+  /**
+   * The one check the server makes itself (OPP-0759): the PR's file list
+   * against the person-only paths. A model can be argued out of calling a
+   * stray file scope creep; a pattern cannot. Fails closed only on a hit —
+   * an unreadable listing leaves the verifier's own verdict alone.
+   */
+  private async withForbiddenFiles(
+    finding: BugFinding,
+    verdict: BugFixVerdict,
+  ): Promise<BugFixVerdict> {
+    const prNumber = finding.prUrl ? prNumberFrom(finding.prUrl) : null;
+    if (!finding.repo || !prNumber) return verdict;
+    let listing: { files: string[]; truncated: boolean };
+    try {
+      listing = await this.github.listPullRequestFiles(finding.repo, prNumber);
+    } catch {
+      return verdict;
+    }
+    const hits = personOnlyPaths(listing.files);
+    if (!hits.length) return verdict;
+    return withServerChecks(verdict, [
+      {
+        name: 'forbidden_files',
+        ok: false,
+        evidence: `files a fix must not touch: ${describePersonOnlyPaths(hits)}`,
+        skipped: null,
+      },
+    ]);
+  }
+
   private async actOnVerdict(
     finding: BugFinding,
     verdict: BugFixVerdict,
@@ -287,29 +354,26 @@ export class BugVerifyFixService {
     if (fresh.status !== BugFindingStatus.PR_OPENED) return; // a person already acted
 
     if (verdict.verdict === 'fail') {
-      await this.notificationService.notify({
-        level: BugHunterNotificationLevel.ACTION_NEEDED,
-        title: `Verifier refused my fix for "${clip(fresh.title)}"`,
-        body:
-          `${failures
-            .slice(0, 4)
-            .map((f) => `• ${f}`)
-            .join('\n')}\n` +
-          `The PR is still open. Ask me to try again with these failures in hand, fix it yourself, or close it.`,
-        findingId: fresh.id,
-        runId: verdict.runId ?? undefined,
-        repo: fresh.repo ?? undefined,
-      });
+      // D7 (OPP-0783): retry with the named failures in hand, escalate to
+      // the strong tier, or bring it to a person. The orchestrator owns the
+      // notification on the ask_human path.
+      await this.orchestrator.onFixRefused(fresh.id, verdict, failures);
       return;
     }
 
     // A pass. Merge only where policy already allowed a self-merge; the
-    // Verifier adds a gate, it never opens one.
+    // Verifier adds a gate, it never opens one. D8 records the gate's answer.
     try {
       await this.policyService.assertMayMerge(fresh, fresh.prUrl ?? null, {
         verified: true,
       });
     } catch (error) {
+      await this.orchestrator.recordMergeGate({
+        finding: fresh,
+        verdict,
+        allowed: false,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       await this.notificationService.notify({
         level: BugHunterNotificationLevel.ACTION_NEEDED,
         title: `Verified and ready for your merge: "${clip(fresh.title)}"`,
@@ -323,6 +387,13 @@ export class BugVerifyFixService {
       return;
     }
 
+    await this.orchestrator.recordMergeGate({
+      finding: fresh,
+      verdict,
+      allowed: true,
+      reason:
+        'the Verifier passed every check and policy allows a self-merge here',
+    });
     try {
       await this.fixSessionService.mergeVerifiedFinding(fresh, verdict);
     } catch (error) {

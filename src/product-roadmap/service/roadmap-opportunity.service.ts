@@ -15,9 +15,15 @@ import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import {
   BugFindingSource,
   BugFindingStatus,
+  BugFindingSeverity,
 } from 'src/bug-hunter/enum/bug-finding.enum';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
 import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
+import {
+  composeBugReportDescription,
+  repoForSurface,
+  severityForImpact,
+} from 'src/bug-hunter/util/bug-report-brief.util';
 import { truncateTitle } from 'src/bug-hunter/util/truncate-title.util';
 
 import { S3Service } from 'src/aws/service/s3.service';
@@ -44,6 +50,7 @@ import {
   ROADMAP_READINESS_REQUIRE_TOKEN,
   ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
   ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
+  ROADMAP_LIMITS,
 } from '../constants/product-roadmap.constants';
 import {
   CreateBugReportDto,
@@ -168,6 +175,8 @@ export class RoadmapOpportunityService {
       reporterContext?: Record<string, any> | null;
       /** The repo a staff reporter named; when set, Bug Hunter skips classification. */
       repo?: string | null;
+      /** A reporter's impact rating, mapped to a severity; null leaves it to the finders. */
+      severity?: BugFindingSeverity | null;
       /**
        * Whether the caller holds edit:admin:product-roadmap, resolved in the controller the same
        * way comment and saved-view deletion resolve it — see RoadmapAccessService for why a
@@ -268,6 +277,7 @@ export class RoadmapOpportunityService {
             description: saved.description,
             reportedBugId: saved.id,
             repo,
+            severity: extra?.severity ?? null,
             status: BugFindingStatus.NEW,
           }),
         );
@@ -379,10 +389,18 @@ export class RoadmapOpportunityService {
     tenantId: string | null,
     dto: CreateBugReportDto,
   ): Promise<{ id: string; stage: RoadmapOpportunityStage }> {
+    // The staff form's structured answers become one brief (what happened,
+    // expected, steps, where, when, how often, impact, identifiers), the
+    // surface picks the repo where the reporter did not, and the impact
+    // rating becomes the severity — see bug-report-brief.util.ts.
     const created = await this.create(
       userId,
       {
-        description: dto.description,
+        description: composeBugReportDescription(
+          dto.description,
+          dto.context ?? null,
+          ROADMAP_LIMITS.DESCRIPTION_MAX,
+        ),
         type: RoadmapOpportunityType.BUG,
         productGoal: BUG_REPORT_DEFAULT_PRODUCT_GOAL,
       },
@@ -392,7 +410,8 @@ export class RoadmapOpportunityService {
           : RoadmapOpportunitySource.CONSUMER,
         tenantId,
         reporterContext: dto.context ?? null,
-        repo: dto.repo ?? null,
+        repo: dto.repo ?? repoForSurface(dto.context?.surface) ?? null,
+        severity: severityForImpact(dto.context?.impact),
       },
     );
     return { id: created.id, stage: created.stage };

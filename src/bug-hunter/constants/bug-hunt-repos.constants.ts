@@ -87,6 +87,13 @@ export const BUG_HUNT_REPOS: Record<string, BugHuntRepoConfig> = {
   // bot holds `write`, so `gh pr merge --admin` cannot land anything here. The
   // fix agent leaves a green PR and the admin tab offers the merge — see
   // `canBotMerge`.
+  //
+  // The "master requires a review" reason behind `canBotMerge: false` on
+  // ally-be and ally-web stopped being true during 2026-09/10: both masters
+  // now carry only required status checks. The flag stays false as POLICY
+  // (a person reads what lands on the two biggest repos), and the nightly
+  // protection-drift check (BugHunterProtectionDriftService, OPP-0759)
+  // raises a Problem notice whenever GitHub and this map disagree.
   'ally-be': {
     test: 'npm test',
     lint: 'npm run lint',

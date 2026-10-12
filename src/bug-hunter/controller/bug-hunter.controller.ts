@@ -57,36 +57,35 @@ import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHunterNotification } from '../entity/bug-hunter-notification.entity';
 import {
-  BugHunterSettingsDto,
+  AnswerBugFindingDto,
+  BugCaseBudgetDto,
+  BugFindingDetailDto,
+  BugFindingDto,
+  BugFindingMissDto,
+  BugFindingRefDto,
+  BugFixStepDto,
   BugHuntEventDto,
   BugHuntRunDetailDto,
   BugHuntRunDto,
-  TriggerBugHuntSweepDto,
-  BugFindingDto,
-  BugFindingMissDto,
-  BugCaseBudgetDto,
-  BugFindingDetailDto,
-  ListBugHuntRunsResponseDto,
-  BugHuntRunsSummaryDto,
-  BugHuntRunsSummaryQueryDto,
-  ListBugFindingsQueryDto,
-  ListBugFindingsResponseDto,
-  UpdateBugHunterSettingsDto,
-  AnswerBugFindingDto,
-  EditBugFindingDescriptionDto,
-  StartBugFixSessionDto,
-  BugFixStepDto,
-  BugHunterNotificationDto,
-  ListBugHunterNotificationsQueryDto,
-  ListBugHunterNotificationsResponseDto,
-  SetBugFindingStageDto,
-  BugFindingRefDto,
-  RejectBugFindingDto,
-  BugHunterMetricsDto,
-  BugHunterOperationsMetricsDto,
   BugHunterMetricsQueryDto,
   BugHunterModelSettingsDto,
+  BugHunterNotificationDto,
+  BugHunterOperationsMetricsDto,
+  BugHunterSettingsDto,
+  DecisionOwnersDto,
+  EditBugFindingDescriptionDto,
+  ListBugFindingsQueryDto,
+  ListBugFindingsResponseDto,
+  ListBugHuntRunsResponseDto,
+  ListBugHunterNotificationsQueryDto,
+  ListBugHunterNotificationsResponseDto,
+  RejectBugFindingDto,
+  SetBugFindingStageDto,
+  StartBugFixSessionDto,
+  TriggerBugHuntSweepDto,
   UpdateBugHunterModelSettingsDto,
+  UpdateBugHunterSettingsDto,
+  UpdateDecisionOwnerDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNTER_METRICS_DEFAULT_DAYS,
@@ -99,6 +98,7 @@ import { effectiveStage } from '../util/bug-finding-stage.util';
 import { BugCaseFile } from '../constants/bug-case-file';
 import { BugCaseFileService } from '../service/bug-case-file.service';
 import { withBudgetDefaults } from '../type/bug-case-budget.type';
+import { readBugFixStudy } from '../type/bug-fix-study.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
 import { independentVerificationOf } from '../type/bug-finding-verdict.type';
 import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
@@ -106,6 +106,14 @@ import {
   BugHunterScoreboardService,
   Scoreboard,
 } from '../service/bug-hunter-scoreboard.service';
+import {
+  BugHunterDecisionReplayService,
+  ReplayReport,
+} from '../service/bug-hunter-decision-replay.service';
+import {
+  BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+  BUG_HUNTER_DECISION_POINTS_FIXED,
+} from '../type/bug-hunter-orchestrator.type';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 import {
   BugHunterToday,
@@ -153,6 +161,7 @@ export class BugHunterController {
     private readonly telemetryService: BugHunterTelemetryService,
     private readonly evalService: BugHunterEvalService,
     private readonly memoryService: AgentMemoryService,
+    private readonly replayService: BugHunterDecisionReplayService,
   ) {}
 
   @Get('memory')
@@ -525,6 +534,58 @@ export class BugHunterController {
     return this.decisionService.listForRun(id);
   }
 
+  @Get('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Who owns each decision point — the rule or the model — as it stands, with the defaults and which points are fixed (OPP-0783)',
+  })
+  async getDecisionOwners(): Promise<DecisionOwnersDto> {
+    const settings = await this.bugHunterService.getSettings();
+    return {
+      owners: await this.replayService.effectiveOwners(),
+      defaults: BUG_HUNTER_DECISION_OWNER_DEFAULTS,
+      fixed: [...BUG_HUNTER_DECISION_POINTS_FIXED],
+      overrides: (settings.decisionOwners ?? {}) as Record<string, string>,
+    };
+  }
+
+  @Patch('decisions/owners')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Hand one decision point to the other owner, or back to its default with owner null (OPP-0783). D4 and D8 are fixed and refuse.',
+  })
+  async setDecisionOwner(
+    @Body() body: UpdateDecisionOwnerDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<DecisionOwnersDto> {
+    if (BUG_HUNTER_DECISION_POINTS_FIXED.includes(body.point)) {
+      throw new BadRequestException(
+        `${body.point} is fixed in code (the Verifier vendor and the merge gate) and cannot change owner.`,
+      );
+    }
+    await this.bugHunterService.setDecisionOwner(
+      body.point,
+      body.owner ?? null,
+      user.id,
+    );
+    return this.getDecisionOwners();
+  }
+
+  @Get('decisions/replay')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'The replay: per decision point, how often the owner and the shadow disagreed and who was right, and whether the owner should flip (OPP-0783)',
+  })
+  async getDecisionReplay(@Query('days') days?: string): Promise<ReplayReport> {
+    const window = Number(days);
+    return this.replayService.report(
+      Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
+    );
+  }
+
   @Get('scoreboard')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -781,31 +842,6 @@ export class BugHunterController {
     return this.todayService.today(zone);
   }
 
-  @Get('metrics')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
-  @ApiOperation({
-    summary:
-      'How often Bug Hunter is right, how fast, and at what cost (super-duper-admin)',
-    description:
-      'The finding-level funnel the tab could not compute in the browser: per source and ' +
-      'per repo, filed → judged → merged → released, with the accuracy rate, the decline ' +
-      'breakdown, stage latencies, the regression rate and cost per merged fix. ' +
-      'Findings are cohorted by DISCOVERY date so every rate shares one denominator, and ' +
-      'accuracy counts only findings somebody actually ruled on — see BugHunterMetricsService ' +
-      'for why both of those matter more here than anywhere else on the page. ' +
-      'Aggregated in Postgres over the whole window, unlike the run scorecard, whose ' +
-      'client-side newest-50 sum silently under-reports a busy month.',
-  })
-  @ApiResponse({ status: 200, type: BugHunterMetricsDto })
-  async getMetrics(
-    @Query() query: BugHunterMetricsQueryDto,
-  ): Promise<BugHunterMetricsDto> {
-    const metrics = await this.metricsService.report(
-      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
-    );
-    return metrics as unknown as BugHunterMetricsDto;
-  }
-
   @Patch('findings/:id/description')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -996,24 +1032,6 @@ export class BugHunterController {
       limit ? Number(limit) : undefined,
     );
     return { items: runs.map(toRunDto) };
-  }
-
-  @Get('runs/summary')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
-  @ApiOperation({
-    summary: 'Run scorecard totals for a window (super-duper-admin)',
-    description:
-      'Cost, outcomes, the found/merged/PR tallies and token counts over every run in the ' +
-      'window, plus a dense fourteen-day per-day series — aggregated in Postgres. The ' +
-      'scorecard used to sum these in the browser over GET /runs, which is capped at the ' +
-      'newest 50, so "7 days" and "30 days" showed the same figure once the platform ran ' +
-      'more than 50 shifts a week. Declared before runs/:id so "summary" is not read as an id.',
-  })
-  @ApiResponse({ status: 200, type: BugHuntRunsSummaryDto })
-  async summarizeRuns(
-    @Query() query: BugHuntRunsSummaryQueryDto,
-  ): Promise<BugHuntRunsSummaryDto> {
-    return this.bugHunterService.summarizeRuns(query.days, query.timeZone);
   }
 
   @Get('runs/:id')
@@ -1209,6 +1227,7 @@ export function toFindingDto(
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     independentVerification: independentVerificationOf(row.metadata),
+    pr: (row.metadata?.pr as BugFindingDto['pr'] | undefined) ?? null,
     latestFixVerdict: latestVerdictFor(
       row.metadata?.fixVerdicts,
       row.prUrl ?? null,
@@ -1217,6 +1236,10 @@ export function toFindingDto(
       row.metadata?.postmortem && typeof row.metadata.postmortem === 'object'
         ? (row.metadata.postmortem as Record<string, unknown>)
         : null,
+    study: readBugFixStudy(row.metadata) as unknown as Record<
+      string,
+      unknown
+    > | null,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
     engine: row.engine ?? null,

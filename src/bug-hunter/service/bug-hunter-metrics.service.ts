@@ -3,27 +3,13 @@ import { Injectable } from '@nestjs/common';
 import {
   BUG_FINDING_FINDER_ERROR_REASONS,
   BUG_FINDING_OPEN_STATUSES,
-  BugFindingDecisionReason,
-  BugFindingSource,
   BugFindingStatus,
 } from '../enum/bug-finding.enum';
 import {
   BugFindingRepository,
   DailyFiledCount,
   FindingOutcomeCount,
-  ReporterCount,
-  StageLatency,
 } from '../repository/bug-finding.repository';
-import {
-  BugHuntRunRepository,
-  DailyRunTokens,
-  ModelTokens,
-} from '../repository/bug-hunt-run.repository';
-import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
-import {
-  BugHuntEventRepository,
-  EscalationBreakdown,
-} from '../repository/bug-hunt-event.repository';
 
 /** One source's or one repo's funnel, from filed to live. */
 export interface FindingFunnel {
@@ -69,64 +55,6 @@ export interface FindingFunnel {
   reversalRate: number | null;
 }
 
-/** Why declines happened, counted. The improvement backlog's own input. */
-export interface DeclineBreakdown {
-  reason: BugFindingDecisionReason | 'not_recorded';
-  count: number;
-  /** True when this reason means the finder was wrong. */
-  finderError: boolean;
-}
-
-export interface BugHunterMetrics {
-  /** Days of history. Findings are cohorted by DISCOVERY date — see `outcomeCounts`. */
-  windowDays: number;
-  since: string;
-  /** Every finding filed in the window, child steps excluded. */
-  totalFiled: number;
-  bySource: FindingFunnel[];
-  byRepo: FindingFunnel[];
-  /** The same figures across everything, so a reader has one honest headline. */
-  overall: FindingFunnel;
-  declines: DeclineBreakdown[];
-  /**
-   * Escalations in the window, grouped by their exact summary text — see
-   * BugHuntEventRepository.escalationBreakdown's own doc for why the raw
-   * string is already a clean-enough grouping for 3 of the 4 escalation
-   * paths today.
-   */
-  escalations: EscalationBreakdown[];
-  latency: {
-    filedToDecided: StageLatency;
-    filedToMerged: StageLatency;
-    mergedToReleased: StageLatency;
-  };
-  regressions: {
-    /** New findings in the window that are a shipped fix coming back. */
-    filed: number;
-    /** Fixes shipped in the window that have since come back. */
-    fixesThatFailed: number;
-    /**
-     * `fixesThatFailed / merged` over the window. Null when nothing merged.
-     * This is the number that should gate any widening of the agent's
-     * autonomy — see the plan's staged-autonomy step.
-     */
-    rate: number | null;
-  };
-  cost: {
-    totalUsd: number;
-    runs: number;
-    fixSessionRuns: number;
-    fixSessionUsd: number;
-    /**
-     * Fix-session spend divided by fixes that actually merged in the window.
-     * Null when nothing merged, and deliberately NOT clamped: a figure larger
-     * than a whole sweep's cost means sessions are failing before they land,
-     * which is exactly what a reader should see.
-     */
-    perMergedFixUsd: number | null;
-  };
-}
-
 /** One calendar day of the operations view. Dense: every day in the window is present. */
 export interface OperationsDay {
   /** `YYYY-MM-DD` in the database's clock (UTC). */
@@ -139,163 +67,58 @@ export interface OperationsDay {
   declined: number;
   /** Of `filed`, how many are still new or pending approval. */
   undecided: number;
-  /** `filed` split by finding source. Sources with nothing that day are absent. */
-  bySource: Record<string, number>;
-  /** `filed` split by how hard the bug was to spot — see `difficultyOf`. Always all three keys. */
-  byDifficulty: Record<OperationsDifficulty, OperationsOutcomes>;
-  /** Model tokens spent by runs that STARTED that day, by trigger. */
-  tokens: Record<BugHuntTrigger, OperationsTokens>;
-  /**
-   * How much code the sweeps that started that day were shown. Null when no
-   * run that day reported breadth — telemetry shipped 2026-09-23 and fix
-   * sessions never post it — which is "not recorded", not zero.
-   */
-  breadth: OperationsBreadth | null;
-}
-
-/**
- * How hard a bug was to spot, derived rather than stored.
- *
- * Nothing on a finding says "easy" or "hard", and asking the agent to rate
- * its own findings would be unreliable. Two columns it does carry settle it:
- *
- *  - `easy`: `proven` — a failing test, a lint error, a recurring log or
- *    browser error. The tool output IS the bug; no judgement was needed.
- *  - `hard`: unproven and agent-found — a code-review read, a UX signal. The
- *    agent inferred it and two verifiers had to be convinced.
- *  - `reported`: a person filed it. The agent did not spot it at all, so it
- *    belongs in neither bucket and would distort both.
- */
-export type OperationsDifficulty = 'easy' | 'hard' | 'reported';
-
-export interface OperationsOutcomes {
-  filed: number;
-  accepted: number;
-  declined: number;
-  undecided: number;
-}
-
-export interface OperationsBreadth {
-  /** Runs that day that reported breadth at all. */
-  runs: number;
-  linesInScope: number;
-  filesInScope: number;
-  commits: number;
-  /** Runs that read the whole repo rather than the day's diff. */
-  deepRuns: number;
-}
-
-export interface OperationsTokens {
-  runs: number;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-}
-
-export interface OperationsSourceTotal {
-  source: string;
-  filed: number;
-  accepted: number;
-  declined: number;
-  undecided: number;
-}
-
-export interface OperationsDifficultyTotal extends OperationsOutcomes {
-  difficulty: OperationsDifficulty;
 }
 
 export interface BugHunterOperationsMetrics {
   windowDays: number;
   since: string;
   days: OperationsDay[];
-  /** Window totals per source, most filed first. */
-  bySource: OperationsSourceTotal[];
-  /** Window totals by difficulty. Always easy, hard, reported, in that order. */
-  byDifficulty: OperationsDifficultyTotal[];
-  /** Window breadth over every run that reported it, or null when none did. */
-  breadth: OperationsBreadth | null;
-  /** Window totals by who raised the bug. Always all three parties, zeros included. */
-  byReporter: ReporterCount[];
-  /** Window totals per model, most tokens first. Empty until the CI runner has reported usage. */
-  tokensByModel: ModelTokens[];
   totals: {
     filed: number;
     accepted: number;
     declined: number;
     undecided: number;
-    inputTokens: number;
-    outputTokens: number;
-    costUsd: number;
-    runs: number;
   };
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * What Bug Hunter has actually got right, how fast, and at what cost.
+ * Bug Hunter's volume, day by day — the one metric left on this service.
  *
- * ## Why this is a server-side endpoint and not more arithmetic in the tab
+ * Until 2026-10-12 this also computed `GET metrics`: the whole-window funnel
+ * (accuracy, declines, latencies, regressions, cost per fix) the admin's
+ * accuracy panel drew. That panel was retired on 5 October (OPP-0749) and the
+ * weekly trends on Analytics → Bug Agent carry its figures, folded per week
+ * by `BugAgentPerformanceAnalyticsService` with the funnel arithmetic that
+ * stays exported from here (`foldFunnel`, `groupFunnels`). The operations
+ * view was pruned the same day to the single card somebody watches: bugs
+ * filed per day beside where each cohort stands now.
  *
- * The admin tab already has a scorecard, and it is deliberately run-shaped:
- * `scorecard.ts` reads `GET /runs` and refuses to compute a finding-level
- * funnel, because `found` is tallied across the loaded runs while a finding's
- * status comes from the newest hundred findings — two different denominators,
- * so dividing one by the other produces a rate of nothing. That refusal was
- * right, and this is the other half of it: the funnel is computable, just not
- * in the browser, because it needs every row in the window rather than the
- * newest page of two different lists.
- *
- * The same reasoning fixes a real defect in the existing spend figure. That
- * one sums the newest 50 runs client-side, so a 30-day total silently becomes
- * a floor once the platform exceeds 50 shifts a month — five repos nightly
- * plus fix sessions passes that in under a fortnight, and it under-reports
- * exactly when the agent has been busiest. `costInWindow` aggregates in
- * Postgres with no window cap at all.
- *
- * ## The one claim this makes about accuracy, and its careful shape
+ * ## The one claim the funnel arithmetic makes about accuracy
  *
  * `accuracy = 1 - finderErrors / judged`. Two decisions are load-bearing:
  *
  *  - **Only finder-error declines count against it.** A team that declines
  *    nine real-but-minor findings has not been badly served; one that
- *    declines two hallucinated bugs has. Collapsing those would make good
- *    triage look like a broken agent — see BUG_FINDING_FINDER_ERROR_REASONS.
+ *    declines two hallucinated bugs has — see BUG_FINDING_FINDER_ERROR_REASONS.
  *  - **The denominator is findings somebody RULED ON**, not findings filed.
  *    An open bug is not evidence either way, and counting it as correct would
  *    make accuracy rise simply by nobody doing any triage.
  *
  * Where a reason was never recorded (every decline predating migration
  * 1946000000000) the row is reported as `reasonNotRecorded` and excluded from
- * the denominator rather than guessed at. A metric that quietly assumes the
- * missing half is the flattering half is worse than a gap.
- *
- * ## The one bias left in it, on purpose
- *
- * `approved` is inferred from a finding having reached a fix stage, because
- * APPROVED is a status a row passes THROUGH rather than rests in — counting
- * only rows sitting there would report almost none. The consequence is that a
- * bug a human approved and the agent then failed to fix lands in `failed`, not
- * `approved`, and so drops out of `judged` even though somebody did rule on
- * it. That makes the rate very slightly pessimistic.
- *
- * Left that way deliberately: correcting it needs an `approved_at` stamp the
- * table does not have, and of the two directions to be wrong in, a figure that
- * understates how right the agent has been is the one that cannot talk anybody
- * into giving it more autonomy than it has earned.
+ * the denominator rather than guessed at. `approved` is inferred from a
+ * finding having reached a fix stage, which makes the rate very slightly
+ * pessimistic — the direction that cannot talk anybody into widening the
+ * agent's autonomy.
  */
 @Injectable()
 export class BugHunterMetricsService {
-  constructor(
-    private readonly findingRepository: BugFindingRepository,
-    private readonly runRepository: BugHuntRunRepository,
-    private readonly eventRepository: BugHuntEventRepository,
-  ) {}
+  constructor(private readonly findingRepository: BugFindingRepository) {}
 
   /**
-   * The volume view: what gets filed each day, where it comes from, who
-   * raised it, and what the models cost — the operational counterpart to
-   * `report`, which judges outcomes.
+   * The volume view: what gets filed each day, beside where it stands now.
    *
    * Every volume figure is paired with where that cohort stands now
    * (`accepted` / `declined` / `undecided`). A bar of "12 bugs found" says
@@ -311,67 +134,10 @@ export class BugHunterMetricsService {
    */
   async operations(windowDays: number): Promise<BugHunterOperationsMetrics> {
     const since = new Date(Date.now() - windowDays * MS_PER_DAY);
-
-    const [filed, reporters, tokens, models] = await Promise.all([
-      this.findingRepository.dailyFiledCounts(since),
-      this.findingRepository.reporterCounts(since),
-      this.runRepository.dailyTokens(since),
-      this.runRepository.tokensByModel(since),
-    ]);
-
-    return buildOperations(windowDays, since, filed, reporters, tokens, models);
-  }
-
-  async report(windowDays: number): Promise<BugHunterMetrics> {
-    const since = new Date(Date.now() - windowDays * MS_PER_DAY);
-
-    const [rows, latency, regressionCounts, cost, escalations] =
-      await Promise.all([
-        this.findingRepository.outcomeCounts(since),
-        this.findingRepository.stageLatencies(since),
-        this.findingRepository.regressionCounts(since),
-        this.runRepository.costInWindow(since),
-        this.eventRepository.escalationBreakdown(since),
-      ]);
-
-    const bySource = groupFunnels(rows, (row) => row.source);
-    const byRepo = groupFunnels(rows, (row) => row.repo);
-    const overall = foldFunnel('all', rows);
-
-    return {
-      windowDays,
-      since: since.toISOString(),
-      totalFiled: overall.filed,
-      bySource,
-      byRepo,
-      overall,
-      declines: declineBreakdown(rows),
-      escalations,
-      latency,
-      regressions: {
-        filed: regressionCounts.regressions,
-        fixesThatFailed: regressionCounts.regressedFixes,
-        rate:
-          overall.merged === 0
-            ? null
-            : regressionCounts.regressedFixes / overall.merged,
-      },
-      cost: {
-        totalUsd: round(cost.costUsd),
-        runs: cost.runs,
-        fixSessionRuns: cost.fixSessionRuns,
-        fixSessionUsd: round(cost.fixSessionCostUsd),
-        perMergedFixUsd:
-          overall.merged === 0
-            ? null
-            : round(cost.fixSessionCostUsd / overall.merged),
-      },
-    };
+    const filed = await this.findingRepository.dailyFiledCounts(since);
+    return buildOperations(windowDays, since, filed);
   }
 }
-
-/** Two decimals. Cents matter on a per-run figure and nothing below them does. */
-const round = (value: number): number => Math.round(value * 100) / 100;
 
 const emptyFunnel = (key: string | null): FindingFunnel => ({
   key,
@@ -528,47 +294,7 @@ export const groupFunnels = (
     );
 };
 
-const declineBreakdown = (rows: FindingOutcomeCount[]): DeclineBreakdown[] => {
-  const counts = new Map<string, number>();
-  rows.forEach((row) => {
-    if (
-      row.status !== BugFindingStatus.DISMISSED &&
-      row.status !== BugFindingStatus.REJECTED
-    ) {
-      return;
-    }
-    const key = row.decisionReason ?? 'not_recorded';
-    counts.set(key, (counts.get(key) ?? 0) + Number(row.count));
-  });
-
-  return [...counts.entries()]
-    .map(([reason, count]) => ({
-      reason: reason as DeclineBreakdown['reason'],
-      count,
-      finderError: FINDER_ERROR_REASONS.has(reason),
-    }))
-    .sort((a, b) => b.count - a.count);
-};
-
 // ── operations view ───────────────────────────────────────────────────────
-
-const REPORTERS: ReporterCount['reporter'][] = ['agent', 'staff', 'consumer'];
-
-const emptyTokens = (): OperationsTokens => ({
-  runs: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  costUsd: 0,
-});
-
-const DIFFICULTIES: OperationsDifficulty[] = ['easy', 'hard', 'reported'];
-
-const emptyOutcomes = (): OperationsOutcomes => ({
-  filed: 0,
-  accepted: 0,
-  declined: 0,
-  undecided: 0,
-});
 
 const emptyDay = (date: string): OperationsDay => ({
   date,
@@ -576,80 +302,19 @@ const emptyDay = (date: string): OperationsDay => ({
   accepted: 0,
   declined: 0,
   undecided: 0,
-  bySource: {},
-  byDifficulty: {
-    easy: emptyOutcomes(),
-    hard: emptyOutcomes(),
-    reported: emptyOutcomes(),
-  },
-  tokens: {
-    [BugHuntTrigger.SCHEDULED]: emptyTokens(),
-    [BugHuntTrigger.MANUAL]: emptyTokens(),
-    [BugHuntTrigger.FIX_SESSION]: emptyTokens(),
-    [BugHuntTrigger.VERIFY_FIX]: emptyTokens(),
-    [BugHuntTrigger.VERIFY_FINDINGS]: emptyTokens(),
-  },
-  breadth: null,
 });
-
-/** See `OperationsDifficulty`. Exported for the spec. */
-export const difficultyOf = (
-  source: string,
-  proven: boolean,
-): OperationsDifficulty => {
-  if (source === BugFindingSource.REPORTED_BUG) return 'reported';
-  return proven ? 'easy' : 'hard';
-};
-
-const addOutcomes = (
-  into: OperationsOutcomes,
-  row: {
-    filed: unknown;
-    accepted: unknown;
-    declined: unknown;
-    undecided: unknown;
-  },
-): void => {
-  into.filed += Number(row.filed);
-  into.accepted += Number(row.accepted);
-  into.declined += Number(row.declined);
-  into.undecided += Number(row.undecided);
-};
-
-const addBreadth = (
-  into: OperationsBreadth | null,
-  row: DailyRunTokens,
-): OperationsBreadth | null => {
-  if (row.breadthRuns === 0) return into;
-  const target = into ?? {
-    runs: 0,
-    linesInScope: 0,
-    filesInScope: 0,
-    commits: 0,
-    deepRuns: 0,
-  };
-  target.runs += row.breadthRuns;
-  target.linesInScope += row.linesInScope;
-  target.filesInScope += row.filesInScope;
-  target.commits += row.commits;
-  target.deepRuns += row.deepRuns;
-  return target;
-};
 
 /** `YYYY-MM-DD` in UTC, matching the repositories' `to_char` on a UTC-stored timestamp. */
 const utcDay = (date: Date): string => date.toISOString().slice(0, 10);
 
 /**
- * Exported for the spec: pure arithmetic over the four repository results,
- * so the tests exercise exactly what the endpoint returns without a database.
+ * Exported for the spec: pure arithmetic over the repository's day rows, so
+ * the tests exercise exactly what the endpoint returns without a database.
  */
 export const buildOperations = (
   windowDays: number,
   since: Date,
   filed: DailyFiledCount[],
-  reporters: ReporterCount[],
-  tokens: DailyRunTokens[],
-  models: ModelTokens[],
   now: Date = new Date(),
 ): BugHunterOperationsMetrics => {
   // Dense day axis, oldest first, from the window's first day through today.
@@ -668,116 +333,27 @@ export const buildOperations = (
     const key = utcDay(new Date(time));
     days.set(key, emptyDay(key));
   }
-  // A row outside the axis (clock skew, a run stamped in the future) is
-  // dropped rather than given a day the chart does not draw.
-  const dayFor = (key: string): OperationsDay | undefined => days.get(key);
 
-  const sourceTotals = new Map<string, OperationsSourceTotal>();
-  const difficultyTotals: Record<OperationsDifficulty, OperationsOutcomes> = {
-    easy: emptyOutcomes(),
-    hard: emptyOutcomes(),
-    reported: emptyOutcomes(),
-  };
+  const totals = { filed: 0, accepted: 0, declined: 0, undecided: 0 };
   filed.forEach((row) => {
-    const day = dayFor(row.day);
-    const count = Number(row.filed);
-    // Postgres hands a boolean column back as a boolean, but a raw row from a
-    // mock or a driver quirk can carry the string — accept both.
-    const proven = row.proven === true || String(row.proven) === 'true';
-    const difficulty = difficultyOf(row.source, proven);
-    addOutcomes(difficultyTotals[difficulty], row);
-    if (day) {
-      addOutcomes(day, row);
-      day.bySource[row.source] = (day.bySource[row.source] ?? 0) + count;
-      addOutcomes(day.byDifficulty[difficulty], row);
+    // The repository still returns one row per (day, source, proven) cell;
+    // the view sums them. A row outside the axis (clock skew, a run stamped
+    // in the future) is dropped rather than given a day the chart does not
+    // draw — but it still counts in the window totals, which the takeaway
+    // reads.
+    const day = days.get(row.day);
+    for (const target of day ? [day, totals] : [totals]) {
+      target.filed += Number(row.filed);
+      target.accepted += Number(row.accepted);
+      target.declined += Number(row.declined);
+      target.undecided += Number(row.undecided);
     }
-    const total = sourceTotals.get(row.source) ?? {
-      source: row.source,
-      filed: 0,
-      accepted: 0,
-      declined: 0,
-      undecided: 0,
-    };
-    total.filed += count;
-    total.accepted += Number(row.accepted);
-    total.declined += Number(row.declined);
-    total.undecided += Number(row.undecided);
-    sourceTotals.set(row.source, total);
   });
-
-  let breadth: OperationsBreadth | null = null;
-  tokens.forEach((row) => {
-    breadth = addBreadth(breadth, row);
-    const day = dayFor(row.day);
-    if (!day) return;
-    const cell = day.tokens[row.trigger] ?? emptyTokens();
-    cell.runs += row.runs;
-    cell.inputTokens += row.inputTokens;
-    cell.outputTokens += row.outputTokens;
-    cell.costUsd += row.costUsd;
-    day.tokens[row.trigger] = cell;
-    day.breadth = addBreadth(day.breadth, row);
-  });
-
-  const totals = {
-    filed: 0,
-    accepted: 0,
-    declined: 0,
-    undecided: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    costUsd: 0,
-    runs: 0,
-  };
-  sourceTotals.forEach((total) => {
-    totals.filed += total.filed;
-    totals.accepted += total.accepted;
-    totals.declined += total.declined;
-    totals.undecided += total.undecided;
-  });
-  tokens.forEach((row) => {
-    totals.inputTokens += row.inputTokens;
-    totals.outputTokens += row.outputTokens;
-    totals.costUsd += row.costUsd;
-    totals.runs += row.runs;
-  });
-  totals.costUsd = round(totals.costUsd);
-  days.forEach((day) => {
-    Object.values(day.tokens).forEach((cell) => {
-      cell.costUsd = round(cell.costUsd);
-    });
-  });
-
-  // All three parties, always, so the chart never silently drops "consumer"
-  // on an install where nobody has used the report form yet — a zero there
-  // is a fact worth seeing.
-  const byReporter = REPORTERS.map(
-    (reporter) =>
-      reporters.find((row) => row.reporter === reporter) ?? {
-        reporter,
-        filed: 0,
-        accepted: 0,
-        declined: 0,
-      },
-  );
 
   return {
     windowDays,
     since: since.toISOString(),
     days: [...days.values()],
-    bySource: [...sourceTotals.values()].sort(
-      (a, b) => b.filed - a.filed || a.source.localeCompare(b.source),
-    ),
-    byDifficulty: DIFFICULTIES.map((difficulty) => ({
-      difficulty,
-      ...difficultyTotals[difficulty],
-    })),
-    breadth,
-    byReporter,
-    tokensByModel: [...models].sort(
-      (a, b) =>
-        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
-    ),
     totals,
   };
 };

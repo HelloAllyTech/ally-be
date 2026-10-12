@@ -24,6 +24,15 @@ export const BUG_HUNT_MAX_FIX_ATTEMPTS = 2;
  */
 export const BUG_HUNT_TRIVIAL_FIX_MAX_FILES = 2;
 export const BUG_HUNT_TRIVIAL_LINT_FIX_MAX_FILES = 10;
+/**
+ * The most a verified fix may change and still merge itself, on any trigger
+ * (OPP-0759). A sweep's own fixes stay under the stricter trivial-diff rule
+ * above; this is the ceiling for a fix session's self-merge after a Verifier
+ * pass. Anything wider is a reviewed PR. Files a person has to count are
+ * refused outright — see util/bug-person-only-paths.util.ts.
+ */
+export const BUG_HUNT_SELF_MERGE_MAX_FILES = 6;
+export const BUG_HUNT_SELF_MERGE_MAX_LINES = 300;
 
 /**
  * How long the fix agent's escalation-wait loop polls for an admin's answer
@@ -135,6 +144,7 @@ export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
   CLASSIFY_MISS: 'bug_hunter_classify_miss',
   DECIDE: 'bug_hunter_decide',
+  REVIEW_STUDY: 'bug_hunter_review_study',
 } as const;
 
 /**
@@ -158,6 +168,17 @@ export const BUG_HUNTER_CLASSIFY_MISS_TASK_ID = 'bug-hunter-miss-classifier';
 export const BUG_HUNTER_CLASSIFY_MISS_MODEL = 'gemini-2.5-flash';
 /** How far back the classifier looks for Bug Hunter's own findings on the repo when deciding whether it had already detected the bug. */
 export const BUG_HUNTER_CLASSIFY_MISS_LOOKBACK_DAYS = 21;
+
+/**
+ * The study review — a second model reads a fix session's study before any
+ * code changes (see BugFixStudy). Cheap and on the session's critical path:
+ * the session waits for the answer, so the fast tier and a small budget.
+ */
+export const BUG_HUNTER_REVIEW_STUDY_TASK_ID = 'bug-hunter-study-reviewer';
+export const BUG_HUNTER_REVIEW_STUDY_MODEL = 'gemini-2.5-flash';
+export const BUG_HUNTER_REVIEW_STUDY_MAX_TOKENS = 2048;
+/** Four is enough to say what is wrong; more is a rewrite, which is not the reviewer's job. */
+export const BUG_HUNTER_REVIEW_STUDY_MAX_CONCERNS = 4;
 /** Cap on the own-findings context shown to the classifier; newest first. */
 export const BUG_HUNTER_CLASSIFY_MISS_MAX_CONTEXT_FINDINGS = 40;
 

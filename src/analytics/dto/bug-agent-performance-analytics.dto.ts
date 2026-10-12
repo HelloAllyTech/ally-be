@@ -7,32 +7,6 @@ import {
 
 export class BugAgentPerformanceQueryDto extends AnalyticsWindowQueryDto {}
 
-export class PrecisionWeekDto {
-  @ApiProperty({ description: 'Calendar week start (yyyy-mm-dd, UTC Monday).' })
-  week!: string;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      '1 - finderErrors/judged for findings FILED this week. Null when nothing filed this week has been judged yet.',
-  })
-  accuracy!: number | null;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      "reversed/finderErrors for this week's filed findings. Expect recent weeks to read null or low — a decline needs 30+ days before it can be proven wrong, so this lags by design.",
-  })
-  reversalRate!: number | null;
-
-  @ApiProperty() filed!: number;
-  @ApiProperty({
-    description:
-      'Findings somebody actually ruled on — the denominator of accuracy.',
-  })
-  judged!: number;
-}
-
 export class SourceAccuracyDto {
   @ApiProperty() source!: string;
   @ApiProperty({ nullable: true }) accuracy!: number | null;
@@ -112,34 +86,73 @@ export class ReliabilityWeekDto {
   @ApiProperty() failed!: number;
 }
 
-export class FoundDayDto {
-  @ApiProperty({
-    description:
-      'Calendar day (yyyy-mm-dd, UTC — the clock the sweeps run on).',
-  })
-  day!: string;
-
-  @ApiProperty({
-    description:
-      'Distinct top-level findings filed that day, every source and repo together, excluding any since dismissed or rejected. A quiet day is a real 0.',
-  })
-  filed!: number;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      'Mean of `filed` over this day and the six before it, so the nightly spikes read as a trend. ' +
-      'Null for the first six days of the window, where there are not seven days to average.',
-  })
-  rollingAvg7!: number | null;
-}
-
 export class BugAgentPerformancePrecisionDto {
-  @ApiProperty({ type: [PrecisionWeekDto] }) weekly!: PrecisionWeekDto[];
   @ApiProperty({ type: [SourceAccuracyDto] }) bySource!: SourceAccuracyDto[];
 }
 
+/**
+ * The goal numbers (OPP-0778). Bug Hunter's goal is to find a bug before any
+ * staff member or live user does, so these say how often it did, how often a
+ * bug got past a sweep that had read the code, and how long a found bug took
+ * to fix.
+ */
+export class GoalWeekDto {
+  @ApiProperty() week!: string;
+  @ApiProperty({
+    description:
+      'Bugs people reported this week that were real (not declined as duplicate, not a bug or wrong repo). Every one is a bug Bug Hunter did not find first.',
+  })
+  humanReports!: number;
+  @ApiProperty({
+    description:
+      "Real bugs Bug Hunter's own senses filed this week (not declined as finder error).",
+  })
+  agentBugs!: number;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'agentBugs / (agentBugs + humanReports): the share of this week’s real bugs Bug Hunter found rather than a person. Null when nothing was found by anyone.',
+  })
+  firstFinderShare!: number | null;
+  @ApiProperty({
+    description:
+      'Human reports whose repo a sweep had completed within the previous 7 days — the bug sat in code Bug Hunter had read and passed.',
+  })
+  escapes!: number;
+  @ApiProperty({ nullable: true, description: 'escapes / humanReports.' })
+  escapeRate!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Median hours from a finding being filed to its fix merging, for fixes merged this week.',
+  })
+  timeToFixHoursMedian!: number | null;
+}
+
+export class GoalWindowDto {
+  @ApiProperty() humanReports!: number;
+  @ApiProperty() agentBugs!: number;
+  @ApiProperty({ nullable: true }) firstFinderShare!: number | null;
+  @ApiProperty() escapes!: number;
+  @ApiProperty({ nullable: true }) escapeRate!: number | null;
+  @ApiProperty({ nullable: true }) timeToFixHoursMedian!: number | null;
+  @ApiProperty({
+    type: Object,
+    description:
+      'Why people found bugs first, over the whole window: counts per miss reason from the miss classifier (no_sense, sense_missed, detected_declined, detected_not_fixed, not_a_miss) plus unclassified.',
+  })
+  missReasons!: Record<string, number>;
+}
+
+export class BugAgentGoalDto {
+  @ApiProperty({ type: [GoalWeekDto] }) weekly!: GoalWeekDto[];
+  @ApiProperty({ type: GoalWindowDto }) window!: GoalWindowDto;
+}
+
 export class BugAgentPerformanceResponseDto {
+  @ApiProperty({ type: BugAgentGoalDto })
+  goal!: BugAgentGoalDto;
+
   @ApiProperty({ type: BugAgentPerformancePrecisionDto })
   precision!: BugAgentPerformancePrecisionDto;
 
@@ -154,14 +167,6 @@ export class BugAgentPerformanceResponseDto {
 
   @ApiProperty({ type: [ReliabilityWeekDto] })
   reliability!: ReliabilityWeekDto[];
-
-  @ApiProperty({
-    type: [FoundDayDto],
-    description:
-      'Bugs found per day across all repos, oldest first, gap-filled — the one series on this ' +
-      'tab bucketed by day rather than week, because its job is to show the daily count falling.',
-  })
-  found!: FoundDayDto[];
 
   @ApiProperty({ type: AnalyticsWindowDto })
   window!: AnalyticsWindowDto;

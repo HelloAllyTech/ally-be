@@ -1,6 +1,10 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { BugHunterMode } from '../enum/bug-finding.enum';
+import {
+  DecisionOwner,
+  DecisionPoint,
+} from '../type/bug-hunter-orchestrator.type';
 
 /**
  * The bug-hunter kill switch. A SINGLETON row — `id` is pinned to 1 by a CHECK
@@ -26,4 +30,12 @@ export class BugHunterSettings extends BaseWithoutTenantEntity {
   /** Integer users.id with NO foreign key, per ally-be convention. Null until the first toggle. */
   @Column({ type: 'int', nullable: true })
   updatedBy?: number | null;
+
+  /**
+   * Per-point decision ownership (OPP-0783): D1..D8 → 'rule' | 'model'.
+   * Null or an absent point means `BUG_HUNTER_DECISION_OWNER_DEFAULTS`.
+   * D4 and D8 are fixed in code and ignore this.
+   */
+  @Column({ name: 'decision_owners', type: 'jsonb', nullable: true })
+  decisionOwners?: Partial<Record<DecisionPoint, DecisionOwner>> | null;
 }

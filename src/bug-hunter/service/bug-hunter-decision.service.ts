@@ -16,16 +16,15 @@ import {
   BUG_HUNTER_PROMPT_CODES,
 } from '../constants/bug-hunter.constants';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
+import { BugHunterSettingsRepository } from '../repository/bug-hunter-settings.repository';
+import {
+  BUG_HUNTER_DECISION_POINTS_FIXED,
+  DecisionOwner,
+  DecisionPoint,
+  OrchestratorVeto,
+} from '../type/bug-hunter-orchestrator.type';
 
-export type DecisionPoint =
-  | 'D1'
-  | 'D2'
-  | 'D3'
-  | 'D4'
-  | 'D5'
-  | 'D6'
-  | 'D7'
-  | 'D8';
+export type { DecisionPoint };
 
 export interface DecisionRequest<T> {
   point: DecisionPoint;
@@ -44,6 +43,16 @@ export interface DecisionRequest<T> {
   modelOwned: boolean;
   /** Accept only a pick that is on the menu; return the normalised pick or null. */
   validate: (raw: unknown) => T | null;
+  /**
+   * A budget or safety veto (OPP-0783): the rule acts on its pick, the model
+   * is not asked, and the row says which veto and why.
+   */
+  veto?: OrchestratorVeto;
+  /**
+   * A fixed point (D4, D8): no owner setting applies, the model is never
+   * asked, and this is the reason recorded.
+   */
+  fixed?: string;
 }
 
 export interface DecisionResult<T> {
@@ -76,16 +85,19 @@ export class BugHunterDecisionService {
     private readonly decisions: Repository<BugHuntDecision>,
     private readonly promptSharedService: PromptSharedService,
     private readonly llmCompletion: LlmCompletionService,
+    private readonly settingsRepository: BugHunterSettingsRepository,
   ) {}
 
   async decide<T>(req: DecisionRequest<T>): Promise<DecisionResult<T>> {
     const rulePick = req.rule();
+    const modelOwned = await this.resolveOwner(req);
+    const askModel = !req.veto && !req.fixed;
     let modelPick: T | null = null;
     let modelReason = '';
     let modelConfidence: number | null = null;
     let modelAnswered = false;
     try {
-      const answer = await this.askModel(req);
+      const answer = askModel ? await this.askModel(req) : null;
       if (answer) {
         modelAnswered = true;
         modelPick = req.validate(answer.pick);
@@ -105,15 +117,19 @@ export class BugHunterDecisionService {
       );
     }
 
-    const modelActs = req.modelOwned && modelPick !== null;
+    const modelActs = modelOwned && modelPick !== null;
     const pick = modelActs ? (modelPick as T) : rulePick;
     const owner: 'model' | 'rule' = modelActs ? 'model' : 'rule';
     const shadowPick: T | null = modelActs ? rulePick : modelPick;
-    const reason = modelActs
-      ? modelReason
-      : req.modelOwned
-        ? `Rule acted: the model ${modelAnswered ? 'picked off the menu' : 'did not answer'}.`
-        : 'Rule-owned point; the model shadows.';
+    const reason = req.veto
+      ? `Veto (${req.veto.by}): ${req.veto.reason}`
+      : req.fixed
+        ? `Fixed: ${req.fixed}`
+        : modelActs
+          ? modelReason
+          : modelOwned
+            ? `Rule acted: the model ${modelAnswered ? 'picked off the menu' : 'did not answer'}.`
+            : 'Rule-owned point; the model shadows.';
 
     const record = await this.decisions.save(
       this.decisions.create({
@@ -131,6 +147,7 @@ export class BugHunterDecisionService {
         inputs: {
           ...clipInputs(req.context),
           ...(modelConfidence != null ? { modelConfidence } : {}),
+          ...(req.veto ? { veto: req.veto } : {}),
         },
         model: modelAnswered ? BUG_HUNTER_DECIDE_MODEL : null,
       }),
@@ -143,6 +160,30 @@ export class BugHunterDecisionService {
       confidence: modelConfidence,
       record,
     };
+  }
+
+  /**
+   * Who acts on this point: a fixed point is always the rule; otherwise the
+   * admin's setting (`bug_hunter_settings.decision_owners`, OPP-0783) wins
+   * over what the caller asked for. Settings that cannot be read leave the
+   * caller's default.
+   */
+  private async resolveOwner<T>(req: DecisionRequest<T>): Promise<boolean> {
+    if (BUG_HUNTER_DECISION_POINTS_FIXED.includes(req.point)) return false;
+    try {
+      const settings = await this.settingsRepository.getSettings();
+      const owner = (
+        settings.decisionOwners as
+          | Partial<Record<DecisionPoint, DecisionOwner>>
+          | null
+          | undefined
+      )?.[req.point];
+      if (owner === 'model') return true;
+      if (owner === 'rule') return false;
+    } catch {
+      // Default below.
+    }
+    return req.modelOwned;
   }
 
   listForRun(runId: string): Promise<BugHuntDecision[]> {

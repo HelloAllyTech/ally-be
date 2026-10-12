@@ -105,6 +105,8 @@ describe('BugHunterController', () => {
       {} as never,
       // Memory service: no case here reads or writes the notebook.
       {} as never,
+      // Replay service: no case here reads decisions/replay or owners.
+      {} as never,
     );
   });
 

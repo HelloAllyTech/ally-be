@@ -73,6 +73,7 @@ describe('BugFixSessionService', () => {
     findRunSince: jest.Mock;
     getRun: jest.Mock;
     getPullRequest: jest.Mock;
+    listPullRequests: jest.Mock;
     deleteBranch: jest.Mock;
     findSuccessfulRunSince: jest.Mock;
     nextPatchTag: jest.Mock;
@@ -110,6 +111,7 @@ describe('BugFixSessionService', () => {
       findRunSince: jest.fn(),
       getRun: jest.fn(),
       getPullRequest: jest.fn(),
+      listPullRequests: jest.fn(),
       findSuccessfulRunSince: jest.fn().mockResolvedValue(null),
       nextPatchTag: jest.fn(),
       cancelRun: jest.fn().mockResolvedValue(undefined),
@@ -148,6 +150,7 @@ describe('BugFixSessionService', () => {
       repoClassifier as never,
       roadmapOpportunityRepository as never,
       budgetService as never,
+      { plan: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 
@@ -234,6 +237,56 @@ describe('BugFixSessionService', () => {
         expect.objectContaining({
           stage: BugHuntEventStage.SESSION_DISPATCHED,
           summary: expect.stringContaining('restarted with your answer'),
+        }),
+      );
+    });
+
+    it('retry (OPP-0783): writes why it is back, charges the budget, dispatches as the orchestrator and keeps the PR URL', async () => {
+      const row = findingRow({
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+        metadata: { orchestrator: { retries: 1 } },
+      });
+      bugFindingService.getOne.mockResolvedValue(row);
+
+      await service.retry(row, {
+        kind: 'verifier_fail',
+        move: 'escalate_model',
+        failures: ['suite: 3 tests red'],
+        prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/812',
+        decisionId: 'dec-D7',
+      });
+
+      expect(budgetService.assertCanStartSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'finding-1' }),
+        { force: false, userId: null },
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            retry: expect.objectContaining({
+              kind: 'verifier_fail',
+              move: 'escalate_model',
+              attempt: 2,
+              failures: ['suite: 3 tests red'],
+            }),
+          }),
+        }),
+      );
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+      // The refused PR is kept so the brief can say which branch to continue on.
+      expect(findingRepository.update).not.toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ prUrl: null }),
+      );
+      expect(bugHunterService.appendEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stage: BugHuntEventStage.SESSION_DISPATCHED,
+          summary: expect.stringContaining(
+            'sent back in by my orchestrator (escalate_model, attempt 2) after the Verifier refused the last PR',
+          ),
+          payload: expect.objectContaining({ startedBy: 'orchestrator' }),
         }),
       );
     });
@@ -756,6 +809,47 @@ describe('BugFixSessionService', () => {
       expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           summary: expect.stringMatching(/could never be found/i),
+        }),
+      );
+    });
+
+    it('recovers a successful run that failed to report in by finding its PR and moving to PR_OPENED', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: '99',
+                dispatchedAt: new Date(Date.now() - 70 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'success',
+      });
+      github.listPullRequests.mockResolvedValue([
+        {
+          htmlUrl: 'https://github.com/helloallytech/ally-be/pull/123',
+          headRef: 'bughunter/fix-finding-1',
+        },
+      ]);
+
+      await service.reconcile();
+
+      expect(github.listPullRequests).toHaveBeenCalledWith('ally-be');
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: 'https://github.com/helloallytech/ally-be/pull/123',
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.SESSION_RECOVERED,
+          summary: expect.stringContaining('Found pull request 123'),
         }),
       );
     });
@@ -1633,6 +1727,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       { classifyRepo: jest.fn() } as never,
       roadmapOpportunityRepository as never,
       budgetService as never,
+      { plan: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 

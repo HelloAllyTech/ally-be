@@ -3,6 +3,7 @@ import { BugCaseFile } from './bug-case-file';
 import { DATA_BEGIN, DATA_END, clipDossierText } from './bug-fix-dossier';
 import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
 import { BUG_FIX_VERDICT_REQUIRED_CHECKS } from '../type/bug-fix-verdict.type';
+import { renderBugFixStudyLines } from '../type/bug-fix-study.type';
 
 export interface VerifyFixPromptContext {
   finding: BugFinding;
@@ -56,6 +57,13 @@ export function buildVerifyFixPrompt({
 
   const attempts = caseFile.sessions.flatMap((s) => s.attempts);
   const lastAttempt = attempts[attempts.length - 1];
+  const study = caseFile.study;
+  const clientRepos =
+    repo === 'ally-be'
+      ? 'ally-web, ally-mobile'
+      : repo === 'ally-web' || repo === 'ally-mobile'
+        ? 'ally-be'
+        : 'the other Ally repos';
 
   return [
     `You are Bug Hunter's Verifier. A fix for one bug has been opened as a pull request in "${repo}" by a fix session${fixEngine ? ` running on ${fixEngine}` : ''}. You are running on ${engine} (${model}) — a different model, on purpose: you are the second opinion. Your job is to decide whether this PR fixes the bug it claims to fix, does nothing else, and is safe to merge. You do not fix anything, and you do not merge anything. You read, run, measure, and report.`,
@@ -84,6 +92,16 @@ export function buildVerifyFixPrompt({
       : '',
     DATA_END,
     ``,
+    ...(study
+      ? [
+          `## The fixer's study — claims to test, not facts`,
+          `Before it changed anything, the fix session wrote down how it understood the feature and what it planned. Check 8 compares the diff with this. It was written by the model whose work you are judging, so every line is a claim.`,
+          DATA_BEGIN('study'),
+          ...renderBugFixStudyLines(study),
+          DATA_END,
+          ``,
+        ]
+      : []),
     `## The pull request`,
     `${prUrl} (#${prNumber}). The checkout you start in is master. Get the PR: gh pr checkout ${prNumber}. Read its description and diff: gh pr view ${prNumber} --json title,body,files,headRefOid and gh pr diff ${prNumber}. Record the head sha from headRefOid; your verdict is about that commit.`,
     ``,
@@ -93,17 +111,20 @@ export function buildVerifyFixPrompt({
     `1. repro_at_base_fails. Find the regression test the PR adds or changes (a test file in the diff; the PR description names it). Check out the base commit (gh pr view ${prNumber} --json baseRefName; git checkout <base>), bring ONLY the test file(s) across from the head (git checkout <head sha> -- <test paths>), run just that test, and confirm it FAILS. Evidence: the command and the failing assertion. If the PR adds no test, this check is a fail: a fix with no reproduction is a guess.`,
     `2. repro_at_head_passes. Back on the head (git checkout <head sha>, discarding the test-only state: git checkout -- .), run the same test and confirm it PASSES. Evidence: the command and the pass line.`,
     `3. suite. Run ${verifyCommandsList(commands)} on the head. Everything green is ok=true. For each failure, decide whether the fix caused it: run that one failing test or lint target against the base commit. A failure that also fails on base is pre-existing — list it in evidence and do not count it against the fix. A failure that passes on base and fails on head is the fix's fault: ok=false, evidence names it.`,
-    `4. diff_vs_brief. Read every hunk of gh pr diff ${prNumber}. For each, ask: does the bug above require this change? Required hunks are fine. A hunk that renames, refactors, reformats, or touches a file the bug does not involve is scope creep: list it, and set scopeExceeded=true if any such hunk changes behaviour or data. Files under migrations, auth or permission gating, payments, or other security-sensitive paths are always worth a line in the evidence. ok=true only when every hunk is accounted for.`,
-    `5. data_file_counts. If the diff touches JSON, YAML, CSV, locale files, seeds, snapshots or generated files: count what matters before (base) and after (head) — keys per file, rows, blank or empty values, duplicates — with a command (for example jq 'paths | length' or grep -c '""'). A locale file gaining blank values, or losing keys, is ok=false. Skip with reason "no data files in the diff" when there are none.`,
+    `4. diff_vs_brief. Read every hunk of gh pr diff ${prNumber}. For each, ask: does the bug above require this change? Required hunks are fine. A hunk that renames, refactors, reformats, or touches a file the bug does not involve is scope creep: list it, and set scopeExceeded=true if any such hunk changes behaviour or data. Files under migrations, auth or permission gating, payments, or other security-sensitive paths are always worth a line in the evidence. Any file under .claude/ or .github/, a pr-body.md inside the repo, a lockfile, a snapshot, a seed or a locale file is scope creep by definition unless the bug IS that file: name it, and know that Bug Hunter fails the verdict on those files itself whatever you conclude. ok=true only when every hunk is accounted for.`,
+    `5. data_file_counts. If the diff touches JSON, YAML, CSV, locale files, seeds, snapshots or generated files: count what matters before (base) and after (head) — keys per file, rows, blank or empty values, duplicates — with a command (for example jq 'paths | length' or grep -c '""'). A locale file gaining blank values, or losing keys, is ok=false. On ally-web and ally-mobile, "node scripts/i18n-parity.mjs" is the count: run it at base and at head and quote both. A locale value identical to the English one where the other locales translate it is a copy, not a translation — name it. Skip with reason "no data files in the diff" when there are none.`,
     `6. blast_radius. For every exported function, class, component or route the diff changes, grep its callers (git grep -n "<symbol>") and read whether the change holds for each. Note callers the fix did not consider. ok=false only if you find a caller the change breaks; otherwise ok=true with the callers listed.`,
     isFrontend
       ? `7. what_user_sees. If a browser is available in this environment, start the app, load the affected route and describe what you see; attach a screenshot path. If no browser is available, skip with reason "no browser in CI" — do not pretend.`
       : `7. what_user_sees. This repo is a service, not a screen: skip with reason "backend repo" unless the fix changes something a client renders, in which case describe the response before and after with a curl or a test.`,
+    study
+      ? `8. study_followed. Compare the diff with the fixer's study above, three ways. (a) Files: the files the diff touches against "Files to change" — an extra file is scope creep for check 4; a named file left untouched means the plan was not carried out. (b) Mechanism: find the working sibling the study names (or find one yourself: the same kind of value shown correctly elsewhere in this repo) and confirm the fix changes the same kind of place. A locale key or a constant for text that lives in a database table an admin edits, a new header beside the parameter every other endpoint uses, or a second code path beside the existing one is ok=false whatever the tests say — it is the wrong fix, not a risky one. (c) Senders: anything the diff reads from a request — a header, a query parameter, a flag, a language code — must be sent by a client. git grep this repo; when the client is another Ally repo, run gh search code "<the header or parameter name>" --repo HelloAllyTech/<repo> for ${clientRepos}. No sender is ok=false: the bug will still show. Also ok=false when a hunk removes or hard-codes an accessibility attribute, a translation call, a permission check or an existing fallback to make the change compile or a test pass. Evidence names the sibling you compared against and the sender you found.`
+      : `8. study_followed. The case file has no study for this fix — the session predates the study step. Skip with reason "no study on file", but do its mechanism half inside check 4: find the same kind of value shown correctly elsewhere in this repo and confirm the fix changes the same kind of place (not a locale key for database content, not a header no client sends — check the sender with git grep, or gh search code --repo HelloAllyTech/<repo> for ${clientRepos}).`,
     ``,
     `## Report`,
     `First, report progress once: ${report('verify', 'verifier checks complete')}.`,
     `Then send the verdict. Bug Hunter computes pass or fail from your checks — a pass needs every required check ok and scopeExceeded=false — so report what you found, not what you hope:`,
-    `curl -sS -X PATCH "${findingUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"verdict":{"runId":"${runId}","prUrl":"${prUrl}","prHeadSha":"<head sha>","confidence":<0 to 1>,"scopeExceeded":<true|false>,"summary":"<one or two sentences a reviewer reads first>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>","checks":[{"name":"repro_at_base_fails","ok":<true|false>,"evidence":"<command and result>"},{"name":"repro_at_head_passes","ok":<true|false>,"evidence":"..."},{"name":"suite","ok":<true|false>,"evidence":"..."},{"name":"diff_vs_brief","ok":<true|false>,"evidence":"..."},{"name":"data_file_counts","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"blast_radius","ok":<true|false>,"evidence":"..."},{"name":"what_user_sees","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"}]}}'`,
+    `curl -sS -X PATCH "${findingUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"verdict":{"runId":"${runId}","prUrl":"${prUrl}","prHeadSha":"<head sha>","confidence":<0 to 1>,"scopeExceeded":<true|false>,"summary":"<one or two sentences a reviewer reads first>","wouldBeWrongIf":"<the one sentence that would have to be false for your verdict to be wrong>","checks":[{"name":"repro_at_base_fails","ok":<true|false>,"evidence":"<command and result>"},{"name":"repro_at_head_passes","ok":<true|false>,"evidence":"..."},{"name":"suite","ok":<true|false>,"evidence":"..."},{"name":"diff_vs_brief","ok":<true|false>,"evidence":"..."},{"name":"data_file_counts","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"blast_radius","ok":<true|false>,"evidence":"..."},{"name":"what_user_sees","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"},{"name":"study_followed","ok":<true|false>,"evidence":"...","skipped":"<reason, or omit>"}]}}'`,
     `Bug Hunter records the verdict on the bug's case file, posts it on the PR, and either merges (a pass, where this repo allows a self-merge), hands the PR to a person with your verdict attached, or asks for another fix attempt with your named failures.`,
     ``,
     `## Close`,

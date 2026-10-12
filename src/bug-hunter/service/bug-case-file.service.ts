@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from 'src/logger/logger.service';
 
+import { readBugFixStudy } from '../type/bug-fix-study.type';
 import { BugCaseFile, BugCaseVerdict } from '../constants/bug-case-file';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
@@ -89,6 +90,7 @@ export class BugCaseFileService {
         metadata.postmortem && typeof metadata.postmortem === 'object'
           ? (metadata.postmortem as Record<string, unknown>)
           : null,
+      study: readBugFixStudy(metadata),
       lineage: {
         regressionOf:
           typeof metadata.regressionOf === 'string'

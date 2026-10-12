@@ -16,6 +16,8 @@ import { BugCaseFileService } from '../../service/bug-case-file.service';
 import { BugVerifyFixService } from '../../service/bug-verify-fix.service';
 import { BugVerifyFindingsService } from '../../service/bug-verify-findings.service';
 import { BugHunterFinderService } from '../../service/bug-hunter-finder.service';
+import { BugFixStudyService } from '../../service/bug-fix-study.service';
+import { BugHunterOrchestratorService } from '../../service/bug-hunter-orchestrator.service';
 import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
@@ -70,6 +72,11 @@ describe('BugHunterPipelineController', () => {
         {
           provide: BugHuntRunRepository,
           useValue: { findOne: jest.fn(), save: jest.fn() },
+        },
+        { provide: BugFixStudyService, useValue: { record: jest.fn() } },
+        {
+          provide: BugHunterOrchestratorService,
+          useValue: { onSessionFailed: jest.fn() },
         },
       ],
     }).compile();

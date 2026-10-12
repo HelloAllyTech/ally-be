@@ -126,6 +126,7 @@ describe('BugHunterFinderService', () => {
         'production_log',
         'browser_errors',
         'reported_bugs',
+        'locale_parity',
       ]);
       expect(plan.model).toEqual({ engine: 'gemini', model: 'gemini-2.5-pro' });
       expect(plan.decisions).toEqual({ D1: 'dec-D1', D2: 'dec-D2' });
@@ -167,7 +168,7 @@ describe('BugHunterFinderService', () => {
       let plan = await service.ensurePlan(r);
       expect(plan.trigger).toBe('merge');
       expect(plan.light).toBe(true);
-      expect(plan.senses).toEqual(['code_review', 'tests']);
+      expect(plan.senses).toEqual(['code_review', 'tests', 'locale_parity']);
 
       decisions.decide = decideWith({
         D1: { pick: ['code_review', 'browser_errors', 'nonsense'] },
@@ -184,6 +185,35 @@ describe('BugHunterFinderService', () => {
         engine: 'opencode',
         model: 'gemini-2.5-pro',
       });
+    });
+
+    it('offers locale_parity only where locale files exist, and drops a model pick of it elsewhere (OPP-0782)', async () => {
+      decisions.decide = decideWith({
+        D1: { pick: ['code_review', 'locale_parity'] },
+      });
+      const be = await service.ensurePlan(
+        run({
+          repo: 'ally-be',
+          trigger: BugHuntTrigger.MANUAL,
+          metadata: { finderTrigger: 'merge', finderLight: true },
+        }),
+      );
+      expect(be.senses).toEqual(['code_review']);
+      const d1 = decisions.decide.mock.calls.find(
+        ([req]) => req.point === 'D1',
+      )![0];
+      expect(d1.menu).not.toContain('locale_parity');
+      expect(d1.context.hasLocaleFiles).toBe(false);
+
+      decisions.decide = decideWith();
+      const mobile = await service.ensurePlan(
+        run({
+          repo: 'ally-mobile',
+          trigger: BugHuntTrigger.MANUAL,
+          metadata: { finderTrigger: 'merge', finderLight: true },
+        }),
+      );
+      expect(mobile.senses).toEqual(['code_review', 'tests', 'locale_parity']);
     });
   });
 

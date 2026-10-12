@@ -35,6 +35,7 @@ export const BUG_FINDING_EXISTING_SENSES = [
   'ux_signal',
   'code_review',
   'tests',
+  'locale_parity',
 ] as const;
 
 /** Senses Bug Hunter does not have yet. A `no_sense` miss names one of these. */
@@ -44,7 +45,6 @@ export const BUG_FINDING_MISSING_SENSES = [
   'voice_qa',
   'api_contract',
   'visual',
-  'locale_parity',
   'mobile_crash',
   'static_content',
   'llm_output_eval',

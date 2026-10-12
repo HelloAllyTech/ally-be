@@ -4,6 +4,7 @@ import { LanguagesRepository } from '../repository/languages.repository';
 import { DEFAULT_LANGUAGE_CODE } from '../constants/language.constant';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
+import { ActiveVoiceMap } from 'src/common/util/language-availability.util';
 
 @Injectable()
 export class SharedLanguageService {
@@ -27,6 +28,22 @@ export class SharedLanguageService {
    */
   async getLanguagesByIds(ids: number[]): Promise<Languages[]> {
     return this.languagesRepository.getLanguagesById(ids);
+  }
+
+  /**
+   * The voices among `voiceIds` that Studio would still offer: existing,
+   * active catalog voices, keyed by id with the language each belongs to.
+   * Learner-facing `availableLanguages` derivations pass this to
+   * getLanguageVoiceIds so a scenario only advertises the languages Studio
+   * shows as configured, never one left behind by a retired voice.
+   */
+  async getActiveScenarioVoices(voiceIds: string[]): Promise<ActiveVoiceMap> {
+    const voices = voiceIds.length
+      ? await this.languagesRepository.getActiveScenarioVoices([
+          ...new Set(voiceIds),
+        ])
+      : [];
+    return new Map(voices.map((voice) => [voice.id, voice.languageId]));
   }
 
   async getValidLanguages(languageIds: number[]) {

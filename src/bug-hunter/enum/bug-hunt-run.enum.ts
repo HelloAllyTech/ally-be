@@ -18,6 +18,13 @@ export enum BugHuntTrigger {
    */
   VERIFY_FINDINGS = 'verify_findings',
   /**
+   * The PR review sense (OPP-0785): a read-only pass over one open pull
+   * request a person opened, on its head, filing findings linked to the PR.
+   * Judged by the finding Verifier; a confirmed finding becomes a review
+   * comment, never a blocking check.
+   */
+  PR_REVIEW = 'pr_review',
+  /**
    * One admin, one bug, one click — a run scoped to a single finding, started
    * by `POST findings/:id/fix-session` rather than by a repo-wide sweep. It
    * skips Discover and Verify entirely (the bug is already known and already

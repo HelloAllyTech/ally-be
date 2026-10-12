@@ -5,6 +5,7 @@ import { BugHunterDecisionService } from '../bug-hunter-decision.service';
 import { BugHuntDecision } from '../../entity/bug-hunt-decision.entity';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
+import { BugHunterSettingsRepository } from '../../repository/bug-hunter-settings.repository';
 
 const textResponse = (json: unknown) => ({ text: JSON.stringify(json) });
 
@@ -12,6 +13,7 @@ describe('BugHunterDecisionService', () => {
   let service: BugHunterDecisionService;
   let mockComplete: jest.Mock;
   let saved: Record<string, unknown>[];
+  let settingsRow: { decisionOwners: Record<string, string> | null };
 
   const senses = ['tests', 'code_review', 'production_log'] as const;
   const request = (modelOwned: boolean) => ({
@@ -34,6 +36,7 @@ describe('BugHunterDecisionService', () => {
   beforeEach(async () => {
     mockComplete = jest.fn();
     saved = [];
+    settingsRow = { decisionOwners: null };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BugHunterDecisionService,
@@ -55,6 +58,10 @@ describe('BugHunterDecisionService', () => {
           },
         },
         { provide: LlmCompletionService, useValue: { complete: mockComplete } },
+        {
+          provide: BugHunterSettingsRepository,
+          useValue: { getSettings: () => Promise.resolve(settingsRow) },
+        },
       ],
     }).compile();
     service = module.get(BugHunterDecisionService);
@@ -87,6 +94,60 @@ describe('BugHunterDecisionService', () => {
     });
     // long inputs are clipped before storage
     expect((saved[0].inputs as { long: string }).long.length).toBeLessThan(410);
+  });
+
+  it('a veto lets the rule act without asking the model, and the row says which veto (OPP-0783)', async () => {
+    const result = await service.decide({
+      ...request(true),
+      rule: () => ['tests'],
+      veto: { by: 'budget', reason: '2 of 2 sessions used' },
+    });
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      pick: ['tests'],
+      owner: 'rule',
+      shadowPick: null,
+      reason: 'Veto (budget): 2 of 2 sessions used',
+    });
+    expect(saved[0]).toMatchObject({
+      inputs: expect.objectContaining({
+        veto: { by: 'budget', reason: '2 of 2 sessions used' },
+      }),
+      model: null,
+    });
+  });
+
+  it('a fixed point records the rule and its reason, never asking the model, whatever the settings say', async () => {
+    settingsRow.decisionOwners = { D4: 'model' };
+    const result = await service.decide({
+      ...request(true),
+      point: 'D4',
+      rule: () => ['gemini'],
+      fixed: 'the other vendor reads the fix',
+    });
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      pick: ['gemini'],
+      owner: 'rule',
+      reason: 'Fixed: the other vendor reads the fix',
+    });
+  });
+
+  it("an admin's owner setting wins over the caller's default, in both directions (OPP-0783)", async () => {
+    mockComplete.mockResolvedValue(
+      textResponse({ pick: ['code_review'], confidence: 0.9, reason: 'diff' }),
+    );
+    settingsRow.decisionOwners = { D1: 'rule' };
+    let result = await service.decide(request(true));
+    expect(result).toMatchObject({
+      pick: ['code_review', 'tests'],
+      owner: 'rule',
+      shadowPick: ['code_review'],
+    });
+
+    settingsRow.decisionOwners = { D1: 'model' };
+    result = await service.decide(request(false));
+    expect(result).toMatchObject({ pick: ['code_review'], owner: 'model' });
   });
 
   it('lets the rule act when the model picks off the menu, and says so', async () => {

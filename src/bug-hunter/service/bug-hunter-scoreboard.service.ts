@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
+import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import {
   BugFindingDecisionReason,
   BugFindingStatus,
 } from '../enum/bug-finding.enum';
-import { BugHunterSense, senseOfSource } from '../type/bug-hunter-finder.type';
+import { BugHunterSense, senseOfFinding } from '../type/bug-hunter-finder.type';
 
 /** One cell: what a (sense, model) produced on a repo in the window. */
 export interface ScoreboardRow {
@@ -40,6 +41,20 @@ export interface Scoreboard {
     string,
     { filed: number; accepted: number; declined: number; pending: number }
   >;
+  /**
+   * What each engine/model did as a FIXER on this repo (OPP-0783, read by
+   * D6): sessions run, fixes that merged or released, sessions that failed,
+   * and the Verifier's pass/fail verdicts on their PRs. Keyed `engine/model`.
+   */
+  fixByModel: Record<string, ScoreboardFixRow>;
+}
+
+export interface ScoreboardFixRow {
+  sessions: number;
+  merged: number;
+  failed: number;
+  passVerdicts: number;
+  failVerdicts: number;
 }
 
 const ACCEPTED: ReadonlySet<string> = new Set([
@@ -54,6 +69,11 @@ const ACCEPTED: ReadonlySet<string> = new Set([
   BugFindingStatus.RELEASE_FAILED,
   BugFindingStatus.BLOCKED,
   BugFindingStatus.COORDINATING,
+]);
+const SHIPPED: ReadonlySet<string> = new Set([
+  BugFindingStatus.MERGED,
+  BugFindingStatus.RELEASING,
+  BugFindingStatus.RELEASED,
 ]);
 const FINDER_ERROR: ReadonlySet<string> = new Set([
   BugFindingDecisionReason.NOT_A_BUG,
@@ -103,6 +123,8 @@ export class BugHunterScoreboardService {
       : [];
     const runById = new Map(runRows.map((r) => [r.id, r]));
 
+    const fixByModel = await this.fixByModel(repo, since);
+
     const cells = new Map<string, ScoreboardRow>();
     const bySense: Scoreboard['bySense'] = {};
     const byModel: Scoreboard['byModel'] = {};
@@ -137,7 +159,7 @@ export class BugHunterScoreboardService {
     };
 
     for (const f of rows) {
-      const sense = senseOfSource(f.source);
+      const sense = senseOfFinding(f);
       if (!sense) continue;
       const run = f.runId ? runById.get(f.runId) : undefined;
       const engine = run?.engine ?? null;
@@ -180,6 +202,57 @@ export class BugHunterScoreboardService {
       rows: [...cells.values()].sort((a, b) => b.filed - a.filed),
       bySense,
       byModel,
+      fixByModel,
     };
+  }
+
+  /** Fix sessions on the repo in the window, folded by the engine/model that ran them. */
+  private async fixByModel(
+    repo: string,
+    since: Date,
+  ): Promise<Record<string, ScoreboardFixRow>> {
+    const sessions = await this.runs.find({
+      where: {
+        repo,
+        trigger: BugHuntTrigger.FIX_SESSION,
+        createdAt: MoreThanOrEqual(since),
+      },
+      select: ['id', 'engine', 'model', 'status'],
+    });
+    if (!sessions.length) return {};
+    const ids = sessions.map((s) => s.id);
+    const worked = await this.findings.find({
+      where: { runId: In(ids) },
+      select: ['id', 'runId', 'status', 'metadata'],
+    });
+    const byRun = new Map(worked.map((f) => [f.runId, f]));
+    const out: Record<string, ScoreboardFixRow> = {};
+    for (const run of sessions) {
+      const key = `${run.engine ?? '-'}/${run.model ?? '-'}`;
+      const row = (out[key] ??= {
+        sessions: 0,
+        merged: 0,
+        failed: 0,
+        passVerdicts: 0,
+        failVerdicts: 0,
+      });
+      row.sessions += 1;
+      const f = byRun.get(run.id);
+      if (run.status === BugHuntRunStatus.FAILED) {
+        row.failed += 1;
+      } else if (f?.status === BugFindingStatus.FAILED) {
+        row.failed += 1;
+      }
+      if (!f) continue;
+      if (SHIPPED.has(f.status)) row.merged += 1;
+      const verdicts = Array.isArray(f.metadata?.fixVerdicts)
+        ? (f.metadata!.fixVerdicts as { verdict?: string }[])
+        : [];
+      for (const v of verdicts) {
+        if (v.verdict === 'pass') row.passVerdicts += 1;
+        else if (v.verdict === 'fail') row.failVerdicts += 1;
+      }
+    }
+    return out;
   }
 }
