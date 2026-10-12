@@ -25,15 +25,16 @@ const opencodeCase = (): string => {
 describe('opencode engine invocation', () => {
   /**
    * Each call site names the opencode agent it runs as: `builder` for the
-   * phases that write, `reviewer` for the read-only ones, whose denied tools
-   * are never offered at all. Anything else is refused rather than run with
-   * the defaults.
+   * phases that write, `reviewer` for the read-only ones, and `lead` for the
+   * coding lead that directs the builder but may not edit — denied tools are
+   * never offered at all. Anything else is refused rather than run with the
+   * defaults.
    */
   it('runs as the agent the call site names, and only a known one', () => {
     const body = opencodeCase();
 
     expect(body).toMatch(/agent="\$4"/);
-    expect(body).toMatch(/builder \| reviewer\) ;;/);
+    expect(body).toMatch(/builder \| reviewer \| lead\) ;;/);
     expect(body).toMatch(/--agent "\$agent"/);
   });
 
