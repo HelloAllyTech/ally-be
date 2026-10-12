@@ -1,9 +1,11 @@
+import { LoggerService } from 'src/logger/logger.service';
 import {
   BadRequestException,
   Body,
   Controller,
   Get,
   Header,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -119,6 +121,10 @@ import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 @UseGuards(ApiAuthGuard)
 @ApiSecurity('api-key')
 export class BugHunterPipelineController {
+  private readonly logger = LoggerService.getInstance(
+    BugHunterPipelineController.name,
+  );
+
   constructor(
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
@@ -421,7 +427,16 @@ export class BugHunterPipelineController {
   async getFindingForPipeline(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<BugFindingDto> {
-    return toFindingDto(await this.bugFindingService.getOne(id));
+    try {
+      return toFindingDto(await this.bugFindingService.getOne(id));
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        this.logger.warn(
+          `Finding ${id} not found, which may be expected if the client is racing a delete.`,
+        );
+      }
+      throw error;
+    }
   }
 
   @Get('pipeline/repo-commands')
