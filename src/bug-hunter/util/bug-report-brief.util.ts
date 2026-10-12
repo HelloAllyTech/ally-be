@@ -150,16 +150,25 @@ export function composeBugReportDescription(
 
   if (!lines.length) return happened.slice(0, max);
   const tail = `\n\n${lines.join('\n')}`;
-  // The reporter's own words give way last: trim the labelled lines before them.
-  let body = happened;
-  let out = `${body}${tail}`;
-  if (out.length > max) {
-    const roomForBody = Math.max(200, max - tail.length);
-    body =
-      happened.length > roomForBody
-        ? `${happened.slice(0, roomForBody - 1)}…`
-        : happened;
-    out = `${body}${tail}`;
+  // The reporter's own words are the brief and are never shortened. When
+  // the limit is too small for words plus labelled lines, the longest line
+  // (steps, expected, identifiers) is shortened to what fits, and a line too
+  // short to shorten is dropped — so the short lines (where, when, impact)
+  // survive. In practice the finding's limit (5,000) fits everything; this
+  // path exists for a caller composing into a tighter one.
+  let out = `${happened}${tail}`;
+  while (out.length > max && lines.length) {
+    const over = out.length - max;
+    let idx = 0;
+    lines.forEach((l, i) => {
+      if (l.length > lines[idx].length) idx = i;
+    });
+    if (lines[idx].length - over > 40) {
+      lines[idx] = `${lines[idx].slice(0, lines[idx].length - over - 1)}…`;
+    } else {
+      lines.splice(idx, 1);
+    }
+    out = lines.length ? `${happened}\n\n${lines.join('\n')}` : happened;
   }
   return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 }

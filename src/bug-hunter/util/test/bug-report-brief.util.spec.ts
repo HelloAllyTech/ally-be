@@ -72,7 +72,9 @@ describe('bug report brief', () => {
     expect(brief).toContain('Reported from: /bugs');
     expect(brief).not.toContain('How often');
     expect(brief).not.toContain('Impact');
-    // the reporter's words were shortened to make room, but kept most of the space
+    // the reporter's words are never shortened: the longest labelled line is
+    expect(brief.startsWith('x'.repeat(900))).toBe(true);
+    expect(brief).toMatch(/Expected: y+…/);
     expect(brief.indexOf('Expected:')).toBeGreaterThan(500);
 
     expect(composeBugReportDescription('plain', null, 1000)).toBe('plain');

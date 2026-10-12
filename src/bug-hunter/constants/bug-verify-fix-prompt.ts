@@ -87,7 +87,7 @@ export function buildVerifyFixPrompt({
     `## The bug`,
     DATA_BEGIN('bug'),
     `Title: ${clipDossierText(finding.title, 200)}`,
-    `Description: ${clipDossierText(finding.description, 1200)}`,
+    `Description: ${clipDossierText(finding.description, 4000)}`,
     finding.file
       ? `File named by the finder: ${finding.file}${finding.symbol ? ` (${finding.symbol})` : ''}`
       : '',

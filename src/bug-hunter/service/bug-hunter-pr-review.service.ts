@@ -201,7 +201,7 @@ export class BugHunterPrReviewService {
       `### Bug Hunter: ${clipDossierText(finding.title, 160)}`,
       `_Found reviewing this PR at ${pr.headSha.slice(0, 7)}; confirmed by an independent Verifier${confirmed?.by.engine ? ` on ${confirmed.by.engine}` : ''}. A comment, not a check: merge is your call._`,
       ``,
-      clipDossierText(finding.description, 1200),
+      clipDossierText(finding.description, 4000),
       finding.evidence
         ? `\n**Evidence**\n\`\`\`\n${clipDossierText(finding.evidence, 800)}\n\`\`\``
         : '',

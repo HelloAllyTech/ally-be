@@ -63,7 +63,7 @@ export function buildVerifyFindingsPrompt({
         // Up to 1,200 rather than 900: a staff report's brief is up to 1,000
         // characters with its identifiers and impact on the LAST lines, and a
         // verifier that never saw them judged a different bug.
-        `   Description: ${clipDossierText(f.description, 1200)}`,
+        `   Description: ${clipDossierText(f.description, 4000)}`,
         f.file
           ? `   Where the finder pointed: ${f.file}${f.symbol ? ` (${f.symbol})` : ''}`
           : '',
@@ -162,7 +162,7 @@ function buildHeldCheckPrompt(
       return [
         `${i + 1}. id=${f.id}`,
         `   Title: ${clipDossierText(f.title, 200)}`,
-        `   Report: ${clipDossierText(f.description, 1200)}`,
+        `   Report: ${clipDossierText(f.description, 4000)}`,
         steps ? `   The reporter's steps: ${clipDossierText(steps, 500)}` : '',
         f.prUrl ? `   The fix that was released: ${f.prUrl}` : '',
       ]

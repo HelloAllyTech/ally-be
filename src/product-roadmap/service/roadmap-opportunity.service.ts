@@ -19,6 +19,7 @@ import {
 } from 'src/bug-hunter/enum/bug-finding.enum';
 import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
 import { BugHunterMissClassifierService } from 'src/bug-hunter/service/bug-hunter-miss-classifier.service';
+import { BUG_FINDING_DESCRIPTION_MAX_LENGTH } from 'src/bug-hunter/constants/bug-hunter.constants';
 import {
   composeBugReportDescription,
   repoForSurface,
@@ -50,7 +51,6 @@ import {
   ROADMAP_READINESS_REQUIRE_TOKEN,
   ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
   ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
-  ROADMAP_LIMITS,
 } from '../constants/product-roadmap.constants';
 import {
   CreateBugReportDto,
@@ -396,10 +396,15 @@ export class RoadmapOpportunityService {
     const created = await this.create(
       userId,
       {
+        // The form caps the reporter's own words at ROADMAP_LIMITS.DESCRIPTION_MAX;
+        // the brief adds the structured answers after them, so it is composed
+        // into the finding's limit. Composing into the form's limit clipped a
+        // long report to its first two hundred characters (2026-10-12), which
+        // is the part every stage reads first.
         description: composeBugReportDescription(
           dto.description,
           dto.context ?? null,
-          ROADMAP_LIMITS.DESCRIPTION_MAX,
+          BUG_FINDING_DESCRIPTION_MAX_LENGTH,
         ),
         type: RoadmapOpportunityType.BUG,
         productGoal: BUG_REPORT_DEFAULT_PRODUCT_GOAL,

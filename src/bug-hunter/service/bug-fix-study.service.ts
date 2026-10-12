@@ -140,7 +140,7 @@ export class BugFixStudyService {
         `Bug in ${finding.repo ?? 'an unknown repo'}${finding.file ? `, filed against ${finding.file}` : ''}:`,
         `"""`,
         `${finding.title}`,
-        clipDossierText(finding.description, 1500),
+        clipDossierText(finding.description, 4000),
         `"""`,
         ``,
         `The session's study:`,
