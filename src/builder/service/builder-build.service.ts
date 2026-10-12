@@ -147,6 +147,23 @@ export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
 ];
 
 /**
+ * The provider an engine's usage row is filed under, from the model id.
+ *
+ * opencode may report usage under its own `provider/model` form
+ * (`google/gemini-2.5-pro`), which the prefix match does not recognise, and
+ * the fallback used to be a literal 'anthropic' — so Gemini spend could land
+ * under Claude. The id is read without that prefix, and an id nothing
+ * recognises is filed as 'unknown' rather than as some vendor.
+ */
+export const usageProviderFor = (model: string): string => {
+  const bare =
+    model.includes('/') && !model.startsWith('models/')
+      ? model.slice(model.indexOf('/') + 1)
+      : model;
+  return providerForModel(bare) ?? providerForModel(model) ?? 'unknown';
+};
+
+/**
  * The gate verdicts that describe the tree as it stands: one per (repo, kind)
  * from the newest gate round only.
  *
@@ -2049,9 +2066,7 @@ export class BuilderBuildService {
       if (!input && !output && !cacheRead && !cacheWrite) continue;
 
       await this.llmUsage.record({
-        // From the model id, not a literal: opencode runs
-        // Gemini, so a hardcoded 'anthropic' filed Gemini spend under Claude.
-        provider: providerForModel(String(model)) ?? 'anthropic',
+        provider: usageProviderFor(String(model)),
         model: String(model),
         task: LlmTask.BUILDER_BUILD,
         promptTokens: input,
