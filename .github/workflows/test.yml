@@ -156,6 +156,11 @@ jobs:
       - name: MCP reporting server
         run: node scripts/builder/test/builder-mcp.test.mjs
 
+      # The agent's node/npm/npx follow the repo's .nvmrc. Run on its default
+      # Node, ally-web's specs fail for reasons that are not the change.
+      - name: Agent Node per repo
+        run: bash scripts/builder/test/node-shims.test.sh
+
       - name: Engine loop dry run
         run: bash scripts/builder/test/loop-dryrun.sh
 

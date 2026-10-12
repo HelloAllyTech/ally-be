@@ -116,25 +116,58 @@ MCP_SERVER="${HERE}/builder-mcp.mjs"
 # Each run_agent call names the agent it runs as. `revert_stray_writes` stays
 # regardless: a guarantee this pipeline depends on is not left resting on one
 # vendor's config being read the way its documentation says.
-cat > opencode.json <<MCPEOF
+#
+# instructions: every cloned repo's AGENTS.md, loaded at the start of every
+# phase. Without it opencode attaches a repo's AGENTS.md only when its `read`
+# tool first opens a file in that repo — `grep` and `glob` never do — so a
+# phase could finish without ever seeing the rules of the repo it edited.
+#
+# formatter: format-file.sh runs the edited file's own repo's prettier. The
+# built-in prettier formatter looks for a package.json above the working
+# directory, which here is the workspace holding repos/, so it never ran; it is
+# disabled outright so the two can never both format a file.
+#
+# steps: a turn cap per agent. On its last step opencode withholds the tools
+# and asks for a text answer, so a phase that has stopped making progress ends
+# with a summary instead of running until the wall clock kills it.
+INSTRUCTIONS_JSON="$(
+  for dir in repos/*/; do
+    if [ -f "${dir}AGENTS.md" ]; then printf '%s\n' "${PWD}/${dir}AGENTS.md"; fi
+  done | jq -R . | jq -sc .
+)"
+jq -n \
+  --arg mcp "$MCP_SERVER" \
+  --arg helper_env "${BUILDER_HELPER_ENV}" \
+  --arg formatter "${HERE}/format-file.sh" \
+  --argjson instructions "${INSTRUCTIONS_JSON:-[]}" \
+  --argjson builder_steps "${BUILDER_AGENT_STEPS:-300}" \
+  --argjson reviewer_steps "${BUILDER_REVIEWER_STEPS:-150}" '
 {
-  "\$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "builder": {
-      "type": "local",
-      "command": ["node", "${MCP_SERVER}"],
-      "enabled": true,
-      "environment": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" }
+  "$schema": "https://opencode.ai/config.json",
+  mcp: {
+    builder: {
+      type: "local",
+      command: ["node", $mcp],
+      enabled: true,
+      environment: { BUILDER_HELPER_ENV: $helper_env }
     }
   },
-  "agent": {
-    "builder": {},
-    "reviewer": {
-      "permission": { "edit": "deny", "write": "deny", "bash": "deny" }
+  instructions: $instructions,
+  formatter: {
+    prettier: { disabled: true },
+    "repo-prettier": {
+      command: [$formatter, "$FILE"],
+      extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]
+    }
+  },
+  agent: {
+    builder: { steps: $builder_steps },
+    reviewer: {
+      steps: $reviewer_steps,
+      permission: { edit: "deny", write: "deny", bash: "deny" }
     }
   }
-}
-MCPEOF
+}' > opencode.json
 
 # Model per tier, from the single `models` workflow input. ally-be always
 # supplies all three; the fallbacks only cover a hand-run workflow.
@@ -676,6 +709,39 @@ wrote_tool_calls_as_text() {
     | grep -qE '(^|[^A-Za-z0-9_])call:[A-Za-z_][A-Za-z0-9_.-]*\{'
 }
 
+# Every repo's HEAD plus anything uncommitted, as one hash. Taken before and
+# after a writing phase, so "did it change anything" is a comparison rather
+# than a guess from the transcript.
+tree_fingerprint() {
+  local dir
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    printf '%s %s\n' "$dir" "$(git -C "$dir" rev-parse HEAD 2>/dev/null)"
+    git -C "$dir" status --porcelain 2>/dev/null
+    git -C "$dir" diff 2>/dev/null
+  done | git hash-object --stdin
+}
+
+# Did the phase stop mid-sentence? Its last words are empty, or end on a
+# letter, digit, comma or dash rather than the punctuation a finished reply
+# ends on.
+#
+# The model's turn is cut short and opencode, correctly, ends the run because
+# nothing more was asked for. Session 880e73e6 run 3's first coding pass
+# (2026-10-12) globbed for the plan's files for 30 seconds, went quiet for
+# three and a half minutes and ended on "Okay, to-do list time. Let's get" —
+# no edits, an attempt spent, and a gate run over an unchanged tree.
+ended_mid_thought() {
+  local result_file="$1" last
+  last="$(jq -r '.result // ""' "$result_file" 2>/dev/null \
+    | LC_ALL=C tr -d '[:space:]' | LC_ALL=C tail -c 1)"
+  [ -z "$last" ] && return 0
+  case "$last" in
+    [A-Za-z0-9,\;-]) return 0 ;;
+  esac
+  return 1
+}
+
 # A phase rerun overwrites its result file, and the spend of the attempt it
 # replaced has to survive that or the scoreboard under-reports what the phase
 # cost. Without `final`, the current result is banked into `<file>.spent`; with
@@ -792,12 +858,22 @@ run_agent() {
   # same prompt — because continuing the one that produced it is exactly
   # what made it worse. And the coder's shared session is dropped, so the
   # next attempt does not inherit it either.
+  #
+  # A writing phase that changed nothing and stopped mid-sentence is the same
+  # failure in a different shape (see ended_mid_thought), and gets the same
+  # cold rerun from the same budget of retries. Only for code and fix: a
+  # finalise pass may legitimately leave the tree as it found it.
   local text_call_retries="${BUILDER_TEXT_CALL_RETRIES:-2}"
   local text_call_try=0
+  local tree_before="" stall_reason=""
   rm -f "${result_file}.spent"
   while :; do
     rc=0
-    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
+    case "$AGENT_PHASE" in code | fix) tree_before="$(tree_fingerprint)" ;; esac
+    # node-shims first: the agent's own `node`/`npm`/`npx` follow the .nvmrc
+    # of the repo it is standing in, as the gate's always have (node-shims/_shim).
+    PATH="${HERE}/node-shims:${PATH}" \
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
       ${oc_session[@]+"${oc_session[@]}"} \
       --model "$oc_model" \
       --agent "$agent" \
@@ -807,20 +883,28 @@ run_agent() {
     | node "$FORWARDER" --result-out "$result_file" || rc=$?
 
     [ "$rc" = "0" ] || break
-    wrote_tool_calls_as_text "$result_file" || break
+    if wrote_tool_calls_as_text "$result_file"; then
+      stall_reason="wrote its tool calls out as text instead of making them"
+    elif [ -n "$tree_before" ] &&
+         [ "$(tree_fingerprint)" = "$tree_before" ] &&
+         ended_mid_thought "$result_file"; then
+      stall_reason="stopped mid-sentence without changing any code"
+    else
+      break
+    fi
 
     if [ "$AGENT_PHASE" = code ]; then
       OPENCODE_CODER_SESSION=
     fi
     if [ "$text_call_try" -ge "$text_call_retries" ]; then
-      echo "::warning::${oc_model} still wrote its tool calls as text after ${text_call_try} cold retries." >&2
+      echo "::warning::${oc_model} still ${stall_reason} after ${text_call_try} cold retries." >&2
       break
     fi
     text_call_try=$((text_call_try + 1))
-    echo "::warning::${oc_model} wrote a tool call as text instead of making it; rerunning this phase in a fresh session (${text_call_try}/${text_call_retries})." >&2
+    echo "::warning::${oc_model} ${stall_reason}; rerunning this phase in a fresh session (${text_call_try}/${text_call_retries})." >&2
     curl -sS -X POST "${API}/events" \
       -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-      -d "$(jq -nc --arg m "$oc_model" '{events:[{type:"text",payload:{text:("The model (" + $m + ") wrote its tool calls out as text instead of making them, so this phase did nothing. Running it again in a fresh session.")}}]}')" \
+      -d "$(jq -nc --arg m "$oc_model" --arg r "$stall_reason" '{events:[{type:"text",payload:{text:("The model (" + $m + ") " + $r + ", so this phase did nothing. Running it again in a fresh session.")}}]}')" \
       >/dev/null 2>&1 || true
     fold_spent_into "$result_file"
     oc_session=()

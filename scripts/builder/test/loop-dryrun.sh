@@ -233,6 +233,20 @@ if [ -n "${DRYRUN_TEXT_CALL:-}" ] && [ "$phase" = "build" ]; then
   fi
 fi
 
+# A coder whose turn is cut short: no edits, last words mid-sentence — session
+# 880e73e6 run 3's first pass ended on "Okay, to-do list time. Let's get". On
+# its first DRYRUN_STALL invocations, then behaves.
+if [ -n "${DRYRUN_STALL:-}" ] && [ "$phase" = "build" ]; then
+  n=$(( $(cat /tmp/builder-dryrun-stall-count 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > /tmp/builder-dryrun-stall-count
+  if [ "$n" -le "$DRYRUN_STALL" ]; then
+    echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_stalled"}'
+    echo '{"type":"text","part":{"type":"text","text":"Okay, to-do list time. Let'"'"'s get"},"sessionID":"ses_stalled"}'
+    echo '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":3,"input":2,"output":1,"cache":{"read":0}},"cost":0.25},"sessionID":"ses_stalled"}'
+    exit 0
+  fi
+fi
+
 # A phase that never returns. opencode has no turn cap and no mid-run dollar
 # ceiling, so the wall clock in run_agent is the only bound on a stuck phase —
 # which is exactly why that bound exists.
@@ -461,7 +475,8 @@ run_scenario() {
   rm -f /tmp/builder-paused /tmp/builder-dryrun-verify-count \
         /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it \
         /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md \
-        /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions
+        /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions \
+        /tmp/builder-dryrun-stall-count
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -865,11 +880,24 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = text-calls ]; then
   run_scenario text-calls DRYRUN_TEXT_CALL=1 DRYRUN_PR_BODY=1
   check "finished the run" 0 "$EXIT_CODE"
   check "said why it reran" yes \
-    "$(grep -q 'wrote a tool call as text' "${WORK}/text-calls.out" && echo yes || echo no)"
+    "$(grep -q 'wrote its tool calls out as text' "${WORK}/text-calls.out" && echo yes || echo no)"
   check "reran the coder cold" "cold cold" \
     "$(tr '\n' ' ' < /tmp/builder-dryrun-textcall-sessions | sed 's/ $//')"
   check "never continued the poisoned session" no \
     "$(grep -q 'ses_poisoned' /tmp/builder-dryrun-textcall-sessions && echo yes || echo no)"
+  check "billed both runs of the phase" yes \
+    "$(grep -q 'COST code-1:0.75' "$LOG_FILE" && echo yes || echo no)"
+fi
+
+# A coder whose turn is cut short changes nothing and stops mid-sentence. It is
+# rerun cold from the same retry budget rather than handed to the gate as an
+# attempt that did nothing.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = stalled-turn ]; then
+  run_scenario stalled-turn DRYRUN_STALL=1 DRYRUN_PR_BODY=1
+  check "finished the run" 0 "$EXIT_CODE"
+  check "said why it reran" yes \
+    "$(grep -q 'stopped mid-sentence without changing any code' "${WORK}/stalled-turn.out" && echo yes || echo no)"
+  check "ran the coder twice" 2 "$(cat /tmp/builder-dryrun-stall-count)"
   check "billed both runs of the phase" yes \
     "$(grep -q 'COST code-1:0.75' "$LOG_FILE" && echo yes || echo no)"
 fi
