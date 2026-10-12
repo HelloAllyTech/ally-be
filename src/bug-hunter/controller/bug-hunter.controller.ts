@@ -83,6 +83,7 @@ import {
   RejectBugFindingDto,
   SetBugFindingStageDto,
   StartBugFixSessionDto,
+  MergeBugFindingDto,
   TriggerBugHuntSweepDto,
   UpdateBugHunterModelSettingsDto,
   UpdateBugHunterSettingsDto,
@@ -106,6 +107,7 @@ import {
   independentVerificationOf,
 } from '../type/bug-finding-verdict.type';
 import { BugVerifyFindingsService } from '../service/bug-verify-findings.service';
+import { buildCaseChain } from '../type/bug-case-chain.type';
 import { BugHunterDecisionService } from '../service/bug-hunter-decision.service';
 import {
   BugHunterScoreboardService,
@@ -711,9 +713,14 @@ export class BugHunterController {
   async mergeFinding(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: TokenUser,
+    @Body() body?: MergeBugFindingDto,
   ): Promise<BugFindingDto> {
     return this.toDto(
-      await this.bugFixSessionService.mergeFinding(id, user.id),
+      await this.bugFixSessionService.mergeFinding(
+        id,
+        user.id,
+        body?.force === true,
+      ),
     );
   }
 
@@ -1252,6 +1259,7 @@ export function toFindingDto(
     miss: readMiss(row.metadata),
     budget: withBudgetDefaults(row.budget ?? null) as BugCaseBudgetDto,
     independentVerification: independentVerificationOf(row.metadata),
+    chain: buildCaseChain(row) as unknown as Record<string, unknown>,
     faultLocation: faultLocationOf(row.metadata) as unknown as Record<
       string,
       unknown

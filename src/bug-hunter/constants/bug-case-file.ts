@@ -2,6 +2,7 @@ import { BugFindingSource, BugFindingSeverity } from '../enum/bug-finding.enum';
 import { BugCaseBudget } from '../type/bug-case-budget.type';
 import { BugFindingMiss } from '../type/bug-finding-miss.type';
 import { BugFixStudy } from '../type/bug-fix-study.type';
+import { BugCaseChain } from '../type/bug-case-chain.type';
 import { FixDossierSession } from './bug-fix-dossier';
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 
@@ -59,6 +60,8 @@ export interface BugCaseFile {
   postmortem: Record<string, unknown> | null;
   /** The latest study a fix session wrote before changing code — see BugFixStudy. Null before any session studied it. */
   study: BugFixStudy | null;
+  /** The chain of evidence from the symptom to the change — see BugCaseChain. Derived on read. */
+  chain: BugCaseChain;
   lineage: {
     regressionOf: string | null;
     regressed: boolean;

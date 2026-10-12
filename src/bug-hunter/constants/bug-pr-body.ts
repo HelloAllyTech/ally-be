@@ -1,5 +1,6 @@
 import { BugHuntDecision } from '../entity/bug-hunt-decision.entity';
 import { renderBugFixStudyLines } from '../type/bug-fix-study.type';
+import { BUG_CHAIN_LINK_WORDS } from '../type/bug-case-chain.type';
 import { BugCaseFile, BugCaseVerdict } from './bug-case-file';
 import { clipDossierText } from './bug-fix-dossier';
 
@@ -76,6 +77,17 @@ export function renderPrBody(
       `Not independently verified before this fix; the regression test in this PR is the proof.`,
     );
   }
+
+  lines.push(
+    ``,
+    `## The chain`,
+    `A fix is a chain of evidence from the symptom to the change. Bug Hunter merges only when the first five links hold; the sixth is checked after release.`,
+    ``,
+    ...caseFile.chain.links.map(
+      (l) =>
+        `- ${l.status === 'present' ? '✔' : l.status === 'weak' ? '◐' : l.status === 'broken' ? '✖' : '○'} **${BUG_CHAIN_LINK_WORDS[l.link]}** — ${l.status}${l.evidence ? `: ${l.evidence}` : ''}`,
+    ),
+  );
 
   lines.push(``, `## How it works today, and the plan`);
   if (caseFile.study) {

@@ -1085,6 +1085,13 @@ export class BugFindingDto {
   })
   faultLocation!: Record<string, unknown> | null;
 
+  @ApiProperty({
+    type: Object,
+    description:
+      'The case chain: six links from the symptom to the change — observed, reproduced, located, changed, resolved, held — each present, weak, missing or broken with one line of evidence, plus `mergeable` and the `blocking` links. See BugCaseChain.',
+  })
+  chain!: Record<string, unknown>;
+
   independentVerification!:
     | 'pending'
     | 'confirmed'
@@ -1329,6 +1336,17 @@ export class RecordBugFixPlanDto {
   @ValidateNested({ each: true })
   @Type(() => BugFixPlanStepDto)
   steps!: BugFixPlanStepDto[];
+}
+
+export class MergeBugFindingDto {
+  @ApiProperty({
+    required: false,
+    description:
+      'Merge although the case chain is not complete. The refusal names the missing links; this is the admin saying they read them. Recorded with the merge.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 export class StartBugFixSessionDto {

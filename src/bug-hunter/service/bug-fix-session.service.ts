@@ -27,6 +27,7 @@ import {
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 
 import { BugFinding } from '../entity/bug-finding.entity';
+import { buildCaseChain, chainRefusal } from '../type/bug-case-chain.type';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
@@ -608,7 +609,11 @@ export class BugFixSessionService {
    * person must look at this", and a person pressing this having read the
    * diff is exactly the condition it was asking for. `decidedBy` records who.
    */
-  async mergeFinding(findingId: string, userId: number): Promise<BugFinding> {
+  async mergeFinding(
+    findingId: string,
+    userId: number,
+    force = false,
+  ): Promise<BugFinding> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (finding.status !== BugFindingStatus.PR_OPENED) {
       throw new ForbiddenException(
@@ -628,6 +633,14 @@ export class BugFixSessionService {
       throw new BadRequestException(
         `Could not read a PR number out of ${finding.prUrl}.`,
       );
+    }
+
+    // The case chain, for a person too: a merge from the tab used to skip
+    // the Verifier entirely (that is how #792 landed). The refusal names the
+    // links; `force` is the admin saying they read them.
+    const chain = buildCaseChain(finding);
+    if (!chain.mergeable && !force) {
+      throw new ForbiddenException(chainRefusal(chain));
     }
 
     const pr = await this.github.getPullRequest(finding.repo, prNumber);

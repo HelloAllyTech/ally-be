@@ -39,6 +39,31 @@ const finding = (overrides: Partial<BugFinding> = {}): BugFinding =>
       confidence: 0.9,
       independentVerification: 'confirmed',
       fixVerdicts: [PASS_VERDICT],
+      // The case chain (2026-10-12): a self-merge needs the symptom
+      // reproduced, the fault located and the change inside that layer.
+      findingVerdicts: [
+        {
+          verdict: 'confirmed',
+          reproduction: 'seen at base',
+          fault: {
+            layer: 'code',
+            repo: 'ally-ai-learn',
+            evidence: 'e',
+            repair: null,
+          },
+        },
+      ],
+      study: {
+        feature: 'f',
+        howItWorksToday: ['a', 'b'],
+        valueLivesIn: 'code',
+        rootCause: 'r',
+        approach: 'a',
+        filesToChange: ['src/a.py'],
+        testPlan: 't',
+        recordedAt: '2026-10-12T00:00:00.000Z',
+        runId: 'run-1',
+      },
     },
     ...overrides,
   }) as BugFinding;
@@ -246,6 +271,32 @@ describe('BugHunterPolicyService', () => {
       expect(github.listPullRequestFiles).toHaveBeenCalledWith(
         'ally-ai-learn',
         42,
+      );
+    });
+
+    it('refuses a self-merge whose chain is broken — the change in a layer the Verifier ruled out — and names the link', async () => {
+      const f = finding();
+      bugFindingService.getOne.mockResolvedValue(
+        finding({
+          metadata: {
+            ...f.metadata,
+            findingVerdicts: [
+              {
+                verdict: 'confirmed',
+                reproduction: 'GET …?languageCode=mr returns English',
+                fault: {
+                  layer: 'data',
+                  repo: 'ally-be',
+                  evidence: 'no mr rows',
+                  repair: 'publish them',
+                },
+              },
+            ],
+          },
+        }),
+      );
+      await expect(merging()).rejects.toThrow(
+        /chain is not complete: changed in that mechanism is broken \(the fault is in data and the change is in code\)/,
       );
     });
 

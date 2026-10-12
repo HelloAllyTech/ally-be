@@ -53,6 +53,7 @@ describe('buildVerifyFindingsPrompt — locate before fixing', () => {
     const p = build([finding()]);
     expect(p).toContain('A nightly sweep of "ally-web" running on opencode');
     expect(p).not.toContain('## Human reports');
-    expect(p).not.toContain('"faultLayer"');
+    expect(p).toContain('## Name the layer');
+    expect(p).toContain('"faultLayer":"<code|data|config|unknown>"');
   });
 });
