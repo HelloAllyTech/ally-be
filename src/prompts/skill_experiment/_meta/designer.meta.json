@@ -1,0 +1,8 @@
+{
+  "name": "Auto-improve — prompt designer",
+  "description": "Drafts the next challenger in an auto-improve experiment from the current best text, the rubric, the judge's reasons and earlier failed attempts. Its draft is validated in code: one that drops, renames or invents a runtime placeholder is rejected and never served. The context arrives as a separate message, so this text has no placeholders.",
+  "category": "Auto-improve",
+  "runtimes": [
+    "ally-be"
+  ]
+}

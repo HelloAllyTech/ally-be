@@ -241,6 +241,11 @@ the team digest flags it — rather than trusting the model to comply. Since 202
 default audience, staff-tool work included; internal is kept for work of no value to anyone, and a
 wrong call is corrected from the admin console's audience toggle.
 
+`skill_experiment/` (`judge.txt`, `designer.txt`) is the same shape: the judge and the prompt
+designer behind auto-improve ([skill-experiments.md](skill-experiments.md)). Their payload — a rubric
+and an output to score, or a champion and its scores to revise — arrives as a separate JSON message,
+so neither file has placeholders.
+
 These deliberately do **not** degrade to a hardcoded fallback — they throw when the row is
 missing. The reasoning is the opposite of the agent case: an agent answering slightly worse
 still serves its user, whereas one of these produces a batch of stored items (roadmap

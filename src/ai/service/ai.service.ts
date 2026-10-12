@@ -67,6 +67,9 @@ import {
   AgentMemorySearchRequest,
 } from '../dto/ai.request.dto';
 import { PromptSharedService } from '../../prompt/service/prompt-shared.service';
+import { SkillExperimentRouterService } from '../../skill-experiment/service/skill-experiment-router.service';
+import { isConnectedSkill } from '../../skill-experiment/constants/skill-experiment.constants';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 import {
   ALLY_AI_PROMPT_PREFIX,
   ALLY_AI_LEARN_PROMPT_PREFIX,
@@ -108,6 +111,11 @@ function withCorpus(endpoint: string, corpus: KnowledgeCorpus): string {
   return `${endpoint}${separator}corpus=${encodeURIComponent(corpus)}`;
 }
 
+/** The debrief skills (System Skills codes); both are connected to auto-improve. */
+const SCENARIO_EVALUATION_PROMPT_CODE = 'ally_ai_scenario_scenario_evaluation';
+const SCENARIO_EVALUATION_WITH_MEMORY_PROMPT_CODE =
+  'ally_ai_scenario_scenario_evaluation_with_memory';
+
 @Injectable()
 export class AiService {
   logger = LoggerService.getInstance(AiService.name);
@@ -117,6 +125,7 @@ export class AiService {
     private config: AppConfigService,
     private eventEmitter: EventEmitter2,
     private promptSharedService: PromptSharedService,
+    private skillExperiments: SkillExperimentRouterService,
   ) {}
 
   async transcribeAudioFromBuffer(audioBuffer: Buffer): Promise<string> {
@@ -1111,14 +1120,35 @@ export class AiService {
      */
     usageTask?: LlmTask.SCENARIO_EVALUATION_LANGUAGE,
   ): Promise<ScenarioEvaluationResponse> {
+    // Auto-improve (skill experiments) runs on the learner's own debrief only —
+    // the per-language re-evaluation is a re-run of a debrief already judged.
+    const promptCode = needMemory
+      ? SCENARIO_EVALUATION_WITH_MEMORY_PROMPT_CODE
+      : SCENARIO_EVALUATION_PROMPT_CODE;
+    const arm = usageTask
+      ? null
+      : await this.skillExperiments.assign(promptCode);
+    const experimentInput = {
+      transcript: messages.map((m) => `${m.role}: ${m.content}`).join('\n'),
+      languageCode: languageCode ?? null,
+      workerType: supervisorContext?.workerType ?? null,
+      enableRecommendations: enableRecommendations ?? false,
+      helpfulBehaviours: supervisorContext?.helpfulBehaviours ?? [],
+      unhelpfulBehaviours: supervisorContext?.unhelpfulBehaviours ?? [],
+      ...(needMemory ? { previousSummary: previousMemory ?? null } : {}),
+    };
+    const tenantId = ExecutionManager.getTenantId() ?? null;
+
     try {
       const prompts = await this.getPromptOverrides();
-      const request: ScenarioEvaluationRequest = {
+      const buildRequest = (
+        requestPrompts: ScenarioEvaluationRequest['prompts'],
+      ): ScenarioEvaluationRequest => ({
         chat_history: messages,
         need_memory: needMemory,
         previous_memory: previousMemory ?? null,
         memory_prompt: memoryPrompt ?? null,
-        prompts,
+        prompts: requestPrompts,
         enable_recommendations: enableRecommendations ?? false,
         language_code: languageCode ?? null,
         worker_type: supervisorContext?.workerType ?? null,
@@ -1138,12 +1168,49 @@ export class AiService {
         ...(usageTask === LlmTask.SCENARIO_EVALUATION_LANGUAGE
           ? { usage_task: LlmTask.SCENARIO_EVALUATION_LANGUAGE }
           : {}),
+      });
+
+      const send = async (variantText: string | null) => {
+        const request = buildRequest(
+          variantText === null
+            ? prompts
+            : {
+                ...prompts,
+                [promptCode]: await this.experimentPromptEntry(
+                  promptCode,
+                  variantText,
+                ),
+              },
+        );
+        return this.makeRequest<
+          ScenarioEvaluationResponse,
+          ScenarioEvaluationRequest
+        >(ENDPOINTS.SCENARIO_EVALUATION, request, true, 'post');
       };
 
-      const response = await this.makeRequest<
-        ScenarioEvaluationResponse,
-        ScenarioEvaluationRequest
-      >(ENDPOINTS.SCENARIO_EVALUATION, request, true, 'post');
+      let response: ScenarioEvaluationResponse;
+      try {
+        response = await send(arm?.content ?? null);
+        void this.skillExperiments.record(arm, {
+          input: experimentInput,
+          output: JSON.stringify(response),
+          tenantId,
+        });
+      } catch (error) {
+        void this.skillExperiments.record(arm, {
+          input: experimentInput,
+          error: error instanceof Error ? error.message : String(error),
+          tenantId,
+        });
+        // A challenger that broke the debrief must not cost the learner theirs:
+        // retry once on the skill's own text. The failure is already recorded
+        // against the challenger, which is how the loop retires it.
+        if (!arm || arm.isOriginal) throw error;
+        this.logger.warn(
+          `Experiment variant failed for ${promptCode}; retrying the debrief on the skill's own text`,
+        );
+        response = await send(null);
+      }
       this.logger.debug(
         `Scenario session evaluation received: ${JSON.stringify(response)}`,
       );
@@ -1151,6 +1218,26 @@ export class AiService {
     } catch (error) {
       throw aiFailureToHttpException(error, 'scenario session evaluation');
     }
+  }
+
+  /**
+   * The `prompts` entry that makes ally-ai run `text` for `promptCode`, keyed
+   * the way ally-ai looks it up. Carries the row's `availableVariables` (so
+   * ally-ai's formatter leaves unknown braces literal, as it would for the
+   * row's own text) and its model settings, so both arms of an experiment run
+   * on the same model and differ only in text.
+   */
+  private async experimentPromptEntry(promptCode: string, text: string) {
+    const [row] = await this.promptSharedService.getPromptsByOptions({
+      promptCode: [promptCode],
+    });
+    return {
+      prompt: text,
+      availableVariables: row?.availableVariables || [],
+      ...(row?.provider ? { provider: row.provider } : {}),
+      ...(row?.model ? { model: row.model } : {}),
+      ...(row?.temperature != null ? { temperature: row.temperature } : {}),
+    };
   }
 
   /**
@@ -1206,7 +1293,7 @@ export class AiService {
          * We use a global replace with /_/g to handle nested structures if any.
          */
         const mappedKey = rawCode.replace(/_/g, '/');
-        overrides[mappedKey] = {
+        const entry = {
           prompt: p.prompt,
           availableVariables: p.availableVariables || [],
           // Prompt-level LLM overrides (honored by ally-ai's text-gen / drift
@@ -1215,6 +1302,17 @@ export class AiService {
           ...(p.model ? { model: p.model } : {}),
           ...(p.temperature != null ? { temperature: p.temperature } : {}),
         };
+        overrides[mappedKey] = entry;
+        // ally-ai looks prompts up by their full code (`ally_ai_<dir>_<file>`),
+        // never by the slash-mapped key above, so an override sent only under
+        // that key does not reach it. Skills connected to auto-improve are also
+        // sent under the key ally-ai reads, so a winning variant applied from
+        // an experiment actually runs. Deliberately not widened to every
+        // ally-ai skill here: that would switch on every stale dashboard edit
+        // at once — see docs/skill-experiments.md.
+        if (isConnectedSkill(p.promptCode)) {
+          overrides[p.promptCode] = entry;
+        }
       }
       return overrides;
     } catch (error) {

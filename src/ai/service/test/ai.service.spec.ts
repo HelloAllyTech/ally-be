@@ -7,6 +7,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
 import { AiService } from '../ai.service';
 import { PromptSharedService } from '../../../prompt/service/prompt-shared.service';
+import { SkillExperimentRouterService } from '../../../skill-experiment/service/skill-experiment-router.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
@@ -21,6 +22,10 @@ describe('AiService', () => {
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let mockLogger: jest.Mocked<LoggerService>;
   let mockPromptSharedService: jest.Mocked<PromptSharedService>;
+  let mockSkillExperiments: {
+    assign: jest.Mock;
+    record: jest.Mock;
+  };
 
   const mockConfig = {
     ai: {
@@ -50,6 +55,11 @@ describe('AiService', () => {
     mockPromptSharedService = {
       getPromptsByOptions: jest.fn().mockResolvedValue([]),
     } as any;
+    // No experiment is live unless a test says otherwise.
+    mockSkillExperiments = {
+      assign: jest.fn().mockResolvedValue(null),
+      record: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -65,6 +75,10 @@ describe('AiService', () => {
         {
           provide: PromptSharedService,
           useValue: mockPromptSharedService,
+        },
+        {
+          provide: SkillExperimentRouterService,
+          useValue: mockSkillExperiments,
         },
       ],
     }).compile();
@@ -147,6 +161,7 @@ describe('AiService', () => {
         { ai: { ...mockConfig.ai, apiUrl: '' } } as any,
         eventEmitter,
         mockPromptSharedService,
+        mockSkillExperiments as any,
       );
 
       const result = await serviceWithoutUrl.getNudge(
@@ -273,6 +288,128 @@ describe('AiService', () => {
       );
       const stray = (mockedAxios as any).mock.calls.at(-1)[0].data;
       expect('usage_task' in stray).toBe(false);
+    });
+  });
+
+  describe('getScenarioSessionEvaluation under a skill experiment', () => {
+    const mockMessages = [
+      { id: '1', role: 'COUNSELOR', content: 'Hello' },
+      { id: '2', role: 'CLIENT', content: 'Hi' },
+    ] as any;
+    const CODE = 'ally_ai_scenario_scenario_evaluation';
+    const arm = (isOriginal: boolean) => ({
+      experimentId: 'exp-1',
+      variantId: isOriginal ? 'v-0' : 'v-1',
+      promptCode: CODE,
+      content: isOriginal
+        ? 'ORIGINAL {chat_history}'
+        : 'VARIANT {chat_history}',
+      isOriginal,
+      record: true,
+    });
+
+    it('sends the arm text under the key ally-ai reads and records the output', async () => {
+      mockSkillExperiments.assign.mockResolvedValue(arm(false));
+      mockPromptSharedService.getPromptsByOptions.mockResolvedValue([
+        { promptCode: CODE, availableVariables: ['chat_history'] },
+      ] as any);
+      (mockedAxios as any).mockResolvedValue({ data: { summary: 'ok' } });
+
+      const result = await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+      );
+
+      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE);
+      const sent = (mockedAxios as any).mock.calls.at(-1)[0].data;
+      expect(sent.prompts[CODE]).toEqual({
+        prompt: 'VARIANT {chat_history}',
+        availableVariables: ['chat_history'],
+      });
+      expect(result).toEqual({ summary: 'ok' });
+      expect(mockSkillExperiments.record).toHaveBeenCalledWith(
+        expect.objectContaining({ variantId: 'v-1' }),
+        expect.objectContaining({
+          output: JSON.stringify({ summary: 'ok' }),
+          input: expect.objectContaining({
+            transcript: 'COUNSELOR: Hello\nCLIENT: Hi',
+          }),
+        }),
+      );
+    });
+
+    it('picks the with-memory skill when memory is needed', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+      await service.getScenarioSessionEvaluation(mockMessages, true, 'prev');
+      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(
+        'ally_ai_scenario_scenario_evaluation_with_memory',
+      );
+    });
+
+    it('never experiments on the per-language re-evaluation', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        false,
+        'ta',
+        undefined,
+        'sess-1',
+        LlmTask.SCENARIO_EVALUATION_LANGUAGE,
+      );
+      expect(mockSkillExperiments.assign).not.toHaveBeenCalled();
+    });
+
+    it('records a failed challenger and retries the debrief on the skill text', async () => {
+      mockSkillExperiments.assign.mockResolvedValue(arm(false));
+      (mockedAxios as any)
+        .mockRejectedValueOnce(new Error('ally-ai 500'))
+        .mockResolvedValueOnce({ data: { summary: 'fallback' } });
+
+      const result = await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+      );
+
+      expect(result).toEqual({ summary: 'fallback' });
+      expect(mockSkillExperiments.record).toHaveBeenCalledWith(
+        expect.objectContaining({ variantId: 'v-1' }),
+        expect.objectContaining({ error: expect.any(String) }),
+      );
+      const retry = (mockedAxios as any).mock.calls.at(-1)[0].data;
+      expect(retry.prompts[CODE]).toBeUndefined();
+    });
+
+    it('does not retry when the original arm fails — that failure is the skill’s own', async () => {
+      mockSkillExperiments.assign.mockResolvedValue(arm(true));
+      (mockedAxios as any).mockRejectedValue(new Error('ally-ai 500'));
+
+      await expect(
+        service.getScenarioSessionEvaluation(mockMessages, false, null),
+      ).rejects.toThrow();
+      expect((mockedAxios as any).mock.calls).toHaveLength(1);
+    });
+  });
+
+  describe('getPromptOverrides key for connected skills', () => {
+    it('sends a connected skill under its full code as well as the legacy key, and leaves others alone', async () => {
+      mockPromptSharedService.getPromptsByOptions.mockResolvedValue([
+        { promptCode: 'ally_ai_scenario_scenario_evaluation', prompt: 'A' },
+        { promptCode: 'ally_ai_summary_summary', prompt: 'B' },
+      ] as any);
+
+      const overrides = await (service as any).getPromptOverrides();
+
+      expect(overrides['ally_ai_scenario_scenario_evaluation'].prompt).toBe(
+        'A',
+      );
+      expect(overrides['scenario/scenario/evaluation'].prompt).toBe('A');
+      expect(overrides['summary/summary'].prompt).toBe('B');
+      expect(overrides['ally_ai_summary_summary']).toBeUndefined();
     });
   });
 
@@ -565,6 +702,7 @@ describe('AiService', () => {
         { ai: { ...mockConfig.ai, apiUrl: '' } } as any,
         eventEmitter,
         mockPromptSharedService,
+        mockSkillExperiments as any,
       );
 
       const mockChatHistory = [{ role: 'user', content: 'test' }];
@@ -578,6 +716,7 @@ describe('AiService', () => {
         { ai: { ...mockConfig.ai, outboundApiKey: '' } } as any,
         eventEmitter,
         mockPromptSharedService,
+        mockSkillExperiments as any,
       );
 
       expect(serviceWithoutKey).toBeDefined();
