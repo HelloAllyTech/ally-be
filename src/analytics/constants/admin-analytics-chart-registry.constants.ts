@@ -2190,6 +2190,16 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/BugHunterDecisionsPanel.tsx'),
       note: "Per decision point D1–D8: owner now, decisions, agreed, disagreed, owner right, shadow right, vetoes and the verdict (flip / keep / not enough cases / fixed), judged by each case's outcome. Flip once the shadow has won 30 disagreements and more than the owner; the flip is made on Settings → AI models (OPP-0783). /v1/bug-hunter/decisions/replay",
     },
+    {
+      id: 'AAQ-237',
+      tab: 'Highlights',
+      subTab: 'Helping skills',
+      title: 'Advanced behaviours by practice depth',
+      kind: 'chart',
+      chartType: 'custom (change rows)',
+      componentFile: f('Analytics/tabs/FoundationalSkillsSubTab.tsx'),
+      note: "Nested tiers of learners by scored slices (4+, 6+, 8+, 10+): each learner's last half vs first half of slices (from slice 2 by default; picker for slice 1), the share of chances at an advanced behaviour they took, adjusted for which roleplays filled each slice (roleplay effects leave-one-learner-out). Change ± bootstrap 95% CI and sign test; averages withheld below 20 learners, counts travel; tier listed from 5. Added 2026-10-12 as a hypothesis to watch after a one-off read (6+ slices: 15 of 19 rose; flat across 4+). /v1/analytics/foundational-skills/advanced-behaviours",
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */

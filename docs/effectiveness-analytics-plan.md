@@ -992,3 +992,9 @@ migration and LLM guard suites pass (214 suites, 2,365 tests at the time of buil
 was also exercised against a local database seeded with 60 synthetic learners (477 scored
 slices, a course with progress, quizzes and a roleplay gate), returning sensible values and the
 withheld states where n sat below the floors.
+
+### 13.6 Added after the build
+
+| AAQ | Sub-tab | Endpoint (`/v1/analytics/…`) | Why |
+|---|---|---|---|
+| 237 | Helping skills | `foundational-skills/advanced-behaviours` | A production read on 2026-10-12 found learners with 6+ scored slices showing advanced behaviours in more of their chances later on (12.3% → 16.7%, 15 of 19 rose, after scenario adjustment), while the same change across everyone with 4+ slices was flat. It was charted as a **hypothesis to watch**, not a result. The tiers are nested and uncorrected, the 20-learner floor applies, and the scenario adjustment is leave-one-learner-out. Rules: `util/foundational-skills-advanced.util.ts`. |

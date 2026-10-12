@@ -15,6 +15,8 @@ import {
   FoundationalSkillsProgressResponseDto,
   FoundationalSkillsBehavioursQueryDto,
   FoundationalSkillsBehavioursResponseDto,
+  FoundationalSkillsAdvancedBehavioursQueryDto,
+  FoundationalSkillsAdvancedBehavioursResponseDto,
   FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
@@ -39,6 +41,11 @@ import {
   FHS_BEHAVIOUR_THRESHOLDS,
   computeBehaviourRates,
 } from '../util/foundational-skills-behaviour.util';
+import {
+  AdvancedLearner,
+  FHS_ADVANCED_THRESHOLDS,
+  computeAdvancedByDepth,
+} from '../util/foundational-skills-advanced.util';
 // One floor for every judged score on the platform — see SkillGrowthAnalyticsService.
 import { MIN_SCORE_SAMPLE_SIZE } from '../repository/quality-distribution-analytics.repository';
 
@@ -364,6 +371,64 @@ export class FoundationalSkillsAnalyticsService {
       computedAt: new Date().toISOString(),
     };
   }
+
+  /**
+   * Advanced behaviours by practice depth (AAQ-237): own later vs earlier
+   * practice, scenario-adjusted, for nested tiers of practice amount. Added
+   * after a one-off read found a rise among heavier practisers that did not
+   * hold across everyone, so it is served as a hypothesis to watch. Built from
+   * stored behaviour codes plus each slice's session → scenario mix: no model
+   * calls. Rules in `util/foundational-skills-advanced.util.ts`.
+   */
+  async getAdvancedBehaviours(
+    query: FoundationalSkillsAdvancedBehavioursQueryDto,
+  ): Promise<FoundationalSkillsAdvancedBehavioursResponseDto> {
+    const baselineFrom = query.baselineFrom === 1 ? 1 : 2;
+    const rows = await this.repository.getAllLearnerCuts(
+      FHS_RUBRIC_VERSION,
+      query.tenantId,
+    );
+    const scenarios = await this.repository.getSessionScenarios([
+      ...new Set(rows.flatMap((r) => r.sessionIds)),
+    ]);
+    const learners = toAdvancedLearners(rows, scenarios);
+    const { tiers } = computeAdvancedByDepth(learners, {
+      baselineFrom,
+      sampleFloor: MIN_SCORE_SAMPLE_SIZE,
+      minCohort: MIN_COHORT_SIZE,
+    });
+    return {
+      rubricVersion: FHS_RUBRIC_VERSION,
+      minSampleSize: MIN_SCORE_SAMPLE_SIZE,
+      minCohortSize: MIN_COHORT_SIZE,
+      baselineFrom,
+      thresholds: {
+        depths: [...FHS_ADVANCED_THRESHOLDS.depths],
+        minComparedSlices: FHS_ADVANCED_THRESHOLDS.minComparedSlices,
+        minOtherLearnersPerScenario:
+          FHS_ADVANCED_THRESHOLDS.minOtherLearnersPerScenario,
+      },
+      measuredLearners: learners.length,
+      tiers,
+      provenance: {
+        derivation:
+          `Per ${FHS_CUT_LEARNER_CHARS.toLocaleString('en')}-character slice: advanced behaviours the judge ` +
+          `saw ÷ advanced behaviours the slice gave a chance at (every skill it could assess). Each ` +
+          `learner's first half of slices (from slice ${baselineFrom}) against their last half. The change ` +
+          `is adjusted for which roleplays filled each slice, with each roleplay's effect estimated from ` +
+          `other learners only. Tiers are nested: everyone with at least that many scored slices.`,
+        note:
+          `Added 2026-10-12 after a one-off analysis found a rise among learners with 6+ slices that did ` +
+          `not hold across everyone with 4+: a hypothesis being re-tested as practice accumulates, not a ` +
+          `result. The tiers are four looks at one question, with no correction for that. Averages, ` +
+          `intervals and tests over fewer than ${MIN_SCORE_SAMPLE_SIZE} learners are withheld; counts ` +
+          `travel. On a fixed course order the adjustment also absorbs some real learning, so it errs ` +
+          `small. AI-judged; not yet checked against trained human raters. Rubric ${FHS_RUBRIC_VERSION}; ` +
+          `test organisations excluded.`,
+      },
+      computedAt: new Date().toISOString(),
+    };
+  }
 }
 
 /** Rows arrive ordered by user then cut; fold them into one series per learner. */
@@ -389,6 +454,41 @@ function groupByLearner(
       unhelpful: row.unhelpful,
       levels: row.levels,
       observed: new Set(row.verdicts.flatMap((v) => v.observed ?? [])),
+    });
+  }
+  for (const learner of byUser.values()) {
+    learner.cuts.sort((a, b) => a.cut - b.cut);
+  }
+  return [...byUser.values()];
+}
+
+/**
+ * The same series as {@link groupByLearner}, carrying each slice's scenario mix
+ * (sessions per scenario) for the advanced-behaviour adjustment. A session
+ * with no scenario is left out of the mix.
+ */
+function toAdvancedLearners(
+  rows: readonly FoundationalSkillsLearnerCutRow[],
+  scenarios: ReadonlyMap<string, { scenarioId: number | null }>,
+): AdvancedLearner[] {
+  const byUser = new Map<number, AdvancedLearner>();
+  for (const row of rows) {
+    let learner = byUser.get(row.userId);
+    if (!learner) {
+      learner = { userId: row.userId, cuts: [] };
+      byUser.set(row.userId, learner);
+    }
+    const mix = new Map<number, number>();
+    for (const id of new Set(row.sessionIds)) {
+      const scenarioId = scenarios.get(id)?.scenarioId;
+      if (scenarioId != null)
+        mix.set(scenarioId, (mix.get(scenarioId) ?? 0) + 1);
+    }
+    learner.cuts.push({
+      cut: row.cut,
+      levels: row.levels,
+      observed: new Set(row.verdicts.flatMap((v) => v.observed ?? [])),
+      scenarios: mix,
     });
   }
   for (const learner of byUser.values()) {

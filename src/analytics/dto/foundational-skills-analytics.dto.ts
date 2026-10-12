@@ -1093,3 +1093,118 @@ export class FoundationalSkillsBehavioursResponseDto {
   provenance!: FoundationalSkillsProvenanceDto;
   @ApiProperty() computedAt!: string;
 }
+
+// ---- Advanced behaviours by practice depth (AAQ-237) ----
+
+export class FoundationalSkillsAdvancedBehavioursQueryDto {
+  @ApiProperty({
+    description:
+      'First slice each learner is compared from. 2 (default) leaves slice 1 out as a ' +
+      'warm-up; 1 compares every slice.',
+    required: false,
+    enum: [1, 2],
+    default: 2,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([1, 2])
+  baselineFrom?: 1 | 2;
+
+  @ApiProperty({
+    description:
+      'Narrow to a single tenant (uuid or code). Slices and the scenario adjustment ' +
+      'are both scoped to practice in that org. Omitted: every non-test org.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
+}
+
+export class FhsAdvancedThresholdsDto {
+  @ApiProperty({
+    type: [Number],
+    description: 'Nested tiers: learners with at least this many scored slices',
+  })
+  depths!: number[];
+  @ApiProperty({ description: 'Compared slices a learner needs (1 + 1)' })
+  minComparedSlices!: number;
+  @ApiProperty({
+    description:
+      'Other learners a scenario needs before its effect is estimated (else 0)',
+  })
+  minOtherLearnersPerScenario!: number;
+}
+
+export class FhsAdvancedTierDto {
+  @ApiProperty({ description: 'Learners with this many scored slices or more' })
+  minSlices!: number;
+  @ApiProperty({ description: 'Comparable learners in the tier' })
+  learners!: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Mean advanced-behaviour rate, first half of slices, % (raw)',
+  })
+  startPct!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Mean advanced-behaviour rate, last half of slices, % (raw)',
+  })
+  nowPct!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Mean advanced behaviours per slice, first half (raw)',
+  })
+  startPerSlice!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Mean advanced behaviours per slice, last half (raw)',
+  })
+  nowPerSlice!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Unadjusted paired change, percentage points',
+  })
+  rawChangePts!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Scenario-adjusted paired mean change, percentage points',
+  })
+  changePts!: number | null;
+  @ApiProperty({ type: [Number], nullable: true })
+  ciPts!: [number, number] | null;
+  @ApiProperty() up!: number;
+  @ApiProperty() down!: number;
+  @ApiProperty() tied!: number;
+  @ApiProperty({ type: Number, nullable: true })
+  signP!: number | null;
+  @ApiProperty({ description: 'Shown, and the 95% CI excludes zero' })
+  detectable!: boolean;
+}
+
+export class FoundationalSkillsAdvancedBehavioursResponseDto {
+  @ApiProperty() rubricVersion!: string;
+  @ApiProperty() minSampleSize!: number;
+  @ApiProperty() minCohortSize!: number;
+  @ApiProperty({ enum: [1, 2] }) baselineFrom!: 1 | 2;
+  @ApiProperty({ type: FhsAdvancedThresholdsDto })
+  thresholds!: FhsAdvancedThresholdsDto;
+  @ApiProperty() measuredLearners!: number;
+  @ApiProperty({
+    type: [FhsAdvancedTierDto],
+    description: 'Ascending; a tier is listed only from minCohortSize learners',
+  })
+  tiers!: FhsAdvancedTierDto[];
+  @ApiProperty({ type: FoundationalSkillsProvenanceDto })
+  provenance!: FoundationalSkillsProvenanceDto;
+  @ApiProperty() computedAt!: string;
+}
