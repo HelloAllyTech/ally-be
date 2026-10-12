@@ -10,6 +10,11 @@ import {
   DailyFiledCount,
   FindingOutcomeCount,
 } from '../repository/bug-finding.repository';
+import {
+  BugHuntRunRepository,
+  DailyRunTokens,
+} from '../repository/bug-hunt-run.repository';
+import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 
 /** One source's or one repo's funnel, from filed to live. */
 export interface FindingFunnel {
@@ -67,6 +72,15 @@ export interface OperationsDay {
   declined: number;
   /** Of `filed`, how many are still new or pending approval. */
   undecided: number;
+  /** Model tokens and cost spent by runs that STARTED that day, by trigger. Always every trigger. */
+  tokens: Record<BugHuntTrigger, OperationsTokens>;
+}
+
+export interface OperationsTokens {
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
 }
 
 export interface BugHunterOperationsMetrics {
@@ -78,6 +92,10 @@ export interface BugHunterOperationsMetrics {
     accepted: number;
     declined: number;
     undecided: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    runs: number;
   };
 }
 
@@ -92,8 +110,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * weekly trends on Analytics → Bug Agent carry its figures, folded per week
  * by `BugAgentPerformanceAnalyticsService` with the funnel arithmetic that
  * stays exported from here (`foldFunnel`, `groupFunnels`). The operations
- * view was pruned the same day to the single card somebody watches: bugs
- * filed per day beside where each cohort stands now.
+ * view was pruned the same day to the two cards somebody watches: bugs
+ * filed per day beside where each cohort stands now, and spend over time by
+ * what started the run (restored the same evening at the user's request).
  *
  * ## The one claim the funnel arithmetic makes about accuracy
  *
@@ -115,7 +134,10 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 @Injectable()
 export class BugHunterMetricsService {
-  constructor(private readonly findingRepository: BugFindingRepository) {}
+  constructor(
+    private readonly findingRepository: BugFindingRepository,
+    private readonly runRepository: BugHuntRunRepository,
+  ) {}
 
   /**
    * The volume view: what gets filed each day, beside where it stands now.
@@ -134,8 +156,11 @@ export class BugHunterMetricsService {
    */
   async operations(windowDays: number): Promise<BugHunterOperationsMetrics> {
     const since = new Date(Date.now() - windowDays * MS_PER_DAY);
-    const filed = await this.findingRepository.dailyFiledCounts(since);
-    return buildOperations(windowDays, since, filed);
+    const [filed, tokens] = await Promise.all([
+      this.findingRepository.dailyFiledCounts(since),
+      this.runRepository.dailyTokens(since),
+    ]);
+    return buildOperations(windowDays, since, filed, tokens);
   }
 }
 
@@ -296,25 +321,44 @@ export const groupFunnels = (
 
 // ── operations view ───────────────────────────────────────────────────────
 
+/** Two decimals. Cents matter on a per-run figure and nothing below them does. */
+const round = (value: number): number => Math.round(value * 100) / 100;
+
+const emptyTokens = (): OperationsTokens => ({
+  runs: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  costUsd: 0,
+});
+
 const emptyDay = (date: string): OperationsDay => ({
   date,
   filed: 0,
   accepted: 0,
   declined: 0,
   undecided: 0,
+  tokens: {
+    [BugHuntTrigger.SCHEDULED]: emptyTokens(),
+    [BugHuntTrigger.MANUAL]: emptyTokens(),
+    [BugHuntTrigger.FIX_SESSION]: emptyTokens(),
+    [BugHuntTrigger.VERIFY_FIX]: emptyTokens(),
+    [BugHuntTrigger.VERIFY_FINDINGS]: emptyTokens(),
+    [BugHuntTrigger.PR_REVIEW]: emptyTokens(),
+  },
 });
 
 /** `YYYY-MM-DD` in UTC, matching the repositories' `to_char` on a UTC-stored timestamp. */
 const utcDay = (date: Date): string => date.toISOString().slice(0, 10);
 
 /**
- * Exported for the spec: pure arithmetic over the repository's day rows, so
+ * Exported for the spec: pure arithmetic over the two repository reads, so
  * the tests exercise exactly what the endpoint returns without a database.
  */
 export const buildOperations = (
   windowDays: number,
   since: Date,
   filed: DailyFiledCount[],
+  tokens: DailyRunTokens[],
   now: Date = new Date(),
 ): BugHunterOperationsMetrics => {
   // Dense day axis, oldest first, from the window's first day through today.
@@ -334,7 +378,16 @@ export const buildOperations = (
     days.set(key, emptyDay(key));
   }
 
-  const totals = { filed: 0, accepted: 0, declined: 0, undecided: 0 };
+  const totals = {
+    filed: 0,
+    accepted: 0,
+    declined: 0,
+    undecided: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    runs: 0,
+  };
   filed.forEach((row) => {
     // The repository still returns one row per (day, source, proven) cell;
     // the view sums them. A row outside the axis (clock skew, a run stamped
@@ -348,6 +401,29 @@ export const buildOperations = (
       target.declined += Number(row.declined);
       target.undecided += Number(row.undecided);
     }
+  });
+
+  // Spend: one cell per (day, trigger). A row outside the axis still counts
+  // in the window totals — it is a real run — even though no day draws it.
+  tokens.forEach((row) => {
+    totals.inputTokens += row.inputTokens;
+    totals.outputTokens += row.outputTokens;
+    totals.costUsd += row.costUsd;
+    totals.runs += row.runs;
+    const day = days.get(row.day);
+    if (!day) return;
+    const cell = day.tokens[row.trigger] ?? emptyTokens();
+    cell.runs += row.runs;
+    cell.inputTokens += row.inputTokens;
+    cell.outputTokens += row.outputTokens;
+    cell.costUsd += row.costUsd;
+    day.tokens[row.trigger] = cell;
+  });
+  totals.costUsd = round(totals.costUsd);
+  days.forEach((day) => {
+    Object.values(day.tokens).forEach((cell) => {
+      cell.costUsd = round(cell.costUsd);
+    });
   });
 
   return {

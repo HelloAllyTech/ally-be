@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
-import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
+import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
+/** One (day, trigger) cell of run spend — see `dailyTokens`. */
+export interface DailyRunTokens {
+  /** Calendar day, `YYYY-MM-DD`, in the database's clock (UTC). */
+  day: string;
+  trigger: BugHuntTrigger;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** The CLI's own figure where a run reported one, else the token estimate. */
+  costUsd: number;
+}
+
 @Injectable()
 export class BugHuntRunRepository extends Repository<BugHuntRun> {
   constructor(dataSource: DataSource) {
@@ -19,6 +31,59 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
 
   listRecent(limit: number): Promise<BugHuntRun[]> {
     return this.find({ order: { createdAt: 'DESC' }, take: limit });
+  }
+
+  /**
+   * Tokens and cost per calendar day and trigger — the Spend-over-time card
+   * on Analytics → Bug Agent, which folds these day cells into days, weeks
+   * or months on the client.
+   *
+   * Grouped by trigger rather than by phase because that is the only split
+   * the table can honestly make: in Works-solo mode a sweep discovers,
+   * verifies AND fixes in one run, so its tokens cannot be attributed to
+   * finding versus fixing. Cost prefers the CLI's own figure over the token
+   * estimate, which prices prompt-cache reads at full rate and overstates a
+   * cache-heavy run. Skipped runs spend nothing and are left out, so a quiet
+   * night is a zero rather than a row.
+   */
+  async dailyTokens(since: Date): Promise<DailyRunTokens[]> {
+    const rows = await this.manager.query<
+      Array<{
+        day: string;
+        trigger: BugHuntTrigger;
+        runs: string;
+        input_tokens: string | null;
+        output_tokens: string | null;
+        cost_usd: string | null;
+      }>
+    >(
+      `
+      SELECT
+        to_char(r."createdAt", 'YYYY-MM-DD') AS day,
+        r.trigger AS trigger,
+        COUNT(*) AS runs,
+        COALESCE(SUM(r."totalInputTokens"), 0) AS input_tokens,
+        COALESCE(SUM(r."totalOutputTokens"), 0) AS output_tokens,
+        COALESCE(SUM(COALESCE(
+          NULLIF((r.metadata->>'cliReportedCostUsd'), '')::numeric,
+          r."totalTokenCostUsd"
+        )), 0) AS cost_usd
+      FROM bug_hunt_runs r
+      WHERE r."createdAt" >= $1
+        AND r.status NOT IN ('skipped_disabled', 'skipped_quiet')
+      GROUP BY 1, 2
+      ORDER BY 1 ASC
+      `,
+      [since],
+    );
+    return rows.map((row) => ({
+      day: row.day,
+      trigger: row.trigger,
+      runs: Number(row.runs),
+      inputTokens: Number(row.input_tokens ?? 0),
+      outputTokens: Number(row.output_tokens ?? 0),
+      costUsd: Number(row.cost_usd ?? 0),
+    }));
   }
   /**
    * How much of the repo runs in the window were shown, averaged over the runs

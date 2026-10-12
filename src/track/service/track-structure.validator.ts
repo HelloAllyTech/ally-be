@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   ArticleContent,
   ArticleQuestion,
+  ArticleResource,
   JournalContent,
   parseArticleQuestionMarkers,
   TrackItemType,
@@ -38,6 +39,7 @@ import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
   TRACK_MAX_ARTICLE_QUESTIONS,
+  TRACK_MAX_ARTICLE_RESOURCES,
   TRACK_LIKERT_MAX_SCALE_POINTS,
   TRACK_LIKERT_MAX_STATEMENTS,
   TRACK_LIKERT_MIN_SCALE_POINTS,
@@ -189,6 +191,48 @@ function validateArticleContent(
     fail(`Article component "${title}" must have content.`);
   }
   validateArticleQuestions(content, title);
+  validateArticleResources(content.resources, title);
+}
+
+/**
+ * Curated external links. Loose on count and free-form on title, strict on
+ * the one thing that matters for safety: the URL becomes a real `<a href>`
+ * link and an iframe `src` on two frontends, so only http(s) is accepted —
+ * `javascript:`/`data:` etc. are rejected here, not sanitized downstream.
+ */
+function validateArticleResources(
+  resources: ArticleResource[] | undefined,
+  title: string,
+): void {
+  if (!resources || resources.length === 0) return;
+
+  if (resources.length > TRACK_MAX_ARTICLE_RESOURCES) {
+    fail(
+      `Article component "${title}": at most ${TRACK_MAX_ARTICLE_RESOURCES} resources.`,
+    );
+  }
+
+  const seenIds = new Set<string>();
+  resources.forEach((resource: ArticleResource, index) => {
+    const label = `Article component "${title}" resource ${index + 1}`;
+    if (!resource?.id) fail(`${label}: missing id.`);
+    if (seenIds.has(resource.id)) {
+      fail(`${label}: duplicate id ${resource.id}.`);
+    }
+    seenIds.add(resource.id);
+
+    if (!resource.title?.trim()) fail(`${label}: missing title.`);
+
+    let parsed: URL;
+    try {
+      parsed = new URL(resource.url);
+    } catch {
+      fail(`${label}: "${resource.url}" is not a valid URL.`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      fail(`${label}: only http(s) links are allowed.`);
+    }
+  });
 }
 
 /**

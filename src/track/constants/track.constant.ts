@@ -24,6 +24,13 @@ export const TRACK_MAX_QUIZ_QUESTIONS = 50;
 export const TRACK_MAX_ARTICLE_QUESTIONS = 10;
 
 /**
+ * Curated external links per ARTICLE. A short, trainer-picked reading list,
+ * not a bibliography — kept well below the question ceiling for the same
+ * reason: past this many, the links belong in their own resource page.
+ */
+export const TRACK_MAX_ARTICLE_RESOURCES = 10;
+
+/**
  * Likert bounds. A scale needs two points to be a choice and past ten stops
  * being a scale anyone reads point by point; twenty statements is already a
  * long survey for one screen.

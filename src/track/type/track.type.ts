@@ -77,10 +77,24 @@ export interface TrackTranslations {
  */
 export type ArticleQuestion = McqSingleQuestion;
 
+/**
+ * A curated external link shown in the "Resources" list after an article's
+ * body — supplementary reading, never required: nothing here gates
+ * completion, and the player opens it in place (a modal/sheet with an
+ * embedded view) rather than sending the learner out of the app, per
+ * "reach curated material without leaving the course".
+ */
+export interface ArticleResource {
+  id: string;
+  title: string;
+  url: string;
+}
+
 export interface ArticleContent {
   html: string;
   imageUrls?: string[];
   questions?: ArticleQuestion[];
+  resources?: ArticleResource[];
 }
 
 /** Matches the placeholder an article question is anchored to in the HTML. */

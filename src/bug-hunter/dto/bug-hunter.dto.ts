@@ -1528,6 +1528,17 @@ export class BugHunterMetricsQueryDto {
   days?: number;
 }
 
+export class BugHunterOperationsTokensDto {
+  @ApiProperty() runs!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty({
+    description:
+      'Two decimals; the CLI figure where reported, else the token estimate.',
+  })
+  costUsd!: number;
+}
+
 export class BugHunterOperationsDayDto {
   @ApiProperty({ description: 'YYYY-MM-DD, in the database clock (UTC).' })
   date!: string;
@@ -1546,6 +1557,13 @@ export class BugHunterOperationsDayDto {
 
   @ApiProperty({ description: 'Of `filed`, still new or pending approval.' })
   undecided!: number;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'Tokens and cost spent by runs that started that day, keyed by trigger (scheduled / manual / fix_session / verify_fix / verify_findings / pr_review), each a BugHunterOperationsTokensDto. A sweep finds, verifies and fixes in one run, so sweep tokens cannot be split into discovery and fixing.',
+  })
+  tokens!: Record<string, BugHunterOperationsTokensDto>;
 }
 
 export class BugHunterOperationsTotalsDto {
@@ -1553,6 +1571,10 @@ export class BugHunterOperationsTotalsDto {
   @ApiProperty() accepted!: number;
   @ApiProperty() declined!: number;
   @ApiProperty() undecided!: number;
+  @ApiProperty() inputTokens!: number;
+  @ApiProperty() outputTokens!: number;
+  @ApiProperty() costUsd!: number;
+  @ApiProperty() runs!: number;
 }
 
 export class BugHunterOperationsMetricsDto {

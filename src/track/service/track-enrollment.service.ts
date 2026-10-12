@@ -532,6 +532,7 @@ export class TrackEnrollmentService {
           answeredQuestionCount: questions.filter(
             (question) => answered[question.id],
           ).length,
+          resources: article.resources ?? [],
         };
       }
 
@@ -967,7 +968,10 @@ export class TrackEnrollmentService {
         const article = item.content as ArticleContent | undefined;
         // Count only, like the quiz's — enough for the card to say the
         // article has questions in it, with nothing about what they ask.
-        return { questionCount: article?.questions?.length ?? 0 };
+        return {
+          questionCount: article?.questions?.length ?? 0,
+          resourceCount: article?.resources?.length ?? 0,
+        };
       }
       case TrackItemType.JOURNAL: {
         const journal = item.content as JournalContent | undefined;

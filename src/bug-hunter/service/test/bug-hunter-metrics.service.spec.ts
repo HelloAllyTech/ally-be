@@ -13,6 +13,8 @@ import {
   DailyFiledCount,
   FindingOutcomeCount,
 } from '../../repository/bug-finding.repository';
+import { DailyRunTokens } from '../../repository/bug-hunt-run.repository';
+import { BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
 
 /**
  * The funnel arithmetic is what the weekly precision figures on Analytics →
@@ -124,24 +126,34 @@ describe('buildOperations', () => {
   });
 
   it('draws every calendar day in the window, zeros included, oldest first', () => {
-    const out = buildOperations(3, since, [], now);
+    const out = buildOperations(3, since, [], [], now);
     expect(out.days.map((d) => d.date)).toEqual([
       '2026-09-26',
       '2026-09-27',
       '2026-09-28',
     ]);
-    expect(out.days[1]).toEqual({
+    expect(out.days[1]).toMatchObject({
       date: '2026-09-27',
       filed: 0,
       accepted: 0,
       declined: 0,
       undecided: 0,
     });
+    expect(out.days[1].tokens[BugHuntTrigger.SCHEDULED]).toEqual({
+      runs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    });
     expect(out.totals).toEqual({
       filed: 0,
       accepted: 0,
       declined: 0,
       undecided: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      runs: 0,
     });
   });
 
@@ -156,9 +168,10 @@ describe('buildOperations', () => {
         // Outside the axis: not drawn, but still in the window totals.
         cell('2026-09-30', [1, 0, 1, 0]),
       ],
+      [],
       now,
     );
-    expect(out.days[1]).toEqual({
+    expect(out.days[1]).toMatchObject({
       date: '2026-09-27',
       filed: 6,
       accepted: 3,
@@ -166,7 +179,7 @@ describe('buildOperations', () => {
       undecided: 1,
     });
     expect(out.days[2].filed).toBe(2);
-    expect(out.totals).toEqual({
+    expect(out.totals).toMatchObject({
       filed: 9,
       accepted: 3,
       declined: 3,
@@ -176,11 +189,63 @@ describe('buildOperations', () => {
     expect(out.since).toBe(since.toISOString());
   });
 
-  it('is what the service returns from the one repository read', async () => {
+  it('buckets spend by day and trigger, rounds cost to cents, and counts an off-axis run in the totals', () => {
+    const spend = (
+      day: string,
+      trigger: BugHuntTrigger,
+      over: Partial<DailyRunTokens> = {},
+    ): DailyRunTokens => ({
+      day,
+      trigger,
+      runs: 1,
+      inputTokens: 1000,
+      outputTokens: 200,
+      costUsd: 0.12345,
+      ...over,
+    });
+    const out = buildOperations(
+      3,
+      since,
+      [],
+      [
+        spend('2026-09-27', BugHuntTrigger.SCHEDULED, { runs: 2 }),
+        spend('2026-09-27', BugHuntTrigger.FIX_SESSION, {
+          inputTokens: 300,
+          outputTokens: 50,
+          costUsd: 1.25,
+        }),
+        // A run stamped after the axis ends: real spend, no bar.
+        spend('2026-10-01', BugHuntTrigger.MANUAL, { costUsd: 9 }),
+      ],
+      now,
+    );
+    const day = out.days.find((d) => d.date === '2026-09-27')!;
+    expect(day.tokens[BugHuntTrigger.SCHEDULED]).toEqual({
+      runs: 2,
+      inputTokens: 1000,
+      outputTokens: 200,
+      costUsd: 0.12,
+    });
+    expect(day.tokens[BugHuntTrigger.FIX_SESSION].costUsd).toBe(1.25);
+    expect(day.tokens[BugHuntTrigger.PR_REVIEW].runs).toBe(0);
+    expect(out.days.some((d) => d.date === '2026-10-01')).toBe(false);
+    expect(out.totals).toMatchObject({
+      inputTokens: 2300,
+      outputTokens: 450,
+      runs: 4,
+      costUsd: 10.37,
+    });
+  });
+
+  it('is what the service returns from the two repository reads', async () => {
     const findingRepository = {
       dailyFiledCounts: jest.fn().mockResolvedValue([]),
     };
-    const service = new BugHunterMetricsService(findingRepository as never);
+    const runRepository = { dailyTokens: jest.fn().mockResolvedValue([]) };
+    const service = new BugHunterMetricsService(
+      findingRepository as never,
+      runRepository as never,
+    );
 
     const out = await service.operations(7);
 
@@ -189,5 +254,6 @@ describe('buildOperations', () => {
     expect(findingRepository.dailyFiledCounts).toHaveBeenCalledWith(
       expect.any(Date),
     );
+    expect(runRepository.dailyTokens).toHaveBeenCalledWith(expect.any(Date));
   });
 });

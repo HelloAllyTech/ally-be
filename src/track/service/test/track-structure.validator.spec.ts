@@ -657,6 +657,108 @@ describe('validateTrackStructure - inline article questions', () => {
   });
 });
 
+describe('validateTrackStructure - article resources', () => {
+  const wrap = (item: any): UpsertTrackSectionDto[] => [
+    { title: 'S', order: 1, items: [item] },
+  ];
+
+  const resource = (overrides: Record<string, any> = {}) => ({
+    id: 'r1',
+    title: 'A curated reading',
+    url: 'https://example.com/reading',
+    ...overrides,
+  });
+
+  const articleItem = (content: Record<string, any>) => ({
+    type: TrackItemType.ARTICLE,
+    order: 1,
+    title: 'Article',
+    content,
+  });
+
+  it('accepts an article with no resources at all', () => {
+    expect(() =>
+      validateTrackStructure(wrap(articleItem({ html: '<p>hi</p>' }))),
+    ).not.toThrow();
+  });
+
+  it('accepts an article with valid resources', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>hi</p>',
+            resources: [resource(), resource({ id: 'r2' })],
+          }),
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a resource with a missing title', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>hi</p>',
+            resources: [resource({ title: '  ' })],
+          }),
+        ),
+      ),
+    ).toThrow(/missing title/);
+  });
+
+  it('rejects a non-http(s) resource URL', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>hi</p>',
+            resources: [resource({ url: 'javascript:alert(1)' })],
+          }),
+        ),
+      ),
+    ).toThrow(/only http\(s\) links/);
+  });
+
+  it('rejects a malformed resource URL', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>hi</p>',
+            resources: [resource({ url: 'not a url' })],
+          }),
+        ),
+      ),
+    ).toThrow(/not a valid URL/);
+  });
+
+  it('rejects duplicate resource ids', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>hi</p>',
+            resources: [resource(), resource()],
+          }),
+        ),
+      ),
+    ).toThrow(/duplicate id/);
+  });
+
+  it('caps the number of resources in one article', () => {
+    const resources = Array.from({ length: 11 }, (_, i) =>
+      resource({ id: `r${i}` }),
+    );
+    expect(() =>
+      validateTrackStructure(
+        wrap(articleItem({ html: '<p>hi</p>', resources })),
+      ),
+    ).toThrow(/at most 10 resources/);
+  });
+});
+
 describe('validateTrackStructure - question media', () => {
   const wrap = (item: any): UpsertTrackSectionDto[] => [
     { title: 'S', order: 1, items: [item] },
