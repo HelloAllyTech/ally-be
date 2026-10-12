@@ -1,0 +1,6 @@
+{
+  "name": "Builder — Platform Rules",
+  "description": "Standing rules every Builder agent receives — interviewer, technical designer, planner, coder and reviewer: additive API and data changes because released mobile apps lag the backend, never renaming persisted keys, finding every reader before changing a field, reusing existing components, scope and test discipline. Hand-written and authoritative, unlike lessons, which are learned and advisory.",
+  "category": "Builder",
+  "runtimes": ["ally-be"]
+}

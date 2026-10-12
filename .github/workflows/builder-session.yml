@@ -34,7 +34,7 @@ on:
         description: Builder run id (created before dispatch)
         required: true
       mode:
-        description: build | resume
+        description: build | resume | fix | review | design
         required: true
         default: build
       repos:

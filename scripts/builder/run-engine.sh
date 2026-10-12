@@ -118,8 +118,8 @@ MCP_SERVER="${HERE}/builder-mcp.mjs"
 # regardless: a guarantee this pipeline depends on is not left resting on one
 # vendor's config being read the way its documentation says.
 #
-# instructions: every cloned repo's AGENTS.md, loaded at the start of every
-# phase. Without it opencode attaches a repo's AGENTS.md only when its `read`
+# instructions: the platform rules, then every cloned repo's AGENTS.md, loaded
+# at the start of every phase. Without it opencode attaches a repo's AGENTS.md only when its `read`
 # tool first opens a file in that repo — `grep` and `glob` never do — so a
 # phase could finish without ever seeing the rules of the repo it edited.
 #
@@ -131,10 +131,24 @@ MCP_SERVER="${HERE}/builder-mcp.mjs"
 # steps: a turn cap per agent. On its last step opencode withholds the tools
 # and asks for a text answer, so a phase that has stopped making progress ends
 # with a summary instead of running until the wall clock kills it.
+# The platform rules every Builder agent works under (src/prompts/builder/
+# platform_rules.txt, editable from the dashboard), loaded first. Served by
+# ally-be so a dashboard edit reaches the runner too; the protocol checkout's
+# copy of the file is the fallback, so an unreachable endpoint never means a
+# run without rules.
+PLATFORM_RULES=/tmp/builder-platform-rules.md
+if ! curl -fsS "${ALLY_BE_API_URL}/api/v1/builder/pipeline/platform-rules" \
+      -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$PLATFORM_RULES" 2>/dev/null ||
+   [ ! -s "$PLATFORM_RULES" ]; then
+  cp "${HERE}/../../src/prompts/builder/platform_rules.txt" "$PLATFORM_RULES" 2>/dev/null || true
+fi
 INSTRUCTIONS_JSON="$(
-  for dir in repos/*/; do
-    if [ -f "${dir}AGENTS.md" ]; then printf '%s\n' "${PWD}/${dir}AGENTS.md"; fi
-  done | jq -R . | jq -sc .
+  {
+    if [ -s "$PLATFORM_RULES" ]; then printf '%s\n' "$PLATFORM_RULES"; fi
+    for dir in repos/*/; do
+      if [ -f "${dir}AGENTS.md" ]; then printf '%s\n' "${PWD}/${dir}AGENTS.md"; fi
+    done
+  } | jq -R . | jq -sc .
 )"
 jq -n \
   --arg mcp "$MCP_SERVER" \
@@ -1200,7 +1214,67 @@ ensure_branches() {
   done
 }
 
+# ── Design mode: read the code, write the technical design, change nothing ──
+#
+# Before any branch exists, on purpose: a design run writes no code, so it has
+# no branch to create and nothing to push — the repos stay on master, which
+# save_work_in_progress never pushes, even from the crash handler.
+#
+# Two read-only passes on the `reviewer` agent. The designer explores every
+# cloned repo and submits the design through the `design` tool, which answers
+# with whatever still blocks approval, so it can fix and resubmit. Then a cold
+# critic — a fresh session that did not write the design — checks its claims
+# against the code and files a verdict through `design_review`. Session
+# 880e73e6's PRD prescribed renaming a stored key no released mobile client
+# could read; the reader list and the critic exist so that is found here, in
+# minutes, rather than by a build.
+if [ "${BUILDER_MODE:-build}" = "design" ]; then
+  DESIGN_TIMEOUT="$(timeout_for design 30m)"
+  rm -f /tmp/builder-design-submitted /tmp/builder-design-reviewed
+
+  echo "::group::design (${PLANNER_MODEL})"
+  snapshot_heads
+  set_agent_phase design
+  run_agent "$PROMPT_FILE" "${RESULTS_DIR}/design.json" \
+    "$PLANNER_MODEL" reviewer "$DESIGN_TIMEOUT"
+  report_phase_cost design "$PLANNER_MODEL" "${RESULTS_DIR}/design.json"
+  revert_stray_writes "the designer"
+  echo "::endgroup::"
+
+  if [ ! -f /tmp/builder-design-submitted ]; then
+    report_outcome '{"outcome":"failed","error":"The designer finished without submitting a design. Draft it again; if it keeps happening, the run log says where it stopped."}'
+    exit 1
+  fi
+
+  if fetch_prompt design-review-prompt /tmp/builder-design-review-prompt.txt; then
+    echo "::group::design review (${VERIFIER_MODEL})"
+    snapshot_heads
+    set_agent_phase design-review
+    run_agent /tmp/builder-design-review-prompt.txt "${RESULTS_DIR}/design-review.json" \
+      "$VERIFIER_MODEL" reviewer "$VERIFY_TIMEOUT" || true
+    report_phase_cost design-review "$VERIFIER_MODEL" "${RESULTS_DIR}/design-review.json"
+    revert_stray_writes "the design reviewer"
+    echo "::endgroup::"
+    # A critic that filed nothing leaves the design without a review, which the
+    # admin sees; it does not undo a design that was submitted.
+    [ -f /tmp/builder-design-reviewed ] ||
+      echo "::warning::The design reviewer filed no verdict." >&2
+  else
+    echo "::warning::Could not fetch the design review prompt; the design stands without a review." >&2
+  fi
+
+  report_outcome '{"outcome":"done"}'
+  exit 0
+fi
+
 ensure_branches
+
+# The approved technical design's per-repo file list, for the gate's scope
+# check (check-scope.mjs). Empty when the session has none, which leaves the
+# plan's file lists to judge by on their own.
+if ! fetch_prompt design-scope /tmp/builder-design-scope.json 2>/dev/null; then
+  echo '{}' > /tmp/builder-design-scope.json
+fi
 
 # ── Work a previous run left on the branch ──────────────────────────────────
 #

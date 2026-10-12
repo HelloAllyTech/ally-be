@@ -268,6 +268,81 @@ await test('a scope change without a reason is refused', async () => {
   assert.equal(call.result.isError, true);
 });
 
+// The design tools belong to their own phases: a coder offered `design` could
+// rewrite the scope it is about to be held to.
+await test('design tools are offered only in their own phase', async () => {
+  const design = await listTools('design');
+  assert.ok(design.includes('design'));
+  assert.ok(!design.includes('design_review'));
+  const review = await listTools('design-review');
+  assert.ok(review.includes('design_review'));
+  assert.ok(!review.includes('design'));
+  for (const phase of ['code', 'plan', 'verify', 'finalise', undefined]) {
+    const tools = await listTools(phase);
+    assert.ok(!tools.includes('design') && !tools.includes('design_review'), `${phase} must not have them`);
+  }
+});
+
+const DESIGN = {
+  designMd: '## Approach',
+  scope: [{ repo: 'ally-be', files: ['src/a.ts'] }],
+  contracts: [],
+  compatibilityMd: '',
+  testMap: [],
+  openDecisions: [],
+};
+
+await test('a submitted design marks the run and relays what blocks approval', async () => {
+  const marker = path.join(tmp, 'design-submitted');
+  process.env.BUILDER_DESIGN_SUBMITTED = marker;
+  try {
+    const { call, received } = await callTool('design', DESIGN, {
+      phase: 'design',
+      body: JSON.stringify({ ok: true, blockers: ['R1 has no test in the test map'] }),
+    });
+    const post = received.find((r) => r.url.endsWith('/design'));
+    assert.deepEqual(post.parsed, DESIGN);
+    assert.ok(fs.existsSync(marker), 'the runner reads this marker');
+    assert.match(textOf(call), /blocked by:\n- R1 has no test/);
+  } finally {
+    delete process.env.BUILDER_DESIGN_SUBMITTED;
+  }
+});
+
+await test('a refused design is an error and leaves no marker', async () => {
+  const marker = path.join(tmp, 'design-refused');
+  process.env.BUILDER_DESIGN_SUBMITTED = marker;
+  try {
+    const { call } = await callTool('design', DESIGN, {
+      phase: 'design',
+      status: 400,
+      body: '{"message":"not this run"}',
+    });
+    assert.equal(call.result.isError, true);
+    assert.ok(!fs.existsSync(marker));
+  } finally {
+    delete process.env.BUILDER_DESIGN_SUBMITTED;
+  }
+});
+
+await test('a design review is posted with its verdict', async () => {
+  const marker = path.join(tmp, 'design-reviewed');
+  process.env.BUILDER_DESIGN_REVIEWED = marker;
+  try {
+    const { call, received } = await callTool(
+      'design_review',
+      { verdict: 'concerns', notesMd: 'misses `QuizResults.tsx:79`' },
+      { phase: 'design-review' },
+    );
+    const post = received.find((r) => r.url.endsWith('/design-review'));
+    assert.equal(post.parsed.verdict, 'concerns');
+    assert.ok(fs.existsSync(marker));
+    assert.match(textOf(call), /review stored \(concerns\)/);
+  } finally {
+    delete process.env.BUILDER_DESIGN_REVIEWED;
+  }
+});
+
 await test('an empty question is refused before it can pause the run', async () => {
   const { call, received } = await callTool('ask', { questions: [] });
 

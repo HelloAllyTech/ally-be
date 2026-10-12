@@ -27,6 +27,11 @@
 //
 // Usage: check-scope.mjs --dir <repo dir> --repo <name> --results <file>
 //          [--plan /tmp/builder-plan.md] [--declared /tmp/builder-scope-changes.jsonl]
+//          [--design-scope /tmp/builder-design-scope.json]
+//
+// The approved technical design's per-repo file list ({repos: {repo: [paths]}},
+// from ally-be) counts as planned too: the design is what the admin approved,
+// and the plan is the coder's breakdown of it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -145,7 +150,7 @@ export function scopeProblems({ repo, changes, planned, declared }) {
     if (TEST_FILE.test(file) && (status === 'A' || subjects.has(subjectOf(file)))) continue;
     if (status === 'A' && plannedDirs.has(path.dirname(file))) continue;
     problems.push(
-      `${file}: not in the plan's file list — restore it from origin/master; if the planned change genuinely needs it, declare it with scope_change and say why`,
+      `${file}: not in the plan's or the approved design's file list — restore it from origin/master; if the planned change genuinely needs it, declare it with scope_change and say why`,
     );
   }
   return { judged: true, problems };
@@ -182,6 +187,16 @@ function collect(dir) {
   return [...changes, ...untracked];
 }
 
+/** The approved design's file list for one repo; empty when there is none. */
+export const designScope = (file, repo) => {
+  try {
+    const files = JSON.parse(fs.readFileSync(file, 'utf8'))?.repos?.[repo];
+    return Array.isArray(files) ? files.filter((f) => typeof f === 'string' && f) : [];
+  } catch {
+    return [];
+  }
+};
+
 const readDeclared = (file) => {
   try {
     return fs
@@ -213,6 +228,7 @@ if (isMain) {
   const resultsPath = argOf('results');
   const planPath = argOf('plan') ?? '/tmp/builder-plan.md';
   const declaredPath = argOf('declared') ?? '/tmp/builder-scope-changes.jsonl';
+  const designScopePath = argOf('design-scope') ?? '/tmp/builder-design-scope.json';
   if (!dir || !repo || !resultsPath) {
     console.error('usage: check-scope.mjs --dir <repo dir> --repo <name> --results <file>');
     process.exit(1);
@@ -230,7 +246,7 @@ if (isMain) {
     verdict = scopeProblems({
       repo,
       changes: collect(dir),
-      planned: planScope(planMd, repo),
+      planned: [...planScope(planMd, repo), ...designScope(designScopePath, repo)],
       declared: readDeclared(declaredPath),
     });
   } catch (error) {

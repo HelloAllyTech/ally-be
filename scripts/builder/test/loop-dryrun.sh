@@ -202,6 +202,21 @@ if [ "${DRYRUN_RUN_SELFCHECK:-}" = 1 ] && [ "$phase" = "build" ]; then
   echo "$?" > /tmp/builder-dryrun-selfcheck.rc
 fi
 
+# Design mode. run-engine.sh names the phase in BUILDER_PHASE_FILE; the
+# markers stand in for the `design` and `design_review` MCP tools, which is what
+# writes them for real. DRYRUN_DESIGN_SKIP=1 is a designer that never submits.
+agent_phase="$(cat "${BUILDER_PHASE_FILE:-/tmp/builder-phase}" 2>/dev/null)"
+if [ "$agent_phase" = design ] || [ "$agent_phase" = design-review ]; then
+  if [ "$agent_phase" = design ] && [ "${DRYRUN_DESIGN_SKIP:-}" != 1 ]; then
+    date > /tmp/builder-design-submitted
+  fi
+  [ "$agent_phase" = design-review ] && date > /tmp/builder-design-reviewed
+  echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_design"}'
+  echo '{"type":"text","part":{"type":"text","text":"Done."},"sessionID":"ses_design"}'
+  echo '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":3,"input":2,"output":1,"cache":{"read":0}},"cost":0.2},"sessionID":"ses_design"}'
+  exit 0
+fi
+
 # A coder that ran self-check itself before stopping: the stamp matches the
 # tree it leaves, so no follow-up turn is needed.
 if [ "${DRYRUN_SELFCHECKED:-}" = 1 ] && [ "$phase" = "build" ]; then
@@ -505,7 +520,8 @@ run_scenario() {
         /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions \
         /tmp/builder-dryrun-stall-count /tmp/builder-scope-changes.jsonl \
         /tmp/builder-selfcheck.stamp /tmp/builder-dryrun-selfcheck-turns \
-        /tmp/builder-dryrun-selfcheck.out /tmp/builder-dryrun-selfcheck.rc
+        /tmp/builder-dryrun-selfcheck.out /tmp/builder-dryrun-selfcheck.rc \
+        /tmp/builder-design-submitted /tmp/builder-design-reviewed
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -962,6 +978,24 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = stalled-turn ]; then
   check "ran the coder twice" 2 "$(cat /tmp/builder-dryrun-stall-count)"
   check "billed both runs of the phase" yes \
     "$(grep -q 'COST code-1:0.75' "$LOG_FILE" && echo yes || echo no)"
+fi
+
+# Design mode: two read-only passes, an outcome, and no branch work at all.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = design ]; then
+  run_scenario design BUILDER_MODE=design
+  check "finished the run" 0 "$EXIT_CODE"
+  check "reported done" yes "$(has_in_log 'POST complete {"outcome":"done"}')"
+  check "billed the designer" yes "$(has_in_log 'COST design:')"
+  check "ran the cold critic" yes "$(has_in_log 'GET design-review-prompt')"
+  check "billed the critic" yes "$(has_in_log 'COST design-review:')"
+  check "no gate, no plan" no "$(has_in_log 'GET plan-prompt')"
+  check "pushed nothing" no \
+    "$(grep -q 'pushed ' "${WORK}/design.out" && echo yes || echo no)"
+
+  run_scenario design-unsubmitted BUILDER_MODE=design DRYRUN_DESIGN_SKIP=1
+  check "fails a design that was never submitted" 1 "$EXIT_CODE"
+  check "and says so" yes "$(has_in_log 'without submitting a design')"
+  check "skips the critic" no "$(has_in_log 'GET design-review-prompt')"
 fi
 
 # ── 12. the runner itself failing ──────────────────────────────────────────

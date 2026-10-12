@@ -176,11 +176,26 @@ const currentPhase = () => {
   }
 };
 
+/**
+ * Tools that belong to exactly one phase. The designer submits a design and
+ * the design critic files a verdict; a coder offered `design` could rewrite
+ * the scope it is about to be held to.
+ */
+const ONLY_IN_PHASE = {
+  design: 'design',
+  design_review: 'design-review',
+};
+
 const toolsForPhase = () => {
   const phase = currentPhase();
-  // Unknown phase: withhold nothing. See above.
-  if (!phase || MAY_FINISH_THE_RUN.has(phase)) return Object.keys(TOOLS);
-  return Object.keys(TOOLS).filter((name) => name !== 'complete_run');
+  const own = (name) => !ONLY_IN_PHASE[name] || ONLY_IN_PHASE[name] === phase;
+  // Unknown phase: withhold nothing but the phase-owned tools. See above.
+  if (!phase || MAY_FINISH_THE_RUN.has(phase)) {
+    return Object.keys(TOOLS).filter(own);
+  }
+  return Object.keys(TOOLS).filter(
+    (name) => name !== 'complete_run' && own(name),
+  );
 };
 
 /* ── The tools ───────────────────────────────────────────────────────────── */
@@ -314,6 +329,142 @@ const TOOLS = {
       return {
         text: `declared ${entry.repo}/${entry.path}${result.ok ? '' : ' (feed note not recorded)'}`,
       };
+    },
+  },
+
+  design: {
+    description:
+      'Submit the technical design. Call it once the design is complete; the ' +
+      'reply lists whatever still blocks approval — fix each and call again ' +
+      'with the whole design until none remain.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        designMd: {
+          type: 'string',
+          description: 'The design itself, markdown.',
+        },
+        scope: {
+          type: 'array',
+          description:
+            'Per repo, the exact files (globs allowed) the build may change. ' +
+            "This becomes the build's hard scope check.",
+          items: {
+            type: 'object',
+            properties: {
+              repo: { type: 'string' },
+              files: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['repo', 'files'],
+          },
+        },
+        contracts: {
+          type: 'array',
+          description:
+            'Every stored field, API field, enum or table the change alters, ' +
+            'with every reader found, as "repo:path:line".',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              change: { type: 'string' },
+              readers: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['name', 'change', 'readers'],
+          },
+        },
+        compatibilityMd: {
+          type: 'string',
+          description:
+            'How released mobile builds and existing data keep working.',
+        },
+        testMap: {
+          type: 'array',
+          description: 'Every requirement id → the test that proves it.',
+          items: {
+            type: 'object',
+            properties: {
+              requirementId: { type: 'string' },
+              repo: { type: 'string' },
+              file: { type: 'string' },
+              asserts: { type: 'string' },
+            },
+            required: ['requirementId', 'repo', 'file', 'asserts'],
+          },
+        },
+        openDecisions: {
+          type: 'array',
+          description:
+            'Decisions only a person can make, each with its options. Any ' +
+            'entry blocks approval until the PRD settles it.',
+          items: { type: 'string' },
+        },
+      },
+      required: [
+        'designMd',
+        'scope',
+        'contracts',
+        'compatibilityMd',
+        'testMap',
+        'openDecisions',
+      ],
+    },
+    handler: async (design) => {
+      const result = await request('POST', 'design', design);
+      if (!result.ok) {
+        return {
+          isError: true,
+          text: `design NOT stored (${result.status}): ${result.text}`,
+        };
+      }
+      // The runner reads this to tell "submitted" from "finished without
+      // submitting".
+      writeFileSync(
+        process.env.BUILDER_DESIGN_SUBMITTED || '/tmp/builder-design-submitted',
+        new Date().toISOString(),
+      );
+      let blockers = [];
+      try {
+        blockers = JSON.parse(result.text).blockers ?? [];
+      } catch {
+        // Stored, and nothing to report.
+      }
+      return {
+        text: blockers.length
+          ? `design stored, but approval is blocked by:\n- ${blockers.join('\n- ')}\nFix each and call design again with the whole design.`
+          : 'design stored; nothing blocks approval.',
+      };
+    },
+  },
+
+  design_review: {
+    description:
+      'File your verdict on the technical design: pass, or concerns with ' +
+      'what is wrong and the evidence (file:line).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verdict: { type: 'string', enum: ['pass', 'concerns'] },
+        notesMd: { type: 'string', description: 'Your findings, markdown.' },
+      },
+      required: ['verdict', 'notesMd'],
+    },
+    handler: async ({ verdict, notesMd }) => {
+      const result = await request('POST', 'design-review', {
+        verdict,
+        notesMd: String(notesMd ?? ''),
+      });
+      if (!result.ok) {
+        return {
+          isError: true,
+          text: `review NOT stored (${result.status}): ${result.text}`,
+        };
+      }
+      writeFileSync(
+        process.env.BUILDER_DESIGN_REVIEWED || '/tmp/builder-design-reviewed',
+        new Date().toISOString(),
+      );
+      return { text: `review stored (${verdict})` };
     },
   },
 

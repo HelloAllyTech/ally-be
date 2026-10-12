@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-import { globToRegExp, planScope, scopeProblems } from '../check-scope.mjs';
+import { designScope, globToRegExp, planScope, scopeProblems } from '../check-scope.mjs';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const CHECK = path.join(HERE, '..', 'check-scope.mjs');
@@ -164,6 +164,14 @@ test('no file list for the repo: not judged, nothing blocked', () => {
   assert.deepEqual(verdict, { judged: false, problems: [] });
 });
 
+test('reads one repo from the design scope, and nothing from a missing file', () => {
+  const file = path.join(os.tmpdir(), `design-scope-${process.pid}.json`);
+  fs.writeFileSync(file, JSON.stringify({ repos: { 'ally-be': ['src/a.ts', 'src/b/**'] } }));
+  assert.deepEqual(designScope(file, 'ally-be'), ['src/a.ts', 'src/b/**']);
+  assert.deepEqual(designScope(file, 'ally-web'), []);
+  assert.deepEqual(designScope('/nonexistent.json', 'ally-be'), []);
+});
+
 // End to end: a real repo, a real plan file, a real results file.
 test('writes a failing scope check into the gate results', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scope-'));
@@ -191,6 +199,13 @@ test('writes a failing scope check into the gate results', () => {
   assert.equal(written.checks.scope.passed, false);
   assert.equal(written.checks.scope.failures.length, 1);
   assert.match(written.checks.scope.failures[0], /^src\/b\.ts: not in the plan/);
+
+  // The approved design's file list counts as planned.
+  const design = path.join(dir, '..', `${path.basename(dir)}-design.json`);
+  fs.writeFileSync(design, JSON.stringify({ repos: { demo: ['src/b.ts'] } }));
+  execFileSync('node', [CHECK, '--dir', dir, '--repo', 'demo', '--results', results,
+    '--plan', plan, '--declared', path.join(dir, 'none.jsonl'), '--design-scope', design], { stdio: 'ignore' });
+  assert.equal(JSON.parse(fs.readFileSync(results, 'utf8')).checks.scope.passed, true);
 });
 
 console.log(`check-scope: ${passed} passed`);
