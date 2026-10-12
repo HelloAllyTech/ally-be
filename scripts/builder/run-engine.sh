@@ -1513,6 +1513,17 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   # run, and a verifier judging the diff against the PRD alone would raise
   # objections to work the admin explicitly asked for.
   apply_steers /tmp/builder-verify-prompt.txt
+  # What the coder declared outside the plan's file lists. The scope check
+  # accepts a declared file; whether the reason holds up is the reviewer's call.
+  if [ -s /tmp/builder-scope-changes.jsonl ]; then
+    {
+      printf '\n\n## Files the coder declared outside the plan\n\n'
+      printf 'Each passed the scope check only because it was declared. Judge whether\n'
+      printf 'the reason holds; a test or snapshot edited to quiet an unrelated check is\n'
+      printf 'a blocking objection.\n\n'
+      jq -r '"- `\(.repo)/\(.path)` — \(.reason)"' /tmp/builder-scope-changes.jsonl 2>/dev/null || true
+    } >> /tmp/builder-verify-prompt.txt
+  fi
 
   snapshot_heads
   set_agent_phase verify

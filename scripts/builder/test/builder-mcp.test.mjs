@@ -232,6 +232,42 @@ await test('the checklist takes structured items, with no file and no jq', async
   assert.match(textOf(call), /2 item/);
 });
 
+// The scope gate reads declarations from a file the runner and the server
+// share; the feed gets a line a reviewer can see.
+await test('a scope change is written for the gate and said in the feed', async () => {
+  const file = path.join(tmp, 'scope-changes.jsonl');
+  process.env.BUILDER_SCOPE_CHANGES = file;
+  try {
+    const { call, received } = await callTool('scope_change', {
+      repo: 'ally-web',
+      path: 'repos/ally-web/apps/admin/src/a.ts',
+      reason: 'the editor imports its toolbar config from here',
+    });
+
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(lines, [
+      {
+        repo: 'ally-web',
+        // A path given from the workspace is stored relative to the repo.
+        path: 'apps/admin/src/a.ts',
+        reason: 'the editor imports its toolbar config from here',
+      },
+    ]);
+    const said = received.find(
+      (r) => r.url.endsWith('/events') && /Scope change: ally-web\/apps\/admin\/src\/a\.ts/.test(JSON.stringify(r.parsed)),
+    );
+    assert.ok(said, 'the declaration must reach the run feed');
+    assert.match(textOf(call), /declared ally-web\/apps\/admin\/src\/a\.ts/);
+  } finally {
+    delete process.env.BUILDER_SCOPE_CHANGES;
+  }
+});
+
+await test('a scope change without a reason is refused', async () => {
+  const { call } = await callTool('scope_change', { repo: 'ally-web', path: 'a.ts', reason: '' });
+  assert.equal(call.result.isError, true);
+});
+
 await test('an empty question is refused before it can pause the run', async () => {
   const { call, received } = await callTool('ask', { questions: [] });
 

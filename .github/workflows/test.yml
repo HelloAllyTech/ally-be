@@ -156,6 +156,10 @@ jobs:
       - name: MCP reporting server
         run: node scripts/builder/test/builder-mcp.test.mjs
 
+      # Changed files must be ones the plan named, or declared with a reason.
+      - name: Scope check
+        run: node scripts/builder/test/check-scope.test.mjs
+
       # The agent's node/npm/npx follow the repo's .nvmrc. Run on its default
       # Node, ally-web's specs fail for reasons that are not the change.
       - name: Agent Node per repo

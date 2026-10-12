@@ -250,6 +250,13 @@ for dir in repos/*/; do
   [ -n "$tree" ] && printf '%s\n' "$tree" > "${GATE_DIR}/${repo}.tree"
   fi
 
+  # Every round, including one that reused the results above: the plan and the
+  # coder's scope declarations can change while the tree does not.
+  node "${HERE}/check-scope.mjs" \
+    --dir "$dir" \
+    --repo "$repo" \
+    --results "${GATE_DIR}/${repo}.json" || true
+
   # A baseline is only needed to excuse a failure, so it is computed only when
   # there is one to excuse. The happy path — which is most runs — never pays for
   # a full suite at all.

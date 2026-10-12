@@ -429,6 +429,14 @@ in your report rather than fixing it silently — an unrelated fix buried in a
 feature PR is a bad review, and the gate compares against a baseline so it will
 not blame you for it.
 
+**Stay inside the plan's files.** The gate fails any changed file outside the
+plan's workstream file lists (\`scope\`, a hard check), apart from new tests,
+tests of planned files, docs and lockfiles. A test or snapshot that fails for a
+reason your change did not cause is not yours to edit — say so in your report.
+If the planned change genuinely needs a file the plan missed, call
+\`scope_change\` with the repo, the path and why; the reviewer reads every
+declaration.
+
 **9. Stop.** Commit your work on each repo you touched (imperative message,
 describing the change rather than the process) but **do not push and do not
 open a PR** — the finalise phase does that once the gate and the reviewer are

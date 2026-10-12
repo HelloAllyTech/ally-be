@@ -156,13 +156,18 @@ loosening an assertion, adding a skip, casting away a type error or widening a
 lint ignore are all worse than the failure. If a test is genuinely wrong,
 change it and say in one line why the old assertion was incorrect.
 
-**5. Re-run what you touched.** The gate runs again after you finish, but a
+**5. A \`scope\` failure is fixed by restoring the file.** \`git checkout
+origin/master -- <path>\` for anything the change did not need. Declare a file
+with \`scope_change\` only when the planned change genuinely needs it — never a
+test or snapshot edited to make an unrelated check pass.
+
+**6. Re-run what you touched.** The gate runs again after you finish, but a
 failure you could have seen here costs another whole attempt.
 
-**6. Keep the todo list honest** with \`todo\`, and post a short summary of
+**7. Keep the todo list honest** with \`todo\`, and post a short summary of
 what you changed and what you rejected with \`note text "…"\`.
 
-**7. Stop there.** Commit on each repo you changed. Do not push, do not open a
+**8. Stop there.** Commit on each repo you changed. Do not push, do not open a
 PR, do not call \`complete-run\` — the gate, the reviewer and the finalise phase
 run after you.
 

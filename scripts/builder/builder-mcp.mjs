@@ -49,6 +49,7 @@
 
 import { readFileSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
+import { appendFileSync } from 'node:fs';
 
 /* ── Configuration, read the way the helpers read it ─────────────────────── */
 
@@ -260,6 +261,59 @@ const TOOLS = {
         { type: String(type), payload: { text: String(text ?? '') } },
       ]);
       return { text: result.ok ? 'note recorded' : 'note NOT recorded' };
+    },
+  },
+
+  scope_change: {
+    description:
+      'Declare a file you must change that the plan did not list, and why. ' +
+      "The test gate fails any changed file outside the plan's file list " +
+      'unless it is declared here; the reviewer reads every declaration. ' +
+      'Prefer restoring an unplanned change over declaring it: declare only ' +
+      'what the planned change genuinely needs, never a test or snapshot you ' +
+      'edited to make an unrelated check pass.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'The repo, e.g. ally-web.' },
+        path: {
+          type: 'string',
+          description: 'The file, relative to that repo, e.g. src/a/b.ts.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Why the planned change needs this file.',
+        },
+      },
+      required: ['repo', 'path', 'reason'],
+    },
+    handler: async ({ repo, path: file, reason }) => {
+      const entry = {
+        repo: String(repo ?? '').trim(),
+        path: String(file ?? '')
+          .trim()
+          .replace(/^\.\//, '')
+          .replace(new RegExp(`^repos/${String(repo ?? '').trim()}/`), ''),
+        reason: String(reason ?? '').trim(),
+      };
+      if (!entry.repo || !entry.path || !entry.reason) {
+        return { isError: true, text: 'repo, path and reason are all required.' };
+      }
+      appendFileSync(
+        process.env.BUILDER_SCOPE_CHANGES || '/tmp/builder-scope-changes.jsonl',
+        `${JSON.stringify(entry)}\n`,
+      );
+      const result = await postEvents([
+        {
+          type: 'text',
+          payload: {
+            text: `Scope change: ${entry.repo}/${entry.path} — ${entry.reason}`,
+          },
+        },
+      ]);
+      return {
+        text: `declared ${entry.repo}/${entry.path}${result.ok ? '' : ' (feed note not recorded)'}`,
+      };
     },
   },
 

@@ -476,7 +476,7 @@ run_scenario() {
         /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it \
         /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md \
         /tmp/builder-dryrun-textcall-count /tmp/builder-dryrun-textcall-sessions \
-        /tmp/builder-dryrun-stall-count
+        /tmp/builder-dryrun-stall-count /tmp/builder-scope-changes.jsonl
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
