@@ -251,10 +251,18 @@ export class ScenarioService {
     return data;
   }
 
-  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
+  async getPublicScenarios(
+    languageCode?: string,
+  ): Promise<GetScenarioDtoWithPagination> {
     const { data, count } = await this.scenariosRepository.getScenarios({
       isPublic: true,
     });
+
+    if (languageCode) {
+      data.forEach((scenario) =>
+        applyScenarioTranslations(scenario, languageCode),
+      );
+    }
 
     return { data, count };
   }
@@ -1559,13 +1567,24 @@ export class ScenarioService {
             [scenario], // single-item array so helper can reuse same logic
             () =>
               this.sanitizeMetadata({
-                title: updateScenarioDto.title,
-                description: updateScenarioDto.description,
-                sexualOrientation: updateScenarioDto.sexualOrientation,
-                genderIdentity: updateScenarioDto.genderIdentity,
-                customFields: updateScenarioDto?.customFields,
-                knowledgeSources: updateScenarioDto?.knowledgeSources,
-                stateNames: updateScenarioDto?.stateNames,
+                title: updateScenarioDto.title ?? scenario.title,
+                description:
+                  updateScenarioDto.description ?? scenario.description,
+                sexualOrientation:
+                  updateScenarioDto.sexualOrientation ??
+                  scenario.metadata?.sexualOrientation,
+                genderIdentity:
+                  updateScenarioDto.genderIdentity ??
+                  scenario.metadata?.genderIdentity,
+                customFields:
+                  updateScenarioDto?.customFields ??
+                  scenario.metadata?.customFields,
+                knowledgeSources:
+                  updateScenarioDto?.knowledgeSources ??
+                  scenario.metadata?.knowledgeSources,
+                stateNames:
+                  updateScenarioDto?.stateNames ??
+                  scenario.metadata?.stateNames,
               }),
             translationConsiderableData,
             (s) =>
@@ -2947,11 +2966,26 @@ export class ScenarioService {
 
         const sanitized = this.sanitizeMetadata(rawMetadata);
 
+        const languageVoices =
+          resolveLanguageVoices?.(scenario) ??
+          scenario.metadata?.languageVoices;
+        const languagesFiltered =
+          await this.getTranslationTargetLanguagesFromLanguageVoices(
+            languageVoices,
+          );
+
+        const newLanguageCodes = languagesFiltered
+          .map((l) => l.translationCode)
+          .filter(
+            (code) => !scenario.translations || !scenario.translations[code],
+          );
+
         if (
           !this.hasTranslatableFieldsChanged(
             scenario,
             sanitized as Partial<MetadataShape>,
-          )
+          ) &&
+          newLanguageCodes.length === 0
         ) {
           this.logger?.debug?.(
             `[persistTranslationsForScenarios] scenario ${scenario.id}: no translatable fields have changed, skipping translations`,
@@ -2966,13 +3000,6 @@ export class ScenarioService {
           continue;
         }
 
-        const languageVoices =
-          resolveLanguageVoices?.(scenario) ??
-          scenario.metadata?.languageVoices;
-        const languagesFiltered =
-          await this.getTranslationTargetLanguagesFromLanguageVoices(
-            languageVoices,
-          );
         if (!languagesFiltered.length) {
           this.logger?.warn?.(
             `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
@@ -3361,6 +3388,47 @@ export class ScenarioService {
       processedScenarioEvents,
       processedSessionEvents,
     };
+  }
+
+  async translateAllActiveScenarios(): Promise<SuccessResponse> {
+    const scenarios = await this.scenariosRepository.find({
+      where: { status: ScenarioStatus.ACTIVE },
+    });
+
+    for (const scenario of scenarios) {
+      const translationConsiderableData: TranslationConsiderableData = {
+        currentLocation: scenario.metadata?.currentLocation,
+        profession: scenario.metadata?.profession,
+        context: scenario.metadata?.context,
+        age: scenario.metadata?.age,
+        gender: scenario.metadata?.gender,
+      };
+
+      await this.persistTranslationsForScenarios(
+        [scenario],
+        () =>
+          this.sanitizeMetadata({
+            title: scenario.title,
+            description: scenario.description,
+            context: scenario.metadata?.context,
+            sexualOrientation: scenario.metadata?.sexualOrientation,
+            genderIdentity: scenario.metadata?.genderIdentity,
+            customFields: scenario.metadata?.customFields,
+            stateInstructions: scenario.metadata?.stateInstructions,
+            knowledgeSources: scenario.metadata?.knowledgeSources,
+            stateNames: scenario.metadata?.stateNames,
+          }),
+        translationConsiderableData,
+        undefined,
+        {
+          userId: Number(ExecutionManager.getUserId()),
+          jobId: randomUUID(),
+          action: ScenarioTranslationAction.UPDATE,
+        },
+      );
+    }
+
+    return { success: true };
   }
 
   async getBranchingInstructionDynamicShortcuts(

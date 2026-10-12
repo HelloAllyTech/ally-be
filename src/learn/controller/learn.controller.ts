@@ -143,8 +143,10 @@ export class LearnController {
   @Public()
   @ApiOperation({ summary: 'Get all public scenarios' })
   @Get('scenarios/public')
-  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
-    return this.scenarioService.getPublicScenarios();
+  async getPublicScenarios(
+    @Query('languageCode') languageCode?: string,
+  ): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getPublicScenarios(languageCode);
   }
 
   @ApiOperation({ summary: 'Get all scenarios' })
@@ -896,6 +898,17 @@ export class LearnController {
     return this.scenarioService.translateChecklistItems(
       batchSize ? Number(batchSize) : undefined,
     );
+  }
+
+  @ApiOperation({
+    summary: 'Re-translate every active scenario',
+    description:
+      'Processes all active scenarios and generates translations for all configured languages.',
+  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
+  @Post('scenarios/translate-all')
+  async translateAllActiveScenarios(): Promise<SuccessResponse> {
+    return this.scenarioService.translateAllActiveScenarios();
   }
 
   @ApiOperation({ summary: 'Delete scenario events' })
