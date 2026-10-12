@@ -179,7 +179,7 @@ somebody's account unattended is not a thing this run gets to decide.)
 
 The wiki is **public**. No secrets, credentials, internal hostnames, IP
 addresses or cloud region details on a page, ever — the same rule the repo's
-own CLAUDE.md states, and worth re-reading before you write.
+own AGENTS.md states, and worth re-reading before you write.
 
 ### When it did not, or you could not
 

@@ -63,11 +63,8 @@ const truncate = (value) => {
 // step — so they accumulate here, and the totals are written out when the
 // stream closes.
 //
-// The dollars are opencode's own, not a rate card. That is the one thing this
-// engine gives the budget ceiling that neither other engine can: gemini-cli
-// reported no cost at all and Claude Code reported its own estimate, so spend
-// was priced from a table someone had to keep up to date, and an unpriced
-// model silently read as free.
+// The dollars are opencode's own, not a rate card, so the budget ceiling reads
+// measured spend and an unpriced model cannot silently read as free.
 let opencodeCost = 0;
 let opencodeTokens = { input: 0, output: 0, cached: 0 };
 let opencodeSawStep = false;
@@ -113,9 +110,8 @@ const normaliseOpencode = (record) => {
 
     // Shapes read from a real run, not from documentation: `part.tool` is the
     // name, `part.state.input` the arguments and `part.state.output` the
-    // result, all on ONE event rather than the call/result pair the other
-    // engines emit. Both are still forwarded, so the feed reads the same
-    // whichever engine produced it.
+    // result, all on ONE event. The feed shows a call and a result, so both
+    // are forwarded from it.
     if (typeof input.filePath === 'string' || typeof input.path === 'string') {
       const wrote = 'content' in input;
       const edited = 'oldString' in input || 'old_string' in input;
@@ -212,10 +208,6 @@ const finaliseOpencode = () => {
  *
  * Returns an array because a single assistant message can carry both prose and
  * several tool calls, and the feed shows them as separate rows.
- *
- * One engine, so no dispatch. The claude-code and gemini normalisers that used
- * to sit here existed because each CLI invented its own event shape; opencode
- * runs those vendors' models itself, so there is one shape to read again.
  */
 const normalise = (record) => normaliseOpencode(record);
 

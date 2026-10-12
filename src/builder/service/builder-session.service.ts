@@ -125,33 +125,12 @@ export class BuilderSessionService {
         ? String(this.configService.builder.defaultBudgetUsd)
         : null);
 
-    // The engine, for the same reason and with the same history as the budget
-    // above. `builder_sessions.engine` carries a column default (once
-    // 'claude-code', then 'gemini', now 'opencode'), so `session.engine` is
-    // never null — and the
-    // dispatch reads
-    // `overrides.engine ?? session.engine ?? settings.defaultEngine`, where a
-    // non-null column default makes the third rung unreachable. The admin's
-    // "default engine" picker therefore applied to no new session ever: every
-    // one of them arrived at dispatch already saying claude-code.
-    //
-    // Worse than doing nothing, because the per-tier MODELS do read settings.
-    // A workspace set to Gemini produced a claude-code engine with
-    // `gemini-2.5-pro` as its coder, and the run died on its first invocation
-    // having planned on claude-haiku-4-5.
-    //
-    // Stamped here, where the budget's identical bug was fixed, rather than by
-    // making the column nullable — the session then records the engine it will
-    // actually run on, which is also what the UI reads back.
-    const engine = settings.defaultEngine ?? 'opencode';
-
     const session = await this.sessionRepository.save(
       this.sessionRepository.create({
         title: title || 'New build',
         slug: await this.allocateSlug(title),
         tenantId: params.tenantId ?? null,
         budgetUsd,
-        engine,
         createdBy: userId,
         updatedBy: userId,
       }),
@@ -406,7 +385,6 @@ export class BuilderSessionService {
     changes: {
       title?: string;
       repos?: string[];
-      engine?: string;
       model?: string;
     },
   ): Promise<BuilderSession> {
@@ -429,7 +407,6 @@ export class BuilderSessionService {
       }
       patch.repos = changes.repos;
     }
-    if (changes.engine !== undefined) patch.engine = changes.engine;
     if (changes.model !== undefined) patch.model = changes.model;
 
     await this.sessionRepository.update({ id: session.id }, patch);

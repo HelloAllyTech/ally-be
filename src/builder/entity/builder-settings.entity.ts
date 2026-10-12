@@ -123,9 +123,6 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   @Column({ type: 'int', default: 3 })
   maxFixRunsPerPr!: number;
 
-  @Column({ type: 'varchar', length: 40, nullable: true })
-  defaultEngine?: string | null;
-
   /** Legacy coder-tier default; `coderModel` wins when both are set. */
   @Column({ type: 'varchar', length: 80, nullable: true })
   defaultModel?: string | null;

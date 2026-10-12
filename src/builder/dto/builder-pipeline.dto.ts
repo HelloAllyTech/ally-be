@@ -299,12 +299,6 @@ export class UpsertBuilderRepoMapDto {
  * surface exists to prevent.
  */
 export class RecordBuilderRunModelDto {
-  @ApiPropertyOptional({ description: 'The engine that ran this run' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  engine?: string;
-
   @ApiPropertyOptional({ description: 'The model that ran this run' })
   @IsOptional()
   @IsString()

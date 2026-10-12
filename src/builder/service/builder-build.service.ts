@@ -51,7 +51,7 @@ import {
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
-  builderAllowedEngines,
+  BUILDER_ENGINE,
   BUILDER_MODEL_DEFAULTS,
   BUILDER_RESUME_FILES_MAX,
   BUILDER_RESUME_TEST_OUTPUT_MAX,
@@ -178,7 +178,6 @@ export class BuilderBuildService {
     session: BuilderSession,
     userId: number,
     overrides: {
-      engine?: string;
       model?: string;
       plannerModel?: string;
       verifierModel?: string;
@@ -238,12 +237,6 @@ export class BuilderBuildService {
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
-    // settings.defaultEngine existed on the entity but was never actually
-    // consulted here — the admin-facing "default engine" picker changed a
-    // column nothing read. Falling through to it (and finally to the
-    // hardcoded default, for a settings row that predates the field) is what
-    // makes that picker do something.
-    const engine = this.resolveEngine(session, settings, overrides.engine);
     // Epic mode dispatches the first milestone rather than the whole PRD. The
     // split itself is proposed and confirmed before this point — a wrong
     // decomposition is expensive in a way a wrong plan is not, because it
@@ -254,21 +247,14 @@ export class BuilderBuildService {
     const milestone = await this.epicService.nextPending(session.id);
 
     const sizing = await this.classifySession(session, milestone);
-    const models = this.resolveModels(
-      engine,
-      session,
-      settings,
-      overrides,
-      sizing,
-    );
+    const models = this.resolveModels(session, settings, overrides, sizing);
     await this.assertModelsAreReal(models);
 
-    // Carry the chosen engine/model onto the session so a resume run and the
-    // UI both read the same thing without re-deriving it.
+    // Carry the chosen model onto the session so a resume run and the UI both
+    // read the same thing without re-deriving it.
     await this.sessionRepository.update(
       { id: session.id },
       {
-        engine,
         model: models.coder,
         status: BuilderSessionStatus.BUILDING,
         currentStage: BuilderStage.SETUP,
@@ -281,7 +267,7 @@ export class BuilderBuildService {
     );
 
     return this.dispatchRun({
-      session: { ...session, engine, model: models.coder },
+      session: { ...session, model: models.coder },
       mode: BuilderRunMode.BUILD,
       userId,
       repos,
@@ -323,11 +309,7 @@ export class BuilderBuildService {
       this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
-      const models = this.resolveModels(
-        this.resolveEngine(session, settings),
-        session,
-        settings,
-      );
+      const models = this.resolveModels(session, settings);
       await this.sessionRepository.update(
         { id: session.id },
         {
@@ -370,44 +352,11 @@ export class BuilderBuildService {
   }
 
   /**
-   * Which engine this session runs on.
-   *
-   * One expression, because every model tier now falls back differently
-   * depending on the answer — and a resume, fix or review run that disagreed
-   * with the build run about the engine would resolve a different set of
-   * models for the same session.
-   */
-  private resolveEngine(
-    session: BuilderSession,
-    settings: { defaultEngine?: string | null },
-    override?: string,
-  ): string {
-    const chosen =
-      override ?? session.engine ?? settings.defaultEngine ?? 'opencode';
-
-    // Permitted, or overruled — wherever it came from. See
-    // builderAllowedEngines: a stale `claude-code` and an admin typing
-    // `claude-code` spend the same money, so this does not care which it was.
-    const allowed = builderAllowedEngines();
-    if (!allowed.length || allowed.includes(chosen)) return chosen;
-
-    // Said, not swallowed. An engine picker being overruled should be
-    // findable without reading this file.
-    this.logger.info(
-      `Builder engine "${chosen}" is not permitted (allowed: ` +
-        `${allowed.join(', ')}); running session ${session.id} on ` +
-        `${allowed[0]} instead.`,
-    );
-    return allowed[0];
-  }
-
-  /**
    * Model per tier, resolved run override → session (coder only) → settings →
    * config default. One resolution path so the run row, the workflow input
    * and the UI can never disagree about which model a phase used.
    */
   private resolveModels(
-    engine: string,
     session: BuilderSession,
     settings: {
       plannerModel?: string | null;
@@ -431,17 +380,8 @@ export class BuilderBuildService {
     const { size } = sizing;
     const profile = BUILDER_SIZE_PROFILES[size];
 
-    // No engine filter. There used to be one, and it earned its place: each
-    // CLI ran one vendor's models and exited on its first phase if handed
-    // another's, so a session pinned to `gemini` resolving a Claude id from
-    // settings burned its whole remediation ladder repeating the same error.
-    //
-    // opencode is a harness rather than a vendor. It runs whatever provider it
-    // holds a key for, so "does this model belong to this engine" stopped
-    // being a question with an answer — and with one engine left there is
-    // nothing to filter FOR. run-engine.sh derives the provider prefix from
-    // the model id, which is where that knowledge now lives, at the boundary
-    // that actually invokes the thing.
+    // No per-vendor filter: opencode runs whatever provider it holds a key
+    // for, and run-engine.sh derives the provider prefix from the model id.
     const coder =
       overrides.model ??
       session.model ??
@@ -467,8 +407,6 @@ export class BuilderBuildService {
           // unconfigured mechanical model would otherwise hand the runner an
           // empty `--model`, and a cost optimisation that can fail the build
           // is not one.
-          // The same fallback covers a mechanical model belonging to
-          // another engine — see forThisEngine above.
           (config.mechanicalModel ?? coder)
         : profile.plannerTier === 'coder'
           ? coder
@@ -602,7 +540,7 @@ export class BuilderBuildService {
    * anything.
    *
    * A model id that a provider no longer serves fails in the worst available
-   * way today: `run-engine.sh` has no `set -e`, so `claude -p --model <gone>`
+   * way today: `run-engine.sh` has no `set -e`, so `opencode run --model <gone>`
    * errors, the script carries on, the gate runs against an unchanged tree and
    * blocks, and the loop retries. Nothing anywhere says the model does not
    * exist. On a small build's ladder — two rungs on the same tier — that burns
@@ -744,11 +682,7 @@ export class BuilderBuildService {
 
     // A resume keeps the paused run's models: switching tiers mid-session
     // would make "which model wrote this" unanswerable for the run pair.
-    const models = this.resolveModels(
-      this.resolveEngine(session, settings),
-      session,
-      settings,
-    );
+    const models = this.resolveModels(session, settings);
     return this.dispatchRun({
       session,
       mode: BuilderRunMode.RESUME,
@@ -952,11 +886,7 @@ export class BuilderBuildService {
       1,
     );
 
-    const models = this.resolveModels(
-      this.resolveEngine(session, settings),
-      session,
-      settings,
-    );
+    const models = this.resolveModels(session, settings);
     const run = await this.dispatchRun({
       session,
       mode: BuilderRunMode.FIX,
@@ -1063,11 +993,7 @@ export class BuilderBuildService {
       mode: BuilderRunMode.REVIEW,
       userId: session.createdBy ?? 0,
       repos: [pullRequest.repo],
-      models: this.resolveModels(
-        this.resolveEngine(session, settings),
-        session,
-        settings,
-      ),
+      models: this.resolveModels(session, settings),
       branches: { [pullRequest.repo]: pullRequest.branch },
       pullRequestId: pullRequest.id,
     });
@@ -1146,7 +1072,7 @@ export class BuilderBuildService {
         mode,
         status: BuilderRunStatus.QUEUED,
         resumeOfRunId: params.resumeOfRunId ?? null,
-        engine: session.engine,
+        engine: BUILDER_ENGINE,
         model: models.coder,
         plannerModel: models.planner,
         verifierModel: models.verifier,
@@ -1179,7 +1105,6 @@ export class BuilderBuildService {
           run_id: run.id,
           mode,
           repos: JSON.stringify(repos),
-          engine: run.engine,
           // One JSON input for all three tiers: workflow_dispatch caps at 10
           // inputs and this file already sits at 9.
           models: JSON.stringify(models),
@@ -1763,7 +1688,7 @@ export class BuilderBuildService {
       if (!input && !output && !cacheRead && !cacheWrite) continue;
 
       await this.llmUsage.record({
-        // From the model id, not a literal: the default engine (opencode) runs
+        // From the model id, not a literal: opencode runs
         // Gemini, so a hardcoded 'anthropic' filed Gemini spend under Claude.
         provider: providerForModel(String(model)) ?? 'anthropic',
         model: String(model),
@@ -2093,10 +2018,7 @@ export class BuilderBuildService {
   ): Promise<void> {
     await this.runRepository.update(
       { id: run.id },
-      {
-        engine: dto.engine ?? run.engine,
-        model: dto.model ?? run.model,
-      },
+      { model: dto.model ?? run.model },
     );
   }
 

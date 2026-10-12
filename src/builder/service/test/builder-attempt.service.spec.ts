@@ -12,7 +12,7 @@ describe('BuilderAttemptService', () => {
   const run = {
     id: 'run-1',
     sessionId: 'sess-1',
-    engine: 'claude-code',
+    engine: 'opencode',
   } as any;
 
   const repo = (over: Record<string, any> = {}) => ({

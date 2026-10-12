@@ -110,8 +110,8 @@ ${renderRepoCommands(context.repos)}
  * reasoning that a pre-built curl beats one the model writes freshly each
  * time. That part was right; embedding them was not. A coding agent's shell
  * tool spawns a fresh shell per call, so a function defined in one call does
- * not exist in the next — the definitions only worked because Claude Code
- * pastes the whole body every time.
+ * not exist in the next — the definitions only worked for an agent that
+ * happened to paste the whole body every time.
  *
  * Gemini read the same block and ran `stage REMEDIATING`, which is exactly
  * what the documentation appears to describe. It got `bash: line 1: stage:
@@ -358,10 +358,10 @@ than importing a style from elsewhere.
 
 **Work the plan's independent workstreams in parallel — if your toolset can.**
 Where the plan marks two workstreams parallel-safe and you have a subagent tool
-(\`Task\`), run them as concurrent subagents, one per workstream, each told to
+(\`task\`), run them as concurrent subagents, one per workstream, each told to
 confine itself to that workstream's file list. **If you have no such tool, do
-them one after another.** The prompt is shared by every engine and not all of
-them have subagents; a plan that assumes one is a plan, not a requirement.
+them one after another.** Not every toolset has subagents; a plan that
+assumes one is a plan, not a requirement.
 You integrate the results and run the tests yourself. Never let two subagents
 hold the same file: a plan that marks overlapping file sets parallel-safe is
 wrong, and sequential is the right answer there.
@@ -416,7 +416,7 @@ that matters is the failure list at the end.
 The same applies to everything you read. This phase is charged for its whole
 context on every turn, and a coding pass runs well over a hundred turns:
 
-- Prefer \`Grep\` and a \`Read\` with a line range over reading a whole file. A
+- Prefer \`grep\` and a \`read\` with a line range over reading a whole file. A
   2,000-line service read in full is paid for a hundred more times.
 - When a subagent finishes (if you used one), write down what you needed from it in a few
   lines and work from that, not from its full transcript.

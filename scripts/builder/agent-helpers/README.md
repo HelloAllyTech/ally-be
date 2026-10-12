@@ -10,8 +10,8 @@ in the prompt for every role. That only works if the agent pastes the whole
 body into each shell it opens, because a coding agent's shell tool spawns a
 fresh shell per call and nothing survives between them.
 
-Claude Code happens to do that. Gemini did not — it read the documentation and
-ran `stage REMEDIATING`, which is exactly what the prompt appears to describe:
+Some agents happen to do that. The Gemini CLI, an engine since retired, did
+not — it read the documentation and ran `stage REMEDIATING`, which is exactly what the prompt appears to describe:
 
     $ stage REMEDIATING
     bash: line 1: stage: command not found

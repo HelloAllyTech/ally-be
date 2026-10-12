@@ -103,12 +103,6 @@ export class UpdateBuilderSessionDto {
   @IsString({ each: true })
   repos?: string[];
 
-  @ApiPropertyOptional({ description: 'Coding engine for build runs' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  engine?: string;
-
   @ApiPropertyOptional({ description: 'Model for build runs' })
   @IsOptional()
   @IsString()
@@ -147,14 +141,6 @@ export class PatchBuilderPrdDto {
 }
 
 export class StartBuilderBuildDto {
-  @ApiPropertyOptional({
-    description: 'Override the session engine for this run',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  engine?: string;
-
   @ApiPropertyOptional({
     description: 'Override the coder-tier model for this run',
   })
@@ -346,15 +332,6 @@ export class UpdateBuilderSettingsDto {
   @IsString()
   @MaxLength(80)
   verifierModel?: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Which coding engine a new build runs on when the session/dispatch doesn't say (null = claude-code).",
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  defaultEngine?: string;
 }
 
 export class ListBuilderSessionsQueryDto {

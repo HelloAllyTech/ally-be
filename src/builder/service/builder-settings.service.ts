@@ -52,7 +52,6 @@ export class BuilderSettingsService {
         | 'autoMergeEnabled'
         | 'autoReleaseEnabled'
         | 'maxFixRunsPerPr'
-        | 'defaultEngine'
         | 'defaultModel'
         | 'plannerModel'
         | 'coderModel'

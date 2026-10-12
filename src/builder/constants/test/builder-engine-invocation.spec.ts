@@ -1,12 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import {
-  BUILDER_ENGINE_ALLOWED_DEFAULT,
-  BUILDER_MODEL_DEFAULTS,
-  builderAllowedEngines,
-} from '../builder.constants';
-
 const SCRIPTS = join(__dirname, '..', '..', '..', '..', 'scripts', 'builder');
 
 const runEngine = (): string =>
@@ -16,107 +10,30 @@ const installEngine = (): string =>
   readFileSync(join(SCRIPTS, 'install-engine.sh'), 'utf8');
 
 /**
- * The `case "$ENGINE" in opencode)` body.
+ * The `run_agent` function body — the one place a phase becomes an
+ * `opencode run`.
  */
 const opencodeCase = (): string => {
   const source = runEngine();
-  const start = source.indexOf('\n    opencode)');
+  const start = source.indexOf('\nrun_agent() {');
   expect(start).toBeGreaterThan(-1);
-  const end = source.indexOf('\n      ;;', start);
+  const end = source.indexOf('\n}\n', start);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end);
 };
 
-/**
- * Two invariants of the Gemini invocation, both of which fail SILENTLY when
- * they are wrong — which is the only reason they are worth a test. Neither
- * produces an error the runner can see: one hangs until the phase wall clock
- * kills it, the other downgrades the approval mode and waits for a person who
- * is not there. A silent stall looks exactly like a slow model.
- *
- * Both held on @google/gemini-cli 0.22.5 and stopped holding on 0.60.0, so the
- * failure mode this guards is specifically "the old invocation was carried
- * forward across a version bump".
- */
-
-/**
- * Everything runs on one engine, and the pin is what makes that true rather
- * than merely configured.
- */
-describe('the engine allowlist', () => {
-  const before = process.env.BUILDER_ENGINE_ALLOWED;
-  afterEach(() => {
-    if (before === undefined) delete process.env.BUILDER_ENGINE_ALLOWED;
-    else process.env.BUILDER_ENGINE_ALLOWED = before;
-  });
-
-  /**
-   * The point of the list, and the reason it survives having one entry.
-   *
-   * A session carries its creation engine forever, so hours after every phase
-   * had been moved off Claude Code a review still dispatched `claude-code`
-   * with `claude-opus-4-7` and reviewed a pull request on another vendor's
-   * credits. A stale engine and an admin typing one cost the same money. Now
-   * that opencode runs every vendor's models itself, nothing else needs to be
-   * permitted — but the list is what turns a stale value into an overrule
-   * rather than a bill.
-   */
-  it('permits opencode alone', () => {
-    delete process.env.BUILDER_ENGINE_ALLOWED;
-
-    expect(builderAllowedEngines()).toEqual(['opencode']);
-    expect(builderAllowedEngines()).not.toContain('claude-code');
-    expect(builderAllowedEngines()).not.toContain('gemini');
-    expect(BUILDER_ENGINE_ALLOWED_DEFAULT).toEqual(['opencode']);
-  });
-
-  /**
-   * One env var, because the friction should match the decision: putting
-   * another vendor back on the list is a choice about someone else's bill.
-   */
-  it('is changed without a deploy, and an empty value lifts it entirely', () => {
-    process.env.BUILDER_ENGINE_ALLOWED = 'opencode';
-    expect(builderAllowedEngines()).toEqual(['opencode']);
-
-    process.env.BUILDER_ENGINE_ALLOWED = ' opencode , gemini ';
-    expect(builderAllowedEngines()).toEqual(['opencode', 'gemini']);
-
-    // Empty means unrestricted rather than "nothing allowed", which would
-    // brick every build on a typo.
-    process.env.BUILDER_ENGINE_ALLOWED = '';
-    expect(builderAllowedEngines()).toEqual([]);
-  });
-
-  /**
-   * The first entry is where anything unpermitted lands, so it has to be an
-   * engine that can actually run the compiled model defaults. opencode can run
-   * any of them, which is the whole reason the other engines could go.
-   */
-  it('falls back to the engine that can run the model defaults', () => {
-    delete process.env.BUILDER_ENGINE_ALLOWED;
-
-    expect(builderAllowedEngines()[0]).toBe('opencode');
-    for (const [tier, model] of Object.entries(BUILDER_MODEL_DEFAULTS)) {
-      expect(`${tier}=${model}`).toMatch(/=[a-z0-9.-]+$/);
-    }
-  });
-});
-
 describe('opencode engine invocation', () => {
   /**
-   * Read-only is one decision across three engines.
-   *
-   * Claude Code takes a tool allowlist, Gemini takes nothing and is undone
-   * afterwards by revert_stray_writes, and opencode takes an AGENT whose
-   * denied tools are never offered at all. What decides which is the same
-   * allowlist string in every case — anything permitted to Write is the
-   * builder, everything else reviews — so a phase cannot be read-only on one
-   * engine and not another.
+   * Each call site names the opencode agent it runs as: `builder` for the
+   * phases that write, `reviewer` for the read-only ones, whose denied tools
+   * are never offered at all. Anything else is refused rather than run with
+   * the defaults.
    */
-  it('picks its agent from the same allowlist the other engines use', () => {
+  it('runs as the agent the call site names, and only a known one', () => {
     const body = opencodeCase();
 
-    expect(body).toMatch(/case "\$tools" in \*Write\*\) agent="builder"/);
+    expect(body).toMatch(/agent="\$4"/);
+    expect(body).toMatch(/builder \| reviewer\) ;;/);
     expect(body).toMatch(/--agent "\$agent"/);
   });
 

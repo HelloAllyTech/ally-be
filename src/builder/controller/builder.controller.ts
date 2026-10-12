@@ -165,7 +165,7 @@ export class BuilderController {
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
-    summary: 'Rename a session or set its repos / engine / model',
+    summary: 'Rename a session or set its repos / model',
   })
   updateSession(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
@@ -741,9 +741,6 @@ export class BuilderController {
           : {}),
         ...(dto.verifierModel !== undefined
           ? { verifierModel: dto.verifierModel || null }
-          : {}),
-        ...(dto.defaultEngine !== undefined
-          ? { defaultEngine: dto.defaultEngine || null }
           : {}),
       },
       user.id,

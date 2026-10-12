@@ -85,10 +85,9 @@ describe('the coder prompt', () => {
   });
 
   /**
-   * Parallelism is asked for, but conditionally: this prompt is shared by
-   * every engine and Gemini has no subagent tool. It used to read as a
-   * requirement, which left a Gemini run either ignoring an instruction or
-   * hunting for a tool it does not have.
+   * Parallelism is asked for, but conditionally: not every toolset has a
+   * subagent tool. It used to read as a requirement, which left a run without
+   * one either ignoring an instruction or hunting for a tool it does not have.
    */
   it('asks for parallel subagents where the engine has them', () => {
     const prompt = flat(render());

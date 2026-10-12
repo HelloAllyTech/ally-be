@@ -819,10 +819,6 @@ export class AppConfigService {
         'BUILDER_MECHANICAL_MODEL',
         BUILDER_MODEL_DEFAULTS.mechanical,
       ),
-      buildEngine: this.configService.get<string>(
-        'BUILDER_ENGINE',
-        'claude-code',
-      ),
       // Hard cap on tool-use round-trips per interview turn. Generous because
       // a substantial turn legitimately chains research calls with several
       // update_prd patches; on cap-hit the orchestrator wraps up in prose.

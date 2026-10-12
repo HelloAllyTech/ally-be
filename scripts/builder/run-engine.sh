@@ -10,10 +10,9 @@
 # pull requests are opened by a final phase that is only reached once both are
 # satisfied. Nothing this run writes becomes a PR without passing them.
 #
-# The engine boundary lives here: each engine gets a case that knows how to
-# invoke it and what its streaming output looks like. Everything downstream —
-# the event schema, the pipeline endpoints, the admin UI — is engine-neutral,
-# because forward-events.mjs normalises whatever comes out into one shape.
+# The engine boundary lives here: run_agent invokes opencode, and
+# forward-events.mjs normalises its streaming output into the event schema the
+# pipeline endpoints and admin UI read.
 #
 # Fix mode (BUILDER_MODE=fix) runs a narrower pipeline: code → gate, no
 # planner and no reviewer. See the block below for why.
@@ -22,7 +21,6 @@
 set -euo pipefail
 
 PROMPT_FILE="${1:?usage: run-engine.sh <build-prompt-file>}"
-ENGINE="${BUILDER_ENGINE:-gemini}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FORWARDER="${HERE}/forward-events.mjs"
 API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
@@ -84,7 +82,7 @@ chmod 600 "$BUILDER_HELPER_ENV"
 # at startup and omits what this phase may not call, which works because the
 # engine — and therefore its MCP server — is a fresh process per phase.
 #
-# Same lesson as the opencode spike's read-only agent: the guarantee that held
+# Same lesson as opencode's read-only agent: the guarantee that held
 # was the tool not being offered, not the call being refused.
 BUILDER_PHASE_FILE=/tmp/builder-phase
 export BUILDER_PHASE_FILE
@@ -99,8 +97,8 @@ set_agent_phase setup
 # to. See builder-mcp.mjs for the five distinct ways the shell channel has
 # broken — none of them about the protocol, all of them about the channel.
 #
-# The helpers on PATH stay. This is additive: an engine with no MCP support
-# still has them, and they are the fallback if this server fails to start. Both
+# The helpers on PATH stay. They are the fallback if this server fails to
+# start. Both
 # speak to the same ally-be endpoints, so the contract is the HTTP API rather
 # than either implementation, and a build that uses one, the other or both
 # reports identically.
@@ -110,36 +108,14 @@ set_agent_phase setup
 # gaining a second home in the agent's own workspace.
 MCP_SERVER="${HERE}/builder-mcp.mjs"
 
-# Gemini CLI reads project settings from ./.gemini/settings.json. `trust: true`
-# is what makes the tools callable without a confirmation nobody is there to
-# give — the same reason the run passes --yolo.
-mkdir -p .gemini
-cat > .gemini/settings.json <<MCPEOF
-{
-  "mcpServers": {
-    "builder": {
-      "command": "node",
-      "args": ["${MCP_SERVER}"],
-      "env": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" },
-      "trust": true,
-      "timeout": 30000
-    }
-  }
-}
-MCPEOF
-
-# Claude Code takes the same thing as a file on the command line. Its own
-# schema, hence a second file rather than one shared by wishful thinking.
-# opencode takes the same server in its own schema, plus the thing neither
-# other engine offers: agents whose permissions are enforced by NOT OFFERING
-# the tool. The spike watched a denied agent try `bash` and be told "Model
-# tried to call unavailable tool 'bash'" — while keeping every builder_* tool,
-# so a reviewer that cannot write can still report what it found.
+# opencode takes the server in its own schema, plus agents whose permissions
+# are enforced by NOT OFFERING the tool. A denied agent that tries `bash` is
+# told "Model tried to call unavailable tool 'bash'" — while keeping every
+# builder_* tool, so a reviewer that cannot write can still report what it found.
 #
-# Two agents, mapped from the tool allowlists this runner already uses, so
-# read-only stays one decision rather than one per engine. `revert_stray_writes`
-# stays regardless: a guarantee this pipeline depends on is not left resting on
-# one vendor's config being read the way its documentation says.
+# Each run_agent call names the agent it runs as. `revert_stray_writes` stays
+# regardless: a guarantee this pipeline depends on is not left resting on one
+# vendor's config being read the way its documentation says.
 cat > opencode.json <<MCPEOF
 {
   "\$schema": "https://opencode.ai/config.json",
@@ -160,19 +136,6 @@ cat > opencode.json <<MCPEOF
 }
 MCPEOF
 
-BUILDER_MCP_CONFIG=/tmp/builder-mcp-config.json
-cat > "$BUILDER_MCP_CONFIG" <<MCPEOF
-{
-  "mcpServers": {
-    "builder": {
-      "command": "node",
-      "args": ["${MCP_SERVER}"],
-      "env": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" }
-    }
-  }
-}
-MCPEOF
-
 # Model per tier, from the single `models` workflow input. ally-be always
 # supplies all three; the fallbacks only cover a hand-run workflow.
 MODELS_JSON="${BUILDER_MODELS:-{\}}"
@@ -188,19 +151,12 @@ VERIFIER_MODEL="$(model_for verifier "gemini-2.5-pro")"
 
 # ── A wall clock per phase ──────────────────────────────────────────────────
 #
-# The only bound that works on every engine.
-#
-# `--max-turns` and `--max-budget-usd` were Claude Code flags. opencode has
-# neither, so a phase has nothing between it and the job's 120-minute timeout:
-# a loop that stops making progress burns the entire run, and the session's
-# spend ceiling is only consulted at phase boundaries it may never reach. Two
-# of the three runaway protections this pipeline relies on were
-# therefore Claude-only, the same way the tool allowlist was.
-#
-# Wall clock is not as good as a turn cap — it cannot tell a slow phase from a
-# stuck one — but it is the one limit no vendor has to implement for us. The
-# generous defaults are for the honest slow case; the point is that nothing
-# runs forever.
+# opencode has no turn cap and no per-run dollar ceiling, so without this a
+# phase has nothing between it and the job's 120-minute timeout, and the
+# session's spend ceiling is only consulted at phase boundaries it may never
+# reach. Wall clock cannot tell a slow phase from a stuck one, but it is the one
+# limit no vendor has to implement for us. The generous defaults are for the
+# honest slow case; the point is that nothing runs forever.
 # Durations carry their unit, so a bare number means minutes and the dry-run
 # harness can ask for seconds to prove the mechanism without waiting for one.
 timeout_for() {
@@ -244,19 +200,6 @@ EFFORT="$(model_for effort "high")"
 # src/builder/constants/builder.constants.ts — change both together.
 MAX_CODE_ITERATIONS="${BUILDER_MAX_CODE_ITERATIONS:-4}"
 MAX_VERIFY_ROUNDS="${BUILDER_MAX_VERIFY_ROUNDS:-3}"
-
-# Tool allowlists. The verifier gets no Write/Edit/Task on purpose: a reviewer
-# that patches the diff is no longer reviewing it.
-#
-# `mcp__builder` covers every tool the reporting server offers. Claude Code
-# namespaces MCP tools as `mcp__<server>__<tool>`, and an allowlist that omits
-# them silently removes the agent's only way to report — which, for the
-# verifier, is the difference between a review that files findings and one that
-# reads the diff and then cannot say so.
-MCP_TOOLS="mcp__builder"
-CODER_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Task,${MCP_TOOLS}"
-PLANNER_TOOLS="Bash,Read,Glob,Grep,Task,${MCP_TOOLS}"
-VERIFIER_TOOLS="Bash,Read,Glob,Grep,${MCP_TOOLS}"
 
 RESULTS_DIR=/tmp/builder-results
 mkdir -p /tmp/builder-evidence "$RESULTS_DIR"
@@ -767,149 +710,123 @@ fold_spent_into() {
 }
 
 run_agent() {
-  # No turn cap and no per-phase dollar ceiling. Both were Claude Code flags —
-  # --max-turns and --max-budget-usd — and opencode has neither, so the
-  # parameters went with the engine rather than lingering as numbers every
-  # caller computed and nothing read.
+  # One phase, one `opencode run`. `agent` is the opencode agent it runs as
+  # (opencode.json): `builder` for phases that write, `reviewer` for the
+  # read-only ones — the planner and the verifier — which are denied edit,
+  # write and bash by the tool not being offered at all.
   #
-  # Spend is still bounded, by the two mechanisms that do not need the engine's
-  # cooperation: the wall clock below, and hold_or_abort_if_over_budget at each
-  # phase boundary, which works on measured spend because opencode reports it.
-  local prompt_file="$1" result_file="$2" model="$3" tools="$4"
+  # No turn cap and no per-phase dollar ceiling: opencode has neither. Spend is
+  # bounded by the wall clock below and by hold_or_abort_if_over_budget at each
+  # phase boundary, which works on the spend opencode reports.
+  #
+  # `--auto` approves what is not explicitly denied, which is the trust model
+  # the runner already assumes: it IS the isolation boundary.
+  local prompt_file="$1" result_file="$2" model="$3" agent="$4"
   local duration="${5:-}"
   local rc=0
   local -a TIMEOUT_CMD
   set_timeout_cmd "$duration"
 
-  case "$ENGINE" in
-
-    # Verified end to end by .github/workflows/opencode-spike.yml before this
-    # case was written. See install-engine.sh for what that proved.
-    #
-    # The only engine. The claude-code and gemini cases that used to sit above
-    # this one are gone: opencode is a harness rather than a vendor, so it
-    # reaches Anthropic, OpenAI and Google alike, and maintaining our own
-    # invocation, flag set and event normaliser per CLI bought nothing once one
-    # of them could run them all.
-    #
-    # `--agent` is how a phase becomes read-only. The allowlist this runner
-    # already computes decides which one: anything permitted to Write is the
-    # builder, everything else reviews.
-    #
-    # `--auto` approves what is not explicitly denied, which is the trust model
-    # the runner already assumes: it IS the isolation boundary. The denials in
-    # opencode.json are what make that safe for the read-only phases, and they
-    # hold by removing the tool rather than by refusing the call.
-    #
-    # Two params this case cannot honour, and both are honest gaps rather than
-    # oversights: no turn cap flag exists, and no mid-run dollar ceiling —
-    # though opencode at least REPORTS dollars, so the between-phase budget
-    # hold works on measured spend instead of a rate card.
-    opencode)
-      local agent="reviewer"
-      case "$tools" in *Write*) agent="builder" ;; esac
-
-      # opencode names a model `provider/model`; everything upstream names one
-      # the way its own vendor does — `gemini-2.5-pro`, `claude-opus-4-7`. The
-      # translation belongs here, at the boundary that knows both.
-      #
-      # Derived from the id rather than defaulting to google. The old line
-      # prefixed EVERYTHING with `google/`, which was harmless while Gemini was
-      # the only thing anyone set and actively wrong the moment it was not: a
-      # settings row reading `claude-opus-4-7` became `google/claude-opus-4-7`,
-      # a model no provider has, and every phase died on it. Prod held exactly
-      # that for a day.
-      #
-      # An id that already carries a slash is passed through untouched, so an
-      # explicit `anthropic/…` still wins. An unrecognised shape is passed
-      # through too — opencode's own error names the provider it could not
-      # find, which beats this line inventing one.
-      local oc_model="$model"
-      case "$oc_model" in
-        */*) ;;
-        claude-*) oc_model="anthropic/${oc_model}" ;;
-        gemini-*) oc_model="google/${oc_model}" ;;
-        gpt-* | o[0-9]-* | o[0-9]) oc_model="openai/${oc_model}" ;;
-      esac
-
-      # Continue the coding conversation instead of starting it again.
-      #
-      # Every `opencode run` is its own session, and a build made three of them
-      # — planner, coder, remediation — each beginning with no memory of the
-      # last. The remediation prompt then opens "address the feedback from the
-      # previous attempt" to an agent that has never seen the attempt, so it
-      # re-reads the repository to rediscover what it wrote minutes earlier.
-      #
-      # Only the coding attempts share one. The planner and the reviewer are
-      # deliberately cold: a reviewer that remembers writing the diff is not an
-      # independent reviewer, which is the whole reason that phase exists.
-      local -a oc_session=()
-      if [ "$AGENT_PHASE" = code ] && [ -n "${OPENCODE_CODER_SESSION:-}" ]; then
-        oc_session=(--session "$OPENCODE_CODER_SESSION")
-        echo "Continuing opencode session ${OPENCODE_CODER_SESSION}."
-      fi
-
-      # ── Tool calls written as prose ─────────────────────────────────────
-      #
-      # Gemini, now and then, stops calling tools and starts WRITING them:
-      # `call:bash{command:ls -F repos}` arrives as a text part, the step
-      # finishes with reason `stop`, and opencode — correctly — ends the run,
-      # because nothing was called. Nothing fails and nothing errors. The
-      # phase simply returns having done nothing.
-      #
-      # It cost session 178e6598 its whole ladder on 2026-10-01. Every coding
-      # attempt ended on its second step, every gate read "unchanged", and
-      # because the attempts share one session the transcript each inherited
-      # was the poisoned one: by attempt 4 the model was describing a fix to a
-      # file it had never opened, in tests it had never run. Four attempts,
-      # $0.12, and a verdict blaming a diff that did not exist.
-      #
-      # So it is caught here, where the evidence is: the result text. A phase
-      # that ended on a written call is run again COLD — a fresh session, the
-      # same prompt — because continuing the one that produced it is exactly
-      # what made it worse. And the coder's shared session is dropped, so the
-      # next attempt does not inherit it either.
-      local text_call_retries="${BUILDER_TEXT_CALL_RETRIES:-2}"
-      local text_call_try=0
-      rm -f "${result_file}.spent"
-      while :; do
-        rc=0
-        ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
-          ${oc_session[@]+"${oc_session[@]}"} \
-          --model "$oc_model" \
-          --agent "$agent" \
-          --format json \
-          --auto \
-          "$(cat "$prompt_file")" \
-        | node "$FORWARDER" --result-out "$result_file" || rc=$?
-
-        [ "$rc" = "0" ] || break
-        wrote_tool_calls_as_text "$result_file" || break
-
-        if [ "$AGENT_PHASE" = code ]; then
-          OPENCODE_CODER_SESSION=
-        fi
-        if [ "$text_call_try" -ge "$text_call_retries" ]; then
-          echo "::warning::${oc_model} still wrote its tool calls as text after ${text_call_try} cold retries." >&2
-          break
-        fi
-        text_call_try=$((text_call_try + 1))
-        echo "::warning::${oc_model} wrote a tool call as text instead of making it; rerunning this phase in a fresh session (${text_call_try}/${text_call_retries})." >&2
-        curl -sS -X POST "${API}/events" \
-          -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-          -d "$(jq -nc --arg m "$oc_model" '{events:[{type:"text",payload:{text:("The model (" + $m + ") wrote its tool calls out as text instead of making them, so this phase did nothing. Running it again in a fresh session.")}}]}')" \
-          >/dev/null 2>&1 || true
-        fold_spent_into "$result_file"
-        oc_session=()
-      done
-      fold_spent_into "$result_file" final
-      ;;
-
-    *)
-      echo "Unknown BUILDER_ENGINE '${ENGINE}'." >&2
-      exit 1
-      ;;
+  case "$agent" in
+    builder | reviewer) ;;
+    *) echo "run_agent: unknown opencode agent '${agent}'." >&2; exit 1 ;;
   esac
+
+  # opencode names a model `provider/model`; everything upstream names one
+  # the way its own vendor does — `gemini-2.5-pro`, `claude-opus-4-7`. The
+  # translation belongs here, at the boundary that knows both.
+  #
+  # Derived from the id rather than defaulting to google. The old line
+  # prefixed EVERYTHING with `google/`, which was harmless while Gemini was
+  # the only thing anyone set and actively wrong the moment it was not: a
+  # settings row reading `claude-opus-4-7` became `google/claude-opus-4-7`,
+  # a model no provider has, and every phase died on it. Prod held exactly
+  # that for a day.
+  #
+  # An id that already carries a slash is passed through untouched, so an
+  # explicit `anthropic/…` still wins. An unrecognised shape is passed
+  # through too — opencode's own error names the provider it could not
+  # find, which beats this line inventing one.
+  local oc_model="$model"
+  case "$oc_model" in
+    */*) ;;
+    claude-*) oc_model="anthropic/${oc_model}" ;;
+    gemini-*) oc_model="google/${oc_model}" ;;
+    gpt-* | o[0-9]-* | o[0-9]) oc_model="openai/${oc_model}" ;;
+  esac
+
+  # Continue the coding conversation instead of starting it again.
+  #
+  # Every `opencode run` is its own session, and a build made three of them
+  # — planner, coder, remediation — each beginning with no memory of the
+  # last. The remediation prompt then opens "address the feedback from the
+  # previous attempt" to an agent that has never seen the attempt, so it
+  # re-reads the repository to rediscover what it wrote minutes earlier.
+  #
+  # Only the coding attempts share one. The planner and the reviewer are
+  # deliberately cold: a reviewer that remembers writing the diff is not an
+  # independent reviewer, which is the whole reason that phase exists.
+  local -a oc_session=()
+  if [ "$AGENT_PHASE" = code ] && [ -n "${OPENCODE_CODER_SESSION:-}" ]; then
+    oc_session=(--session "$OPENCODE_CODER_SESSION")
+    echo "Continuing opencode session ${OPENCODE_CODER_SESSION}."
+  fi
+
+  # ── Tool calls written as prose ─────────────────────────────────────
+  #
+  # Gemini, now and then, stops calling tools and starts WRITING them:
+  # `call:bash{command:ls -F repos}` arrives as a text part, the step
+  # finishes with reason `stop`, and opencode — correctly — ends the run,
+  # because nothing was called. Nothing fails and nothing errors. The
+  # phase simply returns having done nothing.
+  #
+  # It cost session 178e6598 its whole ladder on 2026-10-01. Every coding
+  # attempt ended on its second step, every gate read "unchanged", and
+  # because the attempts share one session the transcript each inherited
+  # was the poisoned one: by attempt 4 the model was describing a fix to a
+  # file it had never opened, in tests it had never run. Four attempts,
+  # $0.12, and a verdict blaming a diff that did not exist.
+  #
+  # So it is caught here, where the evidence is: the result text. A phase
+  # that ended on a written call is run again COLD — a fresh session, the
+  # same prompt — because continuing the one that produced it is exactly
+  # what made it worse. And the coder's shared session is dropped, so the
+  # next attempt does not inherit it either.
+  local text_call_retries="${BUILDER_TEXT_CALL_RETRIES:-2}"
+  local text_call_try=0
+  rm -f "${result_file}.spent"
+  while :; do
+    rc=0
+    ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
+      ${oc_session[@]+"${oc_session[@]}"} \
+      --model "$oc_model" \
+      --agent "$agent" \
+      --format json \
+      --auto \
+      "$(cat "$prompt_file")" \
+    | node "$FORWARDER" --result-out "$result_file" || rc=$?
+
+    [ "$rc" = "0" ] || break
+    wrote_tool_calls_as_text "$result_file" || break
+
+    if [ "$AGENT_PHASE" = code ]; then
+      OPENCODE_CODER_SESSION=
+    fi
+    if [ "$text_call_try" -ge "$text_call_retries" ]; then
+      echo "::warning::${oc_model} still wrote its tool calls as text after ${text_call_try} cold retries." >&2
+      break
+    fi
+    text_call_try=$((text_call_try + 1))
+    echo "::warning::${oc_model} wrote a tool call as text instead of making it; rerunning this phase in a fresh session (${text_call_try}/${text_call_retries})." >&2
+    curl -sS -X POST "${API}/events" \
+      -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+      -d "$(jq -nc --arg m "$oc_model" '{events:[{type:"text",payload:{text:("The model (" + $m + ") wrote its tool calls out as text instead of making them, so this phase did nothing. Running it again in a fresh session.")}}]}')" \
+      >/dev/null 2>&1 || true
+    fold_spent_into "$result_file"
+    oc_session=()
+  done
+  fold_spent_into "$result_file" final
+
 
   # 124 is `timeout` saying it stopped the phase. Reported and then swallowed:
   # the pipeline continues to the gate, which judges whatever was written by
@@ -926,10 +843,8 @@ run_agent() {
 
   # ── Every other non-zero exit, the same way ────────────────────────────────
   #
-  # An engine stops for reasons that are not "the work is wrong": its own
-  # `--max-budget-usd` ceiling, a provider 529, a loop detector
-  # (`[gemini] Loop detected, stopping execution`), a crash after an hour of
-  # correct edits. All of those returned the code to the caller, and `set -e`
+  # An engine stops for reasons that are not "the work is wrong": a provider
+  # 529, a loop detector, a crash after an hour of correct edits. All of those returned the code to the caller, and `set -e`
   # turned each one into an immediate, silent death of the whole run: no gate,
   # no /complete, nothing pushed. The feed's last line was whatever the agent
   # happened to be saying, and the outcome gate reported it minutes later as
@@ -944,7 +859,7 @@ run_agent() {
   # The run can still fail. It fails at the gate, on evidence, with the branch
   # pushed and a verdict a person can read.
   if [ "$rc" != "0" ]; then
-    echo "::warning::The ${ENGINE} engine exited ${rc} during this phase." >&2
+    echo "::warning::The opencode engine exited ${rc} during this phase." >&2
 
     # ── Did it stop, or did it never start? ─────────────────────────────────
     #
@@ -967,15 +882,15 @@ run_agent() {
     # so. Either one, and the old behaviour holds: the gate judges what is on
     # disk, because the gate is a better judge of that than an exit status is.
     if engine_produced_nothing "$result_file"; then
-      echo "::error::The ${ENGINE} engine never ran: no result and nothing written." >&2
-      report_outcome "$(jq -nc --arg e "$ENGINE" --arg m "$model" --arg c "$rc" --arg p "$CURRENT_PHASE" \
+      echo "::error::The opencode engine never ran: no result and nothing written." >&2
+      report_outcome "$(jq -nc --arg e opencode --arg m "$model" --arg c "$rc" --arg p "$CURRENT_PHASE" \
         '{outcome:"failed", error:("The " + $e + " engine could not run during " + $p + ": it exited with status " + $c + " having produced no output and written nothing. This is the runner, not the change — the usual cause is a model this engine cannot use (" + $m + "), or a missing credential. Its own message is the last entry in the run feed. No attempts were spent on it.")}')"
       exit 1
     fi
 
     curl -sS -X POST "${API}/events" \
       -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-      -d "$(jq -nc --arg e "$ENGINE" --arg c "$rc" '{events:[{type:"text",payload:{text:("The " + $e + " engine stopped with exit status " + $c + " during this phase — its own budget ceiling, a provider error or a loop it detected in itself. Whatever it had written is still on the branch and the test gate runs next.")}}]}')" \
+      -d "$(jq -nc --arg e opencode --arg c "$rc" '{events:[{type:"text",payload:{text:("The " + $e + " engine stopped with exit status " + $c + " during this phase — its own budget ceiling, a provider error or a loop it detected in itself. Whatever it had written is still on the branch and the test gate runs next.")}}]}')" \
       >/dev/null 2>&1 || true
   fi
   return 0
@@ -991,11 +906,8 @@ run_agent() {
 # that *committed*: a commit is not a working-tree change, so it survives both
 # and rides into the gate and the pull request as if the coder had written it.
 #
-# That gap was invisible while the only engine in use took a tool allowlist —
-# the verifier is given no Write, Edit or Task, so it could not have made one.
-# The allowlist does not translate to every engine (Gemini's equivalent is
-# "approve every tool call"), and "the reviewer cannot write" has to hold
-# because the runner enforces it, not because one engine's flags happen to.
+# "The reviewer cannot write" has to hold because the runner enforces it, not
+# because one engine's agent config happens to.
 HEADS_FILE=/tmp/builder-heads.txt
 
 snapshot_heads() {
@@ -1010,10 +922,10 @@ snapshot_heads() {
 # Enforce "read-only" after the fact, for every phase that claims it.
 #
 # Three phases are meant not to write: the planner, the in-build verifier, and
-# a review run. Each is invoked with an allowlist that withholds Write and Edit
-# — and that allowlist reaches Claude Code only. Gemini's equivalent is
-# `--yolo`, "run any tool without asking", so run-engine.sh passes it no tool
-# list at all and every one of those phases can write, edit and commit.
+# a review run. Each runs as opencode's `reviewer` agent, which is denied edit,
+# write and bash — but that is the engine's config, not a guarantee this runner
+# has checked, and an earlier engine with no such control let every one of
+# those phases write, edit and commit.
 #
 # It is not hypothetical. A fresh Gemini build was observed writing a component
 # and a test file, and running the suite, while the stage rail correctly read
@@ -1228,13 +1140,13 @@ fi
 # One phase, no gate, no baseline. A review run reads a finished diff and posts
 # findings; there is nothing to test because nothing was written.
 #
-# VERIFIER_TOOLS, not CODER_TOOLS, and the omission is the design rather than a
-# precaution. Give a reviewer Write and Edit and it stops arguing with the code
-# and simply fixes it — at which point nothing independent has looked at the
-# result, and the fix loop downstream has nothing to act on because the problem
-# is already gone. The prompt says not to; the tool list means it cannot.
+# The `reviewer` agent, not `builder`, and the omission is the design rather
+# than a precaution. Give a reviewer write access and it stops arguing with the
+# code and simply fixes it — at which point nothing independent has looked at
+# the result, and the fix loop downstream has nothing to act on because the
+# problem is already gone. The prompt says not to; the agent means it cannot.
 #
-# Budgeted off the verify phase for the same reason it borrows those tools: it
+# Budgeted off the verify phase for the same reason it borrows that agent: it
 # is the same shape of work, one careful read of a diff.
 if [ "${BUILDER_MODE:-build}" = "review" ]; then
   echo "::group::review (${VERIFIER_MODEL})"
@@ -1242,7 +1154,7 @@ if [ "${BUILDER_MODE:-build}" = "review" ]; then
   snapshot_heads
   set_agent_phase review
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" "$VERIFY_TIMEOUT"
+    "$VERIFIER_MODEL" reviewer "$VERIFY_TIMEOUT"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
   # This one reviews a pull request a person is reading. A reviewer that
   # silently amended the branch under them would be worse than one that
@@ -1273,7 +1185,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   post_stage CODING
   set_agent_phase fix
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" "$CODE_TIMEOUT"
+    "$CODER_MODEL" builder "$CODE_TIMEOUT"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
   echo "::endgroup::"
 
@@ -1325,7 +1237,7 @@ if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
   set_agent_phase plan
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLAN_TIMEOUT" || true
+    "$PLANNER_MODEL" reviewer "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
 
   # A planner that said nothing at all. gemini-2.5-flash, on the small-build
@@ -1337,7 +1249,7 @@ if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
      [ -z "$(jq -r '.result // "" | gsub("^\\s+|\\s+$"; "")' "${RESULTS_DIR}/plan.json" 2>/dev/null || true)" ]; then
     echo "::warning::${PLANNER_MODEL} returned an empty plan; planning again on ${CODER_MODEL}." >&2
     run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-      "$CODER_MODEL" "$PLANNER_TOOLS" "$PLAN_TIMEOUT" || true
+      "$CODER_MODEL" reviewer "$PLAN_TIMEOUT" || true
     report_phase_cost plan-retry "$CODER_MODEL" "${RESULTS_DIR}/plan.json"
   fi
   # The plan is the output; the tree is not. A planner that has already written
@@ -1436,7 +1348,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
 
     set_agent_phase code
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-      "$attempt_model" "$CODER_TOOLS" "$CODE_TIMEOUT"
+      "$attempt_model" builder "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
@@ -1522,7 +1434,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   set_agent_phase verify
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" "$VERIFY_TIMEOUT" || true
+    "$VERIFIER_MODEL" reviewer "$VERIFY_TIMEOUT" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
   revert_stray_writes "the verifier"
@@ -1629,7 +1541,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
 fi
 set_agent_phase finalise
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
-  "$CODER_MODEL" "$CODER_TOOLS" "$FINALISE_TIMEOUT"
+  "$CODER_MODEL" builder "$FINALISE_TIMEOUT"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 
@@ -1789,8 +1701,7 @@ open_pull_requests() {
     # runner's own precomputed files stay where they are. Only what the AGENT
     # writes has to live in the workspace.
     #
-    # `/tmp` is still accepted second, because Claude Code can write there and
-    # older prompts asked it to.
+    # `/tmp` is still accepted second, because older prompts asked for it.
     body_file=""
     for candidate in "builder-pr-${repo}.md" "/tmp/builder-pr-${repo}.md"; do
       [ -s "$candidate" ] || continue

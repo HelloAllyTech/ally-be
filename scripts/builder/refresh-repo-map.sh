@@ -55,33 +55,22 @@ PROMPT
 # build protocol — branches, phases, gates, cost callbacks — and this is one
 # prompt whose answer is a document.
 #
-# The default has to agree with install-engine.sh's. It used to say `gemini`
-# after that engine was removed everywhere else, so every repo landed on the
-# `*)` branch below — and because the workflow tolerates a per-repo failure,
-# the run that refreshed nothing still concluded green.
-ENGINE="${BUILDER_ENGINE:-opencode}"
-
-case "$ENGINE" in
-
-  # The only engine, as in install-engine.sh and run-engine.sh. Its model ids
-  # are `provider/model`; everything upstream names one the way its vendor
-  # does, so the id gets its provider from its shape — the same rule
-  # run-engine.sh applies, where the comment explains why it is derived rather
-  # than defaulted to google. The google provider reads
-  # GOOGLE_GENERATIVE_AI_API_KEY, not GEMINI_API_KEY; a claude-* or gpt-*
-  # BUILDER_MAP_MODEL needs its own key added to builder-context-refresh.yml.
-  #
-  # The agent is offered no write or edit tool. Not to protect the clone — it
-  # is deleted on exit — but because of where the document goes: an agent
-  # asked to "write a Repo Knowledge Pack" that CAN write may save it to a file
-  # and answer "Done.", and "Done." is a non-empty map that would replace a
-  # good one. With the tools never offered, the reply is the only place left
-  # for it. Bash stays, for section 5's `git log`.
-  #
-  # No turn cap and no tool allowlist exist on this CLI; the job's
-  # timeout-minutes is the backstop for both.
-  opencode)
-    cat > opencode.json <<'OCEOF'
+# opencode model ids are `provider/model`; everything upstream names one the
+# way its vendor does, so the id gets its provider from its shape — the same
+# rule run-engine.sh applies, where the comment explains why it is derived
+# rather than defaulted to google. The google provider reads
+# GOOGLE_GENERATIVE_AI_API_KEY, not GEMINI_API_KEY; a claude-* or gpt-*
+# BUILDER_MAP_MODEL needs its own key added to builder-context-refresh.yml.
+#
+# The agent is offered no write or edit tool. Not to protect the clone — it
+# is deleted on exit — but because of where the document goes: an agent
+# asked to "write a Repo Knowledge Pack" that CAN write may save it to a file
+# and answer "Done.", and "Done." is a non-empty map that would replace a
+# good one. With the tools never offered, the reply is the only place left
+# for it. Bash stays, for section 5's `git log`.
+#
+# No turn cap exists on this CLI; the job's timeout-minutes is the backstop.
+cat > opencode.json <<'OCEOF'
 {
   "$schema": "https://opencode.ai/config.json",
   "agent": {
@@ -92,55 +81,48 @@ case "$ENGINE" in
 }
 OCEOF
 
-    MAP_MODEL="${BUILDER_MAP_MODEL:-gemini-2.5-pro}"
-    case "$MAP_MODEL" in
-      */*) ;;
-      claude-*) MAP_MODEL="anthropic/${MAP_MODEL}" ;;
-      gemini-*) MAP_MODEL="google/${MAP_MODEL}" ;;
-      gpt-* | o[0-9]-* | o[0-9]) MAP_MODEL="openai/${MAP_MODEL}" ;;
-    esac
-
-    opencode run \
-      --model "$MAP_MODEL" \
-      --agent mapper \
-      --format json \
-      --auto \
-      "$PROMPT" \
-      > /tmp/map-result.jsonl
-
-    # opencode has no terminal frame carrying the answer, so the document is
-    # reassembled from its `text` records, as normaliseOpencode() in
-    # forward-events.mjs does. Unlike there, only the LAST step that wrote any
-    # text counts: the steps before it are the agent narrating its own
-    # exploration between tool calls ("Let me read CLAUDE.md"), and that is
-    # not part of the map. Errors are echoed because an auth or model failure
-    # otherwise surfaces only as the empty-map refusal below, with no reason.
-    MAP_MD="$(node -e "
-      const fs = require('fs');
-      let step = [];
-      let lastWithText = [];
-      for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
-        if (!line.trim()) continue;
-        let record;
-        try { record = JSON.parse(line); } catch { continue; }
-        if (record?.type === 'step_start') {
-          step = [];
-        } else if (record?.type === 'text' && record.part?.text?.trim()) {
-          step.push(record.part.text);
-          lastWithText = step;
-        } else if (record?.type === 'error') {
-          console.error('[opencode] ' + (record.error?.data?.message ?? record.error?.name ?? 'unknown error'));
-        }
-      }
-      process.stdout.write(lastWithText.join('\n').trim());
-    ")"
-    ;;
-
-  *)
-    echo "Unknown BUILDER_ENGINE '${ENGINE}' — add a case here, to install-engine.sh and to run-engine.sh." >&2
-    exit 1
-    ;;
+MAP_MODEL="${BUILDER_MAP_MODEL:-gemini-2.5-pro}"
+case "$MAP_MODEL" in
+  */*) ;;
+  claude-*) MAP_MODEL="anthropic/${MAP_MODEL}" ;;
+  gemini-*) MAP_MODEL="google/${MAP_MODEL}" ;;
+  gpt-* | o[0-9]-* | o[0-9]) MAP_MODEL="openai/${MAP_MODEL}" ;;
 esac
+
+opencode run \
+  --model "$MAP_MODEL" \
+  --agent mapper \
+  --format json \
+  --auto \
+  "$PROMPT" \
+  > /tmp/map-result.jsonl
+
+# opencode has no terminal frame carrying the answer, so the document is
+# reassembled from its `text` records, as normaliseOpencode() in
+# forward-events.mjs does. Unlike there, only the LAST step that wrote any
+# text counts: the steps before it are the agent narrating its own
+# exploration between tool calls ("Let me read CLAUDE.md"), and that is
+# not part of the map. Errors are echoed because an auth or model failure
+# otherwise surfaces only as the empty-map refusal below, with no reason.
+MAP_MD="$(node -e "
+  const fs = require('fs');
+  let step = [];
+  let lastWithText = [];
+  for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    if (record?.type === 'step_start') {
+      step = [];
+    } else if (record?.type === 'text' && record.part?.text?.trim()) {
+      step.push(record.part.text);
+      lastWithText = step;
+    } else if (record?.type === 'error') {
+      console.error('[opencode] ' + (record.error?.data?.message ?? record.error?.name ?? 'unknown error'));
+    }
+  }
+  process.stdout.write(lastWithText.join('\n').trim());
+")"
 
 if [ -z "$MAP_MD" ]; then
   echo "Empty map for ${REPO} — refusing to overwrite a good one with nothing." >&2

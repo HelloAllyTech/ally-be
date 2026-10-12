@@ -227,9 +227,8 @@ describe('BuilderPipelineController', () => {
     expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
   });
 
-  it('should record the engine and model for a run', async () => {
+  it('should record the model for a run', async () => {
     const runId = uuidv4();
-    const engine = 'test-engine';
     const model = 'test-model';
     // Non-null asserted: the mock is a Partial<BuilderBuildService>, so every
     // member is optional to the type checker even though this one is always
@@ -237,7 +236,7 @@ describe('BuilderPipelineController', () => {
     // type error that ts-jest does not raise.
     const mockRun = await mockBuilderBuildService.getRunOrFail!(runId);
 
-    const dto: RecordBuilderRunModelDto = { engine, model };
+    const dto: RecordBuilderRunModelDto = { model };
 
     await request(app.getHttpServer())
       .post(`/builder/pipeline/runs/${runId}/model`)

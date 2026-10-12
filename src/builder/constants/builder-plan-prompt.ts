@@ -14,7 +14,7 @@ import { buildPromptHeader, renderPrd } from './builder-build-prompt';
  * all read; a plan that only ever existed inside a coding agent's context
  * dies with that process.
  *
- * The planner has read-only tools plus Task. It cannot edit the tree, which is
+ * The planner has read-only tools plus `task`. It cannot edit the tree, which is
  * deliberate: a planner that starts implementing produces neither a plan nor a
  * finished change.
  */
@@ -60,7 +60,7 @@ enough to know, concretely, which files each requirement touches. Read the code
 that surrounds them, not just the files themselves: the plan's value is in
 knowing what else depends on what you are about to change.
 
-If you have a subagent tool (\`Task\`), use it to explore several repos or subsystems at once rather
+If you have a subagent tool (\`task\`), use it to explore several repos or subsystems at once rather
 than reading them one after another — you are the only phase that can spend
 wall-clock time on reading without holding up the build.
 

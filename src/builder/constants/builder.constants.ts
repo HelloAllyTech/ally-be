@@ -397,6 +397,12 @@ export const BUILDER_EVIDENCE_ERROR_WINDOW_HOURS = 24;
  */
 export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
 
+/**
+ * The only coding engine. Still written to build_runs.engine and
+ * builder_attempts.engine as a historical record of which CLI ran.
+ */
+export const BUILDER_ENGINE = 'opencode';
+
 /* ── Model tiering ──────────────────────────────────────────────────────── */
 
 /**
@@ -413,88 +419,15 @@ export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
  *
  * Gemini on every tier, and for the same reason LLM_TIER_FLOOR is OpenAI: a
  * default's job is to be the thing that still works. These used to be Anthropic
- * ids while `builder_settings.defaultEngine` was already `gemini` in production,
- * which quietly split Builder in half — the build phase read the settings row
- * and ran on Gemini, while the interview, the epic decomposition and every
- * mechanical pass read *these* and ran on Claude. Nobody chose that split; it
- * was what "the settings row overrides the default" means when only one of the
- * two code paths consults the settings row.
+ * ids while the build phase already ran on Gemini, which quietly split Builder
+ * in half — the interview, the epic decomposition and every mechanical pass ran
+ * on Claude because only one of the two code paths consulted the settings row.
  *
  * `gemini-2.5-pro` rather than a per-tier spread because Gemini publishes two
  * general models, not five: pro where the answer's quality is the point, flash
  * where throughput is. Mapping "Opus vs Sonnet" onto that would be inventing a
  * distinction the vendor does not offer.
  */
-/**
- * The one engine Builder may run, or null to let the chain below decide.
- *
- * Builder resolves its engine `override ?? session.engine ?? settings
- * .defaultEngine ?? 'gemini'`, and a session carries the engine it was created
- * with forever. That is correct for a resume — a run that continues someone
- * else's branches should continue on the same engine — and wrong for
- * everything else the moment the default moves, because a session created
- * before the move keeps dispatching its REVIEW and FIX runs on the old engine
- * indefinitely.
- *
- * That is not hypothetical. On 2026-09-23, hours after every Builder phase had
- * been moved to Gemini and verified as Gemini, a review of ally-web#694
- * dispatched `BUILDER_ENGINE=claude-code` with `claude-opus-4-7` and
- * `claude-sonnet-4-6` — model ids that exist nowhere in this codebase — because
- * the resolution reached a rung the migration never touched. Every pull request
- * Builder opened was being reviewed on another vendor's credits, silently, and
- * the only reason anyone noticed was that the run failed for an unrelated
- * reason and someone read its workflow inputs.
- *
- * So the pin is deliberately blunt: set, it wins over the session, the settings
- * row and the environment alike, because each of those is a place a foreign
- * model id has already been found hiding. It is one constant to clear when
- * Builder should be multi-engine again, and `resolveEngine` says in the log
- * whenever it overrides something — a pin that silently disagreed with the
- * admin picker would be the same class of bug it exists to close.
- */
-// One engine. opencode is a harness rather than a vendor — it runs Anthropic,
-// OpenAI and Google models alike — so `gemini` came off this list when its
-// invocation case, its event normaliser and its install step were deleted.
-// Choosing a model is now how you choose a vendor; see run-engine.sh, which
-// derives the provider prefix from the model id.
-export const BUILDER_ENGINE_ALLOWED_DEFAULT = ['opencode'];
-
-/**
- * The engines Builder may run. Anything else is overruled to the first entry.
- *
- * This began as a single pin, because a session carries the engine it was
- * created with forever and that is wrong for everything except a resume: hours
- * after every Builder phase had been moved to Gemini and verified as Gemini, a
- * review of ally-web#694 dispatched `claude-code` with `claude-opus-4-7`,
- * because the review path read a session created before the move. Every pull
- * request Builder opened was being reviewed on another vendor's credits, and
- * the only reason anyone noticed is that the run failed for an unrelated
- * reason and someone read its workflow inputs.
- *
- * A single pin closed that and closed too much with it: it also refused a
- * DELIBERATE choice, which made an opencode comparison run impossible. The
- * distinction that matters is not explicit-versus-inherited, it is which
- * engines are permitted to spend at all. A stale `claude-code` and an admin
- * typing `claude-code` cost exactly the same money.
- *
- * So: a list. An engine on it may be chosen by anyone — the run override, the
- * session, the settings row. An engine off it is overruled wherever it came
- * from, and `resolveEngine` says so in the log rather than swapping quietly.
- * `claude-code` is deliberately absent; putting it back is one env var, which
- * is the right amount of friction for a decision about someone else's bill.
- */
-export const builderAllowedEngines = (): string[] => {
-  const raw = process.env.BUILDER_ENGINE_ALLOWED;
-  if (raw === undefined) return [...BUILDER_ENGINE_ALLOWED_DEFAULT];
-  const parsed = raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  // An empty value means "no restriction" rather than "nothing is allowed" —
-  // the latter would brick every build on a typo.
-  return parsed;
-};
-
 export const BUILDER_MODEL_DEFAULTS = {
   interview: 'gemini-2.5-pro',
   planner: 'gemini-2.5-pro',
@@ -516,15 +449,6 @@ export const BUILDER_MAX_CODE_ITERATIONS = 4;
 
 /** Most fresh-context verifier invocations per run. */
 export const BUILDER_MAX_VERIFY_ROUNDS = 3;
-
-/**
- * Tool allowlists per phase. The verifier deliberately gets no Write/Edit/
- * Task: it reviews the tree, it does not touch it (run-engine also
- * hard-reverts any stray write with git after the verifier exits).
- */
-export const BUILDER_CODER_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,Task';
-export const BUILDER_PLANNER_TOOLS = 'Bash,Read,Glob,Grep,Task';
-export const BUILDER_VERIFIER_TOOLS = 'Bash,Read,Glob,Grep';
 
 /* ── Mid-run budget hold ────────────────────────────────────────────────── */
 

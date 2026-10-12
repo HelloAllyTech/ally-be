@@ -63,17 +63,7 @@ export class BuilderSession extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   repos?: string[] | null;
 
-  /**
-   * Coding engine + model for build runs. Parameters rather than constants so
-   * another CLI can be slotted in without a schema change.
-   *
-   * The column default is a backstop only: BuilderSessionService stamps
-   * `settings.defaultEngine` at creation, because a non-null column default
-   * makes the dispatch's `?? settings.defaultEngine` rung unreachable.
-   */
-  @Column({ type: 'varchar', length: 40, default: 'opencode' })
-  engine!: string;
-
+  /** Coder model for build runs; null falls through to builder_settings. */
   @Column({ type: 'varchar', length: 80, nullable: true })
   model?: string | null;
 

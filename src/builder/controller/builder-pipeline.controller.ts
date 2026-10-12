@@ -634,7 +634,7 @@ export class BuilderPipelineController {
   }
 
   @Post('runs/:runId/model')
-  @ApiOperation({ summary: 'Record the engine and model used for this run' })
+  @ApiOperation({ summary: 'Record the model used for this run' })
   async recordModel(
     @Param('runId', ParseUUIDPipe) runId: string,
     @Body() dto: RecordBuilderRunModelDto,

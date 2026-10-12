@@ -20,7 +20,6 @@ const readySession = (overrides: Record<string, any> = {}) => ({
   title: 'Add a thing',
   status: BuilderSessionStatus.PRD_READY,
   repos: ['ally-be'],
-  engine: 'claude-code',
   model: 'claude-sonnet-5',
   budgetUsd: null,
   totalCostUsd: '0',
@@ -29,24 +28,6 @@ const readySession = (overrides: Record<string, any> = {}) => ({
 });
 
 describe('BuilderBuildService', () => {
-  // Unrestricted for this whole file.
-  //
-  // Production runs an engine ALLOWLIST (see builderAllowedEngines), which
-  // overrules anything not on it wherever it came from. The chain it overrules
-  // is still what these tests exist to cover — sizing, the escalation ladder
-  // and, above all, never handing one engine another engine's model. That
-  // filter is the safety net if the list is ever widened, so it is tested with
-  // the list lifted rather than deleted with it in place.
-  // `builder-engine-invocation.spec.ts` covers the list itself.
-  const allowedBefore = process.env.BUILDER_ENGINE_ALLOWED;
-  beforeAll(() => {
-    process.env.BUILDER_ENGINE_ALLOWED = '';
-  });
-  afterAll(() => {
-    if (allowedBefore === undefined) delete process.env.BUILDER_ENGINE_ALLOWED;
-    else process.env.BUILDER_ENGINE_ALLOWED = allowedBefore;
-  });
-
   let service: BuilderBuildService;
   let github: {
     isConfigured: boolean;
@@ -643,67 +624,16 @@ describe('BuilderBuildService', () => {
     });
   });
 
-  describe('engine resolution', () => {
-    const dispatchedEngine = () =>
-      github.dispatchWorkflow.mock.calls[0][0].inputs.engine as string;
+  describe('engine', () => {
+    it('records opencode on the run and no longer sends an engine input', async () => {
+      await service.startBuild(readySession() as any, 1);
 
-    it('lets an explicit override win over everything else', async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        maxConcurrentBuilds: 3,
-        defaultEngine: 'gemini',
-      });
-
-      await service.startBuild(
-        readySession({ engine: 'claude-code' }) as any,
-        1,
-        {
-          engine: 'codex',
-        },
+      expect(runRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'opencode' }),
       );
-
-      expect(dispatchedEngine()).toBe('codex');
-    });
-
-    it("falls through to the session's own engine when no override is given", async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        maxConcurrentBuilds: 3,
-        defaultEngine: 'gemini',
-      });
-
-      await service.startBuild(
-        readySession({ engine: 'claude-code' }) as any,
-        1,
-      );
-
-      expect(dispatchedEngine()).toBe('claude-code');
-    });
-
-    it("falls through to the admin's configured default when the session has none — the field a settings picker used to change and nothing read", async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        maxConcurrentBuilds: 3,
-        defaultEngine: 'gemini',
-        defaultModel: 'gemini-2.5-pro',
-      });
-
-      await service.startBuild(readySession({ engine: null }) as any, 1);
-
-      expect(dispatchedEngine()).toBe('gemini');
-    });
-
-    it('falls all the way back to opencode when nothing at all is configured', async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        maxConcurrentBuilds: 3,
-        defaultEngine: null,
-        defaultModel: 'gemini-2.5-pro',
-      });
-
-      await service.startBuild(readySession({ engine: null }) as any, 1);
-
-      expect(dispatchedEngine()).toBe('opencode');
+      expect(
+        github.dispatchWorkflow.mock.calls[0][0].inputs,
+      ).not.toHaveProperty('engine');
     });
   });
 

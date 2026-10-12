@@ -6,7 +6,7 @@
 # and is the most expensive to get wrong: a mis-ordered phase means a pull
 # request opens before it has been reviewed, and a mis-wired verdict means the
 # remediation round never happens. So both the engine and ally-be are faked
-# here — a `claude` shim that replays canned stream-json, and a tiny HTTP
+# here — an `opencode` shim that replays canned JSON events, and a tiny HTTP
 # server that serves the phase prompts and records every callback.
 #
 # Scenarios:
@@ -518,7 +518,6 @@ run_scenario() {
       PATH="${WORK}:$PATH" \
       ALLY_BE_API_URL="http://127.0.0.1:${PORT}" \
       ALLY_BE_API_KEY=test-key \
-      BUILDER_ENGINE=opencode \
       BUILDER_RUN_ID=11111111-1111-1111-1111-111111111111 \
       BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v"}' \
       "$@" \

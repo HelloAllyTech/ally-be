@@ -4,9 +4,9 @@
 #
 # The environment is not ours to rely on. These helpers are invoked by a coding
 # agent's shell tool, and what that tool hands its subprocess is the agent
-# vendor's decision: Gemini's `run_shell_command` propagates PATH but not the
-# job's own variables, so every helper resolved correctly, ran, and died on a
-# missing ALLY_BE_API_URL. The run coded and planned behind a progress rail
+# vendor's decision: the (since retired) Gemini CLI's `run_shell_command`
+# propagated PATH but not the job's own variables, so every helper resolved
+# correctly, ran, and died on a missing ALLY_BE_API_URL. The run coded and planned behind a progress rail
 # that never moved — the same symptom as the `command not found` before it, one
 # layer further in.
 #
