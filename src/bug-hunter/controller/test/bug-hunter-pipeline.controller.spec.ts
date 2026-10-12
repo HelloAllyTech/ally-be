@@ -21,7 +21,7 @@ import { BugHunterOrchestratorService } from '../../service/bug-hunter-orchestra
 import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
-import { ValidationPipe } from '@nestjs/common';
+import { NotFoundException, ValidationPipe } from '@nestjs/common';
 
 describe('BugHunterPipelineController', () => {
   let controller: BugHunterPipelineController;
@@ -34,7 +34,10 @@ describe('BugHunterPipelineController', () => {
       controllers: [BugHunterPipelineController],
       providers: [
         { provide: BugHunterService, useValue: {} },
-        { provide: BugFindingService, useValue: { setStatus: jest.fn() } },
+        {
+          provide: BugFindingService,
+          useValue: { setStatus: jest.fn(), getOne: jest.fn() },
+        },
         { provide: BugHunterFinderDataService, useValue: {} },
         {
           provide: BugFixSessionService,
@@ -215,6 +218,24 @@ describe('BugHunterPipelineController', () => {
       });
 
       expect(dto.id).toBe('finding-1');
+    });
+  });
+
+  describe('getFindingForPipeline', () => {
+    it('returns a finding', async () => {
+      const finding = { id: 'f-1' };
+      (bugFindingService.getOne as jest.Mock).mockResolvedValue(finding);
+      const result = await controller.getFindingForPipeline('f-1');
+      expect(result.id).toBe('f-1');
+    });
+
+    it('re-throws a NotFoundException but logs it as a warning', async () => {
+      (bugFindingService.getOne as jest.Mock).mockRejectedValue(
+        new NotFoundException('not found'),
+      );
+      await expect(controller.getFindingForPipeline('f-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
