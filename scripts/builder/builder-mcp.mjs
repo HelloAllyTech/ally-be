@@ -186,8 +186,20 @@ const ONLY_IN_PHASE = {
   design_review: 'design-review',
 };
 
+/**
+ * What the design phases may use at all: their own tool and `note`. The first
+ * live design run (session 880e73e6, 2026-10-12) called `stage` and moved a
+ * session that was not building to CODING; a designer has no stage, todo
+ * list, pull request, question or outcome to report.
+ */
+const DESIGN_PHASE_TOOLS = {
+  design: ['design', 'note'],
+  'design-review': ['design_review', 'note'],
+};
+
 const toolsForPhase = () => {
   const phase = currentPhase();
+  if (DESIGN_PHASE_TOOLS[phase]) return DESIGN_PHASE_TOOLS[phase];
   const own = (name) => !ONLY_IN_PHASE[name] || ONLY_IN_PHASE[name] === phase;
   // Unknown phase: withhold nothing but the phase-owned tools. See above.
   if (!phase || MAY_FINISH_THE_RUN.has(phase)) {

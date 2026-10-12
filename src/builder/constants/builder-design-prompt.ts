@@ -160,10 +160,36 @@ ${context.repoPacks.trim()}
 `.trim()
     : '';
 
+  // A redraft: the last draft and what its reviewer found. Rendered through
+  // the same function the build prompts use, so it reads like the design it
+  // will become.
+  const previous = context.prd.technicalDesign?.previous;
+  const redraftBlock = previous?.designMd?.trim()
+    ? `
+## This is a redraft — fix what the reviewer found
+
+Your previous draft and its independent review are below. Address **every**
+finding: fix it in the design (a missed reader added with its line, a missed
+file added to scope, a test added to the map), or, if a finding is wrong, say
+why with evidence (\`repo:path:line\`) under a "Review response" heading in
+\`designMd\`. Keep what the review did not object to. Check the review's
+claims against the code before acting on them.
+
+### The review (${previous.review?.verdict ?? 'none filed'})
+
+${previous.review?.notesMd?.trim() || '(No review was filed for the previous draft.)'}
+
+### The previous draft
+
+${renderTechnicalDesign({ ...(context.prd.technicalDesign as BuilderTechnicalDesign), ...previous })}
+`.trim()
+    : '';
+
   return [
     renderPlatformRules(context.platformRules),
     intro,
     protocol,
+    redraftBlock,
     packsBlock,
     renderPrd(context.prd),
   ]

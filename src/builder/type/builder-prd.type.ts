@@ -129,6 +129,17 @@ export interface BuilderDesignReview {
   at: string;
 }
 
+export type BuilderPreviousDesign = Pick<
+  BuilderTechnicalDesign,
+  | 'designMd'
+  | 'scope'
+  | 'contracts'
+  | 'compatibilityMd'
+  | 'testMap'
+  | 'openDecisions'
+  | 'review'
+>;
+
 export interface BuilderTechnicalDesign {
   status: BuilderTechnicalDesignStatus;
   /** The DESIGN run drafting it; only that run may submit to it. */
@@ -150,6 +161,15 @@ export interface BuilderTechnicalDesign {
   approvedBy: number | null;
   approvedAt: string | null;
   error: string | null;
+  /**
+   * The draft this one replaces, with its reviewer's findings — what a
+   * redraft is asked to fix. Without it a redraft started from nothing and
+   * could repeat exactly what the critic objected to (session 880e73e6's
+   * first design missed the component-template save path and two mobile
+   * readers; the critic found all three). Never nested: a redraft of a
+   * redraft carries only its immediate predecessor.
+   */
+  previous?: BuilderPreviousDesign | null;
 }
 
 /** Progress flags the interviewer sets as it completes each phase. */

@@ -271,12 +271,10 @@ await test('a scope change without a reason is refused', async () => {
 // The design tools belong to their own phases: a coder offered `design` could
 // rewrite the scope it is about to be held to.
 await test('design tools are offered only in their own phase', async () => {
-  const design = await listTools('design');
-  assert.ok(design.includes('design'));
-  assert.ok(!design.includes('design_review'));
-  const review = await listTools('design-review');
-  assert.ok(review.includes('design_review'));
-  assert.ok(!review.includes('design'));
+  // Only their own tool and `note`: a designer that called `stage` moved a
+  // session that was not building to CODING.
+  assert.deepEqual((await listTools('design')).sort(), ['design', 'note']);
+  assert.deepEqual((await listTools('design-review')).sort(), ['design_review', 'note']);
   for (const phase of ['code', 'plan', 'verify', 'finalise', undefined]) {
     const tools = await listTools(phase);
     assert.ok(!tools.includes('design') && !tools.includes('design_review'), `${phase} must not have them`);
