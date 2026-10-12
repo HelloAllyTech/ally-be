@@ -323,19 +323,30 @@ await test('a refused design is an error and leaves no marker', async () => {
   }
 });
 
-await test('a design review is posted with its verdict', async () => {
+await test('a design review derives its verdict from defects, and keeps suggestions apart', async () => {
   const marker = path.join(tmp, 'design-reviewed');
   process.env.BUILDER_DESIGN_REVIEWED = marker;
   try {
     const { call, received } = await callTool(
       'design_review',
-      { verdict: 'concerns', notesMd: 'misses `QuizResults.tsx:79`' },
+      { defects: [], suggestions: ['Article questions could take rich text too.'] },
       { phase: 'design-review' },
     );
     const post = received.find((r) => r.url.endsWith('/design-review'));
-    assert.equal(post.parsed.verdict, 'concerns');
+    // A sound design with only suggestions passes.
+    assert.equal(post.parsed.verdict, 'pass');
+    assert.deepEqual(post.parsed.suggestions, ['Article questions could take rich text too.']);
+    assert.match(post.parsed.notesMd, /\*\*Suggestions\*\*/);
     assert.ok(fs.existsSync(marker));
-    assert.match(textOf(call), /review stored \(concerns\)/);
+    assert.match(textOf(call), /review stored \(pass: 0 defect\(s\), 1 suggestion\(s\)\)/);
+
+    const second = await callTool(
+      'design_review',
+      { defects: ['ally-be:src/a.ts:9 reads prompt and is not listed'], suggestions: [] },
+      { phase: 'design-review' },
+    );
+    const failed = second.received.find((r) => r.url.endsWith('/design-review'));
+    assert.equal(failed.parsed.verdict, 'concerns');
   } finally {
     delete process.env.BUILDER_DESIGN_REVIEWED;
   }

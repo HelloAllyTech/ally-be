@@ -440,12 +440,37 @@ export class SubmitBuilderDesignDto {
 }
 
 export class SubmitBuilderDesignReviewDto {
-  @ApiProperty({ enum: ['pass', 'concerns'] })
+  /** Ignored when `defects` is sent: the verdict is derived from it. */
+  @ApiPropertyOptional({ enum: ['pass', 'concerns'] })
+  @IsOptional()
   @IsIn(['pass', 'concerns'])
-  verdict!: 'pass' | 'concerns';
+  verdict?: 'pass' | 'concerns';
 
-  @ApiProperty({ description: 'The findings, markdown' })
+  @ApiPropertyOptional({
+    description: 'Anything else worth a person reading, markdown',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(30_000)
-  notesMd!: string;
+  notesMd?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'What would make the build wrong or a released client break',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(4_000, { each: true })
+  defects?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Scope the design could widen to — not defects',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(4_000, { each: true })
+  suggestions?: string[];
 }
