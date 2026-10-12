@@ -122,6 +122,10 @@ jobs:
       # variable BUILDER_MULTI_AGENT to 0 to put the single coder back without
       # a deploy.
       BUILDER_MULTI_AGENT: ${{ vars.BUILDER_MULTI_AGENT || '1' }}
+      # Live redirects into a running coding phase (run-engine.sh). Off until
+      # a real run has shown it end to end; set the repository variable
+      # BUILDER_LIVE_STEER to 1 to turn it on without a deploy.
+      BUILDER_LIVE_STEER: ${{ vars.BUILDER_LIVE_STEER || '0' }}
 
     steps:
       - name: Check out the protocol (ally-be)

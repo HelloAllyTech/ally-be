@@ -53,6 +53,7 @@ import fs from 'node:fs';
 const log = process.env.DRYRUN_LOG;
 const append = (line) => fs.appendFileSync(log, `${line}\n`);
 let budgetPolls = 0;
+let steerPolls = 0;
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -74,6 +75,21 @@ http.createServer((req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(state));
+    return;
+  }
+
+  if (req.method === 'GET' && path.endsWith('/steer')) {
+    // One pending note, served once, when the scenario sets one — and only
+    // after DRYRUN_STEER_AFTER earlier polls, so it can arrive mid-phase
+    // rather than at the phase boundary that collects notes the old way.
+    const note = process.env.DRYRUN_STEER_NOTE;
+    steerPolls += 1;
+    const served = fs.existsSync('/tmp/builder-dryrun-steer-served');
+    const due = note && !served && steerPolls > Number(process.env.DRYRUN_STEER_AFTER ?? 0);
+    if (due) fs.writeFileSync('/tmp/builder-dryrun-steer-served', '1');
+    append(`GET steer:${due ? 'note' : 'none'}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ notes: due ? [{ id: 'n1', note }] : [] }));
     return;
   }
 
@@ -170,6 +186,26 @@ cat > "${WORK}/opencode" <<'SHIM'
 # that bit first when the real engine changed, so the shim insists on it: if
 # run-engine.sh ever goes back to passing a flag, no argument will carry the
 # marker and every phase will fall through to "build".
+# `opencode serve`: a stand-in server that records what is posted into a
+# session, so the live steer relay can be checked end to end.
+if [ "${1:-}" = serve ]; then
+  port=""; prev=""
+  for arg in "$@"; do [ "$prev" = "--port" ] && port="$arg"; prev="$arg"; done
+  exec node -e '
+    const http = require("http");
+    const fs = require("fs");
+    http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => { body += c; });
+      req.on("end", () => {
+        if (req.method === "POST") fs.appendFileSync("/tmp/builder-dryrun-live.log", `${req.url} ${body}\n`);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end("[]");
+      });
+    }).listen(Number(process.argv[1]), "127.0.0.1");
+  ' "$port"
+fi
+
 prompt=""
 agent=""
 for arg in "$@"; do
@@ -178,8 +214,20 @@ for arg in "$@"; do
     *) [[ "$arg" == *PROMPT:* ]] && prompt="$(printf '%s' "$arg" | grep -o 'PROMPT:[a-z-]*' | head -1)" ;;
   esac
 done
-phase="${prompt#PROMPT:}"
+# The marker only: a prompt with corrections appended carries more after it.
+phase="$(printf '%s' "$prompt" | grep -o 'PROMPT:[a-z-]*' | head -1)"
+phase="${phase#PROMPT:}"
 [ -n "$phase" ] || phase="build"
+
+# Attached to a server: stay busy long enough for the relay to poll.
+if printf '%s' "$*" | grep -q -- '--attach'; then
+  echo "${phase}:attached" >> /tmp/builder-dryrun-agents
+  if [ "$phase" = build ]; then
+    # The session id arrives with the first frame, as opencode's does.
+    echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_dryrun"}'
+    sleep "${DRYRUN_LIVE_SLEEP:-3}"
+  fi
+fi
 
 # Which opencode agent each invocation ran as, and whether a coding prompt
 # carried the lead's brief.
@@ -533,7 +581,9 @@ run_scenario() {
         /tmp/builder-selfcheck.stamp /tmp/builder-dryrun-selfcheck-turns \
         /tmp/builder-dryrun-selfcheck.out /tmp/builder-dryrun-selfcheck.rc \
         /tmp/builder-design-submitted /tmp/builder-design-reviewed \
-        /tmp/builder-dryrun-agents
+        /tmp/builder-dryrun-agents /tmp/builder-dryrun-live.log \
+        /tmp/builder-dryrun-steer-served /tmp/builder-live-session \
+        /tmp/builder-steers.md
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -565,6 +615,7 @@ run_scenario() {
   DRYRUN_BUDGET_RAISE_AFTER="${DRYRUN_BUDGET_RAISE_AFTER:-0}" \
   DRYRUN_PROMPT_FAIL="${DRYRUN_PROMPT_FAIL:-}" \
   DRYRUN_GATE_FAIL="$gate_fail" \
+  DRYRUN_STEER_NOTE="${DRYRUN_STEER_NOTE:-}" DRYRUN_STEER_AFTER="${DRYRUN_STEER_AFTER:-0}" \
     node "${WORK}/server.mjs" &
   SERVER_PID=$!
 
@@ -646,6 +697,28 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = multi-agent ]; then
   check "codes as the single builder when switched off" yes \
     "$(grep -qx 'build:builder' /tmp/builder-dryrun-agents && echo yes || echo no)"
   check "with no lead brief" no "$(grep -qx 'build:lead-brief' /tmp/builder-dryrun-agents && echo yes || echo no)"
+fi
+
+# Live redirects: a note pending while the coder runs is posted into its
+# session through the local server, acknowledged, and kept for later phases.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = live-steer ]; then
+  DRYRUN_STEER_NOTE="Do not touch productUpdates.test.ts" DRYRUN_STEER_AFTER=1 \
+    run_scenario live-steer DRYRUN_SELFCHECKED=1 BUILDER_LIVE_STEER=1 \
+    BUILDER_STEER_POLL_SECONDS=1 BUILDER_OPENCODE_PORT=8798
+  check "finished the run" 0 "$EXIT_CODE"
+  check "coded attached to the server" yes \
+    "$(grep -qx 'build:attached' /tmp/builder-dryrun-agents && echo yes || echo no)"
+  check "posted the note into the running session" yes \
+    "$(grep -q '/session/ses_dryrun/prompt_async .*Do not touch productUpdates' /tmp/builder-dryrun-live.log 2>/dev/null && echo yes || echo no)"
+  check "as the lead" yes \
+    "$(grep -q '"agent":"lead"' /tmp/builder-dryrun-live.log 2>/dev/null && echo yes || echo no)"
+  check "acknowledged it as live" yes "$(has_in_log 'live:code')"
+  check "planning stayed unattached" no \
+    "$(grep -qx 'plan-prompt:attached' /tmp/builder-dryrun-agents && echo yes || echo no)"
+
+  run_scenario live-steer-off DRYRUN_SELFCHECKED=1
+  check "off by default" no \
+    "$(grep -q ':attached' /tmp/builder-dryrun-agents 2>/dev/null && echo yes || echo no)"
 fi
 
 # A coder that stops without a passing self-check of its final tree gets one

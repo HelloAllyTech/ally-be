@@ -30,6 +30,11 @@ const RUN_ID = process.env.BUILDER_RUN_ID;
 
 const resultOutIndex = process.argv.indexOf('--result-out');
 const RESULT_OUT = resultOutIndex > -1 ? process.argv[resultOutIndex + 1] : null;
+// Where to write the opencode session id the moment it is first seen, rather
+// than at the end with the result: run-engine.sh's live steer relay needs it
+// while the phase is still running, to inject a correction into it.
+const sessionOutIndex = process.argv.indexOf('--session-out');
+const SESSION_OUT = sessionOutIndex > -1 ? process.argv[sessionOutIndex + 1] : null;
 
 /** Flush on either bound, whichever comes first. */
 const FLUSH_INTERVAL_MS = 2000;
@@ -78,6 +83,13 @@ const normaliseOpencode = (record) => {
   const part = record?.part ?? {};
   if (!opencodeSessionId && typeof record?.sessionID === 'string') {
     opencodeSessionId = record.sessionID;
+    if (SESSION_OUT) {
+      try {
+        writeFileSync(SESSION_OUT, opencodeSessionId);
+      } catch {
+        // Telemetry must never fail a build; the relay simply has no session.
+      }
+    }
   }
 
   if (record?.type === 'text' && part.text?.trim()) {

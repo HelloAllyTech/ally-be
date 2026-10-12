@@ -868,6 +868,83 @@ fold_spent_into() {
   : > "$result_file"
 }
 
+# ── Live redirects (BUILDER_LIVE_STEER=1) ──────────────────────────────────
+#
+# A correction an admin sends used to wait for the next phase boundary: on
+# 2026-10-12 one reached a fix-up round 22 minutes after it was written, by
+# which time the failures it named were already fixed. With this on, the
+# coding phases run against a local `opencode serve` and `opencode run
+# --attach`, and a relay posts each pending note into the running session
+# (`POST /session/:id/prompt_async`), where the agent reads it at its next
+# step. Delivered notes still go to STEER_FILE, so later phases see them too.
+#
+# Off by default until a real run has shown it works end to end. Killing an
+# attached `opencode run` does not stop the session on the server, so a
+# wall-clock stop aborts the session explicitly and the server is stopped
+# after every phase.
+LIVE_STEER="${BUILDER_LIVE_STEER:-0}"
+OC_PORT="${BUILDER_OPENCODE_PORT:-4096}"
+OC_URL="http://127.0.0.1:${OC_PORT}"
+STEER_POLL_SECONDS="${BUILDER_STEER_POLL_SECONDS:-30}"
+LIVE_SESSION_FILE=/tmp/builder-live-session
+OC_SERVER_PID=""
+
+start_opencode_server() {
+  PATH="${HERE}/node-shims:${PATH}" \
+  OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS="${BUILDER_SHELL_TIMEOUT_MS:-1200000}" \
+    opencode serve --hostname 127.0.0.1 --port "$OC_PORT" \
+    > /tmp/builder-opencode-serve.log 2>&1 &
+  OC_SERVER_PID=$!
+  local _
+  for _ in $(seq 1 60); do
+    # Any HTTP answer at all means it is listening.
+    if curl -s -o /dev/null "${OC_URL}/session" 2>/dev/null; then return 0; fi
+    kill -0 "$OC_SERVER_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+  echo "::warning::opencode serve did not come up; this phase runs without live redirects." >&2
+  stop_opencode_server
+  return 1
+}
+
+stop_opencode_server() {
+  [ -n "$OC_SERVER_PID" ] || return 0
+  kill "$OC_SERVER_PID" 2>/dev/null || true
+  wait "$OC_SERVER_PID" 2>/dev/null || true
+  OC_SERVER_PID=""
+}
+
+# Runs in the background for the length of one phase; killed when it ends.
+relay_steers() {
+  local agent="$1" oc_model="$2" sid payload count text body ids
+  while sleep "$STEER_POLL_SECONDS"; do
+    sid="$(cat "$LIVE_SESSION_FILE" 2>/dev/null || true)"
+    [ -n "$sid" ] || continue
+    payload="$(curl -fsS "${API}/steer" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || true)"
+    count="$(printf '%s' "$payload" | jq -r '.notes | length' 2>/dev/null || echo 0)"
+    case "$count" in '' | *[!0-9]*) count=0 ;; esac
+    [ "$count" -gt 0 ] || continue
+
+    text="$(printf '%s' "$payload" | jq -r '
+      "A correction from the admin, sent while you were working. It adds to the failures and objections you are already working on; it does not replace them. If you cannot act on it in this phase, say so in your summary.\n\n"
+      + ([.notes[] | "- " + .note] | join("\n"))')"
+    body="$(jq -nc --arg a "$agent" --arg p "${oc_model%%/*}" --arg m "${oc_model#*/}" --arg t "$text" \
+      '{agent: $a, model: {providerID: $p, modelID: $m}, parts: [{type: "text", text: $t}]}')"
+    if curl -fsS -X POST "${OC_URL}/session/${sid}/prompt_async" \
+         -H 'Content-Type: application/json' -d "$body" >/dev/null 2>&1; then
+      {
+        printf '\n### From the admin, during the run (live, %s)\n\n' "$AGENT_PHASE"
+        printf '%s' "$payload" | jq -r '.notes[] | "- " + .note'
+      } >> "$STEER_FILE"
+      ids="$(printf '%s' "$payload" | jq -c --arg ph "live:${AGENT_PHASE}" '{ids: [.notes[].id], phase: $ph}')"
+      curl -sS -X POST "${API}/steer/ack" \
+        -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+        -d "$ids" >/dev/null 2>&1 || true
+      echo "Relayed ${count} steering note(s) into the running ${AGENT_PHASE} phase." >&2
+    fi
+  done
+}
+
 run_agent() {
   # One phase, one `opencode run`. `agent` is the opencode agent it runs as
   # (opencode.json): `builder` for phases that write, `reviewer` for the
@@ -959,10 +1036,21 @@ run_agent() {
   local text_call_retries="${BUILDER_TEXT_CALL_RETRIES:-2}"
   local text_call_try=0
   local tree_before="" stall_reason=""
+  local -a oc_attach=()
+  local relay_pid=""
   rm -f "${result_file}.spent"
   while :; do
     rc=0
     case "$AGENT_PHASE" in code | fix) tree_before="$(tree_fingerprint)" ;; esac
+    oc_attach=()
+    relay_pid=""
+    rm -f "$LIVE_SESSION_FILE"
+    if [ "$LIVE_STEER" = 1 ] && { [ "$AGENT_PHASE" = code ] || [ "$AGENT_PHASE" = fix ]; } &&
+       start_opencode_server; then
+      oc_attach=(--attach "$OC_URL")
+      relay_steers "$agent" "$oc_model" &
+      relay_pid=$!
+    fi
     # node-shims first: the agent's own `node`/`npm`/`npx` follow the .nvmrc
     # of the repo it is standing in, as the gate's always have (node-shims/_shim).
     #
@@ -976,8 +1064,20 @@ run_agent() {
       --agent "$agent" \
       --format json \
       --auto \
+      ${oc_attach[@]+"${oc_attach[@]}"} \
       "$(cat "$prompt_file")" \
-    | node "$FORWARDER" --result-out "$result_file" || rc=$?
+    | node "$FORWARDER" --result-out "$result_file" --session-out "$LIVE_SESSION_FILE" || rc=$?
+
+    if [ -n "$relay_pid" ]; then
+      kill "$relay_pid" 2>/dev/null || true
+      wait "$relay_pid" 2>/dev/null || true
+      # Stopped at the wall clock: the session would carry on inside the server.
+      if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
+        curl -s -X POST "${OC_URL}/session/$(cat "$LIVE_SESSION_FILE" 2>/dev/null)/abort" \
+          >/dev/null 2>&1 || true
+      fi
+      stop_opencode_server
+    fi
 
     [ "$rc" = "0" ] || break
     if wrote_tool_calls_as_text "$result_file"; then
