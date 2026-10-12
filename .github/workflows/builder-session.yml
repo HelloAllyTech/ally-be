@@ -118,6 +118,10 @@ jobs:
       BUILDER_BRANCH_SLUG: ${{ inputs.branch_slug }}
       BUILDER_BRANCHES: ${{ inputs.branches }}
       BUILDER_REPOS: ${{ inputs.repos }}
+      # The lead + per-repo coders build (run-engine.sh). Set the repository
+      # variable BUILDER_MULTI_AGENT to 0 to put the single coder back without
+      # a deploy.
+      BUILDER_MULTI_AGENT: ${{ vars.BUILDER_MULTI_AGENT || '1' }}
 
     steps:
       - name: Check out the protocol (ally-be)

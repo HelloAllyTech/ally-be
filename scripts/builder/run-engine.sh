@@ -150,13 +150,77 @@ INSTRUCTIONS_JSON="$(
     done
   } | jq -R . | jq -sc .
 )"
+# ── The multi-agent build ──────────────────────────────────────────────────
+#
+# The coding phases run as a `lead` that cannot edit: it briefs one coder per
+# repo through opencode's `task` tool, plus a test writer, checks their work
+# with self-check and sends failures back to whoever owns them. Each coder can
+# edit only its own repo; the test writer only test files. One context per
+# repo, rather than one context holding every repo's files: a single coder's
+# fix-up round in session 880e73e6 cost $11, re-reading everything it had
+# already read.
+#
+# Edit patterns are matched against the path relative to opencode's worktree,
+# which for this workspace (not itself a git repo) is `/` — hence the leading
+# `*`, which matches either spelling. Subagents inherit only the parent
+# SESSION's denies, not the lead's agent config, so the lead's own edit denial
+# does not reach its coders (opencode agent/subagent-permissions.ts).
+#
+# BUILDER_MULTI_AGENT=0 (a repo variable on ally-be, no deploy needed) puts the
+# single `builder` coder back.
+MULTI_AGENT="${BUILDER_MULTI_AGENT:-1}"
+CODING_AGENT=builder
+[ "$MULTI_AGENT" = 1 ] && CODING_AGENT=lead
+TEAM_JSON="$(
+  {
+    for dir in repos/*/; do
+      [ -d "$dir/.git" ] || continue
+      repo="$(basename "$dir")"
+      sed "s/__REPO__/${repo}/g" "${HERE}/opencode/coder.md" | jq -Rs \
+        --arg repo "$repo" --argjson steps "${BUILDER_CODER_STEPS:-200}" '{
+          key: ("coder-" + $repo),
+          value: {
+            mode: "subagent",
+            description: ("Implements the " + $repo + " part of the approved design. Edits only files under repos/" + $repo + "/."),
+            steps: $steps,
+            prompt: .,
+            permission: { edit: { "*": "deny", ("*repos/" + $repo + "/*"): "allow" } }
+          }
+        }'
+    done
+    jq -Rs --argjson steps "${BUILDER_CODER_STEPS:-200}" '{
+      key: "test-writer",
+      value: {
+        mode: "subagent",
+        description: "Writes tests for a requirement in any repo. Edits only test files.",
+        steps: $steps,
+        prompt: .,
+        permission: { edit: {
+          "*": "deny",
+          "*/__tests__/*": "allow", "*/test/*": "allow", "*/tests/*": "allow",
+          "*.spec.*": "allow", "*.test.*": "allow", "*/test_*.py": "allow", "*_test.py": "allow"
+        } }
+      }
+    }' "${HERE}/opencode/test-writer.md"
+  } | jq -s 'from_entries'
+)"
+# The lead's brief names its team.
+LEAD_PREAMBLE=/tmp/builder-lead-preamble.md
+{
+  printf '%s' "$TEAM_JSON" | jq -r 'to_entries[] | "- `\(.key)` — \(.value.description)"' > /tmp/builder-team.md
+  awk 'FNR==NR { team = team $0 "\n"; next } /__AGENTS__/ { printf "%s", team; next } { print }' \
+    /tmp/builder-team.md "${HERE}/opencode/lead.md"
+} > "$LEAD_PREAMBLE"
+
 jq -n \
   --arg mcp "$MCP_SERVER" \
   --arg helper_env "${BUILDER_HELPER_ENV}" \
   --arg formatter "${HERE}/format-file.sh" \
   --argjson instructions "${INSTRUCTIONS_JSON:-[]}" \
   --argjson builder_steps "${BUILDER_AGENT_STEPS:-300}" \
-  --argjson reviewer_steps "${BUILDER_REVIEWER_STEPS:-150}" '
+  --argjson reviewer_steps "${BUILDER_REVIEWER_STEPS:-150}" \
+  --argjson lead_steps "${BUILDER_LEAD_STEPS:-150}" \
+  --argjson team "${TEAM_JSON:-{\}}" '
 {
   "$schema": "https://opencode.ai/config.json",
   mcp: {
@@ -175,13 +239,18 @@ jq -n \
       extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]
     }
   },
-  agent: {
+  agent: ({
     builder: { steps: $builder_steps },
     reviewer: {
       steps: $reviewer_steps,
       permission: { edit: "deny", write: "deny", bash: "deny" }
+    },
+    lead: {
+      mode: "primary",
+      steps: $lead_steps,
+      permission: { edit: "deny", write: "deny" }
     }
-  }
+  } + $team)
 }' > opencode.json
 
 # Model per tier, from the single `models` workflow input. ally-be always
@@ -818,7 +887,7 @@ run_agent() {
   set_timeout_cmd "$duration"
 
   case "$agent" in
-    builder | reviewer) ;;
+    builder | reviewer | lead) ;;
     *) echo "run_agent: unknown opencode agent '${agent}'." >&2; exit 1 ;;
   esac
 
@@ -1514,13 +1583,19 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   fi
 
   if [ "${skipped_code:-0}" != "1" ]; then
+    # The lead's brief goes first: the build and remediation protocols below it
+    # were written for a single coder, and the brief says how to read them.
+    if [ "$CODING_AGENT" = lead ]; then
+      cat "$LEAD_PREAMBLE" - "$code_prompt" <<< $'\n---\n' > "/tmp/builder-code-prompt-${attempt}.txt"
+      code_prompt="/tmp/builder-code-prompt-${attempt}.txt"
+    fi
     # Last append, so the most recent thing a person said sits at the bottom of
     # the prompt rather than buried inside the plan.
     apply_steers "$code_prompt"
 
     set_agent_phase code
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-      "$attempt_model" builder "$CODE_TIMEOUT"
+      "$attempt_model" "$CODING_AGENT" "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
@@ -1560,7 +1635,7 @@ remaining failure is one your change did not cause — and then say which, and
 why, in a `note`. Do not edit an unrelated test or snapshot to make it pass.
 NUDGE
       run_agent /tmp/builder-selfcheck-nudge.txt "${RESULTS_DIR}/code-${attempt}-check.json" \
-        "$attempt_model" builder "$CODE_TIMEOUT"
+        "$attempt_model" "$CODING_AGENT" "$CODE_TIMEOUT"
       report_phase_cost "code-${attempt}-check" "$attempt_model" "${RESULTS_DIR}/code-${attempt}-check.json"
     fi
 

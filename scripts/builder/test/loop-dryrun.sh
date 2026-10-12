@@ -181,6 +181,17 @@ done
 phase="${prompt#PROMPT:}"
 [ -n "$phase" ] || phase="build"
 
+# Which opencode agent each invocation ran as, and whether a coding prompt
+# carried the lead's brief.
+prev=""
+for arg in "$@"; do
+  [ "$prev" = "--agent" ] && echo "${phase}:${arg}" >> /tmp/builder-dryrun-agents
+  prev="$arg"
+done
+if printf '%s' "$*" | grep -q '## You are the lead'; then
+  echo "${phase}:lead-brief" >> /tmp/builder-dryrun-agents
+fi
+
 # The follow-up turn run-engine.sh gives a coder that stopped without a passing
 # self-check. A well-behaved coder runs it, which leaves the stamp; a
 # DRYRUN_SELFCHECK=ignore one does nothing, to prove the turn is not repeated.
@@ -521,7 +532,8 @@ run_scenario() {
         /tmp/builder-dryrun-stall-count /tmp/builder-scope-changes.jsonl \
         /tmp/builder-selfcheck.stamp /tmp/builder-dryrun-selfcheck-turns \
         /tmp/builder-dryrun-selfcheck.out /tmp/builder-dryrun-selfcheck.rc \
-        /tmp/builder-design-submitted /tmp/builder-design-reviewed
+        /tmp/builder-design-submitted /tmp/builder-design-reviewed \
+        /tmp/builder-dryrun-agents
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -617,6 +629,23 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = happy ]; then
   check "verifier billed" yes "$(has_in_log 'COST verify-1:')"
   check "stages posted in order" "PLANNING CODING GATE VERIFYING FINALISING" \
     "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+fi
+
+# The coding phases run as the lead, briefed on its team; planning and review
+# stay read-only. BUILDER_MULTI_AGENT=0 is the single coder.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = multi-agent ]; then
+  run_scenario multi-agent DRYRUN_SELFCHECKED=1
+  check "codes as the lead" yes "$(grep -qx 'build:lead' /tmp/builder-dryrun-agents && echo yes || echo no)"
+  check "with the lead's brief" yes "$(grep -qx 'build:lead-brief' /tmp/builder-dryrun-agents && echo yes || echo no)"
+  check "plans read-only" yes "$(grep -qx 'plan-prompt:reviewer' /tmp/builder-dryrun-agents && echo yes || echo no)"
+  check "a coder per repo" '{"*":"deny","*repos/demo-repo/*":"allow"}' \
+    "$(jq -c '.agent["coder-demo-repo"].permission.edit' "${WORK}/run/opencode.json" 2>/dev/null)"
+  check "the lead cannot edit" '"deny"' "$(jq -c '.agent.lead.permission.edit' "${WORK}/run/opencode.json" 2>/dev/null)"
+
+  run_scenario single-coder DRYRUN_SELFCHECKED=1 BUILDER_MULTI_AGENT=0
+  check "codes as the single builder when switched off" yes \
+    "$(grep -qx 'build:builder' /tmp/builder-dryrun-agents && echo yes || echo no)"
+  check "with no lead brief" no "$(grep -qx 'build:lead-brief' /tmp/builder-dryrun-agents && echo yes || echo no)"
 fi
 
 # A coder that stops without a passing self-check of its final tree gets one
