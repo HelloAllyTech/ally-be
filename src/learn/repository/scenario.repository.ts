@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
 import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
@@ -19,6 +19,8 @@ import { applyCohortVisibilityFilter } from 'src/cohort/query/cohort-restriction
 import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
+import { ScenarioVersion } from '../entity/scenario-version.entity';
+import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
@@ -109,6 +111,42 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .orderBy('scenario.createdAt', 'DESC')
       .addOrderBy('scenario.id', 'DESC')
       .getManyAndCount();
+
+    if (data.length > 0) {
+      const scenarioIds = data.map((s) => s.id);
+      const versions = await this.dataSource
+        .getRepository(ScenarioVersion)
+        .find({
+          where: {
+            scenarioId: In(scenarioIds),
+            status: ScenarioVersionStatus.PUBLISHED,
+          },
+          order: {
+            versionNumber: 'DESC',
+          },
+        });
+
+      const versionMap = new Map<
+        number,
+        { title: string; description: string }
+      >();
+      for (const version of versions) {
+        if (!versionMap.has(version.scenarioId)) {
+          versionMap.set(version.scenarioId, {
+            title: version.config.title,
+            description: version.config.description,
+          });
+        }
+      }
+
+      for (const scenario of data) {
+        const version = versionMap.get(scenario.id);
+        if (version) {
+          scenario.title = version.title;
+          scenario.description = version.description;
+        }
+      }
+    }
 
     return { data, count };
   }
