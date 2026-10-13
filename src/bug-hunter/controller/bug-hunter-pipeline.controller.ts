@@ -82,7 +82,7 @@ import { BugHunterFinderService } from '../service/bug-hunter-finder.service';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugFixStudyService } from '../service/bug-fix-study.service';
 import { BugHunterOrchestratorService } from '../service/bug-hunter-orchestrator.service';
-import { renderPrBody } from '../constants/bug-pr-body';
+import { bugAdminUrl, renderPrBody } from '../constants/bug-pr-body';
 import { buildPrReviewPrompt } from '../constants/bug-pr-review-prompt';
 import { PrReviewTarget } from '../type/bug-hunter-pr-review.type';
 import { FixPlan, FixRetry } from '../type/bug-hunter-orchestrator.type';
@@ -1008,9 +1008,7 @@ export class BugHunterPipelineController {
     });
     return renderPrBody(caseFile, {
       repo: finding.repo ?? 'unknown',
-      adminUrl: this.configService.adminBaseUrl
-        ? `${this.configService.adminBaseUrl.replace(/\/+$/, '')}/bug-hunter?finding=${finding.id}`
-        : null,
+      adminUrl: bugAdminUrl(this.configService.adminBaseUrl, finding.id),
     });
   }
 
