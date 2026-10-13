@@ -146,7 +146,10 @@ tests, migrations and docs (\`DATA_SCHEMA.md\`) the change needs.
 
 **6. Map every requirement to a test.** \`testMap\` has at least one entry per
 requirement id in the PRD: the repo, the test file, and what it asserts — an
-observable behaviour, not "covers R2".
+observable behaviour, not "covers R2". A requirement that names several
+surfaces ("quiz and journal prompts") needs a test for each one. Every test
+file in the map must also be in that repo's \`scope\`, or the build cannot
+write it.
 
 **7. Submit with \`design\`.** Fields, exactly:
 
@@ -189,14 +192,21 @@ ${context.repoPacks.trim()}
   const previous = context.prd.technicalDesign?.previous;
   const redraftBlock = previous?.designMd?.trim()
     ? `
-## This is a redraft — fix the reviewer's defects
+## This is a redraft — design afresh, then fix the reviewer's defects
 
-Your previous draft and its independent review are below. **Fix every
-defect**: a missed reader added with its line, a missed file added to scope, a
-test added to the map. If a defect is wrong, say why with evidence
-(\`repo:path:line\`) under a "Review response" heading in \`designMd\`.
-Check the review's claims against the code before acting on them, and keep
-what the review did not object to.
+A previous draft and its independent review are below. **Write a new design
+from the PRD and the code, not an edit of the old one.** The previous draft is
+reference: reuse its reader searches and file paths where the code confirms
+them, but every file in your scope must trace to a requirement in the PRD on
+its own merits. Scope the previous draft carried for no requirement's sake is
+dropped, and recorded under "Scope boundaries" with why nothing breaks. Do not
+copy its "Review response"; that answered a review this draft is not
+answering.
+
+**Fix every defect** in the review: a missed reader added with its line, a
+missed file added to scope, a test added to the map. If a defect is wrong, say
+why with evidence (\`repo:path:line\`) under a "Review response" heading in
+\`designMd\`. Check the review's claims against the code before acting on them.
 
 **Suggestions are not instructions.** A suggestion widens the scope beyond what
 the PRD's requirements ask for. Do not adopt one unless the requirements need
@@ -271,6 +281,9 @@ grants files the change has no reason to touch.
 
 **5. Tests.** A requirement whose mapped test would pass without the change,
 or asserts something other than the requirement, is unmapped in all but name.
+So is each surface a requirement names that no test exercises — "quiz and
+journal prompts" mapped only to quiz tests leaves journal untested. A test
+file missing from its repo's \`scope\` is a defect: the build cannot write it.
 
 **6. Reinvention.** The design builds something that already exists — a
 sanitizer, renderer, editor, component or helper. Name the existing one and

@@ -7,6 +7,7 @@ import {
   computeDesignReadiness,
   createDraftingDesign,
   productHashOf,
+  scopeGlobToRegExp,
 } from '../builder-technical-design.util';
 
 const prd = (): BuilderPrdDocument => ({
@@ -186,12 +187,18 @@ describe('computeDesignReadiness', () => {
       computeDesignReadiness(
         designedPrd({ scope: [{ repo: 'not-a-repo', files: ['x.ts'] }] }),
       ).blockers,
-    ).toEqual([expect.stringMatching(/cannot work in: not-a-repo/)]);
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/cannot work in: not-a-repo/),
+      ]),
+    );
     expect(
       computeDesignReadiness(
         designedPrd({ scope: [{ repo: 'ally-be', files: ['  '] }] }),
       ).blockers,
-    ).toEqual([expect.stringMatching(/no files for: ally-be/)]);
+    ).toEqual(
+      expect.arrayContaining([expect.stringMatching(/no files for: ally-be/)]),
+    );
   });
 
   /** Zero readers means the search was not done — the 880e73e6 failure. */
@@ -227,6 +234,55 @@ describe('computeDesignReadiness', () => {
       designedPrd({ testMap: design.testMap.slice(0, 1) }),
     );
     expect(blockers).toEqual([expect.stringMatching(/no test for: R2\./)]);
+  });
+
+  it('blocks a mapped test file the scope does not include, as the scope check would', () => {
+    const design = designedPrd().technicalDesign!;
+    const { blockers } = computeDesignReadiness(
+      designedPrd({
+        testMap: [
+          ...design.testMap,
+          // In scope: the ally-mobile entry names it exactly.
+          {
+            requirementId: 'R2',
+            repo: 'ally-mobile',
+            file: 'src/screens/Quiz.tsx',
+            asserts: 'x',
+          },
+          // Not in scope: only Quiz.tsx is, not its spec.
+          {
+            requirementId: 'R2',
+            repo: 'ally-mobile',
+            file: 'src/__tests__/Quiz.spec.tsx',
+            asserts: 'x',
+          },
+          // Not in scope: the glob is ally-be's, not ally-web's.
+          {
+            requirementId: 'R1',
+            repo: 'ally-web',
+            file: 'src/quiz/test/quiz.spec.ts',
+            asserts: 'x',
+          },
+        ],
+      }),
+    );
+    expect(blockers).toEqual([
+      expect.stringMatching(
+        /not include: ally-mobile:src\/__tests__\/Quiz\.spec\.tsx, ally-web:src\/quiz\/test\/quiz\.spec\.ts\./,
+      ),
+    ]);
+  });
+
+  it('matches scope globs the way the build’s scope check does', () => {
+    expect(
+      scopeGlobToRegExp('src/**/test/*.spec.ts').test('src/test/a.spec.ts'),
+    ).toBe(true);
+    expect(
+      scopeGlobToRegExp('src/**/test/*.spec.ts').test('src/a/b/test/a.spec.ts'),
+    ).toBe(true);
+    expect(scopeGlobToRegExp('src/*.ts').test('src/a/b.ts')).toBe(false);
+    expect(scopeGlobToRegExp('src/quiz/').test('src/quiz/a/b.ts')).toBe(true);
+    expect(scopeGlobToRegExp('./src/a.ts').test('src/a.ts')).toBe(true);
   });
 
   it('blocks on open decisions', () => {

@@ -2027,7 +2027,12 @@ describe('BuilderBuildService', () => {
     const reviewable = {
       status: 'review',
       designMd: 'Add an optional key beside the old one. '.repeat(10),
-      scope: [{ repo: 'ally-web', files: ['src/pages/Quiz.tsx'] }],
+      scope: [
+        {
+          repo: 'ally-web',
+          files: ['src/pages/Quiz.tsx', 'src/pages/Quiz.test.tsx'],
+        },
+      ],
       contracts: [],
       compatibilityMd: '',
       testMap: [

@@ -90,6 +90,37 @@ export function createDraftingDesign(
   };
 }
 
+/**
+ * A scope entry as a matcher, with the same semantics as the build's hard
+ * scope check (`globToRegExp` in scripts/builder/check-scope.mjs): `**`
+ * crosses directories, `*` does not, a trailing slash means "anything under".
+ * Approval and the build must agree on what a scope admits.
+ */
+export function scopeGlobToRegExp(glob: string): RegExp {
+  let pattern = glob.replace(/^\.\//, '');
+  if (pattern.endsWith('/')) pattern += '**';
+  let out = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === '*' && pattern[i + 1] === '*') {
+      if (pattern[i + 2] === '/') {
+        out += '(?:.*/)?';
+        i += 2;
+      } else {
+        out += '.*';
+        i += 1;
+      }
+    } else if (ch === '*') {
+      out += '[^/]*';
+    } else if (ch === '?') {
+      out += '[^/]';
+    } else {
+      out += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  return new RegExp(`^${out}$`);
+}
+
 /** Below this, a design is a heading and a promise, not a design. */
 export const DESIGN_MIN_LENGTH = 200;
 
@@ -212,6 +243,47 @@ export function computeDesignReadiness(
   if (unmapped.length) {
     blockers.push(
       `testMap has no test for: ${unmapped.join(', ')}. Map every requirement to a test file and what it asserts.`,
+    );
+  }
+
+  // A mapped test the scope does not cover is a test the build cannot write:
+  // the hard scope check refuses it. Session 880e73e6's run 7 mapped a
+  // helpline player spec while scoping only the player.
+  const scopeByRepo = new Map<string, RegExp[]>();
+  for (const entry of scope) {
+    const repo = String(entry?.repo ?? '').trim();
+    const files = (Array.isArray(entry?.files) ? entry.files : [])
+      .map((file) => String(file ?? '').trim())
+      .filter(Boolean);
+    scopeByRepo.set(repo, [
+      ...(scopeByRepo.get(repo) ?? []),
+      ...files.map(scopeGlobToRegExp),
+    ]);
+  }
+  const outOfScopeTests = [
+    ...new Set(
+      (Array.isArray(design.testMap) ? design.testMap : [])
+        .map((test) => ({
+          repo: String(test?.repo ?? '').trim(),
+          file: String(test?.file ?? '')
+            .trim()
+            .replace(/^\.\//, ''),
+        }))
+        .filter(
+          ({ repo, file }) =>
+            file &&
+            !(scopeByRepo.get(repo) ?? []).some((matcher) =>
+              matcher.test(file),
+            ),
+        )
+        .map(({ repo, file }) => `${repo || '(blank)'}:${file}`),
+    ),
+  ];
+  // An empty scope already blocks on its own; listing every test again is noise.
+  if (scope.length && outOfScopeTests.length) {
+    blockers.push(
+      `testMap names test files the scope does not include: ${outOfScopeTests.join(', ')}. ` +
+        'Add each to its repo’s scope — the build cannot write a file outside it.',
     );
   }
 
