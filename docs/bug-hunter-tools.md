@@ -45,6 +45,18 @@ The feature map is written by a weekly read-only run per repo
 `POST v1/bug-hunter/feature-maps/refresh` and list cards at
 `GET v1/bug-hunter/feature-maps`.
 
+Card rules since the second version (same day): every card names
+`valueSource` (database, locale_file, config, code, external) and at least
+one data home; a database card names its endpoint, and a client repo's
+database card names the backend repo that stores it. One card per feature
+across repos: a run posting a slug another repo owns has its entry points,
+endpoints and related-repo line merged into that card. An admin removes a
+wrong card with `POST v1/bug-hunter/feature-maps/:id/remove {reason}`; the
+reason becomes an active notebook lesson tagged `feature-map`/`wrong-card`
+that the next map run is told to read. The first run's cards were shallow
+(1 to 4 per repo) and one ally-web card described label bundles under a
+simulation-titles name, so migration `1976200000000` cleared them.
+
 ## Data repairs
 
 A located `data` fault in a repo Bug Hunter can fix no longer stops at a

@@ -96,18 +96,36 @@ describe('the feature map run', () => {
       apiBaseUrl: 'https://api.example.com',
       existing: [
         {
-          slug: 'simulation-translations',
+          repo: 'ally-be',
+          slug: 'simulation-titles-translated',
           title: 'Simulation titles',
           entryPoints: ['src/learn'],
           sourceSha: 'abc',
+          valueSource: 'database',
+        },
+        {
+          repo: 'ally-web',
+          slug: 'ui-labels-translated',
+          title: 'UI labels',
+          entryPoints: ['apps/x'],
+          sourceSha: 'def',
+          valueSource: 'locale_file',
         },
       ],
     });
     expect(p).toContain('Do NOT edit, commit or push anything');
     expect(p).toContain('/tmp/siblings/<repo>');
     expect(p).toContain(
-      'simulation-translations: Simulation titles (mapped at abc',
+      'simulation-titles-translated [database]: Simulation titles (mapped at abc',
     );
+    expect(p).toContain('## Cards other repos own (1)');
+    expect(p).toContain(
+      'ui-labels-translated [locale_file] (ally-web): UI labels',
+    );
+    expect(p).toContain('is TWO cards');
+    expect(p).toContain('feature%20card%20removed%20as%20wrong');
+    expect(p).toContain('Aim for 10 to 15 cards');
+    expect(p).toContain('grep -rln "@Controller" src');
     expect(p).toContain('git diff --name-only <sha>..HEAD');
     expect(p).toContain(
       'https://api.example.com/api/v1/bug-hunter/pipeline/feature-maps',
@@ -121,6 +139,7 @@ describe('the feature map run', () => {
         repo: 'ally-be',
         title: 'Simulation titles',
         summary: 'Stored in scenarios.translations.',
+        valueSource: 'database',
         entryPoints: ['src/learn/service/scenario.service.ts'],
         endpoints: [],
         dataHomes: ['scenarios.translations'],
@@ -133,5 +152,8 @@ describe('the feature map run', () => {
     expect(text).toContain('### Simulation titles (ally-be @ abcdef12)');
     expect(text).toContain('CHECK them');
     expect(text).toContain('- Values live in: scenarios.translations');
+    expect(text).toContain(
+      '- Value comes from: database rows served by an API',
+    );
   });
 });

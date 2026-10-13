@@ -278,7 +278,8 @@ export class BugHunterPipelineController {
       throw new BadRequestException(`Run ${id} is not a feature-map run.`);
     }
     const target = repo ?? run.repo;
-    const existing = await this.featureMapService.list(target);
+    // Every repo's cards: the run refreshes its own and extends others'.
+    const existing = await this.featureMapService.list();
     return buildFeatureMapPrompt({
       repo: target,
       runId: run.id,

@@ -632,6 +632,23 @@ export class BugHunterController {
     return { cards };
   }
 
+  @Post('feature-maps/:id/remove')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary: 'Remove a feature card as wrong, saying why (super-duper-admin)',
+    description:
+      "Deletes the card. A reason becomes an active notebook lesson for the card's repo, tagged feature-map and " +
+      'wrong-card, which the next map run reads so it does not write the same card again.',
+  })
+  async removeFeatureMap(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { reason?: string },
+    @CurrentUser() user: TokenUser,
+  ): Promise<{ removed: true }> {
+    await this.featureMapService.remove(id, user.id, body?.reason ?? null);
+    return { removed: true };
+  }
+
   @Post('feature-maps/refresh')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
