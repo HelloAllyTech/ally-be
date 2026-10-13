@@ -38,6 +38,8 @@ import {
   FoundationalSkillsProgressResponseDto,
   FoundationalSkillsBehavioursQueryDto,
   FoundationalSkillsBehavioursResponseDto,
+  FoundationalSkillsAdvancedBehavioursQueryDto,
+  FoundationalSkillsAdvancedBehavioursResponseDto,
   FoundationalSkillsQueryDto,
   FoundationalSkillsResponseDto,
 } from '../dto/foundational-skills-analytics.dto';
@@ -1452,6 +1454,32 @@ export class AnalyticsController {
     @Query() query: FoundationalSkillsBehavioursQueryDto,
   ): Promise<FoundationalSkillsBehavioursResponseDto> {
     return this.foundationalSkillsAnalyticsService.getBehaviours(query);
+  }
+
+  @Get('foundational-skills/advanced-behaviours')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Advanced helping behaviours by practice depth (super-admin, AAQ-237)',
+    description:
+      'Per learner: the share of their chances at an advanced rubric behaviour that they took, in ' +
+      'their last half of scored slices against their first half (from `baselineFrom`, default 2 so ' +
+      'slice 1 is a warm-up), adjusted for which roleplays filled each slice using roleplay effects ' +
+      'estimated from other learners only. Grouped into nested tiers by scored slices (4+, 6+, 8+, ' +
+      '10+); a tier is listed from `minCohortSize` learners, and its averages, interval and sign test ' +
+      'are null below `minSampleSize` while the up/down counts travel. A hypothesis to watch, not a ' +
+      'result: see `provenance.note`. `tenantId` narrows to one org. Stored behaviour codes only; ' +
+      'test organisations excluded; one rubric version.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Advanced behaviours by practice depth retrieved successfully',
+    type: FoundationalSkillsAdvancedBehavioursResponseDto,
+  })
+  async getFoundationalSkillsAdvancedBehaviours(
+    @Query() query: FoundationalSkillsAdvancedBehavioursQueryDto,
+  ): Promise<FoundationalSkillsAdvancedBehavioursResponseDto> {
+    return this.foundationalSkillsAnalyticsService.getAdvancedBehaviours(query);
   }
 
   @Get('foundational-skills/benchmark')
