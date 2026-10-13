@@ -193,6 +193,60 @@ describe('BugFixSessionService', () => {
       );
     });
 
+    it('fixes where the Verifier located the fault, not where the symptom was filed', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          repo: 'ally-web',
+          metadata: {
+            findingVerdicts: [
+              {
+                verdict: 'confirmed',
+                fault: {
+                  layer: 'data',
+                  repo: 'ally-be',
+                  evidence: 'e',
+                  repair: 'backfill',
+                },
+              },
+            ],
+          },
+        }),
+      );
+
+      await service.start('finding-1', 42);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'ally-be' }),
+      );
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: expect.stringContaining(
+            'Fixing in ally-be, where the Verifier located the fault',
+          ),
+        }),
+      );
+    });
+
+    it('lets an explicit repo override outrank the located fault', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          repo: 'ally-web',
+          metadata: {
+            findingVerdicts: [
+              {
+                verdict: 'confirmed',
+                fault: { layer: 'code', repo: 'ally-be' },
+              },
+            ],
+          },
+        }),
+      );
+      await service.start('finding-1', 42, 'ally-web');
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'ally-web' }),
+      );
+    });
+
     it('asks the case file budget before dispatching, and charges a session once it has', async () => {
       const finding = findingRow();
       bugFindingService.getOne.mockResolvedValue(finding);

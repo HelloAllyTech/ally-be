@@ -24,6 +24,7 @@ import {
   BugHuntPhase,
 } from '../../bug-hunter/enum/bug-hunt-telemetry.enum';
 import { BugHunterEvalPromptKind } from '../../bug-hunter/enum/bug-hunter-eval.enum';
+import { BugHuntTrigger } from '../../bug-hunter/enum/bug-hunt-run.enum';
 import {
   UPDATE_AUDIENCES,
   UPDATE_KINDS,
@@ -181,6 +182,8 @@ describe('CHECK constraints cover their enums', () => {
     // than after the first production INSERT that fails.
     ['CHK_bug_hunt_phases_phase', Object.values(BugHuntPhase)],
     ['CHK_bug_hunt_context_lookups_kind', Object.values(BugHuntLookupKind)],
+    // Every run trigger, including the feature-map run (2026-10-13).
+    ['CHK_bug_hunt_runs_trigger', Object.values(BugHuntTrigger)],
     [
       'CHK_bug_hunter_eval_runs_prompt_kind',
       Object.values(BugHunterEvalPromptKind),

@@ -33,6 +33,14 @@ export enum BugHuntTrigger {
    * only ever sum to one finding.
    */
   FIX_SESSION = 'fix_session',
+  /**
+   * The weekly feature-map run: a read-only pass over one repo that writes
+   * a card per user-facing feature — screens, endpoints, services, tables,
+   * who writes the data, which other repos take part — so a study starts
+   * from how the feature works instead of re-reading the codebase cold.
+   * Never edits the repo. See bug-hunter-feature-map.service.ts.
+   */
+  FEATURE_MAP = 'feature_map',
 }
 
 export enum BugHuntRunStatus {

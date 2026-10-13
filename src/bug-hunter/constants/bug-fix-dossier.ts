@@ -1,4 +1,5 @@
 import { BugFindingSeverity, BugFindingSource } from '../enum/bug-finding.enum';
+import { BugKnowledge, renderKnowledge } from './bug-hunter-knowledge';
 import {
   BugFixStudy,
   renderBugFixStudyLines,
@@ -120,6 +121,12 @@ export interface FixDossier {
   openNeighbours: { id: string; title: string; status: string }[];
   /** The closest notebook entries, so the session starts from what past sessions learned. */
   notebook: { body: string; tags: string[]; similarity: number }[];
+  /**
+   * Playbooks for this class of bug, resolved bugs that read like it, and the
+   * feature cards for the feature it is in. Optional so a dossier built
+   * without the lookups (older callers, tests) still renders.
+   */
+  knowledge?: BugKnowledge;
 }
 
 export interface FixDossierSession {
@@ -377,6 +384,13 @@ export const renderFixDossier = (dossier: FixDossier): string => {
       ),
     );
   }
+
+  // Knowledge headings sit one level down inside the dossier.
+  lines.push(
+    ...renderKnowledge(dossier.knowledge).map((l) =>
+      l.startsWith('### ') ? `#${l}` : l.startsWith('## ') ? `#${l}` : l,
+    ),
+  );
 
   if (!lines.length) {
     return [

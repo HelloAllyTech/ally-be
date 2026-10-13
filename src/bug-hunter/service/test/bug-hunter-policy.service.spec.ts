@@ -300,6 +300,31 @@ describe('BugHunterPolicyService', () => {
       );
     });
 
+    it('never merges a data repair itself, even with a complete chain — a person merges and runs it', async () => {
+      const f = finding();
+      bugFindingService.getOne.mockResolvedValue(
+        finding({
+          metadata: {
+            ...f.metadata,
+            findingVerdicts: [
+              {
+                verdict: 'confirmed',
+                reproduction: 'scenario 111 answers English for mr',
+                fault: {
+                  layer: 'data',
+                  repo: 'ally-ai-learn',
+                  evidence: 'e',
+                  repair: 'backfill',
+                },
+              },
+            ],
+            study: { ...f.metadata!.study, valueLivesIn: 'database' },
+          },
+        }),
+      );
+      await expect(merging()).rejects.toThrow(/This is a data repair/);
+    });
+
     it('never merges a guarded-path change, whoever asked', async () => {
       bugFindingService.getOne.mockResolvedValue(
         finding({ touchesGuardedPath: true }),

@@ -88,4 +88,47 @@ describe('buildVerifyFindingsPrompt — the held check', () => {
     expect(p).toContain('"heldCheck":{"runId":"run-h","held":<true|false>');
     expect(p).not.toContain('## For each finding, in order');
   });
+
+  it('renders what Bug Hunter knows about each finding, and the toolbox, as data', () => {
+    const p = buildVerifyFindingsPrompt({
+      findings: [finding({ source: BugFindingSource.REPORTED_BUG })],
+      repo: 'ally-web',
+      runId: 'run-v',
+      apiBaseUrl: 'https://api.example.com',
+      engine: 'gemini',
+      model: 'gemini-2.5-pro',
+      sweepEngine: null,
+      knowledge: {
+        'f-1': {
+          playbooks: [],
+          featureCards: [],
+          precedents: [
+            {
+              id: 'f-0',
+              title: 'Tooltip stays English in Marathi',
+              repo: 'ally-web',
+              status: 'released',
+              prUrl: null,
+              fault: {
+                layer: 'data',
+                repo: 'ally-be',
+                repair: 'translate the tooltips',
+              },
+              wrongFix: null,
+              declined: null,
+            },
+          ],
+        },
+      },
+    });
+    expect(p).toContain('## What Bug Hunter already knows about f-1');
+    expect(p).toContain(
+      'Fault located in data (ally-be); repair: translate the tooltips.',
+    );
+    expect(p).toContain('## Your tools for locating the fault');
+    expect(p).toContain('pipeline/probes/<name>');
+    expect(p.indexOf('What Bug Hunter already knows')).toBeLessThan(
+      p.indexOf('## Human reports'),
+    );
+  });
 });

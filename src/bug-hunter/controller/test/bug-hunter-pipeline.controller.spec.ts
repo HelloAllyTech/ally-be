@@ -22,6 +22,10 @@ import { SearchBugHunterMemoryQueryDto } from '../../dto/bug-hunter-memory.dto';
 import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
 import { ValidationPipe } from '@nestjs/common';
+import { BugHunterProbeService } from '../../service/bug-hunter-probe.service';
+import { BugHunterKnowledgeService } from '../../service/bug-hunter-knowledge.service';
+import { BugHunterPrecedentService } from '../../service/bug-hunter-precedent.service';
+import { BugHunterFeatureMapService } from '../../service/bug-hunter-feature-map.service';
 
 describe('BugHunterPipelineController', () => {
   let controller: BugHunterPipelineController;
@@ -33,6 +37,33 @@ describe('BugHunterPipelineController', () => {
     module = await Test.createTestingModule({
       controllers: [BugHunterPipelineController],
       providers: [
+        {
+          provide: BugHunterProbeService,
+          useValue: { catalogue: jest.fn(), run: jest.fn() },
+        },
+        {
+          provide: BugHunterKnowledgeService,
+          useValue: {
+            forFinding: jest.fn().mockResolvedValue({
+              playbooks: [],
+              precedents: [],
+              featureCards: [],
+            }),
+          },
+        },
+        {
+          provide: BugHunterPrecedentService,
+          useValue: { similar: jest.fn().mockResolvedValue([]) },
+        },
+        {
+          provide: BugHunterFeatureMapService,
+          useValue: {
+            list: jest.fn().mockResolvedValue([]),
+            forBug: jest.fn().mockResolvedValue([]),
+            save: jest.fn(),
+          },
+        },
+
         { provide: BugHunterService, useValue: {} },
         { provide: BugFindingService, useValue: { setStatus: jest.fn() } },
         { provide: BugHunterFinderDataService, useValue: {} },

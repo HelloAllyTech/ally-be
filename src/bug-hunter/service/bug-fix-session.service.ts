@@ -59,6 +59,7 @@ import {
 import { BugCaseBudgetService } from './bug-case-budget.service';
 import { BugFixPlanService } from './bug-fix-plan.service';
 import { BugFixVerdict } from '../type/bug-fix-verdict.type';
+import { repoForFault } from '../constants/bug-hunter-repair';
 import {
   FixRetry,
   orchestratorStateOf,
@@ -151,7 +152,20 @@ export class BugFixSessionService {
     // is the admin saying they read the post-mortem and want one anyway.
     await this.budgetService.assertCanStartSession(finding, { force, userId });
 
-    let repo = repoOverride ?? finding.repo;
+    // The fix goes where the fault is: a Verifier that located it in another
+    // repo (a backend field the client renders, rows a backend should have
+    // written) outranks the repo the symptom was filed under.
+    const located = repoForFault(finding.metadata);
+    let repo = repoOverride ?? located ?? finding.repo;
+    if (!repoOverride && located && finding.repo && located !== finding.repo) {
+      await this.bugHunterService.appendFindingEvent({
+        findingId: finding.id,
+        repo: located,
+        stage: BugHuntEventStage.FINDER_RESULT,
+        summary: `Fixing in ${located}, where the Verifier located the fault, not in ${finding.repo} where the symptom was filed.`,
+        payload: { locatedRepo: located, filedRepo: finding.repo },
+      });
+    }
     let classification: RepoClassification | null = null;
     if (!repo) {
       classification = await this.repoClassifier.classifyRepo(
@@ -292,19 +306,17 @@ export class BugFixSessionService {
     if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
       throw new ForbiddenException(this.explainUnstartable(finding.status));
     }
-    if (
-      !finding.repo ||
-      !BUG_FIX_SESSION_REPOS.includes(finding.repo as never)
-    ) {
+    const repo = repoForFault(finding.metadata) ?? finding.repo;
+    if (!repo || !BUG_FIX_SESSION_REPOS.includes(repo as never)) {
       throw new BadRequestException(
-        `"${finding.repo ?? 'no repo'}" is not set up for fix sessions.`,
+        `"${repo ?? 'no repo'}" is not set up for fix sessions.`,
       );
     }
     await this.budgetService.assertCanStartSession(finding, {
       force: false,
       userId: null,
     });
-    await this.dispatchFix(finding, finding.repo, actor);
+    await this.dispatchFix(finding, repo, actor);
     return this.bugFindingService.getOne(finding.id);
   }
 

@@ -5,6 +5,7 @@ import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
 import { BUG_FIX_VERDICT_REQUIRED_CHECKS } from '../type/bug-fix-verdict.type';
 import { renderBugFixStudyLines } from '../type/bug-fix-study.type';
 import { faultLocationOf } from '../type/bug-finding-verdict.type';
+import { renderToolbox } from './bug-hunter-toolbox';
 
 export interface VerifyFixPromptContext {
   finding: BugFinding;
@@ -118,6 +119,13 @@ export function buildVerifyFixPrompt({
     `## The pull request`,
     `${prUrl} (#${prNumber}). The checkout you start in is master. Get the PR: gh pr checkout ${prNumber}. Read its description and diff: gh pr view ${prNumber} --json title,body,files,headRefOid and gh pr diff ${prNumber}. Record the head sha from headRefOid; your verdict is about that commit.`,
     ``,
+    ...renderToolbox({
+      apiBaseUrl,
+      repo,
+      runId,
+      authHeader,
+      findingId: finding.id,
+    }),
     `## Checks`,
     `Work through these in order. For each, decide ok=true, ok=false, or skipped with a one-line reason. Required: ${BUG_FIX_VERDICT_REQUIRED_CHECKS.join(', ')} — a required check you did not run, or could not run, is a fail, so say why. The others may be skipped when they do not apply, with the reason.`,
     ``,
@@ -131,7 +139,7 @@ export function buildVerifyFixPrompt({
       ? `7. what_user_sees. If a browser is available in this environment, start the app, load the affected route and describe what you see; attach a screenshot path. If no browser is available, skip with reason "no browser in CI" — do not pretend.`
       : `7. what_user_sees. This repo is a service, not a screen: skip with reason "backend repo" unless the fix changes something a client renders, in which case describe the response before and after with a curl or a test.`,
     fault
-      ? `9. fault_layer_matches. The Verifier located the fault in ${fault.layer}${fault.repo ? ` in ${fault.repo}` : ''}. ${fault.layer === 'code' ? `Confirm the diff changes that code path${fault.repo && fault.repo !== repo ? ` — it was located in ${fault.repo}, and this PR is in ${repo}, so unless the located path is served from here this PR cannot fix it` : ''}.` : `This is a ${fault.layer} fault: no diff in this repo can fix it${fault.repair ? ` (repair: ${clipDossierText(fault.repair, 200)})` : ''}. A PR here is the wrong layer, ok=false, whatever the tests say.`} Evidence: the located path against the hunks that touch it.`
+      ? `9. fault_layer_matches. The Verifier located the fault in ${fault.layer}${fault.repo ? ` in ${fault.repo}` : ''}. ${fault.layer === 'code' ? `Confirm the diff changes that code path${fault.repo && fault.repo !== repo ? ` — it was located in ${fault.repo}, and this PR is in ${repo}, so unless the located path is served from here this PR cannot fix it` : ''}.` : fault.layer === 'data' && fault.repo === repo ? `This is a data fault and this PR is its REPAIR${fault.repair ? ` (repair named: ${clipDossierText(fault.repair, 200)})` : ''}: ok=true only if the diff adds an idempotent backfill (a script, an admin-only endpoint or seed migration) that dry-runs by default, with a test that a second run changes nothing — plus, when the study found one, the code fix that stops the rows going missing. A diff that only changes how the value is displayed is the wrong layer, ok=false.` : `This is a ${fault.layer} fault: no diff in this repo can fix it${fault.repair ? ` (repair: ${clipDossierText(fault.repair, 200)})` : ''}. A PR here is the wrong layer, ok=false, whatever the tests say.`} Evidence: the located path against the hunks that touch it.`
       : `9. fault_layer_matches. No fault location on file — skip with reason "no fault located".`,
     `10. symptom_resolved. The PR's own test is link four; this is link five: the SYMPTOM, gone. ${stepsLine ? `Re-run the reporter's steps at the PR head — "${clipDossierText(stepsLine, 400)}" — in the running app or against the endpoint behind that screen, and record what you saw.` : reproduction ? `Re-run the finding Verifier's reproduction at the PR head — "${clipDossierText(reproduction, 400)}" — and record what you saw.` : 'No steps and no reproduction are on file: run the closest thing to the reported symptom you can (the route, the endpoint, the command) and say what you did.'} A green test with the symptom still present is ok=false${observed?.status === 'present' ? ' and is required here: steps exist, so there is no excuse to skip it' : ''}. If the symptom needs production data you cannot reach, say exactly what you could not run; do not mark it ok.`,
     study

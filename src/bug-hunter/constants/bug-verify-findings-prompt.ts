@@ -3,6 +3,8 @@ import { DATA_BEGIN, DATA_END, clipDossierText } from './bug-fix-dossier';
 import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
 import { BugFindingSource } from '../enum/bug-finding.enum';
 import { renderProductionProbes } from './bug-hunter-probes.constants';
+import { renderToolbox } from './bug-hunter-toolbox';
+import { BugKnowledge, renderKnowledge } from './bug-hunter-knowledge';
 
 export interface VerifyFindingsPromptContext {
   findings: BugFinding[];
@@ -15,6 +17,8 @@ export interface VerifyFindingsPromptContext {
   sweepEngine: string | null;
   /** A post-release check: re-run the reporter's steps against production and say whether the fix held. */
   heldCheck?: boolean;
+  /** Per finding id: the playbooks, resolved look-alikes and feature cards that fit it. */
+  knowledge?: Record<string, BugKnowledge>;
 }
 
 /**
@@ -33,6 +37,7 @@ export function buildVerifyFindingsPrompt({
   model,
   sweepEngine,
   heldCheck = false,
+  knowledge = {},
 }: VerifyFindingsPromptContext): string {
   const commands = repoCommands(repo);
   if (!commands) {
@@ -99,6 +104,18 @@ export function buildVerifyFindingsPrompt({
     list,
     DATA_END,
     ``,
+    ...findings.flatMap((f) =>
+      knowledge[f.id]
+        ? [
+            `## What Bug Hunter already knows about ${f.id}`,
+            DATA_BEGIN('knowledge'),
+            ...renderKnowledge(knowledge[f.id]),
+            DATA_END,
+            ``,
+          ]
+        : [],
+    ),
+    ...renderToolbox({ apiBaseUrl, repo, runId, authHeader }),
     ...(hasReports
       ? [
           `## Human reports: locate the fault before anything else`,
@@ -107,8 +124,7 @@ export function buildVerifyFindingsPrompt({
           `  - "data": the code is right and a row is missing, blank or wrong in production — a translation never created, a tooltip with no text in that language, a record with the wrong value. Name the exact repair a person should make. Do NOT propose a code change for a data fault.`,
           `  - "config": a setting, flag, environment value or deployment is wrong. Name the repair.`,
           `  - "unknown": you could not locate it. A confirmation with an unknown layer is downgraded to unsure, so say what would settle it.`,
-          `Production is where the user saw it, so probe production, read-only, before you read code. These calls need no login and write nothing:`,
-          ...renderProductionProbes(apiBaseUrl),
+          `Production is where the user saw it, so probe production, read-only, before you read code — the tools above, starting with the public calls and the data probes.`,
           `A claim about data carries the request you made and what it returned. "The translation is probably missing" is not evidence; "GET /api/v1/learn/scenarios/111/public?languageCode=mr returns the English title although the scenario has a Marathi voice" is. Then read the code for the path the probe exercised, and only then decide which layer is at fault.`,
           ``,
         ]

@@ -131,6 +131,8 @@ import {
   BugHunterToday,
   BugHunterTodayService,
 } from '../service/bug-hunter-today.service';
+import { BugHunterFeatureMapService } from '../service/bug-hunter-feature-map.service';
+import { BUG_FIX_SESSION_REPOS } from '../constants/bug-fix-session.constants';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -176,6 +178,7 @@ export class BugHunterController {
     private readonly replayService: BugHunterDecisionReplayService,
     private readonly verifyFindingsService: BugVerifyFindingsService,
     private readonly wrongFixService: BugHunterWrongFixService,
+    private readonly featureMapService: BugHunterFeatureMapService,
   ) {}
 
   @Get('memory')
@@ -616,6 +619,39 @@ export class BugHunterController {
     return this.replayService.report(
       Number.isFinite(window) && window > 0 ? Math.min(window, 365) : 90,
     );
+  }
+
+  @Get('feature-maps')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "Bug Hunter's feature map: one card per user-facing feature, how it works across repos (super-duper-admin)",
+  })
+  async listFeatureMaps(@Query('repo') repo?: string) {
+    const cards = await this.featureMapService.list(repo || undefined);
+    return { cards };
+  }
+
+  @Post('feature-maps/refresh')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Start a read-only feature-map run now, for one repo or all of them (super-duper-admin)',
+    description:
+      'The same run the weekly schedule starts. Each run reads one repo and refreshes the cards whose files changed. ' +
+      'Nothing is started while Bug Hunter is OFF.',
+  })
+  async refreshFeatureMaps(@Body() body: { repo?: string }) {
+    if (body?.repo) {
+      const runId = await this.featureMapService.dispatch(body.repo);
+      return { runIds: runId ? [runId] : [] };
+    }
+    const runIds: string[] = [];
+    for (const repo of BUG_FIX_SESSION_REPOS) {
+      const runId = await this.featureMapService.dispatch(repo);
+      if (runId) runIds.push(runId);
+    }
+    return { runIds };
   }
 
   @Get('scoreboard')

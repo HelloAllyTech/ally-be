@@ -8,6 +8,7 @@ import { prNumberFrom } from './bug-hunter-policy.service';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { faultLocationOf, isDataFault } from '../type/bug-finding-verdict.type';
+import { repairableDataFault } from '../constants/bug-hunter-repair';
 import {
   BUG_FINDING_LOCATE_STATUSES,
   BugFindingStatus,
@@ -611,10 +612,13 @@ export class BugHunterOrchestratorService {
       };
     }
     // The Verifier located the fault outside the code: a fix session would
-    // change the nearest source and leave the row or the setting wrong. The
-    // repair goes to a person.
+    // change the nearest source and leave the row or the setting wrong. A
+    // data fault in a repo Bug Hunter can fix becomes a REPAIR session there
+    // (a reviewed backfill PR that never merges itself, see
+    // bug-hunter-repair.ts); a config fault, or data nobody's repo owns,
+    // goes to a person.
     const fault = faultLocationOf(finding.metadata);
-    if (isDataFault(fault)) {
+    if (isDataFault(fault) && !repairableDataFault(finding.metadata)) {
       return {
         by: 'safety',
         reason: `the Verifier located the fault in production ${fault!.layer}${fault!.repair ? ` — repair: ${fault!.repair}` : ''}; a code fix would not touch it`,

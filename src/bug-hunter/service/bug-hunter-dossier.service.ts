@@ -15,6 +15,7 @@ import {
 } from '../util/bug-case-sessions.util';
 import { BugCaseFileService } from './bug-case-file.service';
 import { BugHunterTelemetryService } from './bug-hunter-telemetry.service';
+import { BugHunterKnowledgeService } from './bug-hunter-knowledge.service';
 
 export { DOSSIER_MAX_EVENTS_PER_SESSION, DOSSIER_MAX_SESSIONS, groupSessions };
 
@@ -42,6 +43,7 @@ export class BugHunterDossierService {
     private readonly caseFileService: BugCaseFileService,
     private readonly memoryService: AgentMemoryService,
     private readonly telemetryService: BugHunterTelemetryService,
+    private readonly knowledgeService: BugHunterKnowledgeService,
   ) {}
 
   async build(
@@ -54,7 +56,7 @@ export class BugHunterDossierService {
     // The case file is the shared half of the dossier (OPP-0775): sessions,
     // verdicts, lineage and post-mortem come from it, so the drawer, the
     // Verifier and the fix session all read one record of the same facts.
-    const [caseFile, regressionOf, similar, neighbours, notebook] =
+    const [caseFile, regressionOf, similar, neighbours, notebook, knowledge] =
       await Promise.all([
         this.caseFileService.build(finding, { currentRunId: runId }),
         this.safely('regression', () =>
@@ -104,6 +106,7 @@ export class BugHunterDossierService {
             { source: 'fix_dossier' },
           ),
         ),
+        this.knowledgeService.forFinding(finding, runId),
       ]);
 
     // The sweep's own verifiers (votes) and the independent Verifier are
@@ -200,6 +203,7 @@ export class BugHunterDossierService {
         tags: h.tags ?? [],
         similarity: h.similarity,
       })),
+      knowledge,
     };
   }
 

@@ -99,6 +99,16 @@ import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
 import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
 import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
 import { BugHuntTrigger } from '../enum/bug-hunt-run.enum';
+import { BugHunterProbeService } from '../service/bug-hunter-probe.service';
+import { BugHunterKnowledgeService } from '../service/bug-hunter-knowledge.service';
+import { BugHunterPrecedentService } from '../service/bug-hunter-precedent.service';
+import {
+  BugHunterFeatureMapService,
+  FeatureCardInput,
+} from '../service/bug-hunter-feature-map.service';
+import { playbooksFor } from '../constants/bug-hunter-playbooks';
+import { buildFeatureMapPrompt } from '../constants/bug-feature-map-prompt';
+import { BugKnowledge } from '../constants/bug-hunter-knowledge';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -138,7 +148,144 @@ export class BugHunterPipelineController {
     private readonly runRepository: BugHuntRunRepository,
     private readonly orchestrator: BugHunterOrchestratorService,
     private readonly studyService: BugFixStudyService,
+    private readonly probeService: BugHunterProbeService,
+    private readonly knowledgeService: BugHunterKnowledgeService,
+    private readonly precedentService: BugHunterPrecedentService,
+    private readonly featureMapService: BugHunterFeatureMapService,
   ) {}
+
+  // ── Tools for locating a fault (2026-10-13) ──────────────────────────────
+  // Every route below is read-only except the feature-map write, which only
+  // a map run uses. See renderToolbox for how a protocol presents them.
+
+  @Get('pipeline/probes')
+  @ApiOperation({
+    summary: 'The catalogue of read-only production probes (pipeline only)',
+  })
+  listProbes() {
+    return { probes: this.probeService.catalogue() };
+  }
+
+  @Get('pipeline/probes/:name')
+  @ApiOperation({
+    summary: 'Ask one read-only production probe (pipeline only)',
+    description:
+      'A fixed question about live data or logs — see PIPELINE_PROBES. Every database probe runs a fixed query ' +
+      'in a READ ONLY transaction with a 5-second statement timeout and answers with ids, counts and authored ' +
+      'text only. Pass ?runId= and the call is recorded as a probe lookup on that run.',
+  })
+  async runProbe(
+    @Param('name') name: string,
+    @Query() query: Record<string, string | undefined>,
+  ): Promise<Record<string, unknown>> {
+    const { runId, ...params } = query;
+    return this.telemetryService.timed(
+      runId,
+      BugHuntLookupKind.PROBE,
+      () => this.probeService.run(name, params),
+      (result) => ({ itemCount: 1, chars: JSON.stringify(result).length }),
+      { probe: name, params },
+    );
+  }
+
+  @Get('pipeline/playbooks')
+  @ApiOperation({
+    summary: 'Playbooks that fit a bug, by its words (pipeline only)',
+  })
+  getPlaybooks(@Query('q') q?: string) {
+    return { playbooks: q ? playbooksFor(q, 3) : [] };
+  }
+
+  @Get('pipeline/precedents')
+  @ApiOperation({
+    summary:
+      'Resolved or decided bugs that read like one finding, and where their fault was (pipeline only)',
+  })
+  async getPrecedents(
+    @Query('findingId', ParseUUIDPipe) findingId: string,
+    @Query('runId') runId?: string,
+  ) {
+    const finding = await this.bugFindingService.getOne(findingId);
+    const precedents = await this.telemetryService.timed(
+      runId,
+      BugHuntLookupKind.PRECEDENTS,
+      () => this.precedentService.similar(finding, 5),
+      (rows) => ({ itemCount: rows.length, chars: 0 }),
+      { findingId },
+    );
+    return { precedents };
+  }
+
+  @Get('pipeline/feature-maps')
+  @ApiOperation({
+    summary:
+      'Feature cards that fit a few words, or every card for a repo (pipeline only)',
+  })
+  async getFeatureMaps(
+    @Query('q') q?: string,
+    @Query('repo') repo?: string,
+    @Query('runId') runId?: string,
+  ) {
+    const cards = await this.telemetryService.timed(
+      runId,
+      BugHuntLookupKind.FEATURE_MAP,
+      () =>
+        q
+          ? this.featureMapService.forBug({ title: q, description: q }, 5)
+          : this.featureMapService.list(repo),
+      (rows) => ({
+        itemCount: rows.length,
+        chars: rows.reduce((sum, r) => sum + r.summary.length, 0),
+      }),
+      { q: q ?? null, repo: repo ?? null },
+    );
+    return { cards };
+  }
+
+  @Post('pipeline/feature-maps')
+  @ApiOperation({
+    summary: 'Save a batch of feature cards from a map run (pipeline only)',
+  })
+  saveFeatureMaps(
+    @Body()
+    body: {
+      runId?: string;
+      repo: string;
+      sourceSha?: string;
+      cards: FeatureCardInput[];
+    },
+  ) {
+    return this.featureMapService.save({
+      repo: body?.repo,
+      runId: body?.runId ?? null,
+      sourceSha: body?.sourceSha ?? null,
+      cards: body?.cards,
+    });
+  }
+
+  @Get('pipeline/runs/:id/feature-map-prompt')
+  @ApiOperation({
+    summary:
+      "The weekly feature-map run's protocol for one repo, as plain text (pipeline only)",
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getFeatureMapPrompt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('repo') repo?: string,
+  ): Promise<string> {
+    const run = await this.bugHunterService.getRun(id);
+    if (run.trigger !== BugHuntTrigger.FEATURE_MAP) {
+      throw new BadRequestException(`Run ${id} is not a feature-map run.`);
+    }
+    const target = repo ?? run.repo;
+    const existing = await this.featureMapService.list(target);
+    return buildFeatureMapPrompt({
+      repo: target,
+      runId: run.id,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      existing,
+    });
+  }
 
   @Get('pipeline/memory/search')
   @ApiOperation({
@@ -755,6 +902,14 @@ export class BugHunterPipelineController {
         ),
       )
     ).filter((f): f is NonNullable<typeof f> => f != null);
+    // What Bug Hunter already knows about each finding: playbooks, resolved
+    // look-alikes, feature cards. A failed lookup costs that finding's block.
+    const knowledge: Record<string, BugKnowledge> = {};
+    if (dispatched.heldCheck !== true) {
+      for (const f of findings) {
+        knowledge[f.id] = await this.knowledgeService.forFinding(f, run.id);
+      }
+    }
     return buildVerifyFindingsPrompt({
       findings,
       repo: repo ?? run.repo,
@@ -764,6 +919,7 @@ export class BugHunterPipelineController {
       model: dispatched.counterpart?.model ?? 'gemini-2.5-pro',
       sweepEngine: dispatched.sweepEngine ?? null,
       heldCheck: dispatched.heldCheck === true,
+      knowledge,
     });
   }
 

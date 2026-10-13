@@ -9,6 +9,7 @@ import {
   BUG_FIX_SESSION_WORKFLOW_FILE,
 } from '../constants/bug-fix-session.constants';
 import { repoCommands } from '../constants/bug-hunt-repos.constants';
+import { repairableDataFault } from '../constants/bug-hunter-repair';
 import {
   BUG_FINDING_LOCATE_STATUSES,
   BugFindingDecisionReason,
@@ -583,6 +584,7 @@ export class BugVerifyFindingsService {
           verdict.fault!.layer,
           verdict.fault!.repair,
           verdict.fault!.evidence,
+          repairableDataFault({ findingVerdicts: [verdict] })?.repo ?? null,
         ),
         findingId: finding.id,
         runId: verdict.runId ?? undefined,

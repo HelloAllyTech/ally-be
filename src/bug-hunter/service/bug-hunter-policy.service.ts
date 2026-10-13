@@ -25,7 +25,11 @@ import { BugFindingService } from './bug-finding.service';
 import { BugHunterService } from './bug-hunter.service';
 import { buildCaseChain, chainRefusal } from '../type/bug-case-chain.type';
 import { latestVerdictFor } from '../type/bug-fix-verdict.type';
-import { independentVerificationOf } from '../type/bug-finding-verdict.type';
+import {
+  faultLocationOf,
+  independentVerificationOf,
+  isDataFault,
+} from '../type/bug-finding-verdict.type';
 import {
   describePersonOnlyPaths,
   personOnlyPaths,
@@ -228,6 +232,13 @@ export class BugHunterPolicyService {
 
     await this.assertTrivialDiff(finding, prUrl);
     this.assertChainComplete(finding, prUrl);
+    // A data repair is run by a person after they merge it, so it never
+    // lands on its own, even with a complete chain (see bug-hunter-repair.ts).
+    if (isDataFault(faultLocationOf(finding.metadata))) {
+      throw new ForbiddenException(
+        'This is a data repair: a person reviews it, merges it and runs it. It never merges on its own — leave the PR open and PATCH to pr_opened.',
+      );
+    }
   }
 
   /**

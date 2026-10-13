@@ -26,6 +26,10 @@ import {
   PersistBugFindingsDto,
 } from '../dto/bug-hunter.dto';
 import { BugFindingSource } from '../enum/bug-finding.enum';
+import { BugHunterProbeService } from '../service/bug-hunter-probe.service';
+import { BugHunterKnowledgeService } from '../service/bug-hunter-knowledge.service';
+import { BugHunterPrecedentService } from '../service/bug-hunter-precedent.service';
+import { BugHunterFeatureMapService } from '../service/bug-hunter-feature-map.service';
 
 describe('BugHunterPipelineController', () => {
   let app: INestApplication;
@@ -44,6 +48,33 @@ describe('BugHunterPipelineController', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [BugHunterPipelineController],
       providers: [
+        {
+          provide: BugHunterProbeService,
+          useValue: { catalogue: jest.fn(), run: jest.fn() },
+        },
+        {
+          provide: BugHunterKnowledgeService,
+          useValue: {
+            forFinding: jest.fn().mockResolvedValue({
+              playbooks: [],
+              precedents: [],
+              featureCards: [],
+            }),
+          },
+        },
+        {
+          provide: BugHunterPrecedentService,
+          useValue: { similar: jest.fn().mockResolvedValue([]) },
+        },
+        {
+          provide: BugHunterFeatureMapService,
+          useValue: {
+            list: jest.fn().mockResolvedValue([]),
+            forBug: jest.fn().mockResolvedValue([]),
+            save: jest.fn(),
+          },
+        },
+
         { provide: BugHunterService, useValue: mockBugHunterService },
         { provide: BugFindingService, useValue: mockBugFindingService },
         { provide: BugHunterFinderDataService, useValue: {} },

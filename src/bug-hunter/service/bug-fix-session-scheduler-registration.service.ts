@@ -25,6 +25,10 @@ import { BUG_HUNT_PR_RECONCILE_TASK } from '../type/bug-hunter-orchestrator.type
 import { BUG_HUNT_PR_REVIEW_TASK } from '../type/bug-hunter-pr-review.type';
 import { BugHunterPrReviewService } from './bug-hunter-pr-review.service';
 import {
+  BUG_HUNT_FEATURE_MAP_TASK,
+  BugHunterFeatureMapService,
+} from './bug-hunter-feature-map.service';
+import {
   BUG_HUNT_HELD_WATCH_TASK,
   BugHunterHeldWatchService,
 } from './bug-hunter-held-watch.service';
@@ -42,6 +46,7 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     private readonly verifyFix: BugVerifyFixService,
     private readonly prReview: BugHunterPrReviewService,
     private readonly heldWatch: BugHunterHeldWatchService,
+    private readonly featureMaps: BugHunterFeatureMapService,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +140,12 @@ export class BugFixSessionSchedulerRegistrationService implements OnModuleInit {
     // human report is re-checked against production an hour later.
     scheduledTaskRegistry.register('hourly', BUG_HUNT_HELD_WATCH_TASK, () =>
       this.heldWatch.run(),
+    );
+
+    // The feature map: one read-only map run per repo a week, refreshing the
+    // cards whose files changed. See BugHunterFeatureMap.
+    scheduledTaskRegistry.register('weekly', BUG_HUNT_FEATURE_MAP_TASK, () =>
+      this.featureMaps.refreshAll(),
     );
 
     scheduledTaskRegistry.register(

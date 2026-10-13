@@ -52,4 +52,10 @@ export enum BugHuntLookupKind {
   KNOWN_NON_BUGS = 'known_non_bugs',
   REPO_MAP = 'repo_map',
   MEMORY = 'memory',
+  /** A read-only production probe (BugHunterProbeService): a fixed question asked of live data or logs. */
+  PROBE = 'probe',
+  /** Resolved bugs that read like this one, and where their fault was. */
+  PRECEDENTS = 'precedents',
+  /** Feature cards: how a feature works across repos, from the weekly map run. */
+  FEATURE_MAP = 'feature_map',
 }

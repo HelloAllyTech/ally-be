@@ -180,6 +180,14 @@ describe('BugHunterDossierService', () => {
       ),
       memoryService as never,
       telemetryService as never,
+      // Knowledge: playbooks, look-alikes and feature cards; empty here so every assertion below sees the dossier it always did.
+      {
+        forFinding: jest.fn().mockResolvedValue({
+          playbooks: [],
+          precedents: [],
+          featureCards: [],
+        }),
+      } as never,
     );
   });
 

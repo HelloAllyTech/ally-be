@@ -252,13 +252,17 @@ export const faultIsNotCode = (
   layer: string,
   repair: Maybe<string>,
   evidence: Maybe<string>,
+  /** Bug Hunter will write the repair as a PR in this repo for a person to review, merge and run. */
+  repairRepo: Maybe<string> = null,
 ): BugHunterMessage => ({
   title: `This one is a ${layer} problem, not a code bug: ${findingTitle}`,
   body:
     `I checked production before touching any code, and the code is doing what it was told — the ${layer} behind it is wrong. ` +
     (repair ? `The repair: ${repair} ` : '') +
     (evidence ? `What I saw: ${evidence} ` : '') +
-    `I will not start a fix session on this; it needs a person's hands on the ${layer}.`,
+    (repairRepo
+      ? `I will write the repair as a pull request in ${repairRepo}: an idempotent backfill with a dry run. It never merges itself — you review it, merge it, and run it.`
+      : `I will not start a fix session on this; it needs a person's hands on the ${layer}.`),
 });
 
 /** A person reverted a Bug Hunter PR on master. */

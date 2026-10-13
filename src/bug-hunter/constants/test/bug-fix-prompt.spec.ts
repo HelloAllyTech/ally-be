@@ -108,6 +108,44 @@ describe('buildFixSessionPrompt', () => {
     );
   });
 
+  it('briefs a located data fault as a repair PR that never merges itself, even where the bot may merge', () => {
+    const prompt = build(
+      {
+        repo: 'ally-ai-learn',
+        metadata: {
+          findingVerdicts: [
+            {
+              verdict: 'confirmed',
+              fault: {
+                layer: 'data',
+                repo: 'ally-ai-learn',
+                evidence: 'no Marathi rows for 188 items',
+                repair: 'Backfill the missing translations.',
+              },
+            },
+          ],
+        },
+      } as never,
+      'ally-ai-learn',
+    );
+    expect(prompt).toContain('## This is a DATA REPAIR, not a code fix');
+    expect(prompt).toContain('Backfill the missing translations.');
+    expect(prompt).toMatch(/9\. Do NOT merge\. This is a data repair/);
+    expect(prompt).not.toMatch(/Do NOT run "gh pr merge" in any form/);
+    expect(prompt).not.toMatch(/touches a guarded path \(migrations/);
+  });
+
+  it('renders the toolbox before the protocol', () => {
+    const prompt = build();
+    expect(
+      prompt.indexOf('## Your tools for locating the fault'),
+    ).toBeGreaterThan(-1);
+    expect(prompt.indexOf('## Your tools for locating the fault')).toBeLessThan(
+      prompt.indexOf('Follow this protocol in order'),
+    );
+    expect(prompt).toContain('pipeline/precedents?findingId=finding-1');
+  });
+
   it('tells a fix on a protected repo that it cannot merge, and why', () => {
     // The failure this replaces: the protocol said "merge it", the bot has
     // push access against a master that wants a review, and both fix sessions

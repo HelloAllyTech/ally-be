@@ -68,6 +68,12 @@ import { BugHuntDecision } from './entity/bug-hunt-decision.entity';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
 import { BugHunterModelSettingsService } from './service/bug-hunter-model-settings.service';
+import { BugHunterFeatureMap } from './entity/bug-hunter-feature-map.entity';
+import { BugHunterFeatureMapRepository } from './repository/bug-hunter-feature-map.repository';
+import { BugHunterProbeService } from './service/bug-hunter-probe.service';
+import { BugHunterPrecedentService } from './service/bug-hunter-precedent.service';
+import { BugHunterFeatureMapService } from './service/bug-hunter-feature-map.service';
+import { BugHunterKnowledgeService } from './service/bug-hunter-knowledge.service';
 
 /**
  * Bug Hunter: the kill switch, the comprehensive findings table, run history,
@@ -116,6 +122,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
       BugHuntContextLookup,
       BugHunterEvalRun,
       BugHuntDecision,
+      BugHunterFeatureMap,
       RoadmapOpportunity,
       // Read-only, for resolving reporter and stage-pinner names — see
       // BugFindingService.enrich. Raw repository rather than an import of
@@ -146,6 +153,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHuntPhaseRepository,
     BugHuntContextLookupRepository,
     BugHunterEvalRunRepository,
+    BugHunterFeatureMapRepository,
     BugHunterService,
     BugHunterTelemetryService,
     BugHunterEvalService,
@@ -182,6 +190,10 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugFixStudyService,
     BugHunterWrongFixService,
     BugHunterHeldWatchService,
+    BugHunterProbeService,
+    BugHunterPrecedentService,
+    BugHunterFeatureMapService,
+    BugHunterKnowledgeService,
     BugFixSessionSchedulerRegistrationService,
     BugHunterModelSettingsService,
   ],

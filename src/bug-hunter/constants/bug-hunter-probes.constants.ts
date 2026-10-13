@@ -54,3 +54,84 @@ export const renderProductionProbes = (apiBaseUrl: string): string[] =>
   productionProbes(apiBaseUrl).map(
     (p) => `  - ${p.name} — answers ${p.answers}. How: ${p.how}`,
   );
+
+/**
+ * Probes that need ally-be itself: fixed, named, read-only questions about
+ * live data and logs, answered by BugHunterProbeService over the pipeline's
+ * API key (GET pipeline/probes/:name).
+ *
+ * The public probes above see what an anonymous browser sees. These see what
+ * a public endpoint cannot: which configured languages have no stored
+ * translation, which roles hold a permission, what an org has switched on,
+ * what the backend logged. On 2026-10-12 the fault behind a "Marathi titles
+ * show English" report was missing translation entries for all 188
+ * scenarios; a person found it by hand because no run could ask the data.
+ *
+ * Rules every probe keeps: a fixed query (never SQL from the caller), a
+ * read-only transaction with a short statement timeout, answers as ids,
+ * counts and authored text (titles, locations, permission names) — never a
+ * learner's data — and every call recorded against the run.
+ */
+export interface PipelineProbe {
+  name: string;
+  answers: string;
+  /** Query parameters, with their defaults. */
+  params: string;
+}
+
+export const PIPELINE_PROBES: PipelineProbe[] = [
+  {
+    name: 'scenario-translations',
+    answers:
+      'for one language: how many ACTIVE simulations are configured for it (a voice in metadata.languageVoices), how many have a stored title translation (scenarios.translations[code] and scenario_translations rows), the ids missing one, and the title a learner is served',
+    params:
+      'languageCode (required, e.g. mr), tenant (default ally), scenarioId (optional, one simulation), limit (default 25)',
+  },
+  {
+    name: 'tooltip-translations',
+    answers:
+      'for one language: active Manage Tooltips entries with and without a translation, and the locations missing one',
+    params: 'languageCode (required), limit (default 25)',
+  },
+  {
+    name: 'role-permissions',
+    answers:
+      'which permissions a role (group) holds, or which roles hold one permission — the check for "works for one role, 403 for another"',
+    params: 'role (group name, partial match) OR permission (exact name)',
+  },
+  {
+    name: 'org-preferences',
+    answers:
+      "an organisation's switched-on preferences and feature toggles, by name",
+    params: 'tenant (default ally)',
+  },
+  {
+    name: 'languages',
+    answers:
+      'the languages table: id, value, translationCode, active — the codes clients send and the ids languageVoices uses',
+    params: 'none',
+  },
+  {
+    name: 'recent-errors',
+    answers:
+      "a backend service's logged errors in a window, filtered by a phrase — the first look for a 500 or a DATABASE_ERROR",
+    params:
+      'service (ally-be | ally-ai | ally-ai-learn), minutes (default 60, max 1440), search (optional phrase), limit (default 30)',
+  },
+];
+
+export const PIPELINE_PROBE_NAMES = PIPELINE_PROBES.map((p) => p.name);
+
+export const renderPipelineProbes = (
+  apiBaseUrl: string,
+  runId: string,
+  authHeader: string,
+): string[] => {
+  const base = `${apiBaseUrl.replace(/\/$/, '')}/api/v1/bug-hunter/pipeline/probes`;
+  return [
+    `  Call: curl -sS "${base}/<name>?<params>&runId=${runId}" ${authHeader} — JSON back. The catalogue: curl -sS "${base}" ${authHeader}.`,
+    ...PIPELINE_PROBES.map(
+      (p) => `  - ${p.name} — answers ${p.answers}. Params: ${p.params}.`,
+    ),
+  ];
+};
