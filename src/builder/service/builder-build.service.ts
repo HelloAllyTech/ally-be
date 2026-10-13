@@ -108,6 +108,8 @@ export interface BuilderResolvedModels {
   repoCount: number;
   technicalPlanLength: number;
   effort: 'low' | 'medium' | 'high';
+  /** How the runner builds: the phase pipeline, or the Ralph loop. */
+  loop?: 'pipeline' | 'ralph';
   plannerMaxTurns: number;
   planWords: number;
   budgets: { plan: number; code: number; verify: number; finalise: number };
@@ -241,6 +243,7 @@ export class BuilderBuildService {
       plannerModel?: string;
       verifierModel?: string;
       budgetUsd?: number;
+      loop?: 'pipeline' | 'ralph';
     } = {},
   ): Promise<BuilderBuildRun> {
     const settings = await this.settingsService.get();
@@ -308,7 +311,12 @@ export class BuilderBuildService {
     const milestone = await this.epicService.nextPending(session.id);
 
     const sizing = await this.classifySession(session, milestone);
-    const models = this.resolveModels(session, settings, overrides, sizing);
+    const models = {
+      ...this.resolveModels(session, settings, overrides, sizing),
+      // Travels to the runner inside the `models` input, which already
+      // carries per-run settings; workflow_dispatch allows no more inputs.
+      ...(overrides.loop ? { loop: overrides.loop } : {}),
+    };
     await this.assertModelsAreReal(models);
 
     // Carry the chosen model onto the session so a resume run and the UI both

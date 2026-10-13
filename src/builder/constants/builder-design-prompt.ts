@@ -57,6 +57,25 @@ const renderRepoList = (repos: BuilderRepoDefinition[]): string =>
     )
     .join('\n') || '(none)';
 
+/** The previous review, split when it was filed split. */
+const renderPreviousReview = (
+  review: BuilderTechnicalDesign['review'] | undefined,
+): string => {
+  if (!review)
+    return '### The review\n\n(No review was filed for the previous draft.)';
+  if (review.defects || review.suggestions) {
+    const list = (items: string[] | undefined) =>
+      items?.length ? items.map((item) => `- ${item}`).join('\n') : '(none)';
+    return [
+      `### Defects — fix these`,
+      list(review.defects),
+      `### Suggestions — scope calls, not instructions`,
+      list(review.suggestions),
+    ].join('\n\n');
+  }
+  return `### The review (${review.verdict}, filed before defects and suggestions were separated)\n\n${review.notesMd?.trim() || '(empty)'}`;
+};
+
 export function buildDesignPrompt(context: DesignPromptContext): string {
   const intro = `
 You are Builder's technical designer, working read-only inside a GitHub Actions
@@ -170,18 +189,23 @@ ${context.repoPacks.trim()}
   const previous = context.prd.technicalDesign?.previous;
   const redraftBlock = previous?.designMd?.trim()
     ? `
-## This is a redraft — fix what the reviewer found
+## This is a redraft — fix the reviewer's defects
 
-Your previous draft and its independent review are below. Address **every**
-finding: fix it in the design (a missed reader added with its line, a missed
-file added to scope, a test added to the map), or, if a finding is wrong, say
-why with evidence (\`repo:path:line\`) under a "Review response" heading in
-\`designMd\`. Keep what the review did not object to. Check the review's
-claims against the code before acting on them.
+Your previous draft and its independent review are below. **Fix every
+defect**: a missed reader added with its line, a missed file added to scope, a
+test added to the map. If a defect is wrong, say why with evidence
+(\`repo:path:line\`) under a "Review response" heading in \`designMd\`.
+Check the review's claims against the code before acting on them, and keep
+what the review did not object to.
 
-### The review (${previous.review?.verdict ?? 'none filed'})
+**Suggestions are not instructions.** A suggestion widens the scope beyond what
+the PRD's requirements ask for. Do not adopt one unless the requirements need
+it; apply the platform rule on ambiguity instead, and record under "Scope
+boundaries" what you left out and why nothing breaks. A review filed before
+defects and suggestions were separated lists both together: treat each finding
+that asks for more than the requirements as a suggestion.
 
-${previous.review?.notesMd?.trim() || '(No review was filed for the previous draft.)'}
+${renderPreviousReview(previous.review)}
 
 ### The previous draft
 

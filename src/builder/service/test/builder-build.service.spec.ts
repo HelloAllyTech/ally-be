@@ -667,6 +667,24 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('loop', () => {
+    it('sends the Ralph loop to the runner inside the models input', async () => {
+      await service.startBuild(readySession() as any, 1, { loop: 'ralph' });
+      const models = JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models,
+      );
+      expect(models.loop).toBe('ralph');
+    });
+
+    it('sends no loop for an ordinary build, so the runner keeps the pipeline', async () => {
+      await service.startBuild(readySession() as any, 1);
+      const models = JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models,
+      );
+      expect(models.loop).toBeUndefined();
+    });
+  });
+
   describe('branch for a new build', () => {
     // A previous build/resume run on this session, as branchSlugForBuild
     // looks it up; every other findOne keeps the default.

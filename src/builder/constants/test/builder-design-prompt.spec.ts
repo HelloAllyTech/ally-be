@@ -147,7 +147,37 @@ describe('buildDesignPrompt for a redraft', () => {
     expect(prompt).toContain(
       'First draft: derive prompt in track.service only.',
     );
-    expect(prompt).toContain('### The review (concerns)');
+    expect(prompt).toContain('### The review (concerns, filed before defects');
+    expect(prompt).toContain('Suggestions are not instructions');
+  });
+
+  it('asks for the defects to be fixed and treats suggestions as scope calls', () => {
+    const split = design({
+      status: 'review',
+      designMd: 'Second draft.',
+      review: {
+        verdict: 'concerns',
+        notesMd: '',
+        defects: ['ally-be:src/a.ts:9 reads prompt and is not listed'],
+        suggestions: ['Article questions could take rich text too.'],
+        at: '2026-10-12T15:10:26.099Z',
+      },
+    });
+    const prompt = buildDesignPrompt({
+      sessionId: 'session-1',
+      runId: 'run-3',
+      prd: {
+        ...prd,
+        technicalDesign: createDraftingDesign(prd, 'run-3', split),
+      },
+      repos,
+    });
+    expect(prompt).toContain('### Defects — fix these');
+    expect(prompt).toContain(
+      'ally-be:src/a.ts:9 reads prompt and is not listed',
+    );
+    expect(prompt).toContain('### Suggestions — scope calls, not instructions');
+    expect(prompt).toContain('Article questions could take rich text too.');
   });
 
   it('says nothing about a redraft on a first draft', () => {

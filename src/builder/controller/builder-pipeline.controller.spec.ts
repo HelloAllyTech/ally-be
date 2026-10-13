@@ -476,6 +476,20 @@ describe('BuilderPipelineController', () => {
       expect(failed.review.verdict).toBe('concerns');
     });
 
+    it('serves a Ralph build its spec: rules and the PRD with the approved design, no protocol', async () => {
+      mockPrdService.getOrCreateDoc.mockResolvedValue(
+        withDesign({ ...submission, status: 'approved' }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/builder/pipeline/runs/${designRunId}/spec`)
+        .set('x-api-key', 'test-api-key')
+        .expect(200);
+
+      expect(response.text).toContain('Technical design (approved)');
+      expect(response.text).not.toContain('## Tools');
+    });
+
     it('serves the approved scope per repo', async () => {
       mockPrdService.getOrCreateDoc.mockResolvedValue(
         withDesign({

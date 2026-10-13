@@ -173,6 +173,17 @@ export class StartBuilderBuildDto {
   @IsNumber()
   @Min(0)
   budgetUsd?: number;
+
+  @ApiPropertyOptional({
+    enum: ['pipeline', 'ralph'],
+    description:
+      'How the build runs. `pipeline` (default): plan → code → gate → review. ' +
+      '`ralph`: one agent in a loop, a fresh session per iteration, one plan item ' +
+      'each, with the gate and a cold review as backpressure. Experimental.',
+  })
+  @IsOptional()
+  @IsIn(['pipeline', 'ralph'])
+  loop?: 'pipeline' | 'ralph';
 }
 
 export class RaiseBuilderBudgetDto {

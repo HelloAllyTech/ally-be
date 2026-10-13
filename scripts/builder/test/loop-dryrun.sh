@@ -284,6 +284,43 @@ if [ "$agent_phase" = design ] || [ "$agent_phase" = design-review ]; then
   exit 0
 fi
 
+# A Ralph iteration: the first writes the plan, each later one does one item
+# and checks it off, and the one that checks the last item writes DONE.
+# DRYRUN_RALPH_STUCK=1 is an agent that changes nothing, ever.
+if printf '%s' "$*" | grep -q 'You are one iteration of a build loop'; then
+  echo iteration >> /tmp/builder-dryrun-ralph-iterations
+  if [ "${DRYRUN_RALPH_GATE_FAIL:-}" = 1 ] && grep -q 'Gate failures' .builder/progress.md 2>/dev/null \
+     && [ -f /tmp/builder-dryrun-broke-it ]; then
+    # Read the gate's failure from progress.md and fixed it.
+    rm -f /tmp/builder-dryrun-broke-it
+    echo "fix" >> repos/demo-repo/file.txt
+    git -C repos/demo-repo add -A >/dev/null 2>&1
+    git -C repos/demo-repo -c user.email=t@t.t -c user.name=t commit -qm "fix the gate" >/dev/null 2>&1
+    echo DONE > .builder/status
+  elif [ "${DRYRUN_RALPH_STUCK:-}" != 1 ]; then
+    if [ ! -f .builder/plan.md ]; then
+      printf -- '- [ ] demo-repo: first change — files: file.txt — test: t\n- [ ] demo-repo: second change — files: file.txt — test: t\n' \
+        > .builder/plan.md
+    elif grep -q -- '- \[ \]' .builder/plan.md; then
+      echo "ralph item" >> repos/demo-repo/file.txt
+      git -C repos/demo-repo add -A >/dev/null 2>&1
+      git -C repos/demo-repo -c user.email=t@t.t -c user.name=t commit -qm "ralph item" >/dev/null 2>&1
+      awk 'done == 0 && /- \[ \]/ { sub(/- \[ \]/, "- [x]"); done = 1 } { print }' .builder/plan.md \
+        > .builder/plan.tmp && mv .builder/plan.tmp .builder/plan.md
+      echo "- did an item" >> .builder/progress.md
+      if ! grep -q -- '- \[ \]' .builder/plan.md; then
+        echo DONE > .builder/status
+        # The last item breaks a test the first time round.
+        [ "${DRYRUN_RALPH_GATE_FAIL:-}" = 1 ] && touch /tmp/builder-dryrun-broke-it
+      fi
+    fi
+  fi
+  echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_ralph"}'
+  echo '{"type":"text","part":{"type":"text","text":"Did one item."},"sessionID":"ses_ralph"}'
+  echo '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":3,"input":2,"output":1,"cache":{"read":0}},"cost":0.1},"sessionID":"ses_ralph"}'
+  exit 0
+fi
+
 # A coder that ran self-check itself before stopping: the stamp matches the
 # tree it leaves, so no follow-up turn is needed.
 if [ "${DRYRUN_SELFCHECKED:-}" = 1 ] && [ "$phase" = "build" ]; then
@@ -591,12 +628,13 @@ run_scenario() {
         /tmp/builder-design-submitted /tmp/builder-design-reviewed \
         /tmp/builder-dryrun-agents /tmp/builder-dryrun-live.log \
         /tmp/builder-dryrun-steer-served /tmp/builder-live-session \
-        /tmp/builder-steers.md
+        /tmp/builder-steers.md /tmp/builder-dryrun-ralph-iterations
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
   local log="${WORK}/${name}.log"
   : > "$log"
+  rm -rf "${WORK}/run/.builder"
 
   # The agent's half of opening a pull request: one file, first line the title.
   rm -f /tmp/builder-pr-demo-repo.md /tmp/builder-dryrun-gh.log
@@ -743,6 +781,41 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = design-is-plan ]; then
 
   run_scenario no-design-plans DRYRUN_SELFCHECKED=1
   check "plans when there is no approved design" yes "$(has_in_log 'GET plan-prompt')"
+fi
+
+# The Ralph loop: plan, one item per iteration, DONE, the real gate, the
+# shared review, then the shared finalise. No planner, no coding attempts.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = ralph ]; then
+  run_scenario ralph \
+    BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v","loop":"ralph"}' \
+    BUILDER_STEER_POLL_SECONDS=1
+  check "finished the run" 0 "$EXIT_CODE"
+  check "three iterations: plan, item, item" 3 \
+    "$(wc -l < /tmp/builder-dryrun-ralph-iterations | tr -d ' ')"
+  check "no planner phase" no "$(has_in_log 'GET plan-prompt')"
+  check "fetched the spec" yes "$(has_in_log 'GET spec')"
+  check "billed each iteration" yes "$(has_in_log 'COST ralph-3:')"
+  check "showed the plan as the checklist" yes "$(has_in_log 'EVENT todo')"
+  check "ran the real gate" yes "$(has_in_log 'EVENT gate_result:true')"
+  check "ran the review" yes "$(has_in_log 'EVENT verification:pass')"
+  check "reached finalise" yes "$(has_in_log 'GET finalise-prompt')"
+
+  run_scenario ralph-gate-feedback \
+    BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v","loop":"ralph"}' \
+    DRYRUN_RALPH_GATE_FAIL=1
+  check "a gate failure goes back into the loop and gets fixed" 0 "$EXIT_CODE"
+  check "one more iteration than a clean run" 4 \
+    "$(wc -l < /tmp/builder-dryrun-ralph-iterations | tr -d ' ')"
+  check "the gate failed, then passed" "yes yes" \
+    "$(has_in_log 'EVENT gate_result:false') $(has_in_log 'EVENT gate_result:true')"
+
+  run_scenario ralph-stuck \
+    BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v","loop":"ralph"}' \
+    DRYRUN_RALPH_STUCK=1
+  check "stops a loop that makes no progress" 1 "$EXIT_CODE"
+  check "after three idle iterations" 3 \
+    "$(wc -l < /tmp/builder-dryrun-ralph-iterations | tr -d ' ')"
+  check "and reports it failed" yes "$(has_in_log 'POST complete {"outcome":"failed"')"
 fi
 
 # A coder that stops without a passing self-check of its final tree gets one

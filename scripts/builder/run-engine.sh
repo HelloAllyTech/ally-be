@@ -1586,6 +1586,251 @@ fi
 "${HERE}/capture-baseline.sh" >/tmp/builder-baseline.log 2>&1 &
 BASELINE_PID=$!
 
+# One review round: a fresh-context reviewer reads the PRD and the diff and
+# returns a verdict, stored as a `verification` event. Sets `verdict`. Shared by
+# the phase pipeline and the Ralph loop, so both are judged the same way.
+verify_once() {
+  echo "::group::verify round ${verify_round} (${VERIFIER_MODEL})"
+  post_stage VERIFYING
+  if ! fetch_prompt "verify-prompt?round=${verify_round}" /tmp/builder-verify-prompt.txt; then
+    # An unreachable reviewer says nothing about the code. Same call as an
+    # unparseable verdict below: do not fail a build on the reviewer's plumbing.
+    echo "Could not fetch the verify prompt — treating as a pass." >&2
+    echo "::endgroup::"
+    verdict=pass
+    return 0
+  fi
+
+  # The reviewer gets them too: a steer changes what "correct" means for this
+  # run, and a verifier judging the diff against the PRD alone would raise
+  # objections to work the admin explicitly asked for.
+  apply_steers /tmp/builder-verify-prompt.txt
+  # What the coder declared outside the plan's file lists. The scope check
+  # accepts a declared file; whether the reason holds up is the reviewer's call.
+  if [ -s /tmp/builder-scope-changes.jsonl ]; then
+    {
+      printf '\n\n## Files the coder declared outside the plan\n\n'
+      printf 'Each passed the scope check only because it was declared. Judge whether\n'
+      printf 'the reason holds; a test or snapshot edited to quiet an unrelated check is\n'
+      printf 'a blocking objection.\n\n'
+      jq -r '"- `\(.repo)/\(.path)` — \(.reason)"' /tmp/builder-scope-changes.jsonl 2>/dev/null || true
+    } >> /tmp/builder-verify-prompt.txt
+  fi
+
+  if [ -s /tmp/builder-untested.txt ]; then
+    {
+      printf '\n\n## Code changed without a new test\n\n'
+      printf 'The gate does not block these repos on it. Check the PRD test plan: a\n'
+      printf 'requirement it names a test for, with no such test here, is a blocking\n'
+      printf 'objection.\n\n'
+      sed 's/^/- /' /tmp/builder-untested.txt
+    } >> /tmp/builder-verify-prompt.txt
+  fi
+
+  snapshot_heads
+  set_agent_phase verify
+  run_agent /tmp/builder-verify-prompt.txt \
+    "${RESULTS_DIR}/verify-${verify_round}.json" \
+    "$VERIFIER_MODEL" reviewer "$VERIFY_TIMEOUT" || true
+  report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
+    "${RESULTS_DIR}/verify-${verify_round}.json"
+  revert_stray_writes "the verifier"
+
+  # Parse the verdict AND persist it. Storing it is what lets round two be
+  # told what round one raised, and what puts the objections in front of the
+  # coder on the next attempt — before, the verdict reached ally-be only as
+  # anonymous transcript text and nothing could read it back.
+  verdict="$(node -e '
+    const fs = require("fs");
+    const [file, round] = process.argv.slice(1);
+    const fail = () => { console.log("pass"); process.exit(0); };
+    let text = "";
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+      text = typeof raw.result === "string" ? raw.result : JSON.stringify(raw);
+    } catch { fail(); }
+    // The verdict is the LAST json block — the reviewer is told to end with
+    // it, and earlier blocks are usually quoted code.
+    const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
+    if (!blocks.length) fail();
+    let parsed;
+    try { parsed = JSON.parse(blocks[blocks.length - 1][1]); } catch { fail(); }
+    const objections = Array.isArray(parsed.objections) ? parsed.objections : [];
+    fs.writeFileSync("/tmp/builder-verification-event.json", JSON.stringify({
+      events: [{
+        type: "verification",
+        stage: "VERIFYING",
+        payload: {
+          round: Number(round),
+          verdict: parsed.verdict === "fail" ? "fail" : "pass",
+          objections,
+          checkedRequirements: parsed.checkedRequirements ?? [],
+          notes: parsed.notes ?? null,
+          text: parsed.notes ?? "",
+        },
+      }],
+    }));
+    console.log(parsed.verdict === "fail" ? "fail" : "pass");
+  ' "${RESULTS_DIR}/verify-${verify_round}.json" "$verify_round" 2>/dev/null || echo pass)"
+
+  [ -f /tmp/builder-verification-event.json ] && \
+    post_event_file /tmp/builder-verification-event.json
+  # Kept for the Ralph loop, which writes the objections into its progress file.
+  [ -f /tmp/builder-verification-event.json ] && \
+    cp /tmp/builder-verification-event.json /tmp/builder-last-verification.json
+  rm -f /tmp/builder-verification-event.json
+  echo "::endgroup::"
+}
+
+# ── The Ralph loop (models.loop = "ralph") ────────────────────────────────
+#
+# One agent, one fixed prompt (opencode/ralph.md), run again and again with a
+# fresh session each time. Each iteration reads the state in .builder/ — the
+# spec, the plan, the progress log — does the single most important item,
+# runs self-check, commits, records what it did, and exits. Nothing is handed
+# from agent to agent: every failure the pipeline had on 2026-10-12 was at a
+# handoff (interviewer → designer, critic → designer, run → run, redirect →
+# phase), and the loop has one, the agent's own notes to its next iteration.
+#
+# The gate and a cold review are the backpressure. When the agent writes DONE,
+# the real gate runs; its failures go into progress.md and the loop carries on.
+# When the gate passes, the pipeline's own review round runs (verify_once); its
+# objections go back the same way. A pass goes on to the shared finalise.
+#
+# Stops: BUILDER_RALPH_MAX_ITERATIONS (20), no change to the code or the plan
+# for three iterations, the session budget, and a deadline that leaves the
+# 120-minute job time to gate, review and finalise.
+RALPH_DIR="${PWD}/.builder"
+RALPH_MAX_ITERATIONS="${BUILDER_RALPH_MAX_ITERATIONS:-20}"
+RALPH_DEADLINE_SECONDS="${BUILDER_RALPH_DEADLINE_SECONDS:-5700}"
+RALPH_ITERATION_TIMEOUT="$(timeout_for ralph 15m)"
+
+# The plan's checkboxes as the build page's checklist.
+post_ralph_checklist() {
+  [ -f "$RALPH_DIR/plan.md" ] || return 0
+  node -e '
+    const fs = require("fs");
+    const items = fs.readFileSync(process.argv[1], "utf8").split("\n")
+      .map((line) => line.match(/^\s*-\s*\[( |x|X)\]\s*(.+)$/))
+      .filter(Boolean)
+      .map((m, i) => ({ id: String(i + 1), text: m[2].slice(0, 300), status: m[1] === " " ? "pending" : "done" }));
+    if (!items.length) process.exit(0);
+    process.stdout.write(JSON.stringify({ events: [{ type: "todo", payload: { items } }] }));
+  ' "$RALPH_DIR/plan.md" > /tmp/builder-ralph-todo.json 2>/dev/null || return 0
+  [ -s /tmp/builder-ralph-todo.json ] && post_event_file /tmp/builder-ralph-todo.json
+  return 0
+}
+
+ralph_state_fingerprint() {
+  # `|| true`: plan.md does not exist before the first iteration, and a failing
+  # cat inside this pipeline would end the script under pipefail.
+  { tree_fingerprint; cat "$RALPH_DIR/plan.md" "$RALPH_DIR/progress.md" 2>/dev/null || true; } \
+    | git hash-object --stdin
+}
+
+ralph_loop() {
+  local iteration=0 stuck=0 before after started=$SECONDS
+  mkdir -p "$RALPH_DIR"
+  rm -f "$RALPH_DIR/status"
+  # Dependencies first: the first iteration's self-check installs into the same
+  # repos the background job is installing into.
+  wait "$BASELINE_PID" 2>/dev/null || true
+  if ! fetch_prompt spec "$RALPH_DIR/spec.md"; then
+    echo "Could not fetch the spec; the Ralph loop cannot start." >&2
+    verdict=fail
+    return 0
+  fi
+  [ -f "$RALPH_DIR/progress.md" ] || printf '# Progress\n' > "$RALPH_DIR/progress.md"
+  post_stage CODING
+
+  while [ "$iteration" -lt "$RALPH_MAX_ITERATIONS" ]; do
+    if [ $((SECONDS - started)) -ge "$RALPH_DEADLINE_SECONDS" ]; then
+      echo "::warning::Ralph loop stopped at its deadline after ${iteration} iteration(s)." >&2
+      break
+    fi
+    iteration=$((iteration + 1))
+    echo "::group::ralph iteration ${iteration} (${CODER_MODEL})"
+
+    cp "${HERE}/opencode/ralph.md" "/tmp/builder-ralph-prompt.txt"
+    apply_steers "/tmp/builder-ralph-prompt.txt"
+    before="$(ralph_state_fingerprint)"
+
+    # Cold every time: no session is carried from one iteration to the next.
+    OPENCODE_CODER_SESSION=
+    set_agent_phase code
+    run_agent /tmp/builder-ralph-prompt.txt "${RESULTS_DIR}/ralph-${iteration}.json" \
+      "$CODER_MODEL" builder "$RALPH_ITERATION_TIMEOUT"
+    report_phase_cost "ralph-${iteration}" "$CODER_MODEL" "${RESULTS_DIR}/ralph-${iteration}.json"
+    save_work_in_progress "ralph iteration ${iteration}"
+    post_ralph_checklist
+    echo "::endgroup::"
+
+    exit_if_paused "ralph iteration ${iteration}"
+    hold_or_abort_if_over_budget
+    collect_steers "ralph"
+
+    after="$(ralph_state_fingerprint)"
+    if [ "$after" = "$before" ]; then
+      stuck=$((stuck + 1))
+      echo "::warning::Ralph iteration ${iteration} changed nothing (${stuck} in a row)." >&2
+      if [ "$stuck" -ge 3 ]; then
+        echo "Three iterations without progress; stopping the loop." >&2
+        break
+      fi
+    else
+      stuck=0
+    fi
+
+    [ "$(tr -d '[:space:]' < "$RALPH_DIR/status" 2>/dev/null)" = DONE ] || continue
+    rm -f "$RALPH_DIR/status"
+
+    echo "::group::test gate (ralph iteration ${iteration})"
+    post_stage GATE
+    if ! "${HERE}/run-test-gate.sh" > /tmp/builder-ralph-gate.txt 2>&1; then
+      cat /tmp/builder-ralph-gate.txt
+      echo "::endgroup::"
+      {
+        printf '\n## Gate failures after iteration %s — fix these first\n\n```\n' "$iteration"
+        tail -n 80 /tmp/builder-ralph-gate.txt
+        printf '```\n'
+      } >> "$RALPH_DIR/progress.md"
+      post_stage CODING
+      continue
+    fi
+    cat /tmp/builder-ralph-gate.txt
+    echo "::endgroup::"
+
+    if [ "$verify_round" -gt "$MAX_VERIFY_ROUNDS" ]; then
+      echo "Verification rounds exhausted." >&2
+      break
+    fi
+    rm -f /tmp/builder-last-verification.json
+    verify_once
+    if [ "$verdict" = pass ]; then
+      echo "Ralph loop done after ${iteration} iteration(s); review passed on round ${verify_round}."
+      return 0
+    fi
+    {
+      printf '\n## Review findings after iteration %s — fix these first\n\n' "$iteration"
+      jq -r '.events[0].payload.objections[]? | "- \(.severity // "objection"): \(.repo // "")\(if .file then " " + .file else "" end) — \(.summary // "")\(if .detail then " (" + .detail + ")" else "" end)"' \
+        /tmp/builder-last-verification.json 2>/dev/null || true
+    } >> "$RALPH_DIR/progress.md"
+    verify_round=$((verify_round + 1))
+    post_stage CODING
+  done
+
+  verdict=fail
+  return 0
+}
+
+LOOP="$(printf '%s' "$MODELS_JSON" | jq -r '.loop // "pipeline"' 2>/dev/null || echo pipeline)"
+verify_round=1
+verdict=fail
+if [ "$LOOP" = ralph ]; then
+  echo "Building with the Ralph loop."
+  ralph_loop
+else
+
 # ── Phase 1: PLAN ───────────────────────────────────────────────────────────
 
 echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}."
@@ -1817,93 +2062,7 @@ NUDGE
     break
   fi
 
-  echo "::group::verify round ${verify_round} (${VERIFIER_MODEL})"
-  post_stage VERIFYING
-  if ! fetch_prompt "verify-prompt?round=${verify_round}" /tmp/builder-verify-prompt.txt; then
-    # An unreachable reviewer says nothing about the code. Same call as an
-    # unparseable verdict below: do not fail a build on the reviewer's plumbing.
-    echo "Could not fetch the verify prompt — treating as a pass." >&2
-    echo "::endgroup::"
-    verdict=pass
-    break
-  fi
-
-  # The reviewer gets them too: a steer changes what "correct" means for this
-  # run, and a verifier judging the diff against the PRD alone would raise
-  # objections to work the admin explicitly asked for.
-  apply_steers /tmp/builder-verify-prompt.txt
-  # What the coder declared outside the plan's file lists. The scope check
-  # accepts a declared file; whether the reason holds up is the reviewer's call.
-  if [ -s /tmp/builder-scope-changes.jsonl ]; then
-    {
-      printf '\n\n## Files the coder declared outside the plan\n\n'
-      printf 'Each passed the scope check only because it was declared. Judge whether\n'
-      printf 'the reason holds; a test or snapshot edited to quiet an unrelated check is\n'
-      printf 'a blocking objection.\n\n'
-      jq -r '"- `\(.repo)/\(.path)` — \(.reason)"' /tmp/builder-scope-changes.jsonl 2>/dev/null || true
-    } >> /tmp/builder-verify-prompt.txt
-  fi
-
-  if [ -s /tmp/builder-untested.txt ]; then
-    {
-      printf '\n\n## Code changed without a new test\n\n'
-      printf 'The gate does not block these repos on it. Check the PRD test plan: a\n'
-      printf 'requirement it names a test for, with no such test here, is a blocking\n'
-      printf 'objection.\n\n'
-      sed 's/^/- /' /tmp/builder-untested.txt
-    } >> /tmp/builder-verify-prompt.txt
-  fi
-
-  snapshot_heads
-  set_agent_phase verify
-  run_agent /tmp/builder-verify-prompt.txt \
-    "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" reviewer "$VERIFY_TIMEOUT" || true
-  report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
-    "${RESULTS_DIR}/verify-${verify_round}.json"
-  revert_stray_writes "the verifier"
-
-  # Parse the verdict AND persist it. Storing it is what lets round two be
-  # told what round one raised, and what puts the objections in front of the
-  # coder on the next attempt — before, the verdict reached ally-be only as
-  # anonymous transcript text and nothing could read it back.
-  verdict="$(node -e '
-    const fs = require("fs");
-    const [file, round] = process.argv.slice(1);
-    const fail = () => { console.log("pass"); process.exit(0); };
-    let text = "";
-    try {
-      const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-      text = typeof raw.result === "string" ? raw.result : JSON.stringify(raw);
-    } catch { fail(); }
-    // The verdict is the LAST json block — the reviewer is told to end with
-    // it, and earlier blocks are usually quoted code.
-    const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
-    if (!blocks.length) fail();
-    let parsed;
-    try { parsed = JSON.parse(blocks[blocks.length - 1][1]); } catch { fail(); }
-    const objections = Array.isArray(parsed.objections) ? parsed.objections : [];
-    fs.writeFileSync("/tmp/builder-verification-event.json", JSON.stringify({
-      events: [{
-        type: "verification",
-        stage: "VERIFYING",
-        payload: {
-          round: Number(round),
-          verdict: parsed.verdict === "fail" ? "fail" : "pass",
-          objections,
-          checkedRequirements: parsed.checkedRequirements ?? [],
-          notes: parsed.notes ?? null,
-          text: parsed.notes ?? "",
-        },
-      }],
-    }));
-    console.log(parsed.verdict === "fail" ? "fail" : "pass");
-  ' "${RESULTS_DIR}/verify-${verify_round}.json" "$verify_round" 2>/dev/null || echo pass)"
-
-  [ -f /tmp/builder-verification-event.json ] && \
-    post_event_file /tmp/builder-verification-event.json
-  rm -f /tmp/builder-verification-event.json
-  echo "::endgroup::"
+  verify_once
 
   if [ "$verdict" = "pass" ]; then
     echo "Verification passed on round ${verify_round}."
@@ -1916,12 +2075,18 @@ NUDGE
   hold_or_abort_if_over_budget
 done
 
+fi  # the phase pipeline (LOOP != ralph)
+
 if [ "$verdict" != "pass" ]; then
   # No pull request exists: the finalise phase below is what opens them, and
   # this run never reaches it. That is the whole reason PRs moved after
   # verification — a failing verdict used to fail a run whose PRs were already
   # sitting in the org.
-  echo "Gate and review were not both satisfied after ${MAX_CODE_ITERATIONS} attempts." >&2
+  if [ "$LOOP" = ralph ]; then
+    echo "The Ralph loop ended without a passing gate and review." >&2
+  else
+    echo "Gate and review were not both satisfied after ${MAX_CODE_ITERATIONS} attempts." >&2
+  fi
   save_work_in_progress "final attempt"
   mark_failed_build
   report_outcome '{"outcome":"failed","error":"The change did not pass the test gate and independent review within the attempt limit. No pull request was opened; the standing objections are in the run feed."}'

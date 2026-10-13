@@ -31,7 +31,8 @@ import {
   BuilderBuildRunRepository,
   BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
-import { buildBuildPrompt } from '../constants/builder-build-prompt';
+import { buildBuildPrompt, renderPrd } from '../constants/builder-build-prompt';
+import { renderPlatformRules } from '../constants/builder-platform-rules';
 import { buildPlanPrompt } from '../constants/builder-plan-prompt';
 import { buildRemediatePrompt } from '../constants/builder-remediate-prompt';
 import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
@@ -867,6 +868,27 @@ export class BuilderPipelineController {
       );
     }
     return { ...context, design };
+  }
+
+  /**
+   * What a Ralph-loop build is building, and nothing about how: the platform
+   * rules and the PRD with its approved technical design. The loop's own
+   * prompt (scripts/builder/opencode/ralph.md) carries the protocol; the build
+   * prompt's single-coder protocol would contradict it, and contradicting
+   * instructions are what the loop exists to remove.
+   */
+  @Get('runs/:runId/spec')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'The spec a Ralph-loop build works from: rules, PRD, approved design',
+  })
+  async getSpec(@Param('runId', ParseUUIDPipe) runId: string): Promise<string> {
+    const { doc } = await this.loadRunContext(runId);
+    const platformRules = await this.knowledgeService.platformRules();
+    return [renderPlatformRules(platformRules), renderPrd(doc.draft)]
+      .filter(Boolean)
+      .join('\n\n---\n\n');
   }
 
   @Get('runs/:runId/design-review-prompt')
