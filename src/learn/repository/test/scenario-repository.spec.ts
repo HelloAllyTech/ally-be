@@ -11,6 +11,7 @@ import { ScenariosRepository } from '../scenario.repository';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { ScenarioStatus } from '../../type/scenario.type';
 import { GetScenarioByIdOptions } from 'src/learn/type/scenario-filter.type';
+import { ScenarioVersion } from '../../entity/scenario-version.entity';
 
 describe('ScenariosRepository', () => {
   let repository: ScenariosRepository;
@@ -118,9 +119,9 @@ describe('ScenariosRepository', () => {
       expect(result).toEqual({ data: [], count: 0 });
       expect(mockQueryBuilder.select).toHaveBeenCalledWith([
         'scenario.id',
-        'scenario.title',
+        'COALESCE(latest_version.config ->> \'title\', scenario.title) AS "scenario_title"',
         'scenario.scenario',
-        'scenario.description',
+        'COALESCE(latest_version.config ->> \'description\', scenario.description) AS "scenario_description"',
         'scenario.coverImageUrl',
         'scenario.coverVideoUrl',
         'scenario.status',
@@ -161,9 +162,9 @@ describe('ScenariosRepository', () => {
 
       expect(mockQueryBuilder.select).toHaveBeenCalledWith([
         'scenario.id',
-        'scenario.title',
+        'COALESCE(latest_version.config ->> \'title\', scenario.title) AS "scenario_title"',
         'scenario.scenario',
-        'scenario.description',
+        'COALESCE(latest_version.config ->> \'description\', scenario.description) AS "scenario_description"',
         'scenario.coverImageUrl',
         'scenario.coverVideoUrl',
         'scenario.status',
@@ -173,34 +174,25 @@ describe('ScenariosRepository', () => {
       ]);
     });
 
-    it('should return title and description from latest published version', async () => {
-      const scenarios = [
-        { id: 1, title: 'v1 title', description: 'v1 description' },
-      ];
-      const versions = [
-        {
-          scenarioId: 1,
-          versionNumber: 2,
-          config: { title: 'v2 title', description: 'v2 description' },
-        },
-        {
-          scenarioId: 1,
-          versionNumber: 1,
-          config: { title: 'v1 title', description: 'v1 description' },
-        },
-      ];
+    it('should join with scenario_versions to get the latest published title and description', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([scenarios, 1] as any);
-      const findMock = jest.fn().mockResolvedValue(versions);
-      jest.spyOn(mockDataSource, 'getRepository').mockReturnValue({
-        find: findMock,
-      } as any);
+      await repository.getScenarios();
 
-      const result = await repository.getScenarios();
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        ScenarioVersion,
+        'latest_version',
+        'latest_version.scenarioId = scenario.id AND latest_version.id = (SELECT id FROM scenario_versions WHERE "scenarioId" = scenario.id AND status = \'PUBLISHED\' ORDER BY "versionNumber" DESC, "createdAt" DESC LIMIT 1)',
+      );
 
-      expect(result.data[0].title).toBe('v2 title');
-      expect(result.data[0].description).toBe('v2 description');
-      expect(findMock).toHaveBeenCalled();
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          'scenario.id',
+          'COALESCE(latest_version.config ->> \'title\', scenario.title) AS "scenario_title"',
+          'COALESCE(latest_version.config ->> \'description\', scenario.description) AS "scenario_description"',
+          'scenario.scenario',
+        ]),
+      );
     });
   });
 

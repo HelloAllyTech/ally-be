@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
 import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
@@ -67,13 +67,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
       });
     }
 
-    // Cohort narrowing, layer 2 on top of the scenario_tenants join above. Only
-    // the learner catalog passes cohortScope; the admin list deliberately does
-    // not, so an admin keeps seeing the scenarios they have restricted.
-    //
-    // No grace clause for scenarios: a roleplay is a single session with nothing
-    // to resume, so "finish what you started" has no subject here. Courses and
-    // cases, which do have resumable progress, pass one.
     if (filters?.cohortScope && filters.tenantId) {
       applyCohortVisibilityFilter(query, {
         alias: 'scenario',
@@ -85,9 +78,9 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
     const selectColumns = [
       'scenario.id',
-      'scenario.title',
+      'COALESCE(latest_version.config ->> \'title\', scenario.title) AS "scenario_title"',
       'scenario.scenario',
-      'scenario.description',
+      'COALESCE(latest_version.config ->> \'description\', scenario.description) AS "scenario_description"',
       'scenario.coverImageUrl',
       'scenario.coverVideoUrl',
       'scenario.status',
@@ -98,6 +91,15 @@ export class ScenariosRepository extends Repository<Scenarios> {
     if (filters?.languageCode) {
       selectColumns.push('scenario.translations');
     }
+
+    // A scenario's title and description can be overridden by its latest
+    // published version. This join brings in that version's config so COALESCE
+    // can pick the title and description from it.
+    query.leftJoin(
+      ScenarioVersion,
+      'latest_version',
+      `latest_version.scenarioId = scenario.id AND latest_version.id = (SELECT id FROM scenario_versions WHERE "scenarioId" = scenario.id AND status = '${ScenarioVersionStatus.PUBLISHED}' ORDER BY "versionNumber" DESC, "createdAt" DESC LIMIT 1)`,
+    );
 
     const [data, count] = await query
       .select(selectColumns)
@@ -111,42 +113,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .orderBy('scenario.createdAt', 'DESC')
       .addOrderBy('scenario.id', 'DESC')
       .getManyAndCount();
-
-    if (data.length > 0) {
-      const scenarioIds = data.map((s) => s.id);
-      const versions = await this.dataSource
-        .getRepository(ScenarioVersion)
-        .find({
-          where: {
-            scenarioId: In(scenarioIds),
-            status: ScenarioVersionStatus.PUBLISHED,
-          },
-          order: {
-            versionNumber: 'DESC',
-          },
-        });
-
-      const versionMap = new Map<
-        number,
-        { title: string; description: string }
-      >();
-      for (const version of versions) {
-        if (!versionMap.has(version.scenarioId)) {
-          versionMap.set(version.scenarioId, {
-            title: version.config.title,
-            description: version.config.description,
-          });
-        }
-      }
-
-      for (const scenario of data) {
-        const version = versionMap.get(scenario.id);
-        if (version) {
-          scenario.title = version.title;
-          scenario.description = version.description;
-        }
-      }
-    }
 
     return { data, count };
   }
