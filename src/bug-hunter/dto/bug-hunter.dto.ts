@@ -926,6 +926,9 @@ export class BugFindingDto {
   descriptionEditedBy!: number | null;
 
   @ApiProperty({ nullable: true })
+  descriptionEditedByName!: string | null;
+
+  @ApiProperty({ nullable: true })
   descriptionEditedAt!: Date | null;
 
   @ApiProperty({ nullable: true })
@@ -1005,10 +1008,16 @@ export class BugFindingDto {
   escalationAnsweredBy!: number | null;
 
   @ApiProperty({ nullable: true })
+  escalationAnsweredByName!: string | null;
+
+  @ApiProperty({ nullable: true })
   escalationAnsweredAt!: Date | null;
 
   @ApiProperty({ nullable: true })
   decidedBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  decidedByName!: string | null;
 
   @ApiProperty({ nullable: true })
   decidedAt!: Date | null;
@@ -1184,6 +1193,9 @@ export class BugFindingDto {
   })
   releasedBy!: number | null;
 
+  @ApiProperty({ nullable: true })
+  releasedByName!: string | null;
+
   @ApiProperty({
     nullable: true,
     description:
@@ -1196,6 +1208,9 @@ export class BugFindingDto {
     description: 'The admin who pressed "Stop fix session".',
   })
   cancelledBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  cancelledByName!: string | null;
 
   @ApiProperty({ nullable: true })
   cancelledAt!: Date | null;
