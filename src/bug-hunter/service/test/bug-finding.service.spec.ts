@@ -1180,6 +1180,7 @@ describe('BugFindingService.enrich', () => {
     const usersRepo = { find: jest.fn().mockResolvedValue(users) };
     return {
       roadmap,
+      users: usersRepo,
       service: new BugFindingService(
         { findOne: jest.fn() } as unknown as BugFindingRepository,
         {
@@ -1300,6 +1301,43 @@ describe('BugFindingService.enrich', () => {
       null,
     ]);
     expect(enriched[1].stageOverriddenByName).toBe('Three');
+  });
+
+  /**
+   * The drawer prints these instead of "user #7". Same single lookup as the
+   * reporters and stage-pinners, never one query per field.
+   */
+  it('names everyone who acted on a row, in the same one lookup', async () => {
+    const { service, users } = build(
+      [],
+      [
+        { id: 4, name: 'Rewriter' },
+        { id: 5, name: 'Answerer' },
+        { id: 6, name: 'Decider' },
+        { id: 7, name: 'Releaser' },
+      ],
+    );
+
+    const [enriched] = await service.enrich([
+      row({
+        id: 'f1',
+        descriptionEditedBy: 4,
+        escalationAnsweredBy: 5,
+        decidedBy: 6,
+        releasedBy: 7,
+        cancelledBy: 99,
+      }),
+    ]);
+
+    expect(users.find).toHaveBeenCalledTimes(1);
+    expect(enriched).toMatchObject({
+      descriptionEditedByName: 'Rewriter',
+      escalationAnsweredByName: 'Answerer',
+      decidedByName: 'Decider',
+      releasedByName: 'Releaser',
+      // An account that is gone degrades to null rather than failing the row.
+      cancelledByName: null,
+    });
   });
 
   it("attaches which engine/model ran a finding's most recent run, batched in one query", async () => {
