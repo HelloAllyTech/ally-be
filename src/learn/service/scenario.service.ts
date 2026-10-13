@@ -1579,7 +1579,8 @@ export class ScenarioService {
                   updateScenarioDto?.knowledgeSources ??
                   scenario.metadata?.knowledgeSources,
                 stateNames:
-                  updateScenarioDto?.stateNames ?? scenario.metadata?.stateNames,
+                  updateScenarioDto?.stateNames ??
+                  scenario.metadata?.stateNames,
                 stateInstructions:
                   (updateScenarioDto as any).stateInstructions ??
                   scenario.metadata?.stateInstructions,
@@ -1590,12 +1591,12 @@ export class ScenarioService {
             {
               userId,
               jobId: randomUUID(),
-               action: ScenarioTranslationAction.UPDATE,
-             },
-             entityManager,
-           );
-         }
-         await this.updateScenarioTerminationEvents(
+              action: ScenarioTranslationAction.UPDATE,
+            },
+            entityManager,
+          );
+        }
+        await this.updateScenarioTerminationEvents(
           id,
           updateScenarioDto?.terminationEvents || [],
           entityManager,
@@ -2871,59 +2872,74 @@ export class ScenarioService {
       }));
   }
 
-
   async translateAllActiveScenarios(userId: number): Promise<void> {
-    this.logger.info(`[translateAllActiveScenarios] Backfill requested by user ${userId}`);
-    
-    // Not awaiting this so it runs in background
-    this.dataSource.transaction(async (entityManager) => {
-        const scenariosRepo = entityManager.getRepository(Scenarios);
-        const activeScenarios = await scenariosRepo.find({ where: { status: ScenarioStatus.ACTIVE }});
+    this.logger.info(
+      `[translateAllActiveScenarios] Backfill requested by user ${userId}`,
+    );
 
-        this.logger.info(`[translateAllActiveScenarios] Found ${activeScenarios.length} active scenarios to backfill.`);
+    // Not awaiting this so it runs in background
+    this.dataSource
+      .transaction(async (entityManager) => {
+        const scenariosRepo = entityManager.getRepository(Scenarios);
+        const activeScenarios = await scenariosRepo.find({
+          where: { status: ScenarioStatus.ACTIVE },
+        });
+
+        this.logger.info(
+          `[translateAllActiveScenarios] Found ${activeScenarios.length} active scenarios to backfill.`,
+        );
 
         for (const scenario of activeScenarios) {
-            try {
-                const metadata = {
-                    title: scenario.title,
-                    description: scenario.description,
-                    context: scenario.metadata?.context,
-                    sexualOrientation: scenario.metadata?.sexualOrientation,
-                    genderIdentity: scenario.metadata?.genderIdentity,
-                    customFields: scenario.metadata?.customFields,
-                    stateInstructions: scenario.metadata?.stateInstructions,
-                    knowledgeSources: scenario.metadata?.knowledgeSources,
-                    stateNames: scenario.metadata?.stateNames,
-                };
-                
-                const translationConsiderableData = {
-                    currentLocation: scenario.metadata?.currentLocation,
-                    profession: scenario.metadata?.profession,
-                    context: scenario.metadata?.context,
-                    age: scenario.metadata?.age,
-                    gender: scenario.metadata?.gender,
-                };
+          try {
+            const metadata = {
+              title: scenario.title,
+              description: scenario.description,
+              context: scenario.metadata?.context,
+              sexualOrientation: scenario.metadata?.sexualOrientation,
+              genderIdentity: scenario.metadata?.genderIdentity,
+              customFields: scenario.metadata?.customFields,
+              stateInstructions: scenario.metadata?.stateInstructions,
+              knowledgeSources: scenario.metadata?.knowledgeSources,
+              stateNames: scenario.metadata?.stateNames,
+            };
 
-                await this.persistTranslationsForScenarios(
-                    [scenario],
-                    () => metadata,
-                    translationConsiderableData,
-                    undefined,
-                    {
-                        userId,
-                        jobId: randomUUID(),
-                        action: ScenarioTranslationAction.CREATE,
-                    },
-                    entityManager
-                );
-            } catch (error) {
-                this.logger.error(`[translateAllActiveScenarios] Failed to translate scenario ${scenario.id}`, error.stack);
-            }
+            const translationConsiderableData = {
+              currentLocation: scenario.metadata?.currentLocation,
+              profession: scenario.metadata?.profession,
+              context: scenario.metadata?.context,
+              age: scenario.metadata?.age,
+              gender: scenario.metadata?.gender,
+            };
+
+            await this.persistTranslationsForScenarios(
+              [scenario],
+              () => metadata,
+              translationConsiderableData,
+              undefined,
+              {
+                userId,
+                jobId: randomUUID(),
+                action: ScenarioTranslationAction.CREATE,
+              },
+              entityManager,
+            );
+          } catch (error) {
+            this.logger.error(
+              `[translateAllActiveScenarios] Failed to translate scenario ${scenario.id}`,
+              error.stack,
+            );
+          }
         }
-        this.logger.info(`[translateAllActiveScenarios] Backfill finished for user ${userId}`);
-    }).catch(error => {
-      this.logger.error(`[translateAllActiveScenarios] Backfill transaction failed`, error.stack);
-    });
+        this.logger.info(
+          `[translateAllActiveScenarios] Backfill finished for user ${userId}`,
+        );
+      })
+      .catch((error) => {
+        this.logger.error(
+          `[translateAllActiveScenarios] Backfill transaction failed`,
+          error.stack,
+        );
+      });
   }
 
   /** Strip opening lines from auto-translate output so DB merges never overwrite manual/per-tab openings. */
@@ -3022,82 +3038,82 @@ export class ScenarioService {
       try {
         const rawMetadata = metadataExtractor(scenario);
 
-         const sanitized = this.sanitizeMetadata(rawMetadata);
- 
-         const languageVoices =
-           resolveLanguageVoices?.(scenario) ??
-           scenario.metadata?.languageVoices;
-         const languagesFiltered =
-           await this.getTranslationTargetLanguagesFromLanguageVoices(
-             languageVoices,
-           );
- 
-         const existingTranslations =
-           await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
-             scenario.id,
-           );
-         const existingLanguageIds = new Set(
-           (existingTranslations ?? []).map((r) => Number(r.languageId)),
-         );
- 
-         const newLanguageCodes = languagesFiltered
-           .filter((l) => !existingLanguageIds.has(l.language_id))
-           .map((l) => l.translationCode);
- 
-         const fieldsChanged = this.hasTranslatableFieldsChanged(
-           scenario,
-           sanitized as Partial<MetadataShape>,
-         );
- 
-         if (!fieldsChanged && newLanguageCodes.length === 0) {
-           this.logger?.debug?.(
-             `[persistTranslationsForScenarios] scenario ${scenario.id}: no translatable fields have changed and no new languages, skipping translations`,
-           );
-           continue;
-         }
- 
-         const languageCodesToTranslate = fieldsChanged
-           ? languagesFiltered.map((l) => l.translationCode)
-           : newLanguageCodes;
- 
-         if (languageCodesToTranslate.length === 0) {
-           this.logger?.debug?.(
-             `[persistTranslationsForScenarios] scenario ${scenario.id}: no languages to translate, skipping`,
-           );
-           continue;
-         }
- 
-         if (!sanitized || Object.keys(sanitized).length === 0) {
-           this.logger?.debug?.(
-             `[persistTranslationsForScenarios] scenario ${scenario.id}: no non-empty metadata, skipping`,
-           );
-           continue;
-         }
- 
-         if (!languagesFiltered.length) {
-           this.logger?.warn?.(
-             `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
-           );
-           continue;
-         }
- 
-         emitProgress?.(ScenarioTranslationStatus.STARTED, {
-           completed: 0,
-           total: languageCodesToTranslate.length,
-         });
- 
-         this.logger.info(
-           `[persistTranslationsForScenarios] invoking translation API for scenario ${
-             scenario.id
-           } → codes: ${languageCodesToTranslate.join(', ')}`,
-         );
-         const translatedMap =
-           await this.buildTranslatedMetadataForLanguageCodes(
-             sanitized as Partial<MetadataShape>,
-             languageCodesToTranslate,
-             translationConsiderableData as TranslationConsiderableData,
-             onLanguageProgress,
-           );
+        const sanitized = this.sanitizeMetadata(rawMetadata);
+
+        const languageVoices =
+          resolveLanguageVoices?.(scenario) ??
+          scenario.metadata?.languageVoices;
+        const languagesFiltered =
+          await this.getTranslationTargetLanguagesFromLanguageVoices(
+            languageVoices,
+          );
+
+        const existingTranslations =
+          await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+            scenario.id,
+          );
+        const existingLanguageIds = new Set(
+          (existingTranslations ?? []).map((r) => Number(r.languageId)),
+        );
+
+        const newLanguageCodes = languagesFiltered
+          .filter((l) => !existingLanguageIds.has(l.language_id))
+          .map((l) => l.translationCode);
+
+        const fieldsChanged = this.hasTranslatableFieldsChanged(
+          scenario,
+          sanitized as Partial<MetadataShape>,
+        );
+
+        if (!fieldsChanged && newLanguageCodes.length === 0) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no translatable fields have changed and no new languages, skipping translations`,
+          );
+          continue;
+        }
+
+        const languageCodesToTranslate = fieldsChanged
+          ? languagesFiltered.map((l) => l.translationCode)
+          : newLanguageCodes;
+
+        if (languageCodesToTranslate.length === 0) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no languages to translate, skipping`,
+          );
+          continue;
+        }
+
+        if (!sanitized || Object.keys(sanitized).length === 0) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no non-empty metadata, skipping`,
+          );
+          continue;
+        }
+
+        if (!languagesFiltered.length) {
+          this.logger?.warn?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
+          );
+          continue;
+        }
+
+        emitProgress?.(ScenarioTranslationStatus.STARTED, {
+          completed: 0,
+          total: languageCodesToTranslate.length,
+        });
+
+        this.logger.info(
+          `[persistTranslationsForScenarios] invoking translation API for scenario ${
+            scenario.id
+          } → codes: ${languageCodesToTranslate.join(', ')}`,
+        );
+        const translatedMap =
+          await this.buildTranslatedMetadataForLanguageCodes(
+            sanitized as Partial<MetadataShape>,
+            languageCodesToTranslate,
+            translationConsiderableData as TranslationConsiderableData,
+            onLanguageProgress,
+          );
 
         // Build translatedList: map back to languageId
         const translatedList: Array<CreateScenarioTranslation> = [];
@@ -3119,7 +3135,7 @@ export class ScenarioService {
           );
           continue;
         }
-        
+
         const existingLanguageIdSet = new Set(
           (existingTranslations ?? []).map((r) => Number(r.languageId)),
         );

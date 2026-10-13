@@ -463,7 +463,9 @@ export class LearnController {
   @ApiOperation({ summary: 'Backfill translations for all active scenarios' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Post('scenarios/translate-all')
-  async translateAllScenarios(@CurrentUser() tokenUser: TokenUser): Promise<SuccessResponse> {
+  async translateAllScenarios(
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<SuccessResponse> {
     this.scenarioService.translateAllActiveScenarios(tokenUser.id);
     return { success: true };
   }

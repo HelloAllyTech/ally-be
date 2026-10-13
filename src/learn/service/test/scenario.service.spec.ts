@@ -5536,7 +5536,7 @@ describe('ScenarioService', () => {
 
       scenariosRepository.findOne.mockResolvedValue(originalScenario as any);
       const mockUpdate = jest.fn().mockResolvedValue({ affected: 1 });
-      
+
       const mockEntityManager = {
         getRepository: jest.fn((entity) => {
           if (entity === Scenarios) {
@@ -5548,10 +5548,10 @@ describe('ScenarioService', () => {
           return {
             find: jest.fn().mockResolvedValue([]),
             delete: jest.fn(),
-            create: jest.fn().mockImplementation(data => data),
+            create: jest.fn().mockImplementation((data) => data),
             save: jest.fn().mockResolvedValue(true),
             update: jest.fn().mockResolvedValue({ affected: 1 }),
-          }
+          };
         }),
       };
 
@@ -5559,25 +5559,29 @@ describe('ScenarioService', () => {
         cb(mockEntityManager),
       );
 
-
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         { id: 1, translationCode: 'en', label: 'English', active: true },
         { id: 2, translationCode: 'mr', label: 'Marathi', active: true },
       ] as any);
 
       openaiTranslationsService.translateScenarioData.mockResolvedValue({
-          mr: {
-            title: 'Translated title in mr',
-            description: 'Translated description in mr',
-          },
-        });
+        mr: {
+          title: 'Translated title in mr',
+          description: 'Translated description in mr',
+        },
+      });
 
-      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue([
-        {
-          languageId: 1,
-          metadata: { title: 'English Title', description: 'English Description' },
-        } as any,
-      ]);
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            languageId: 1,
+            metadata: {
+              title: 'English Title',
+              description: 'English Description',
+            },
+          } as any,
+        ],
+      );
 
       const updateDto: UpdateScenarioDto = {
         // No text fields changed, only languageVoices
@@ -5585,7 +5589,7 @@ describe('ScenarioService', () => {
       };
 
       await service.updateScenario(scenarioId, updateDto, 1);
-      
+
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
       ).toHaveBeenCalledWith(
@@ -5605,33 +5609,47 @@ describe('ScenarioService', () => {
       expect(
         scenarioTranslationsRepository.updateScenarioTranslations,
       ).not.toHaveBeenCalled();
-      
+
       const updateCall = mockUpdate.mock.calls[1];
 
       expect(updateCall[0]).toBe(scenarioId);
       expect(updateCall[1].translations).toEqual(
         expect.objectContaining({
-            en: {
-              title: 'English Title',
-              description: 'English Description',
-            },
-            mr: {
-              title: 'Translated title in mr',
-              description: 'Translated description in mr',
-            },
-          })
-      )
+          en: {
+            title: 'English Title',
+            description: 'English Description',
+          },
+          mr: {
+            title: 'Translated title in mr',
+            description: 'Translated description in mr',
+          },
+        }),
+      );
     });
 
     it('backfill should translate only missing languages for active scenarios', async () => {
-      const scenario1 = { ...mockScenario, id: 1, status: ScenarioStatus.ACTIVE, metadata: { languageVoices: { '1': 'v1', '2': 'v2', '3': 'v3' } }, translations: { en: { title: 'T' } } };
-      const scenario2 = { ...mockScenario, id: 2, status: ScenarioStatus.ACTIVE, metadata: { languageVoices: { '1': 'v1', '2': 'v2', '3': 'v3' } }, translations: { en: { title: 'T' }, mr: { title: 'T' } } };
+      const scenario1 = {
+        ...mockScenario,
+        id: 1,
+        status: ScenarioStatus.ACTIVE,
+        metadata: { languageVoices: { '1': 'v1', '2': 'v2', '3': 'v3' } },
+        translations: { en: { title: 'T' } },
+      };
+      const scenario2 = {
+        ...mockScenario,
+        id: 2,
+        status: ScenarioStatus.ACTIVE,
+        metadata: { languageVoices: { '1': 'v1', '2': 'v2', '3': 'v3' } },
+        translations: { en: { title: 'T' }, mr: { title: 'T' } },
+      };
 
       const activeScenarios = [scenario1, scenario2];
-      const mockScenariosRepo = { find: jest.fn().mockResolvedValue(activeScenarios) };
+      const mockScenariosRepo = {
+        find: jest.fn().mockResolvedValue(activeScenarios),
+      };
 
       const mockEntityManager = {
-        getRepository: jest.fn().mockReturnValue(mockScenariosRepo)
+        getRepository: jest.fn().mockReturnValue(mockScenariosRepo),
       };
 
       (dataSource.transaction as jest.Mock).mockImplementation(async (cb) =>
@@ -5641,19 +5659,21 @@ describe('ScenarioService', () => {
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
         .mockResolvedValueOnce([{ languageId: 1 }] as any)
         .mockResolvedValueOnce([{ languageId: 1 }, { languageId: 2 }] as any);
-      
+
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         { id: 1, translationCode: 'en', label: 'English', active: true },
         { id: 2, translationCode: 'mr', label: 'Marathi', active: true },
         { id: 3, translationCode: 'hi', label: 'Hindi', active: true },
       ] as any);
 
-      openaiTranslationsService.translateScenarioData.mockImplementation(async (data, codes) => {
-        return codes.reduce((acc: any, code: string) => {
-          acc[code] = { title: `T in ${code}` };
-          return acc;
-        }, {});
-      });
+      openaiTranslationsService.translateScenarioData.mockImplementation(
+        async (data, codes) => {
+          return codes.reduce((acc: any, code: string) => {
+            acc[code] = { title: `T in ${code}` };
+            return acc;
+          }, {});
+        },
+      );
 
       // We need to properly mock getRepository for the transaction.
       const mockUpdate = jest.fn().mockResolvedValue({ affected: 1 });
@@ -5662,38 +5682,44 @@ describe('ScenarioService', () => {
           return {
             find: jest.fn().mockResolvedValue(activeScenarios),
             update: mockUpdate,
-          }
+          };
         }
         return {
-          getScenarioTranslationsByScenarioId: scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
-        }
+          getScenarioTranslationsByScenarioId:
+            scenarioTranslationsRepository.getScenarioTranslationsByScenarioId,
+        };
       });
-      
+
       await service.translateAllActiveScenarios(1);
 
       // wait for the background job
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(scenarioTranslationsRepository.createScenarioTranslations).toHaveBeenCalledTimes(2);
-      
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledTimes(2);
+
       // For scenario 1, 'mr' and 'hi' are missing
-      expect(scenarioTranslationsRepository.createScenarioTranslations).toHaveBeenCalledWith(
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ languageId: 2, scenarioId: 1 }),
           expect.objectContaining({ languageId: 3, scenarioId: 1 }),
-        ])
+        ]),
       );
 
       // For scenario 2, only 'hi' is missing
-      expect(scenarioTranslationsRepository.createScenarioTranslations).toHaveBeenCalledWith(
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ languageId: 3, scenarioId: 2 }),
-        ])
+        ]),
       );
-
     });
   });
-  
+
   describe('persistTranslationsForScenarios', () => {
     let persistTranslationsForScenarios: (
       scenarios: any[],
