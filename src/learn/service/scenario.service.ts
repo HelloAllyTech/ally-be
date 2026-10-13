@@ -42,6 +42,7 @@ import { ScenariosRepository } from '../repository/scenario.repository';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
+import { ScenarioTranslations } from '../entity/scenario-translation.entity';
 import {
   CreateScenarioEventsDto,
   EventMappingDto,
@@ -919,7 +920,7 @@ export class ScenarioService {
                 gender: scenario.metadata?.gender,
               };
 
-              this.persistTranslationsForScenarios(
+              await this.persistTranslationsForScenarios(
                 [scenario],
                 () =>
                   this.sanitizeMetadata({
@@ -943,6 +944,7 @@ export class ScenarioService {
                   jobId: randomUUID(),
                   action: ScenarioTranslationAction.CREATE,
                 },
+                entityManager,
               );
             }
           }
@@ -1555,7 +1557,7 @@ export class ScenarioService {
             age: scenario.metadata?.age,
             gender: scenario.metadata?.gender,
           };
-          this.persistTranslationsForScenarios(
+          await this.persistTranslationsForScenarios(
             [scenario], // single-item array so helper can reuse same logic
             () =>
               this.sanitizeMetadata({
@@ -1575,6 +1577,7 @@ export class ScenarioService {
               jobId: randomUUID(),
               action: ScenarioTranslationAction.UPDATE,
             },
+            entityManager,
           );
         }
         await this.updateScenarioTerminationEvents(
@@ -2936,6 +2939,7 @@ export class ScenarioService {
       jobId: string;
       action: ScenarioTranslationAction;
     },
+    manager?: EntityManager,
   ) {
     if (!scenarios.length) {
       return;
@@ -3074,10 +3078,12 @@ export class ScenarioService {
         }
 
         // Fetch existing translations for this scenario to split create vs update
-        const existingTranslations =
-          await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
-            scenario.id,
-          );
+        const scenarioTranslationsRepository = manager
+          ? manager.getRepository(ScenarioTranslations)
+          : this.scenarioTranslationsRepository;
+        const existingTranslations = await scenarioTranslationsRepository.find({
+          where: { scenarioId: scenario.id },
+        });
 
         const existingLanguageIdSet = new Set(
           (existingTranslations ?? []).map((r) => Number(r.languageId)),
@@ -3108,15 +3114,19 @@ export class ScenarioService {
 
         // Persist creates first
         if (toCreate.length) {
-          await this.scenarioTranslationsRepository.createScenarioTranslations(
-            toCreate,
-          );
+          await scenarioTranslationsRepository.save(toCreate);
         }
 
         if (toUpdate.length) {
-          await this.scenarioTranslationsRepository.updateScenarioTranslations(
-            toUpdate,
-          );
+          for (const item of toUpdate) {
+            await scenarioTranslationsRepository.update(
+              {
+                scenarioId: item.scenarioId,
+                languageId: item.languageId,
+              },
+              { metadata: item.metadata },
+            );
+          }
         }
 
         const formattedResult: Record<string, ScenarioAppLangugeTranslations> =
@@ -3133,9 +3143,12 @@ export class ScenarioService {
           ...formattedResult,
         };
 
-        this.dataSource
-          .getRepository(Scenarios)
-          .update(scenario.id, { translations: mergedTranslations });
+        const scenariosRepo = manager
+          ? manager.getRepository(Scenarios)
+          : this.dataSource.getRepository(Scenarios);
+        scenariosRepo.update(scenario.id, {
+          translations: mergedTranslations,
+        });
 
         emitProgress?.(ScenarioTranslationStatus.COMPLETED, {
           completed: languageCodes.length,

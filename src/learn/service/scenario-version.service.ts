@@ -295,9 +295,7 @@ export class ScenarioVersionService {
     // runs in ONE transaction so a mid-publish failure can't leave the live
     // scenario half-updated. updateScenario/mapEventsToScenario/
     // deleteScenarioEvents each accept this manager and skip opening their own
-    // transaction. (Note: updateScenario's translation upserts still run on the
-    // main connection afterwards, as they always have — translations remain
-    // eventually-consistent.)
+    // transaction.
     return this.dataSource.transaction(async (em) => {
       // 1. Materialise the snapshot into the live scenario + related tables.
       await this.scenarioService.updateScenario(scenarioId, config, userId, em);

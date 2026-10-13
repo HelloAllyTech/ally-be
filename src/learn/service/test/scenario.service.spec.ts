@@ -264,6 +264,10 @@ describe('ScenarioService', () => {
         id: 1,
         metadata: { title: 'Prueba' },
       }),
+      create: jest.fn((arg) => arg),
+      find: jest.fn().mockResolvedValue([]),
+      save: jest.fn(),
+      update: jest.fn(),
       createScenarioTranslations: jest.fn(),
       updateScenarioTranslations: jest.fn(),
     };
@@ -5727,15 +5731,11 @@ describe('ScenarioService', () => {
         },
       ] as any);
 
-      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
-        [],
-      );
+      scenarioTranslationsRepository.find.mockResolvedValue([]);
 
       await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
-      expect(
-        scenarioTranslationsRepository.createScenarioTranslations,
-      ).toHaveBeenCalledWith([
+      expect(scenarioTranslationsRepository.save).toHaveBeenCalledWith([
         {
           scenarioId: 1,
           languageId: 2,
@@ -5775,33 +5775,31 @@ describe('ScenarioService', () => {
         },
       ] as any);
 
-      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
-        [
-          {
-            scenarioId: 1,
-            languageId: 2,
-            id: '2',
-            metadata: {},
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-      );
-
-      await persistTranslationsForScenarios(scenarios, metadataExtractor);
-
-      expect(
-        scenarioTranslationsRepository.updateScenarioTranslations,
-      ).toHaveBeenCalledWith([
+      scenarioTranslationsRepository.find.mockResolvedValue([
         {
           scenarioId: 1,
           languageId: 2,
+          id: '2',
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
+
+      expect(scenarioTranslationsRepository.update).toHaveBeenCalledWith(
+        {
+          scenarioId: 1,
+          languageId: 2,
+        },
+        {
           metadata: expect.objectContaining({
             title: 'Updated Title',
             description: 'Updated Description',
           }),
         },
-      ]);
+      );
 
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
@@ -5841,33 +5839,29 @@ describe('ScenarioService', () => {
         },
       });
 
-      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
-        [
-          {
-            scenarioId: 1,
-            languageId: 2,
-            id: '2',
-            metadata: { openingStatements: ['manual hi line'] },
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-      );
+      scenarioTranslationsRepository.find.mockResolvedValue([
+        {
+          scenarioId: 1,
+          languageId: 2,
+          id: '2',
+          metadata: { openingStatements: ['manual hi line'] },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
-      expect(
-        scenarioTranslationsRepository.updateScenarioTranslations,
-      ).toHaveBeenCalledWith([
-        expect.objectContaining({
-          languageId: 2,
+      expect(scenarioTranslationsRepository.update).toHaveBeenCalledWith(
+        { languageId: 2, scenarioId: 1 },
+        {
           metadata: expect.objectContaining({
             title: 'T-hi',
             description: 'D-hi',
             openingStatements: ['manual hi line'],
           }),
-        }),
-      ]);
+        },
+      );
     });
 
     it('should continue processing when one scenario throws an error', async () => {
@@ -5896,15 +5890,13 @@ describe('ScenarioService', () => {
         },
       ] as any);
 
-      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
+      scenarioTranslationsRepository.find
         .mockResolvedValueOnce([])
         .mockRejectedValueOnce(new Error('Database error'));
 
       await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
-      expect(
-        scenarioTranslationsRepository.createScenarioTranslations,
-      ).toHaveBeenCalledTimes(1);
+      expect(scenarioTranslationsRepository.save).toHaveBeenCalledTimes(1);
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('unexpected error processing scenario 2'),
