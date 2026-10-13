@@ -93,6 +93,7 @@ export class TrackService {
         coverImageUrl: trackData.coverImageUrl,
         status: trackData.status,
         isGlobal: trackData.isGlobal,
+        isPublicView: trackData.isPublicView ?? false,
         totalItems: trackData.totalItems,
         estimatedDurationMinutes: trackData.estimatedDurationMinutes,
         isAssignedToTenant: filters?.tenantId ? !!trackTenant : undefined,
@@ -127,6 +128,7 @@ export class TrackService {
       description: this.sanitizeDescription(createTrackDto.description),
       coverImageUrl: createTrackDto.coverImageUrl,
       isGlobal: createTrackDto.isGlobal ?? false,
+      isPublicView: createTrackDto.isPublicView ?? false,
       status,
       estimatedDurationMinutes: createTrackDto.estimatedDurationMinutes,
       competencyIds,
@@ -181,6 +183,7 @@ export class TrackService {
       title: updateTrackDto.title ?? track.title,
       coverImageUrl: updateTrackDto.coverImageUrl ?? track.coverImageUrl,
       isGlobal: updateTrackDto.isGlobal ?? track.isGlobal,
+      isPublicView: updateTrackDto.isPublicView ?? track.isPublicView,
       estimatedDurationMinutes:
         updateTrackDto.estimatedDurationMinutes ??
         track.estimatedDurationMinutes,
@@ -424,6 +427,9 @@ export class TrackService {
         coverImageUrl: source.coverImageUrl,
         status: TrackStatus.DRAFT,
         isGlobal: source.isGlobal,
+        // A copy starts private: sharing a course publicly is a decision made
+        // about that course, and the copy has a different link anyway.
+        isPublicView: false,
         totalItems: source.totalItems,
         estimatedDurationMinutes: source.estimatedDurationMinutes,
         translations: source.translations,
@@ -718,6 +724,7 @@ export class TrackService {
       coverImageUrl: track.coverImageUrl,
       status: track.status,
       competencyIds: track.competencyIds ?? null,
+      isPublicView: track.isPublicView ?? false,
     };
   }
 
