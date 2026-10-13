@@ -1693,7 +1693,16 @@ export class ScenarioService {
           updateScenarioDto.translationTitle !== undefined ||
           updateScenarioDto.translationReminders !== undefined)
       ) {
-        const fresh = await this.scenariosRepository.findOne({
+        // On the publish path `manager` is still an OPEN transaction holding
+        // the row lock from the UPDATE above, so these upserts must run on it
+        // too — a pooled connection would block on that lock until
+        // statement_timeout ("Failed to update scenario: canceling statement
+        // due to statement timeout" on every versioned publish with
+        // translations). Reading through it also lets each upsert see the
+        // previous one's uncommitted merge of scenarios.translations.
+        const fresh = await (
+          manager ? manager.getRepository(Scenarios) : this.scenariosRepository
+        ).findOne({
           where: { id },
         });
         if (updateScenarioDto.translationOpeningStatements !== undefined) {
@@ -1701,6 +1710,7 @@ export class ScenarioService {
             id,
             updateScenarioDto.translationOpeningStatements,
             fresh?.metadata,
+            manager,
           );
         }
         if (updateScenarioDto.translationDescription !== undefined) {
@@ -1708,6 +1718,7 @@ export class ScenarioService {
             id,
             updateScenarioDto.translationDescription,
             fresh?.metadata,
+            manager,
           );
         }
         if (updateScenarioDto.translationTitle !== undefined) {
@@ -1715,6 +1726,7 @@ export class ScenarioService {
             id,
             updateScenarioDto.translationTitle,
             fresh?.metadata,
+            manager,
           );
         }
         if (updateScenarioDto.translationReminders !== undefined) {
@@ -1722,6 +1734,7 @@ export class ScenarioService {
             id,
             updateScenarioDto.translationReminders,
             fresh?.metadata,
+            manager,
           );
         }
       }
@@ -2506,6 +2519,11 @@ export class ScenarioService {
     scenarioId: number,
     translationDescription: Record<string, string>,
     metadataForPrimaryResolution?: Record<string, any> | null,
+    // When provided, every read AND write goes through the caller's
+    // transaction. publishVersion holds a row lock on `scenarios` for the
+    // whole publish; a write from the pool here would wait on that lock
+    // forever (the transaction is waiting on us) and die at statement_timeout.
+    manager?: EntityManager,
   ): Promise<void> {
     const primaryId =
       await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
@@ -2515,6 +2533,7 @@ export class ScenarioService {
     const existing =
       await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
         scenarioId,
+        manager,
       );
 
     const toCreate: CreateScenarioTranslation[] = [];
@@ -2545,11 +2564,13 @@ export class ScenarioService {
     if (toCreate.length) {
       await this.scenarioTranslationsRepository.createScenarioTranslations(
         toCreate,
+        manager,
       );
     }
     if (toUpdate.length) {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
+        manager,
       );
     }
 
@@ -2562,7 +2583,10 @@ export class ScenarioService {
       const languages =
         await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
       if (languages.length) {
-        const scenario = await this.scenariosRepository.findOne({
+        const scenariosRepo = manager
+          ? manager.getRepository(Scenarios)
+          : this.dataSource.getRepository(Scenarios);
+        const scenario = await scenariosRepo.findOne({
           where: { id: scenarioId },
         });
         const currentTranslations: Record<string, any> =
@@ -2578,9 +2602,9 @@ export class ScenarioService {
             description: normalizedByLanguageId[Number(language.id)],
           };
         }
-        await this.dataSource
-          .getRepository(Scenarios)
-          .update(scenarioId, { translations: mergedTranslations });
+        await scenariosRepo.update(scenarioId, {
+          translations: mergedTranslations,
+        });
       }
     }
   }
@@ -2589,6 +2613,11 @@ export class ScenarioService {
     scenarioId: number,
     translationTitle: Record<string, string>,
     metadataForPrimaryResolution?: Record<string, any> | null,
+    // When provided, every read AND write goes through the caller's
+    // transaction. publishVersion holds a row lock on `scenarios` for the
+    // whole publish; a write from the pool here would wait on that lock
+    // forever (the transaction is waiting on us) and die at statement_timeout.
+    manager?: EntityManager,
   ): Promise<void> {
     const primaryId =
       await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
@@ -2598,6 +2627,7 @@ export class ScenarioService {
     const existing =
       await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
         scenarioId,
+        manager,
       );
 
     const toCreate: CreateScenarioTranslation[] = [];
@@ -2628,11 +2658,13 @@ export class ScenarioService {
     if (toCreate.length) {
       await this.scenarioTranslationsRepository.createScenarioTranslations(
         toCreate,
+        manager,
       );
     }
     if (toUpdate.length) {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
+        manager,
       );
     }
 
@@ -2644,7 +2676,10 @@ export class ScenarioService {
       const languages =
         await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
       if (languages.length) {
-        const scenario = await this.scenariosRepository.findOne({
+        const scenariosRepo = manager
+          ? manager.getRepository(Scenarios)
+          : this.dataSource.getRepository(Scenarios);
+        const scenario = await scenariosRepo.findOne({
           where: { id: scenarioId },
         });
         const currentTranslations: Record<string, any> =
@@ -2660,9 +2695,9 @@ export class ScenarioService {
             title: normalizedByLanguageId[Number(language.id)],
           };
         }
-        await this.dataSource
-          .getRepository(Scenarios)
-          .update(scenarioId, { translations: mergedTranslations });
+        await scenariosRepo.update(scenarioId, {
+          translations: mergedTranslations,
+        });
       }
     }
   }
@@ -2671,6 +2706,11 @@ export class ScenarioService {
     scenarioId: number,
     translationReminders: Record<string, string[]>,
     metadataForPrimaryResolution?: Record<string, any> | null,
+    // When provided, every read AND write goes through the caller's
+    // transaction. publishVersion holds a row lock on `scenarios` for the
+    // whole publish; a write from the pool here would wait on that lock
+    // forever (the transaction is waiting on us) and die at statement_timeout.
+    manager?: EntityManager,
   ): Promise<void> {
     const primaryId =
       await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
@@ -2680,6 +2720,7 @@ export class ScenarioService {
     const existing =
       await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
         scenarioId,
+        manager,
       );
 
     const toCreate: CreateScenarioTranslation[] = [];
@@ -2712,11 +2753,13 @@ export class ScenarioService {
     if (toCreate.length) {
       await this.scenarioTranslationsRepository.createScenarioTranslations(
         toCreate,
+        manager,
       );
     }
     if (toUpdate.length) {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
+        manager,
       );
     }
 
@@ -2729,7 +2772,10 @@ export class ScenarioService {
       const languages =
         await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
       if (languages.length) {
-        const scenario = await this.scenariosRepository.findOne({
+        const scenariosRepo = manager
+          ? manager.getRepository(Scenarios)
+          : this.dataSource.getRepository(Scenarios);
+        const scenario = await scenariosRepo.findOne({
           where: { id: scenarioId },
         });
         const currentTranslations: Record<string, any> =
@@ -2745,9 +2791,9 @@ export class ScenarioService {
             reminders: normalizedByLanguageId[Number(language.id)],
           };
         }
-        await this.dataSource
-          .getRepository(Scenarios)
-          .update(scenarioId, { translations: mergedTranslations });
+        await scenariosRepo.update(scenarioId, {
+          translations: mergedTranslations,
+        });
       }
     }
   }
@@ -2756,6 +2802,11 @@ export class ScenarioService {
     scenarioId: number,
     translationOpeningStatements: Record<string, string[]>,
     metadataForPrimaryResolution?: Record<string, any> | null,
+    // When provided, every read AND write goes through the caller's
+    // transaction. publishVersion holds a row lock on `scenarios` for the
+    // whole publish; a write from the pool here would wait on that lock
+    // forever (the transaction is waiting on us) and die at statement_timeout.
+    manager?: EntityManager,
   ): Promise<void> {
     const primaryId =
       await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
@@ -2765,6 +2816,7 @@ export class ScenarioService {
     const existing =
       await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
         scenarioId,
+        manager,
       );
 
     const toCreate: CreateScenarioTranslation[] = [];
@@ -2797,11 +2849,13 @@ export class ScenarioService {
     if (toCreate.length) {
       await this.scenarioTranslationsRepository.createScenarioTranslations(
         toCreate,
+        manager,
       );
     }
     if (toUpdate.length) {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
+        manager,
       );
     }
   }

@@ -3723,6 +3723,87 @@ describe('ScenarioService', () => {
       expect(result).toBe(false);
     });
 
+    // Regression: publishing a scenario version runs updateScenario inside
+    // publishVersion's transaction, which holds a row lock on `scenarios`
+    // from the config UPDATE. The translation upserts then wrote
+    // scenarios.translations through the pool — a second connection that
+    // waited on that lock while the transaction waited on it, until
+    // statement_timeout ("Failed to update scenario: canceling statement due
+    // to statement timeout" on every publish of a translated simulation).
+    it("should run the translation upserts on the caller's manager when one is passed", async () => {
+      const updateDto: UpdateScenarioDto = {
+        title: 'Updated Title',
+        translationTitle: { '2': 'Título' },
+      };
+      const existingScenario = {
+        ...mockScenario,
+        isGlobal: false,
+        translations: {},
+      };
+      scenariosRepository.findOne.mockResolvedValue(existingScenario);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        null,
+      );
+      (scenarioSharedService as any).resolveOpeningDialoguePrimaryLanguageId =
+        jest.fn().mockResolvedValue(1);
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+        { id: 2, translationCode: 'es' } as any,
+      ]);
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [],
+      );
+
+      // The pooled repository must never be touched while the manager is open.
+      const pooledUpdate = jest.fn();
+      (dataSource.getRepository as jest.Mock).mockReturnValue({
+        update: pooledUpdate,
+        findOne: jest.fn().mockResolvedValue(existingScenario),
+      });
+
+      const mockScenariosRepo = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+        findOne: jest.fn().mockResolvedValue(existingScenario),
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) return mockScenariosRepo;
+          return {
+            find: jest.fn().mockResolvedValue([]),
+            findOne: jest.fn().mockResolvedValue(null),
+            delete: jest.fn().mockResolvedValue({ affected: 0 }),
+            update: jest.fn().mockResolvedValue({ affected: 1 }),
+            save: jest.fn().mockResolvedValue({}),
+            create: jest.fn().mockReturnValue([]),
+          };
+        }),
+      };
+
+      const result = await service.updateScenario(
+        1,
+        updateDto,
+        1,
+        mockEntityManager as any,
+      );
+
+      expect(result).toBe(true);
+      // The caller owns the transaction: none is opened here.
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(pooledUpdate).not.toHaveBeenCalled();
+      expect(
+        scenarioTranslationsRepository.getScenarioTranslationsByScenarioId,
+      ).toHaveBeenCalledWith(1, mockEntityManager);
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledWith(
+        [{ scenarioId: 1, languageId: 2, metadata: { title: 'Título' } }],
+        mockEntityManager,
+      );
+      // The JSONB mirror is written through the same manager.
+      expect(mockScenariosRepo.update).toHaveBeenCalledWith(1, {
+        translations: { es: { title: 'Título' } },
+      });
+    });
+
     describe('custom fields', () => {
       it('should set customFields as undefined in metadata when customFields is not provided', async () => {
         const updateDto: UpdateScenarioDto = {
