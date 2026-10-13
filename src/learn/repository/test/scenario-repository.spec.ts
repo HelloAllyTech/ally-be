@@ -172,6 +172,36 @@ describe('ScenariosRepository', () => {
         'scenario.translations',
       ]);
     });
+
+    it('should return title and description from latest published version', async () => {
+      const scenarios = [
+        { id: 1, title: 'v1 title', description: 'v1 description' },
+      ];
+      const versions = [
+        {
+          scenarioId: 1,
+          versionNumber: 2,
+          config: { title: 'v2 title', description: 'v2 description' },
+        },
+        {
+          scenarioId: 1,
+          versionNumber: 1,
+          config: { title: 'v1 title', description: 'v1 description' },
+        },
+      ];
+
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([scenarios, 1] as any);
+      const findMock = jest.fn().mockResolvedValue(versions);
+      jest.spyOn(mockDataSource, 'getRepository').mockReturnValue({
+        find: findMock,
+      } as any);
+
+      const result = await repository.getScenarios();
+
+      expect(result.data[0].title).toBe('v2 title');
+      expect(result.data[0].description).toBe('v2 description');
+      expect(findMock).toHaveBeenCalled();
+    });
   });
 
   describe('getScenarioById', () => {
