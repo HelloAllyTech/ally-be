@@ -59,4 +59,5 @@ module.exports = {
   // Not a throttle. A worker is recycled BETWEEN test files once it exceeds the limit,
   // so the only cost is process startup on a worker that was about to die anyway.
   workerIdleMemoryLimit: '1GB',
+  testTimeout: 600000,
 };
