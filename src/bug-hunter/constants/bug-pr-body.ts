@@ -10,6 +10,24 @@ export const PR_BODY_SLOT_UNTOUCHED =
   '<!-- fixer: left untouched on purpose -->';
 
 /**
+ * The admin link a fix PR carries: the Bug Hunter page with this bug's drawer
+ * open, or null when no admin base URL is configured.
+ *
+ * `?bug=` because that is the only param the page opens a drawer from
+ * (`BUG_HUNTER_PARAM.bug` in ally-web), and what the admin's own links use.
+ * This used to write `?finding=`, which the page ignores — every "Open in the
+ * admin" link landed on the table with nothing open.
+ */
+export function bugAdminUrl(
+  adminBaseUrl: string | null | undefined,
+  findingId: string,
+): string | null {
+  return adminBaseUrl
+    ? `${adminBaseUrl.replace(/\/+$/, '')}/bug-hunter?bug=${encodeURIComponent(findingId)}`
+    : null;
+}
+
+/**
  * A fix PR's description, rendered from the case file (OPP-0784).
  *
  * A reviewer used to reconstruct what had been checked from a description

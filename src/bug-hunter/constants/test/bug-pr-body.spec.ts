@@ -2,6 +2,7 @@ import { BugCaseFile } from '../bug-case-file';
 import {
   PR_BODY_SLOT_CHANGE,
   PR_BODY_SLOT_UNTOUCHED,
+  bugAdminUrl,
   renderPrBody,
 } from '../bug-pr-body';
 import { BugHuntDecision } from '../../entity/bug-hunt-decision.entity';
@@ -242,7 +243,7 @@ describe('renderPrBody', () => {
       }),
       {
         repo: 'ally-web',
-        adminUrl: 'https://admin.example.com/bug-hunter?finding=f-1',
+        adminUrl: bugAdminUrl('https://admin.example.com', 'f-1'),
       },
     );
     expect(body).toContain('- **Reported by:** a staff member on 2026-10-02');
@@ -262,7 +263,7 @@ describe('renderPrBody', () => {
       '**D7** retry_fix — by the rule (the model would have: ask_human)',
     );
     expect(body).toContain(
-      '[Open in the admin](https://admin.example.com/bug-hunter?finding=f-1)',
+      '[Open in the admin](https://admin.example.com/bug-hunter?bug=f-1)',
     );
   });
 
@@ -306,5 +307,26 @@ describe('renderPrBody', () => {
     expect(nothing).toContain(
       'Not independently verified before this fix; the regression test in this PR is the proof.',
     );
+  });
+});
+
+describe('bugAdminUrl', () => {
+  // The admin page opens a drawer from `?bug=` and nothing else; `?finding=`
+  // landed on the table with nothing open.
+  it('links to the Bug Hunter page with the drawer open on this bug', () => {
+    expect(bugAdminUrl('https://admin.example.com', 'f-1')).toBe(
+      'https://admin.example.com/bug-hunter?bug=f-1',
+    );
+  });
+
+  it('drops trailing slashes from the base URL', () => {
+    expect(bugAdminUrl('https://admin.example.com//', 'f-1')).toBe(
+      'https://admin.example.com/bug-hunter?bug=f-1',
+    );
+  });
+
+  it('is null when no admin base URL is configured', () => {
+    expect(bugAdminUrl('', 'f-1')).toBeNull();
+    expect(bugAdminUrl(undefined, 'f-1')).toBeNull();
   });
 });
