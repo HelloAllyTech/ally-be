@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { Public } from 'src/auth/decorators/auth.metadata';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { TrackEnrollmentService } from '../service/track-enrollment.service';
 import { TrackQuizService } from '../service/track-quiz.service';
@@ -78,6 +79,39 @@ export class TrackLearnerController {
       trackId,
       languageCode,
     );
+  }
+
+  @Public()
+  @ApiOperation({
+    summary: 'Public outline of a course whose share link is public',
+    description:
+      'No login required. Served only while the course is published and its ' +
+      'author has switched public view on; otherwise 404, with the same ' +
+      'message whether or not the course exists. Titles, descriptions and ' +
+      'component types only — no content, no progress.',
+  })
+  @Get('tracks/:trackId/public')
+  async getPublicTrackOutline(
+    @Param('trackId', ParseUUIDPipe) trackId: string,
+    @Query('languageCode') languageCode?: string,
+  ) {
+    return this.trackEnrollmentService.getPublicTrackOutline(
+      trackId,
+      languageCode,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Whether the signed-in learner can take this course',
+    description:
+      'Same rules as the detail view and enrolment, returned as ' +
+      '`{hasAccess, enrolled, reason}` instead of a 403 — the shared-link ' +
+      'landing page asks this right after login.',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TRACK])
+  @Get('tracks/:trackId/access')
+  async getTrackAccess(@Param('trackId', ParseUUIDPipe) trackId: string) {
+    return this.trackEnrollmentService.getTrackAccess(trackId);
   }
 
   @ApiOperation({
