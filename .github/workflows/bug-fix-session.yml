@@ -216,6 +216,33 @@ jobs:
             exit 1
           fi
 
+      - name: Check out the other Ally repos, read-only
+        env:
+          GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+        run: |
+          set -uo pipefail
+          # The fix belongs where the fault is, and the fault is often in
+          # another repo: on 2026-10-12 a session "fixed" untranslated titles
+          # in the frontend because it could not see that the backend never
+          # generated them. Every other Ally repo is cloned at its default
+          # branch under /tmp/siblings/<repo> for the agent to READ with
+          # shell tools. Outside the workspace so nothing here is ever
+          # committed or linted; .git removed so no token is left on disk;
+          # write permission dropped. A repo that cannot be fetched is a
+          # warning, never a failure: the protocol tells the agent to say so.
+          mkdir -p /tmp/siblings
+          for r in ally-be ally-web ally-mobile ally-ai ally-ai-learn; do
+            [ "$r" = "${GITHUB_REPOSITORY##*/}" ] && continue
+            if git clone --quiet --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/HelloAllyTech/$r.git" "/tmp/siblings/$r" 2>/dev/null; then
+              rm -rf "/tmp/siblings/$r/.git"
+              echo "sibling $r ready"
+            else
+              rm -rf "/tmp/siblings/$r"
+              echo "::warning::Could not clone $r; the session continues without it."
+            fi
+          done
+          chmod -R a-w /tmp/siblings 2>/dev/null || true
+
       - name: Persist credentials to disk for the agent's own shell
         env:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}

@@ -87,6 +87,8 @@ on:
           "sweep" (default) runs the nightly protocol. "pr_review" (OPP-0785)
           reviews one open pull request on its head, read-only, and files
           findings linked to it; needs pr_number and a run_id from ally-be.
+          "map" writes Bug Hunter's feature map for this repo, read-only
+          (one card per user-facing feature); needs a run_id from ally-be.
       pr_number:
         required: false
         type: string
@@ -158,6 +160,9 @@ jobs:
           if [ "${{ inputs.mode }}" = "pr_review" ] && [ -z "$RUN_ID" ]; then
             echo "::error::A PR review run is only ever started by ally-be, which supplies run_id."; exit 1
           fi
+          if [ "${{ inputs.mode }}" = "map" ] && [ -z "$RUN_ID" ]; then
+            echo "::error::A feature-map run is only ever started by ally-be, which supplies run_id."; exit 1
+          fi
           if [ -z "$RUN_ID" ]; then
             # The scheduled path. ally-be opens the run for a human-triggered
             # sweep so the tab can show it straight away; a cron has to open its
@@ -200,7 +205,9 @@ jobs:
           # ally-be builds the prompt: it embeds this repo's test and lint
           # commands, the live mode (MANUAL stops at pending_approval, AI carries
           # on into Fix), and the merge cap.
-          if [ "${{ inputs.mode }}" = "pr_review" ]; then
+          if [ "${{ inputs.mode }}" = "map" ]; then
+            PROMPT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/runs/${{ steps.cfg.outputs.run_id }}/feature-map-prompt?repo=${{ steps.cfg.outputs.repo }}"
+          elif [ "${{ inputs.mode }}" = "pr_review" ]; then
             PROMPT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/pr-review-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}"
           else
             PROMPT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/sweep-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}&deep=${{ inputs.deep || 'false' }}"
@@ -304,6 +311,34 @@ jobs:
             exit 1
           fi
 
+      - name: Check out the other Ally repos, read-only
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+        run: |
+          set -uo pipefail
+          # The fix belongs where the fault is, and the fault is often in
+          # another repo: on 2026-10-12 a session "fixed" untranslated titles
+          # in the frontend because it could not see that the backend never
+          # generated them. Every other Ally repo is cloned at its default
+          # branch under /tmp/siblings/<repo> for the agent to READ with
+          # shell tools. Outside the workspace so nothing here is ever
+          # committed or linted; .git removed so no token is left on disk;
+          # write permission dropped. A repo that cannot be fetched is a
+          # warning, never a failure: the protocol tells the agent to say so.
+          mkdir -p /tmp/siblings
+          for r in ally-be ally-web ally-mobile ally-ai ally-ai-learn; do
+            [ "$r" = "${GITHUB_REPOSITORY##*/}" ] && continue
+            if git clone --quiet --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/HelloAllyTech/$r.git" "/tmp/siblings/$r" 2>/dev/null; then
+              rm -rf "/tmp/siblings/$r/.git"
+              echo "sibling $r ready"
+            else
+              rm -rf "/tmp/siblings/$r"
+              echo "::warning::Could not clone $r; the session continues without it."
+            fi
+          done
+          chmod -R a-w /tmp/siblings 2>/dev/null || true
+
       - name: Persist credentials to disk for the agent's own shell
         if: steps.cfg.outputs.skip != 'true'
         env:
@@ -371,7 +406,11 @@ jobs:
           # the model each turn, until the job's timeout-minutes killed it.
           # That timeout is the safety net; this is the budget.
           # A PR review is a 20-minute read, not a night's sweep (OPP-0785).
-          if [ "${{ inputs.mode }}" = "pr_review" ]; then ENGINE_CAP_SECONDS=1500; else ENGINE_CAP_SECONDS=3600; fi
+          case "${{ inputs.mode }}" in
+            pr_review) ENGINE_CAP_SECONDS=1500 ;;
+            map)       ENGINE_CAP_SECONDS=1800 ;;
+            *)         ENGINE_CAP_SECONDS=3600 ;;
+          esac
           RUN_STATUS_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status"
           RUN_REPORT_URL="${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report"
           supervise() {
