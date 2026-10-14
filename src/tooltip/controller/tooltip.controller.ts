@@ -28,8 +28,8 @@ export class TooltipController {
   @Get('active')
   @Public()
   @ApiOperation({ summary: 'Get all active tooltips (public)' })
-  async getActiveTooltips() {
-    return this.tooltipService.getActiveTooltips();
+  async getActiveTooltips(@Query('languageCode') languageCode?: string) {
+    return this.tooltipService.getActiveTooltips(languageCode);
   }
 
   @Get()
