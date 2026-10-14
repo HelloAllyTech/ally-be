@@ -725,8 +725,13 @@ export class BuilderController {
   @ApiOperation({
     summary: 'The kill switch, concurrency ceiling and defaults',
   })
-  getSettings() {
-    return this.settingsService.get();
+  async getSettings() {
+    // `dispatch` is the server's default for a new build (BUILDER_DISPATCH),
+    // read-only here: the start dialog defaults to it and can override it.
+    return {
+      ...(await this.settingsService.get()),
+      dispatch: this.buildService.defaultDispatch(),
+    };
   }
 
   @Patch('settings')

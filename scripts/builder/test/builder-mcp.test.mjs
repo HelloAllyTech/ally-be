@@ -352,6 +352,45 @@ await test('a design review derives its verdict from defects, and keeps suggesti
   }
 });
 
+await test('a code review files its findings through the tool, empty included', async () => {
+  // The reviewer runs with no shell; the prompt's curl never ran, so no review
+  // on any pull request had recorded a finding.
+  const tools = await listTools('review');
+  assert.ok(tools.includes('review'), 'the review phase has the tool');
+  for (const phase of ['code', 'plan', 'verify', 'design', 'design-review']) {
+    assert.ok(!(await listTools(phase)).includes('review'), `${phase} must not have it`);
+  }
+
+  const { call, received } = await callTool(
+    'review',
+    {
+      pullRequestId: 'pr-1',
+      findings: [
+        { key: 'xss', path: 'src/a.tsx', line: '12', body: ' promptHtml renders unsanitised. ' },
+        { key: 'blank', body: '   ' },
+      ],
+    },
+    { phase: 'review' },
+  );
+  const post = received.find((r) => r.url.endsWith('/review'));
+  assert.equal(post.parsed.pullRequestId, 'pr-1');
+  assert.deepEqual(post.parsed.findings, [
+    { key: 'xss', path: 'src/a.tsx', line: 12, body: 'promptHtml renders unsanitised.' },
+  ]);
+  assert.match(textOf(call), /review stored \(1 finding\(s\)\)/);
+
+  const clean = await callTool('review', { pullRequestId: 'pr-1', findings: [] }, { phase: 'review' });
+  const empty = clean.received.find((r) => r.url.endsWith('/review'));
+  assert.deepEqual(empty.parsed.findings, []);
+
+  const refused = await callTool(
+    'review',
+    { pullRequestId: 'pr-1', findings: [] },
+    { phase: 'review', status: 400, body: 'nope' },
+  );
+  assert.match(textOf(refused.call), /review NOT stored \(400\)/);
+});
+
 await test('an empty question is refused before it can pause the run', async () => {
   const { call, received } = await callTool('ask', { questions: [] });
 

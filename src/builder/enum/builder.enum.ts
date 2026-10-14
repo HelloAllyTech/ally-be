@@ -205,6 +205,12 @@ export enum BuilderEventType {
    * and /complete refuses a `done` for a run that never passed one.
    */
   GATE_RESULT = 'gate_result',
+  /**
+   * The target repo's own CI verdict on an issue build's pull request head
+   * (payload: repo, prNumber, prUrl, sha, state, failed). Like GATE_RESULT,
+   * read from GitHub rather than reported by the agent.
+   */
+  CI_RESULT = 'ci_result',
   /** Per-phase cost increment (plan/code/verify/finalise invocations). */
   PHASE_COST = 'phase_cost',
   /**

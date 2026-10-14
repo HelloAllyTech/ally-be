@@ -675,14 +675,23 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Every OAuth client id Ally's own apps sign in to Google with. A Google ID
+   * token must be issued to one of these; an access token to one of these or
+   * another client in the same Google Cloud project. Each variable may hold a
+   * comma-separated list, so another web client can be added without dropping
+   * the one mobile builds already use.
+   */
   get googleAuth() {
-    return {
-      webClientId: this.configService.get<string>('GOOGLE_WEB_CLIENT_ID'),
-      iosClientId: this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
-      androidClientId: this.configService.get<string>(
-        'GOOGLE_ANDROID_CLIENT_ID',
-      ),
-    };
+    const clientIds = [
+      'GOOGLE_WEB_CLIENT_ID',
+      'GOOGLE_IOS_CLIENT_ID',
+      'GOOGLE_ANDROID_CLIENT_ID',
+    ]
+      .flatMap((key) => this.configService.get<string>(key, '').split(','))
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return { clientIds };
   }
 
   get appleAuth() {

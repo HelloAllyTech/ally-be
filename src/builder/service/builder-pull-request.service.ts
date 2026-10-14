@@ -452,6 +452,7 @@ export class BuilderPullRequestService {
           `working:${workflowRun.id}`,
           `opencode is working on ${repo}#${run.issueNumber}. Live log: ${workflowRun.htmlUrl}`,
           BuilderStage.CODING,
+          { workflowRunUrl: workflowRun.htmlUrl },
         );
       }
       if (workflowRun?.status === 'completed') {
@@ -491,11 +492,23 @@ export class BuilderPullRequestService {
     if (!pr.headSha) return;
     const sha = pr.headSha.slice(0, 7);
     const rollup = await this.github.getCheckRollup(repo, pr.headSha);
+    const ci = (state: 'success' | 'failure' | 'pending') => ({
+      ci: {
+        repo,
+        prNumber: pr.number as number,
+        prUrl: pr.htmlUrl,
+        sha: pr.headSha as string,
+        state,
+        failed: rollup?.failed ?? [],
+      },
+    });
     if (rollup?.state === 'success') {
       await this.buildService.recordIssueMilestone(
         run,
         `ci-pass:${pr.headSha}`,
         `CI passed on ${sha}. The build is done; ${pr.htmlUrl} is ready for review.`,
+        undefined,
+        ci('success'),
       );
       await this.buildService.settleRun(run, BuilderRunStatus.SUCCEEDED, null);
       return;
@@ -505,6 +518,8 @@ export class BuilderPullRequestService {
         run,
         `ci-pending:${pr.headSha}`,
         `CI is running on ${sha}.`,
+        undefined,
+        ci('pending'),
       );
       return;
     }
@@ -512,6 +527,8 @@ export class BuilderPullRequestService {
       run,
       `ci-fail:${pr.headSha}`,
       `CI failed on ${sha}: ${rollup.failed.join(', ') || 'see the checks'}.`,
+      undefined,
+      ci('failure'),
     );
 
     // Once per head commit: a new commit after the request means opencode

@@ -289,6 +289,56 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('issue dispatch — what does not apply to it', () => {
+    beforeEach(() => {
+      (github as any).createIssue = jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-web/issues/41',
+        labels: ['builder'],
+      });
+    });
+
+    it("ignores Builder's model tiers and runner-minute ceiling", async () => {
+      // opencode uses the repo's BUILDER_MODEL on the repo's own Actions.
+      llmModelsRepository.find.mockResolvedValue([
+        { model: 'claude-sonnet-5', active: false },
+      ]);
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        maxRunnerMinutes: 60,
+      });
+
+      await expect(
+        service.startBuild(readySession({ runnerMinutes: 500 }) as any, 1, {
+          dispatch: 'issue',
+        }),
+      ).resolves.toBeDefined();
+      expect((github as any).createIssue).toHaveBeenCalled();
+    });
+
+    it('builds a one-repo design in the repo it names, whatever else the session lists', async () => {
+      prdService.getOrCreateDoc.mockImplementation(async () => {
+        const draft = { requirements: [], technicalPlan: '' } as any;
+        draft.technicalDesign = {
+          ...createDraftingDesign(draft, 'design-run'),
+          status: 'approved',
+          scope: [{ repo: 'ally-web', files: ['src/a.tsx'] }],
+        };
+        return { draft, versionNumber: 2 };
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+        { dispatch: 'issue' },
+      );
+
+      expect((github as any).createIssue.mock.calls[0][0]).toBe('ally-web');
+      expect(run.repos).toEqual(['ally-web']);
+    });
+  });
+
   describe('issue dispatch — the label', () => {
     beforeEach(() => {
       (github as any).createIssue = jest.fn().mockResolvedValue({
@@ -1318,6 +1368,76 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('issue builds — bookkeeping', () => {
+    it('does not count an issue build against the runner-minute ceiling', async () => {
+      sessionRepository.findOne.mockResolvedValue(readySession());
+      const run = {
+        id: 'run-15',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+        issueNumber: 113,
+        dispatchedAt: new Date(Date.now() - 40 * 60_000),
+        startedAt: new Date(Date.now() - 40 * 60_000),
+      };
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-15' },
+        expect.objectContaining({ runnerMinutes: null }),
+      );
+      expect(sessionRepository.increment).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'runnerMinutes',
+        expect.anything(),
+      );
+    });
+
+    it('keeps the Actions log link and records the CI verdict as its own event', async () => {
+      const run = { id: 'run-15', sessionId: 'session-1', cost: null };
+      runRepository.findOne.mockResolvedValue(run);
+      const ci = {
+        repo: 'ally-mobile',
+        prNumber: 114,
+        prUrl: 'https://github.com/o/ally-mobile/pull/114',
+        sha: 'abc',
+        state: 'failure' as const,
+        failed: ['Jest'],
+      };
+
+      await service.recordIssueMilestone(
+        run as any,
+        'working:9',
+        'opencode is working',
+        undefined,
+        { workflowRunUrl: 'https://github.com/o/ally-mobile/actions/runs/9' },
+      );
+      await service.recordIssueMilestone(
+        run as any,
+        'ci-fail:abc',
+        'CI failed',
+        undefined,
+        { ci },
+      );
+
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-15' },
+        {
+          cost: expect.objectContaining({
+            issueWorkflowRunUrl:
+              'https://github.com/o/ally-mobile/actions/runs/9',
+          }),
+        },
+      );
+      expect(eventService.record).toHaveBeenCalledWith(
+        run,
+        'ci_result',
+        ci,
+        null,
+      );
+    });
+  });
+
   describe('cancelRun', () => {
     const run = {
       id: 'run-1',
@@ -1355,6 +1475,42 @@ describe('BuilderBuildService', () => {
       await service.cancelRun({ ...run, githubRunId: null } as any, 7);
 
       expect(github.cancelRun).toHaveBeenCalledWith('ally-be', '123');
+    });
+
+    it("stops an issue build in its own repo, and never touches ally-be's runner", async () => {
+      // Looking for ally-be's runner here found another session's review run.
+      (github as any).closeIssue = jest.fn().mockResolvedValue(undefined);
+      github.findRunSince.mockResolvedValue({
+        id: '555',
+        status: 'in_progress',
+      });
+
+      await service.cancelRun(
+        {
+          ...run,
+          githubRunId: null,
+          issueNumber: 113,
+          repos: ['ally-mobile'],
+        } as any,
+        7,
+      );
+
+      expect(github.findRunSince).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repo: 'ally-mobile',
+          workflow: 'builder.yml',
+          event: 'issues',
+        }),
+      );
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-mobile', '555');
+      expect(github.cancelRun).not.toHaveBeenCalledWith(
+        'ally-be',
+        expect.anything(),
+      );
+      expect((github as any).closeIssue).toHaveBeenCalledWith(
+        'ally-mobile',
+        113,
+      );
     });
   });
 
