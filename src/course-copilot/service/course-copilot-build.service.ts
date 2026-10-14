@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   OnModuleDestroy,
+  Optional,
 } from '@nestjs/common';
 import { In } from 'typeorm';
 import { AppConfigService } from 'src/config/config.service';
@@ -39,6 +40,10 @@ import {
 import { SpecialistValidationError } from './specialists/specialist.types';
 import { CourseCopilotJobSkip } from './course-copilot-media.service';
 import { CourseCopilotCostService } from './course-copilot-cost.service';
+import {
+  COURSE_COPILOT_ANALYTICS_EVENTS,
+  CourseCopilotAnalyticsService,
+} from './course-copilot-analytics.service';
 import { CourseCopilotEventService } from './course-copilot-event.service';
 import { CourseCopilotJobExecutorService } from './course-copilot-job-executor.service';
 import {
@@ -133,6 +138,7 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     private readonly executor: CourseCopilotJobExecutorService,
     private readonly costService: CourseCopilotCostService,
     private readonly eventService: CourseCopilotEventService,
+    @Optional() private readonly analytics?: CourseCopilotAnalyticsService,
   ) {}
 
   onModuleDestroy() {
@@ -820,10 +826,24 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       [fresh.id],
     );
     if (wasBuilding) {
+      const spentUsd = await this.costService.spent(fresh);
       await this.eventService.record(
         fresh.id,
         CourseCopilotEventType.BUILD_FINISHED,
-        { ...counts, spentUsd: await this.costService.spent(fresh) },
+        { ...counts, spentUsd },
+      );
+      this.analytics?.capture(
+        COURSE_COPILOT_ANALYTICS_EVENTS.BUILD_FINISHED,
+        fresh.createdBy,
+        {
+          session_id: fresh.id,
+          track_id: fresh.trackId ?? null,
+          items: jobs.length,
+          failed: counts.failed,
+          skipped: counts.skipped,
+          usd: spentUsd,
+          cancelled: false,
+        },
       );
     }
   }
@@ -919,13 +939,25 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         WHERE id = $1`,
       [session.id],
     );
+    const spentUsd = await this.costService.spent(session);
     await this.eventService.record(
       session.id,
       CourseCopilotEventType.BUILD_FINISHED,
+      { cancelled: true, skipped: skipped.length, spentUsd },
+    );
+    this.analytics?.capture(
+      COURSE_COPILOT_ANALYTICS_EVENTS.BUILD_FINISHED,
+      session.createdBy,
       {
-        cancelled: true,
+        session_id: session.id,
+        track_id: session.trackId ?? null,
+        items: jobs.length,
+        failed: jobs.filter(
+          (job) => job.status === CourseCopilotJobStatus.FAILED,
+        ).length,
         skipped: skipped.length,
-        spentUsd: await this.costService.spent(session),
+        usd: spentUsd,
+        cancelled: true,
       },
     );
   }

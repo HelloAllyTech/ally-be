@@ -99,6 +99,18 @@ progress row and the course's `track_tenants` row (`TrackProgressService.validat
 may only reference active roleplays), non-global and unassigned, and assigning the course is enough.
 They carry `category = 'COURSE_COPILOT'` so the library can filter them.
 
+## Product analytics
+
+Captured server-side through the global PostHog client (the admin console has none), keyed on the
+admin's user id, properties limited to ids, counts and money — never brief text or course content:
+
+| Event | When | Properties |
+|---|---|---|
+| `course_copilot.session_started` | A new session (CREATE or EDIT) | `session_id`, `mode`, `track_id` (EDIT) |
+| `course_copilot.blueprint_approved` | Approve & build | `session_id`, `track_id`, `items`, `new_roleplays`, `minutes`, `estimate_usd` |
+| `course_copilot.build_finished` | Every job settled, or the build was cancelled | `session_id`, `track_id`, `items`, `failed`, `skipped`, `usd`, `cancelled` |
+| `course_copilot.course_published` | `publish_course` after the trainer confirmed | `session_id`, `track_id` |
+
 ## Local verification
 
 `node scripts/course-copilot/e2e.mjs` drives a whole session against the local stack with the real

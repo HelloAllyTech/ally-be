@@ -23,6 +23,7 @@ import {
   CourseCopilotMessageRepository,
   CourseCopilotSessionRepository,
 } from './repository/course-copilot.repository';
+import { CourseCopilotAnalyticsService } from './service/course-copilot-analytics.service';
 import { CourseCopilotBlueprintService } from './service/course-copilot-blueprint.service';
 import { CourseCopilotBriefService } from './service/course-copilot-brief.service';
 import { CourseCopilotBuildService } from './service/course-copilot-build.service';
@@ -83,6 +84,7 @@ import { SpecialistLlmService } from './service/specialists/specialist-llm.servi
     CourseCopilotEventRepository,
     StacksClientService,
     CourseCopilotEventService,
+    CourseCopilotAnalyticsService,
     CourseCopilotGateway,
     CourseCopilotBriefService,
     CourseCopilotLibraryService,

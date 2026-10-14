@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Optional,
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, ILike, In } from 'typeorm';
@@ -45,6 +46,10 @@ import { QuizSpecialist } from './specialists/quiz.specialist';
 import { JournalSpecialist } from './specialists/journal.specialist';
 import { AnnotationSpecialist } from './specialists/annotation.specialist';
 import { CourseCopilotStructureService } from './course-copilot-structure.service';
+import {
+  COURSE_COPILOT_ANALYTICS_EVENTS,
+  CourseCopilotAnalyticsService,
+} from './course-copilot-analytics.service';
 import { CourseCopilotSessionService } from './course-copilot-session.service';
 import { CourseCopilotLibraryService } from './course-copilot-library.service';
 import { CourseCopilotBuildService } from './course-copilot-build.service';
@@ -344,6 +349,7 @@ export class CourseCopilotEditToolsService {
     private readonly quiz: QuizSpecialist,
     private readonly journal: JournalSpecialist,
     private readonly annotation: AnnotationSpecialist,
+    @Optional() private readonly analytics?: CourseCopilotAnalyticsService,
   ) {}
 
   async execute(
@@ -1252,6 +1258,11 @@ export class CourseCopilotEditToolsService {
       this.trackService.updateTrack(track.id, {
         status: TrackStatus.ACTIVE,
       } as any),
+    );
+    this.analytics?.capture(
+      COURSE_COPILOT_ANALYTICS_EVENTS.COURSE_PUBLISHED,
+      context.userId,
+      { session_id: context.session.id, track_id: track.id },
     );
     return this.changed(
       context,

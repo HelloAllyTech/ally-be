@@ -45,6 +45,10 @@ import { CourseCopilotOrchestratorService } from '../service/course-copilot-orch
 import { CourseCopilotBlueprintService } from '../service/course-copilot-blueprint.service';
 import { CourseCopilotBuildService } from '../service/course-copilot-build.service';
 import { CourseCopilotCostService } from '../service/course-copilot-cost.service';
+import {
+  COURSE_COPILOT_ANALYTICS_EVENTS,
+  CourseCopilotAnalyticsService,
+} from '../service/course-copilot-analytics.service';
 
 const STREAM_FAILED_MESSAGE =
   'That turn could not be started. Your answers are all still here — send your message ' +
@@ -75,6 +79,7 @@ export class CourseCopilotController {
     private readonly buildService: CourseCopilotBuildService,
     private readonly costService: CourseCopilotCostService,
     private readonly redisService: RedisService,
+    private readonly analytics: CourseCopilotAnalyticsService,
   ) {}
 
   @Post('sessions')
@@ -149,6 +154,19 @@ export class CourseCopilotController {
     await this.buildService.createJobsForBlueprint(
       approved,
       approved.approvedBlueprint!,
+    );
+    const estimate = approved.approvedBlueprint!.estimate;
+    this.analytics.capture(
+      COURSE_COPILOT_ANALYTICS_EVENTS.BLUEPRINT_APPROVED,
+      user.id,
+      {
+        session_id: approved.id,
+        track_id: approved.trackId ?? null,
+        items: estimate?.items ?? 0,
+        new_roleplays: estimate?.newRoleplays ?? 0,
+        minutes: estimate?.minutes ?? 0,
+        estimate_usd: estimate?.usd ?? 0,
+      },
     );
     this.buildService.start(approved.id);
     return this.sessionService.getDetail(sessionId, user.id);

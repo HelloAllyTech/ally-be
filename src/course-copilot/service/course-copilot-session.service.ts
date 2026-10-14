@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { In, IsNull, Not } from 'typeorm';
 import { AppConfigService } from 'src/config/config.service';
@@ -33,6 +34,10 @@ import {
 import { CourseChangeLogEntry } from '../type/course-copilot.type';
 import { COURSE_COPILOT_LIMITS } from '../constants/course-copilot.constants';
 import { CourseCopilotBriefService } from './course-copilot-brief.service';
+import {
+  COURSE_COPILOT_ANALYTICS_EVENTS,
+  CourseCopilotAnalyticsService,
+} from './course-copilot-analytics.service';
 import { CourseCopilotCostService } from './course-copilot-cost.service';
 import { CourseCopilotEventService } from './course-copilot-event.service';
 import { CourseCopilotStructureService } from './course-copilot-structure.service';
@@ -70,6 +75,7 @@ export class CourseCopilotSessionService {
     private readonly costService: CourseCopilotCostService,
     private readonly eventService: CourseCopilotEventService,
     private readonly structureService: CourseCopilotStructureService,
+    @Optional() private readonly analytics?: CourseCopilotAnalyticsService,
   ) {}
 
   async createSession(
@@ -104,6 +110,11 @@ export class CourseCopilotSessionService {
         createdBy: user.id,
         updatedBy: user.id,
       }),
+    );
+    this.analytics?.capture(
+      COURSE_COPILOT_ANALYTICS_EVENTS.SESSION_STARTED,
+      user.id,
+      { session_id: session.id, mode: session.mode },
     );
     return this.toSummary(session, null);
   }
@@ -142,6 +153,11 @@ export class CourseCopilotSessionService {
         createdBy: user.id,
         updatedBy: user.id,
       }),
+    );
+    this.analytics?.capture(
+      COURSE_COPILOT_ANALYTICS_EVENTS.SESSION_STARTED,
+      user.id,
+      { session_id: session.id, mode: session.mode, track_id: trackId },
     );
     return this.toSummary(session, track);
   }
