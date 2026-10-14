@@ -74,7 +74,12 @@ const allMet = (over: Record<string, any> = {}) => ({
 describe('RoadmapCopilotService', () => {
   const build = (
     script: AgentTurnResult[],
-    options: { configured?: string[]; promptRow?: Record<string, any> } = {},
+    options: {
+      configured?: string[];
+      promptRow?: Record<string, any>;
+      /** Models whose calls throw, as a provider outage or an exhausted balance would. */
+      failing?: string[];
+    } = {},
   ) => {
     const requests: AgentStreamRequest[] = [];
     let call = 0;
@@ -83,6 +88,9 @@ describe('RoadmapCopilotService', () => {
       async *stream(request: AgentStreamRequest) {
         // Snapshot: the service keeps appending to the same array.
         requests.push({ ...request, messages: [...request.messages] });
+        if (options.failing?.includes(request.model)) {
+          throw new Error('400 Your credit balance is too low');
+        }
         const next = script[Math.min(call, script.length - 1)];
         call += 1;
         yield { type: 'final' as const, message: next };
@@ -314,6 +322,14 @@ describe('RoadmapCopilotService', () => {
       expect(system[1].text).not.toContain('Counsellors.');
     });
 
+    it('returns no brief before the admin has said anything', async () => {
+      const { service } = build([submit(allMet({ draft: null }))]);
+
+      const frames = await collect(service.streamTurn({ messages: [] }, 1));
+
+      expect(turnOf(frames).brief).toBeNull();
+    });
+
     it('asks the model to open the conversation when there are no messages', async () => {
       const { service, requests } = build([submit(allMet({ draft: null }))]);
 
@@ -344,6 +360,33 @@ describe('RoadmapCopilotService', () => {
       await collect(service.streamTurn({ messages: [] }, 1));
 
       expect(factory.create).toHaveBeenCalledWith('openai', 'gpt-5');
+    });
+
+    /** The only way to file — a provider having a bad hour must not close the roadmap. */
+    it('reruns the turn on the fallback model when the primary model call fails', async () => {
+      const { service, requests } = build([submit(allMet())], {
+        failing: ['claude-sonnet-5-5'],
+      });
+
+      const frames = await collect(service.streamTurn({ messages: [] }, 1));
+
+      expect(frames.map((f) => f.event)).toEqual(['turn']);
+      expect(requests.map((r) => r.model)).toEqual([
+        'claude-sonnet-5-5',
+        'gpt-5',
+      ]);
+    });
+
+    it('fails closed when the fallback fails too', async () => {
+      const { service } = build([submit(allMet())], {
+        failing: ['claude-sonnet-5-5', 'gpt-5'],
+      });
+
+      const frames = await collect(service.streamTurn({ messages: [] }, 1));
+
+      expect(frames).toEqual([
+        { event: 'error', data: { message: expect.any(String) } },
+      ]);
     });
 
     it('lets the prompt row choose the model', async () => {

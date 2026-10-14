@@ -67,6 +67,8 @@ interface SubmittedTurn {
   brief?: unknown;
 }
 
+type CopilotTarget = { provider: string; model: string };
+
 const FAILED_TURN_MESSAGE =
   "I couldn't finish thinking that through. Your answer is still here — try sending it again.";
 
@@ -141,19 +143,22 @@ export class RoadmapCopilotService {
   /**
    * One turn as a stream: an `activity` / `activity_done` pair per lookup, so the admin can
    * watch it research rather than stare at a spinner, then exactly one `turn` or `error`.
+   *
+   * A turn whose model CALL fails — an outage, a rate limit, an exhausted credit balance — is
+   * rerun once on the fallback model rather than failing. This is the only way to file an
+   * opportunity, so a provider having a bad hour must not close the roadmap. Lookups the first
+   * attempt already ran are reported again if the second repeats them; that is the honest trail.
    */
   async *streamTurn(
     input: CopilotTurnInput,
     userId: number,
   ): AsyncGenerator<CopilotFrame> {
     const turnId = randomUUID();
-    let target: { provider: string; model: string };
-    let provider: IAgentLlmProvider;
+    let primary: CopilotTarget;
     let system: AgentSystemBlock[];
     let productGoalNames: string[];
     try {
-      target = await this.resolveModel();
-      provider = this.agentLlmFactory.create(target.provider, target.model);
+      primary = await this.resolveModel();
       const prepared = await this.buildSystem(userId);
       system = prepared.system;
       productGoalNames = prepared.productGoalNames;
@@ -163,6 +168,47 @@ export class RoadmapCopilotService {
       );
       yield { event: 'error', data: { message: FAILED_TURN_MESSAGE } };
       return;
+    }
+
+    const loop = (target: CopilotTarget) =>
+      this.runLoop(target, { input, userId, turnId, system, productGoalNames });
+
+    let outcome = yield* loop(primary);
+    const fallback = this.fallbackTarget(primary);
+    if (outcome === 'provider_failed' && fallback) {
+      this.logger.warn(
+        `[ROADMAP] Copilot turn ${turnId}: ${primary.model} failed; retrying on ${fallback.model}.`,
+      );
+      outcome = yield* loop(fallback);
+    }
+    if (outcome !== 'done') {
+      yield { event: 'error', data: { message: FAILED_TURN_MESSAGE } };
+    }
+  }
+
+  /**
+   * The tool loop on one model. Yields activity and, on success, the `turn`; returns how it
+   * ended so `streamTurn` can decide whether a fallback is worth trying.
+   */
+  private async *runLoop(
+    target: CopilotTarget,
+    ctx: {
+      input: CopilotTurnInput;
+      userId: number;
+      turnId: string;
+      system: AgentSystemBlock[];
+      productGoalNames: string[];
+    },
+  ): AsyncGenerator<CopilotFrame, 'done' | 'provider_failed' | 'no_submit'> {
+    const { input, userId, turnId, system, productGoalNames } = ctx;
+    let provider: IAgentLlmProvider;
+    try {
+      provider = this.agentLlmFactory.create(target.provider, target.model);
+    } catch (error) {
+      this.logger.error(
+        `[ROADMAP] Copilot could not use ${target.model}: ${(error as Error)?.message}`,
+      );
+      return 'provider_failed';
     }
 
     const previousBrief = normaliseOpportunityBrief(input.brief);
@@ -199,10 +245,9 @@ export class RoadmapCopilotService {
         });
       } catch (error) {
         this.logger.error(
-          `[ROADMAP] Copilot pass ${iteration} failed: ${(error as Error)?.message}`,
+          `[ROADMAP] Copilot pass ${iteration} on ${target.model} failed: ${(error as Error)?.message}`,
         );
-        yield { event: 'error', data: { message: FAILED_TURN_MESSAGE } };
-        return;
+        return 'provider_failed';
       }
 
       if (turn.stopReason === 'invalid_tool_call' && !nudged) {
@@ -223,15 +268,19 @@ export class RoadmapCopilotService {
             );
       const submit = toolUses.find((b) => b.name === COPILOT_SUBMIT_TOOL);
       if (submit) {
+        const turnResult = this.buildTurn(
+          submit.input as SubmittedTurn,
+          productGoalNames,
+          previousBrief,
+        );
+        // Before the admin has said anything there is no idea to assess, and a "Needs work"
+        // verdict over an empty conversation reads as a judgement of the person, not the idea.
+        const spoken = input.messages.some((m) => m.role === 'admin');
         yield {
           event: 'turn',
-          data: this.buildTurn(
-            submit.input as SubmittedTurn,
-            productGoalNames,
-            previousBrief,
-          ),
+          data: spoken ? turnResult : { ...turnResult, brief: null },
         };
-        return;
+        return 'done';
       }
 
       if (!toolUses.length) {
@@ -288,9 +337,23 @@ export class RoadmapCopilotService {
     }
 
     this.logger.warn(
-      `[ROADMAP] Copilot turn ${turnId} ended without submit_turn. Failing closed.`,
+      `[ROADMAP] Copilot turn ${turnId} on ${target.model} ended without submit_turn.`,
     );
-    yield { event: 'error', data: { message: FAILED_TURN_MESSAGE } };
+    return 'no_submit';
+  }
+
+  /** The fallback model, when it is a different model and this environment can run it. */
+  private fallbackTarget(primary: CopilotTarget): CopilotTarget | null {
+    const model = this.configService.roadmapCopilot.fallbackModel;
+    const provider = providerForModel(model);
+    if (
+      !provider ||
+      model === primary.model ||
+      !this.agentLlmFactory.isConfigured(provider)
+    ) {
+      return null;
+    }
+    return { provider, model };
   }
 
   /**
@@ -299,7 +362,7 @@ export class RoadmapCopilotService {
    * no key here — local and preview environments often hold only an OpenAI key, and a copilot
    * that refuses to run is a roadmap nobody can file to.
    */
-  private async resolveModel(): Promise<{ provider: string; model: string }> {
+  private async resolveModel(): Promise<CopilotTarget> {
     const row = await this.promptSharedService.getPromptLlmConfig(
       ROADMAP_PROMPT_CODES.OPPORTUNITY_COPILOT,
     );
@@ -330,7 +393,7 @@ export class RoadmapCopilotService {
 
   private async runPass(
     provider: IAgentLlmProvider,
-    target: { provider: string; model: string },
+    target: CopilotTarget,
     pass: {
       system: AgentSystemBlock[];
       messages: AgentMessage[];

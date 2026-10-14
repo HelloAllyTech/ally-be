@@ -11,7 +11,10 @@ import {
 } from 'src/builder/constants/builder-repos.constants';
 
 import { ROADMAP_COPILOT } from '../constants/product-roadmap.constants';
-import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
 import { RoadmapInterviewNoteRepository } from '../repository/roadmap-content.repository';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { OpportunityResponseDto } from '../dto/roadmap-response.dto';
@@ -23,6 +26,33 @@ export const COPILOT_SUBMIT_TOOL = 'submit_turn';
 /** How much of an opportunity description a search result carries. */
 const SEARCH_DESCRIPTION_CHARS = 400;
 const SEARCH_LIMIT = 8;
+/** Words that would match half the board and say nothing about which half. */
+const SEARCH_STOPWORDS = new Set([
+  'that',
+  'this',
+  'with',
+  'from',
+  'they',
+  'them',
+  'their',
+  'have',
+  'need',
+  'needs',
+  'want',
+  'wants',
+  'able',
+  'when',
+  'what',
+  'which',
+  'about',
+  'into',
+  'more',
+  'some',
+  'make',
+  'users',
+  'user',
+  'ally',
+]);
 const VECTOR_LIMIT = 6;
 /** Low on purpose: the copilot reads the matches and decides, so recall beats precision. */
 const VECTOR_THRESHOLD = 0.3;
@@ -454,7 +484,8 @@ export class RoadmapCopilotToolsService {
             String(input.query ?? ''),
             Array.isArray(input.stage) ? input.stage.map(String) : undefined,
           ),
-          summary: (r) => `${r.matches?.length ?? 0} related opportunit(ies)`,
+          summary: (r) =>
+            count(r.matches, 'related opportunity', 'related opportunities'),
         };
       case 'get_opportunity':
         return {
@@ -467,7 +498,7 @@ export class RoadmapCopilotToolsService {
       case 'search_user_interviews':
         return {
           result: await this.searchInterviews(String(input.query ?? '')),
-          summary: (r) => `${r.interviews?.length ?? 0} interview note(s)`,
+          summary: (r) => count(r.interviews, 'interview note'),
         };
       case 'analytics_ask':
         return {
@@ -486,14 +517,14 @@ export class RoadmapCopilotToolsService {
             input.query ? String(input.query) : undefined,
           ),
           summary: (r) =>
-            `${r.findings?.length ?? 0} friction finding(s), ${r.suggestions?.length ?? 0} suggestion(s)`,
+            `${count(r.findings, 'friction finding')}, ${count(r.suggestions, 'suggestion')}`,
         };
       case 'bug_findings_search':
         return {
           result: await this.evidence.openFindings(
             input.repo ? String(input.repo) : undefined,
           ),
-          summary: (r) => `${r.findings?.length ?? 0} open finding(s)`,
+          summary: (r) => count(r.findings, 'open finding'),
         };
       case 'github_search_code':
         return {
@@ -501,7 +532,7 @@ export class RoadmapCopilotToolsService {
             String(input.query ?? ''),
             input.repo ? String(input.repo) : undefined,
           ),
-          summary: (r) => `${r.results?.length ?? 0} match(es)`,
+          summary: (r) => count(r.results, 'matching file'),
         };
       case 'github_read_file':
         return {
@@ -517,7 +548,7 @@ export class RoadmapCopilotToolsService {
             String(input.repo ?? ''),
             input.path ? String(input.path) : undefined,
           ),
-          summary: (r) => `${r.files?.length ?? 0} file(s)`,
+          summary: (r) => count(r.files, 'file'),
         };
       case 'wiki_search':
         return {
@@ -525,7 +556,7 @@ export class RoadmapCopilotToolsService {
             String(input.query ?? ''),
             BUILDER_WIKI_REPO,
           ),
-          summary: (r) => `${r.results?.length ?? 0} page(s)`,
+          summary: (r) => count(r.results, 'page'),
         };
       case 'wiki_read':
         return {
@@ -538,14 +569,15 @@ export class RoadmapCopilotToolsService {
       case 'stacks_search':
         return {
           result: await this.stacks.search(String(input.query ?? ''), 4),
-          summary: (r) => `${r.results?.length ?? 0} guidance hit(s)`,
+          summary: (r) =>
+            count(r.results, 'piece of guidance', 'pieces of guidance'),
         };
       case 'stacks_get':
         return {
           result: await this.stacks.getChunks(
             Array.isArray(input.ids) ? input.ids.map(String).slice(0, 3) : [],
           ),
-          summary: (r) => `${r.chunks?.length ?? 0} chunk(s)`,
+          summary: (r) => count(r.chunks, 'section', 'sections'),
         };
       default:
         return {
@@ -596,13 +628,15 @@ export class RoadmapCopilotToolsService {
     }
 
     try {
-      const listed = await this.opportunityService.list(userId, {
-        search: trimmed,
-        limit: SEARCH_LIMIT,
-        ...(stage?.length ? { stage } : {}),
-      } as any);
-      for (const row of listed.items)
-        if (!found.has(row.id)) found.set(row.id, row);
+      const ids = await this.keywordMatches(trimmed, stage);
+      const rows = await Promise.all(
+        ids
+          .filter((id) => !found.has(id))
+          .map((id) =>
+            this.opportunityService.findOne(userId, id).catch(() => null),
+          ),
+      );
+      for (const row of rows) if (row) found.set(row.id, row);
     } catch (error) {
       this.logger.warn(
         `[ROADMAP] Copilot wording search failed: ${(error as Error)?.message}`,
@@ -615,6 +649,43 @@ export class RoadmapCopilotToolsService {
       .slice(0, SEARCH_LIMIT + VECTOR_LIMIT)
       .map(compactOpportunity);
     return { ok: true, matches, ...(notes.length ? { notes } : {}) };
+  }
+
+  /**
+   * Opportunity ids ranked by how many of the query's words their description contains.
+   *
+   * Not the board's own `search` filter: that is one ILIKE over the whole phrase, which is right
+   * for a person typing into a filter box and wrong for a model, whose queries are five-word
+   * phrases that no description contains verbatim. Requiring two words (or the only one) keeps
+   * "dashboard" from matching every row that mentions a dashboard.
+   */
+  private async keywordMatches(
+    query: string,
+    stage?: string[],
+  ): Promise<string[]> {
+    const words = [
+      ...new Set(query.toLowerCase().match(/[\p{L}\p{M}\p{N}]{4,}/gu) ?? []),
+    ]
+      .filter((word) => !SEARCH_STOPWORDS.has(word))
+      .slice(0, 6);
+    if (!words.length) return [];
+
+    const score = words
+      .map((_, i) => `(CASE WHEN o.description ILIKE :w${i} THEN 1 ELSE 0 END)`)
+      .join(' + ');
+    const qb = this.opportunityRepository
+      .createQueryBuilder('o')
+      .select('o.id', 'id')
+      .where('o.type = :idea', { idea: RoadmapOpportunityType.IDEA })
+      .andWhere(`(${score}) >= :min`, { min: Math.min(2, words.length) });
+    words.forEach((word, i) => qb.setParameter(`w${i}`, `%${word}%`));
+    if (stage?.length) qb.andWhere('o.stage IN (:...stage)', { stage });
+    const rows = await qb
+      .orderBy(`(${score})`, 'DESC')
+      .addOrderBy('o."createdAt"', 'DESC')
+      .limit(SEARCH_LIMIT)
+      .getRawMany<{ id: string }>();
+    return rows.map((row) => row.id);
   }
 
   private async getOpportunity(
@@ -687,6 +758,13 @@ const compactOpportunity = (row: OpportunityResponseDto) => ({
       ? `${row.description.slice(0, SEARCH_DESCRIPTION_CHARS)}…`
       : row.description,
 });
+
+/** "1 file", "3 files", "No files" — the activity feed is read by people. */
+const count = (list: unknown, one: string, many = `${one}s`): string => {
+  const n = Array.isArray(list) ? list.length : 0;
+  if (n === 0) return `No ${many}`;
+  return `${n} ${n === 1 ? one : many}`;
+};
 
 /** A tool result the model can read in full — and a marker when it could not. */
 const bound = (serialised: string): string =>
