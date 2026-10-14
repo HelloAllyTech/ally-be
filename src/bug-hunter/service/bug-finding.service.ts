@@ -643,6 +643,7 @@ export class BugFindingService {
           ? shipped
           : null;
 
+      let saved: BugFinding;
       try {
         saved = await this.findingRepository.save(
           this.findingRepository.create({
