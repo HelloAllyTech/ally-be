@@ -558,7 +558,7 @@ describe('question media translation', () => {
     const question = (localized.content as any).questions[0];
 
     // promptHtml was not translated, so prompt should fall back to legacy translation
-    expect(question.promptHtml).toBe('<p>English prompt</p>'); // Remains English
+    expect(question.promptHtml).toBeUndefined(); // Deleted because it is stale
     expect(question.prompt).toBe('Legacy Translated Prompt'); // Applied from legacy
   });
 
@@ -593,6 +593,7 @@ describe('question media translation', () => {
     const localized = applyItemFields(source, translationMap);
     const journal = localized.content as any;
     expect(journal.prompts[0].prompt).toBe('Legacy Journal Translation');
+    expect(journal.prompts[0].promptHtml).toBeUndefined();
   });
 
   it('extracts nothing extra for media with no description', () => {

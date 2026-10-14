@@ -167,6 +167,7 @@ function walkQuizQuestion(
         set: (value) => {
           if (!promptHtmlUpdated) {
             question.prompt = value;
+            delete question.promptHtml;
           }
         },
       },
@@ -423,6 +424,7 @@ function walkJournalContent(
           set: (value) => {
             if (!promptHtmlUpdated) {
               prompt.prompt = value;
+              delete prompt.promptHtml;
             }
           },
         },
