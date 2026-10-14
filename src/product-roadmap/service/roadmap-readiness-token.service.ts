@@ -10,6 +10,8 @@ import {
   ROADMAP_READINESS_TOKEN_TTL_MS,
 } from '../constants/product-roadmap.constants';
 import { RoadmapOpportunityEffort } from '../enum/roadmap-opportunity.enum';
+import { RoadmapOpportunityBrief } from '../type/roadmap-brief.type';
+import { canonicalJson } from '../util/roadmap-brief.util';
 
 /** What the guided interview's grading decided, recovered from a token on the way back in. */
 export interface VerifiedReadiness {
@@ -33,6 +35,15 @@ interface ReadinessTokenPayload {
   f: string[];
   /** The proposed size, or null when the grader could not size the draft. */
   e: RoadmapOpportunityEffort | null;
+  /**
+   * sha256 of the copilot's brief (canonical JSON), when the turn produced one.
+   *
+   * Optional inside v1 rather than a v2: a token with no `b` simply cannot carry a brief, which
+   * is exactly what every token minted before the copilot existed should mean. Signed because
+   * the brief's assessment is shown to voters as the copilot's judgement — unsigned, a filer
+   * could send `rating: "strong"` for a draft the copilot rated needs-work.
+   */
+  b?: string;
   /** Expiry, epoch milliseconds. */
   exp: number;
 }
@@ -119,6 +130,10 @@ export class RoadmapReadinessTokenService {
    * The criteria id set in force right now. Order-independent — a reorder of the array is not a
    * change to what is graded, and invalidating every token in flight over one would be noise.
    */
+  private static briefFingerprint(brief: unknown): string {
+    return RoadmapReadinessTokenService.sha256(canonicalJson(brief));
+  }
+
   private static criteriaFingerprint(): string {
     const ids = ROADMAP_READINESS_CRITERIA.map((c) => c.id)
       .slice()
@@ -133,6 +148,7 @@ export class RoadmapReadinessTokenService {
     productGoal?: string | null;
     failedCriteria: string[];
     proposedEffort: RoadmapOpportunityEffort | null;
+    brief?: RoadmapOpportunityBrief | null;
   }): string {
     const payload: ReadinessTokenPayload = {
       v: 1,
@@ -141,6 +157,9 @@ export class RoadmapReadinessTokenService {
       c: RoadmapReadinessTokenService.criteriaFingerprint(),
       f: input.failedCriteria,
       e: input.proposedEffort,
+      ...(input.brief
+        ? { b: RoadmapReadinessTokenService.briefFingerprint(input.brief) }
+        : {}),
       exp: Date.now() + ROADMAP_READINESS_TOKEN_TTL_MS,
     };
 
@@ -169,7 +188,12 @@ export class RoadmapReadinessTokenService {
    */
   verify(
     token: string,
-    against: { description: string; productGoal?: string | null },
+    against: {
+      description: string;
+      productGoal?: string | null;
+      /** The brief being filed alongside, if any. Must be the one the token was minted for. */
+      brief?: unknown;
+    },
   ): VerifiedReadiness {
     const parts = token.split('.');
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
@@ -205,19 +229,19 @@ export class RoadmapReadinessTokenService {
 
     if (payload.v !== 1) {
       throw new BadRequestException(
-        'The readiness result format has changed. Press "Keep talking" to refresh the draft.',
+        'The readiness result format has changed. Send the copilot another message to refresh the draft.',
       );
     }
 
     if (!Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
       throw new BadRequestException(
-        'The draft has expired. Press "Keep talking" to refresh it.',
+        'The draft has expired. Send the copilot another message to refresh it.',
       );
     }
 
     if (payload.c !== RoadmapReadinessTokenService.criteriaFingerprint()) {
       throw new BadRequestException(
-        'The readiness checklist has changed. Press "Keep talking" to redraft against it.',
+        'The readiness checklist has changed. Send the copilot another message to redraft against it.',
       );
     }
 
@@ -231,7 +255,18 @@ export class RoadmapReadinessTokenService {
       // The interesting rejection, and the one a legitimate filer can hit by editing after a
       // pass. Worded for the filer rather than as a validation failure.
       throw new BadRequestException(
-        'This has changed since the interview drafted it. Press "Keep talking" to redraft it.',
+        'This has changed since the interview drafted it. Send the copilot another message to redraft it.',
+      );
+    }
+
+    // A brief is optional — but one that IS sent must be the one the copilot wrote. Checked
+    // after the description so a filer who edited the text hears about the text first.
+    if (
+      against.brief != null &&
+      payload.b !== RoadmapReadinessTokenService.briefFingerprint(against.brief)
+    ) {
+      throw new BadRequestException(
+        "The copilot's brief has changed since it was written. Send the copilot another message to refresh it.",
       );
     }
 

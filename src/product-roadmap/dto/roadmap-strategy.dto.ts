@@ -10,7 +10,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { ROADMAP_LIMITS } from '../constants/product-roadmap.constants';
+import {
+  ROADMAP_LIMITS,
+  ROADMAP_STRATEGY_CONTEXT_LIMITS,
+} from '../constants/product-roadmap.constants';
 
 export class CreateStrategyGoalDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.STRATEGY_GOAL_NAME_MAX })
@@ -114,4 +117,70 @@ export class BulkAssessResponseDto {
       'run is bounded so one request cannot bill the whole board.',
   })
   remaining!: number;
+}
+
+/**
+ * The Vision & strategy page. Every field optional: a field left out keeps its current text,
+ * so the settings form can save one section without having to round-trip the others.
+ */
+export class UpdateRoadmapStrategyContextDto {
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_STRATEGY_CONTEXT_LIMITS.VISION_MAX,
+    description: 'What Ally is for, and where it is going',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_STRATEGY_CONTEXT_LIMITS.VISION_MAX)
+  vision?: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_STRATEGY_CONTEXT_LIMITS.AUDIENCE_MAX,
+    description: 'Who we serve, and which of them first',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_STRATEGY_CONTEXT_LIMITS.AUDIENCE_MAX)
+  audience?: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_STRATEGY_CONTEXT_LIMITS.BETS_MAX,
+    description: "This period's strategic bets",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_STRATEGY_CONTEXT_LIMITS.BETS_MAX)
+  bets?: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_STRATEGY_CONTEXT_LIMITS.NON_GOALS_MAX,
+    description: 'What we have decided not to do',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_STRATEGY_CONTEXT_LIMITS.NON_GOALS_MAX)
+  nonGoals?: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_STRATEGY_CONTEXT_LIMITS.METRICS_MAX,
+    description: 'How we measure success',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_STRATEGY_CONTEXT_LIMITS.METRICS_MAX)
+  metrics?: string;
+}
+
+export class RoadmapStrategyContextDto {
+  @ApiProperty() vision!: string;
+  @ApiProperty() audience!: string;
+  @ApiProperty() bets!: string;
+  @ApiProperty() nonGoals!: string;
+  @ApiProperty() metrics!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Null until first saved',
+  })
+  updatedAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true })
+  updatedByName!: string | null;
 }

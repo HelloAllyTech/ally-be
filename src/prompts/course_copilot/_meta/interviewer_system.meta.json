@@ -1,0 +1,6 @@
+{
+  "name": "Course Copilot Interviewer — System",
+  "description": "System prompt for Course Copilot: interviews a trainer one option-card question at a time (seed, learners, outcomes, assessment first, shape, practice ladder, look, final check), keeps the course brief patched, proposes a blueprint for approval, and edits the built course on request with course-aware tools. Set the model on this row to change the interview model (Claude Sonnet recommended for tool-use reliability).",
+  "category": "Course Copilot",
+  "runtimes": ["ally-be"]
+}

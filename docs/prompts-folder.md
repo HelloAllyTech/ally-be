@@ -53,7 +53,7 @@ src/prompts/
 
 ### Agent system prompts
 
-A folder like `builder/` (or `character_interview/`, `roleplay_copilot/`) holds the *system*
+A folder like `builder/` (or `character_interview/`, `course_copilot/`) holds the *system*
 prompt for a long-running agent rather than a one-shot generation. Two things differ:
 
 - It is read by code through `PromptSharedService.getPromptByCode('<folder>_<file>')`, not
@@ -148,6 +148,26 @@ it — but if the production prompt row is dashboard-overridden, only the tool s
 tool is inert, which is why this is safe; the reverse is not. Guidance that reaches the model
 without the tool existing would produce calls to a tool that isn't there. **Add the tool first,
 then the guidance, and treat the dashboard override as the thing that actually ships.**
+
+### Course Copilot (`course_copilot/`)
+
+One agent prompt and ten one-shot specialist prompts, all under the "Course Copilot" category
+(see [`course-copilot.md`](./course-copilot.md)):
+
+- `interviewer_system.txt` is the agent system prompt (above): read through
+  `getPromptByCode('course_copilot_interviewer_system')`, cached for a minute, with a hardcoded
+  fallback, and **set the interview model on this row** — its provider/model win over
+  `COURSE_COPILOT_MODEL`. The platform rules (limits, item types) are appended in code, not
+  written here, because the tools enforce them.
+- The specialists (`blueprint_planner`, `article_writer`, `quiz_writer`, `journal_writer`,
+  `annotation_writer`, `course_meta`, `course_reviewer`, `image_prompt`, `roleplay_brief`,
+  `history_summary`) are templates with `{{variables}}` rendered by `renderTemplate`, called in
+  JSON mode. Unlike the agent prompt they **throw** when the row is missing — a course built
+  from a fallback prompt would be quietly worse rather than visibly broken.
+- Like `character_interview/`, each specialist's output shape is **also validated in code**
+  (`src/course-copilot/service/specialists/*` normalise ids and shapes, then run the track
+  validator). The same rule applies: if a prompt may be dashboard-overridden, a changed output
+  shape needs the normaliser to accept the old one too.
 
 ### Which prompts the dashboard actually drives
 
@@ -256,22 +276,27 @@ output becomes, not whichever folder you copied.
 
 ### Stateless conversational prompts
 
-A fourth shape looks like an agent prompt but is read like a one-shot: `roadmap/opportunity_interview.txt`
-drives a multi-turn interview, yet each turn is an independent `getPromptByCode` call with the
-whole transcript rendered into the user message. There is no session table and no message rows,
-so nothing needs replaying and there are no `tool_use` blocks to keep paired — the trap
-`rebuildAnthropicHistory` (Builder) and `rebuildHistory` (Character) exist for.
+A fourth shape looks like an agent prompt but keeps no session: `roadmap/opportunity_copilot.txt`
+drives a multi-turn interview with research tools, yet each turn is independent, with the whole
+transcript (and the previous turn's working brief) rendered into one user message. Within a
+turn it is a real tool loop — research tool calls and their results are appended in order —
+but nothing survives the turn except what the client sends back, so there is no history to
+rebuild across turns and no `tool_use` blocks left unpaired — the trap `rebuildAnthropicHistory`
+(Builder) and `rebuildHistory` (Character) exist for.
 
-Two rules matter when writing one:
+Three rules matter when writing one:
 
 - **Speaker-label the transcript** you render in (`ADMIN:` / `YOU:`). Without it the model
   cannot tell its own previous questions from the answers and starts re-asking them.
 - **If the prompt grades anything that later gates a write, grade the write's own criteria** —
-  the same constant, the same ids. `opportunity_interview.txt` reports on
+  the same constant, the same ids. `opportunity_copilot.txt` reports on
   `ROADMAP_READINESS_CRITERIA` because its draft is filed with a signed readiness token, and a
   prompt marking its own private rubric would be a signature over a check nobody ran. If you
   edit the criteria, the interview follows automatically; if you edit the prompt to grade
   something else, you have broken the gate rather than the interview.
+- **Return the structured turn through a tool the prompt requires last** (`submit_turn`), not
+  through JSON mode. JSON mode on Anthropic is a forced `tool_choice`, which current Claude
+  models reject, and it cannot coexist with research tools in the same call.
 
 Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are

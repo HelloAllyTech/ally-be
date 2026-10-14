@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Image Prompt Writer",
+  "description": "Writes the image-generation prompt for a course cover or an article illustration in the house documentary-photography style: real settings, no text in the image, no identifiable real people, nothing distressing, 16:9. JSON mode; guardrail sentence appended in code.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

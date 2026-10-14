@@ -13,6 +13,7 @@ import {
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
+import { RoadmapOpportunityBrief } from '../type/roadmap-brief.type';
 
 /**
  * One attached image: the S3 object URL, plus an optional caption saying what a reader is
@@ -154,6 +155,21 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'jsonb', default: () => `'[]'::jsonb` })
   referenceImages!: RoadmapReferenceImage[];
+
+  /**
+   * The opportunity copilot's brief, as it stood when the opportunity was filed.
+   *
+   * Written once, on create, and only when the readiness token was minted over this exact brief
+   * (RoadmapReadinessTokenService binds its hash) — so the assessment a voter reads is the
+   * copilot's, not the filer's. Not edited afterwards: the description can move on in the
+   * autosaving drawer, and the brief stays a record of the case made at filing time, which the
+   * drawer says next to it. NULL for everything filed without one.
+   *
+   * Not part of the embedded text, for the same reason as `referenceImages`: duplicate detection
+   * reads what the opportunity says, not the case for it.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  brief?: RoadmapOpportunityBrief | null;
 
   /**
    * The Builder session started from this opportunity, if any.
