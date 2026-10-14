@@ -114,6 +114,41 @@ export class RedisService {
     return this.redis.incr(fullKey);
   }
 
+  /**
+   * Increment a counter that lives for a fixed window from its first hit, and
+   * return the count after this increment plus the seconds left in the window.
+   *
+   * For counters that gate something, use this instead of `incr()` + `expire()`.
+   * Those are two round trips: a process that dies between them leaves a counter
+   * with no expiry, and a counter that refuses at a threshold then refuses
+   * forever. Here the increment and the expiry run as one script, and a counter
+   * that somehow has no expiry is given one on its next hit. Later hits never
+   * extend the window.
+   */
+  async incrWithExpiry(
+    key: string,
+    windowSeconds: number,
+  ): Promise<{ count: number; ttlSeconds: number }> {
+    const fullKey = this.getFullKey(key);
+    const [count, ttlSeconds] = (await this.redis.eval(
+      RedisService.INCR_WITH_EXPIRY_SCRIPT,
+      1,
+      fullKey,
+      windowSeconds,
+    )) as [number, number];
+    return { count, ttlSeconds };
+  }
+
+  private static readonly INCR_WITH_EXPIRY_SCRIPT = `
+    local count = redis.call('INCR', KEYS[1])
+    local ttl = redis.call('TTL', KEYS[1])
+    if ttl < 0 then
+      redis.call('EXPIRE', KEYS[1], ARGV[1])
+      ttl = tonumber(ARGV[1])
+    end
+    return { count, ttl }
+  `;
+
   // Increment a field in a Redis hash
   async hincrBy(
     key: string,

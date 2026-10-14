@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -87,6 +89,14 @@ export function authFailureReasonFrom(
     return method === AuthMethod.EMAIL
       ? AuthFailureReason.OTP_FAILED
       : AuthFailureReason.INVALID_TOKEN;
+  }
+  // Only the per-email login-code limits reach here: the per-address throttle
+  // refuses in its guard, before the handler that reports this event runs.
+  if (
+    error instanceof HttpException &&
+    error.getStatus() === HttpStatus.TOO_MANY_REQUESTS
+  ) {
+    return AuthFailureReason.RATE_LIMITED;
   }
   return AuthFailureReason.UNKNOWN_ERROR;
 }

@@ -844,6 +844,11 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 
 - **Redis** (`src/redis/`): caching, rate-limit counters (`src/rate-limit/`), and transient
   session/room coordination. Not a system of record — treat as disposable.
+  The email login code lives here too, keyed by the trimmed, lower-cased address: the code
+  (`otp:`), its hash and sign-in link (`auth_attempt:`, `auth_attempt:magic:`), and the counters
+  behind `OTP_LIMITS` (`otp_guesses:`, `otp_guesses_day:`, `otp_code_requests:`; see
+  `src/auth/constants/otp-limits.constants.ts`). Deleting a learner's `otp_guesses_day:` key lifts
+  the daily wrong-code limit early.
 - **AWS SQS** (`src/message-broker/`): async pipeline between `ally-be` and `ally-ai`.
   Notably carries transcription + summarization results
   (`QUEUE__TRANSCRIBE_AND_SUMMARIZE_RESULTS_BUCKET`).
