@@ -333,6 +333,16 @@ export class UpdateBuilderSettingsDto {
 
   @ApiPropertyOptional({
     description:
+      'Most Builder may spend (USD) on automated review and fixes for one ' +
+      'pull request before handing it to a person. 0 means no limit.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxPrAutomationUsd?: number;
+
+  @ApiPropertyOptional({
+    description:
       'How much Builder does on its own, as one level: off, assist (review, ' +
       'fix, approve), auto_merge (also merge), auto (also release). Sets the ' +
       'individual switches; given together with them, the level wins.',

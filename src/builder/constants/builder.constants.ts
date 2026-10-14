@@ -193,10 +193,11 @@ export const BUILDER_MAX_REPO_REVIEWS_PER_PR = 4;
 export const BUILDER_REPO_REVIEW_TIMEOUT_MS = 90 * 60_000;
 /**
  * How long review-and-fix may run on one pull request, from its first review,
- * before it goes to a person whatever rounds are left. A loop that is still
+ * before it goes to a person whatever rounds are left. 90 minutes: a round is
+ * ~40 minutes of review plus opencode, so this is two rounds. A loop that is still
  * churning after this is not going to converge on its own.
  */
-export const BUILDER_PR_AUTOMATION_TIMEBOX_MS = 3 * 60 * 60_000;
+export const BUILDER_PR_AUTOMATION_TIMEBOX_MS = 90 * 60_000;
 /** How long after a release lands before its health is checked. */
 export const BUILDER_RELEASE_SETTLE_MS = 5 * 60_000;
 export const BUILDER_HEALTH_RETRY_MS = 30_000;

@@ -119,6 +119,14 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
    * many serious findings it filed, and their keys. What "is this getting
    * better?" is decided from.
    */
+  /**
+   * What automated review and `/oc` fixes on this pull request have cost so
+   * far (USD, as opencode prices the tokens), reported by the workflows
+   * (POST /builder/pipeline/usage). Counted against maxPrAutomationUsd.
+   */
+  @Column({ type: 'numeric', precision: 10, scale: 4, default: 0 })
+  automationCostUsd!: string;
+
   @Column({ type: 'jsonb', nullable: true })
   reviewHistory?:
     | { sha: string | null; count: number; keys: string[]; at?: string }[]

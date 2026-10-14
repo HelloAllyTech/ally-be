@@ -823,6 +823,13 @@ export class BuilderController {
         ...(dto.verifierModel !== undefined
           ? { verifierModel: dto.verifierModel || null }
           : {}),
+        ...(dto.maxPrAutomationUsd !== undefined
+          ? {
+              maxPrAutomationUsd: dto.maxPrAutomationUsd
+                ? String(dto.maxPrAutomationUsd)
+                : null,
+            }
+          : {}),
         // The level sets the switches, and wins over any given alongside it.
         ...(dto.autonomyLevel
           ? switchesForAutonomyLevel(dto.autonomyLevel)

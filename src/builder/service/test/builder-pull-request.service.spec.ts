@@ -1060,6 +1060,120 @@ describe('BuilderPullRequestService', () => {
     });
   });
 
+  describe('what automation costs, and the per-PR spend limit', () => {
+    it('adds a review or fix report to its pull request and session', async () => {
+      repository.findOne.mockResolvedValue(
+        openPr({
+          id: 'pr-9',
+          sessionId: 'session-7',
+          automationCostUsd: '1.5',
+        }),
+      );
+      buildService.recordExternalUsage = jest
+        .fn()
+        .mockResolvedValue('session-7');
+
+      await service.recordUsage({
+        kind: 'review',
+        repo: 'ally-web',
+        prNumber: 817,
+        runId: 'review-run',
+        costUsd: 2.25,
+      });
+
+      expect(repository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { repo: 'ally-web', prNumber: 817 } }),
+      );
+      expect(buildService.recordExternalUsage).toHaveBeenCalledWith(
+        'review-run',
+        'session-7',
+        2.25,
+      );
+      expect(repository.increment).toHaveBeenCalledWith(
+        { id: 'pr-9' },
+        'automationCostUsd',
+        2.25,
+      );
+    });
+
+    it('counts a build report to its run and session, not a PR budget', async () => {
+      buildService.recordExternalUsage = jest
+        .fn()
+        .mockResolvedValue('session-7');
+
+      await service.recordUsage({
+        kind: 'build',
+        repo: 'ally-mobile',
+        prNumber: null,
+        runId: 'build-run',
+        costUsd: 4,
+      });
+
+      expect(buildService.recordExternalUsage).toHaveBeenCalledWith(
+        'build-run',
+        null,
+        4,
+      );
+      expect(repository.increment).not.toHaveBeenCalled();
+    });
+
+    it('hands a pull request to a person once its automation budget is spent', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReviewEnabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 2,
+        maxPrAutomationUsd: '10',
+      });
+      feedbackRepository.countActionable.mockResolvedValue(2);
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+      });
+
+      await reconcileWith(
+        { headSha: 'head-3' },
+        openPr({
+          branch: 'opencode/issue1-1',
+          automationCostUsd: '10.40',
+          reviewedSha: 'head-2',
+        }),
+        { state: 'success', failed: [], total: 3 },
+      );
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason:
+            'Spent $10.40 of the $10.00 automation budget on review and fixes, and 2 problems remain.',
+        }),
+      );
+    });
+
+    it('keeps going under the budget', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReviewEnabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 2,
+        maxPrAutomationUsd: '10',
+      });
+
+      await reconcileWith(
+        { headSha: 'head-3' },
+        openPr({
+          branch: 'opencode/issue1-1',
+          automationCostUsd: '3.10',
+          reviewedSha: 'head-2',
+        }),
+        { state: 'success', failed: [], total: 3 },
+      );
+
+      expect(buildService.dispatchReviewRun).toHaveBeenCalled();
+    });
+  });
+
   describe('the track record', () => {
     it('counts clean reviews, merges as reviewed, escalations and unhealthy releases', async () => {
       const pr = (o: Record<string, any>) =>

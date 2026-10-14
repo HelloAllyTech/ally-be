@@ -87,6 +87,7 @@ import {
   RecordBuilderRunModelDto,
   SubmitBuilderDesignDto,
   SubmitBuilderDesignReviewDto,
+  RecordBuilderUsageDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -1181,6 +1182,18 @@ export class BuilderPipelineController {
   @ApiOperation({ summary: 'Repos Builder can work in, with their commands' })
   listRepoCommands() {
     return { repos: BUILDER_REPOS };
+  }
+
+  /**
+   * What an opencode build or fix, or an in-repo review, spent. Posted by the
+   * Builder workflows when they finish; best-effort on their side.
+   */
+  @Post('usage')
+  @ApiOperation({
+    summary: 'Record what an opencode run or a review spent (tokens, USD)',
+  })
+  recordUsage(@Body() dto: RecordBuilderUsageDto) {
+    return this.pullRequestService.recordUsage(dto);
   }
 
   @Post('repo-maps')

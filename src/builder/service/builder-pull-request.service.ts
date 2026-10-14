@@ -639,7 +639,8 @@ export class BuilderPullRequestService {
     if (
       pullRequest.needsHumanAt ||
       (isOpencodeBranch(pullRequest.branch) &&
-        (await this.timeBoxSpent(pullRequest)))
+        ((await this.timeBoxSpent(pullRequest)) ||
+          (await this.budgetSpent(pullRequest))))
     ) {
       await this.considerMergePrompt(pullRequest, remote);
       return;
@@ -2244,6 +2245,70 @@ export class BuilderPullRequestService {
   }
 
   /**
+   * Record what an opencode run or a review spent (POST pipeline/usage).
+   *
+   * Every report adds to the session's total and, when it names one, the
+   * run's cost. Reports for a pull request — a review, a `/oc` fix, a
+   * person's `/oc` — add to that PR's automation spend, which the per-PR
+   * budget (maxPrAutomationUsd) is checked against. A build report names its
+   * run (the issue marker); its PR does not exist yet, so it counts towards
+   * the session, not a PR budget.
+   */
+  async recordUsage(report: {
+    kind: 'build' | 'fix' | 'review';
+    repo: string;
+    prNumber?: number | null;
+    runId?: string | null;
+    costUsd: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  }): Promise<{ ok: boolean; sessionId: string | null }> {
+    const cost = Math.max(0, Number(report.costUsd) || 0);
+    const pullRequest = report.prNumber
+      ? await this.repository.findOne({
+          where: { repo: report.repo, prNumber: report.prNumber },
+          order: { createdAt: 'DESC' },
+        })
+      : null;
+    const sessionId = await this.buildService.recordExternalUsage(
+      report.runId ?? null,
+      pullRequest?.sessionId ?? null,
+      cost,
+    );
+    if (pullRequest && cost > 0) {
+      await this.repository.increment(
+        { id: pullRequest.id },
+        'automationCostUsd',
+        cost,
+      );
+    }
+    this.logger.info(
+      `[BUILDER] ${report.kind} on ${report.repo}${report.prNumber ? `#${report.prNumber}` : ''} cost $${cost.toFixed(4)} (${report.inputTokens ?? 0} in / ${report.outputTokens ?? 0} out tokens).`,
+    );
+    return { ok: true, sessionId };
+  }
+
+  /**
+   * The spend limit: this pull request's automated review and fixes have cost
+   * at least maxPrAutomationUsd. Escalates, and says whether it did. Checked
+   * before every review or `/oc` request, so Builder never starts work past
+   * the limit.
+   */
+  private async budgetSpent(pullRequest: BuilderPullRequest): Promise<boolean> {
+    const settings = await this.settingsService.get();
+    const limit = Number(settings.maxPrAutomationUsd ?? 0);
+    const spent = Number(pullRequest.automationCostUsd ?? 0);
+    if (!limit || spent < limit) return false;
+    const open = await this.feedbackRepository.countActionable(pullRequest.id);
+    await this.escalate(
+      pullRequest,
+      `Spent $${spent.toFixed(2)} of the $${limit.toFixed(2)} automation budget on review and fixes` +
+        (open ? `, and ${open} problem${open === 1 ? '' : 's'} remain.` : '.'),
+    );
+    return true;
+  }
+
+  /**
    * The time box: review-and-fix has run on this pull request for
    * BUILDER_PR_AUTOMATION_TIMEBOX_MS since its first review, and its latest
    * review still had serious findings. Escalates, and says whether it did.
@@ -2261,7 +2326,7 @@ export class BuilderPullRequestService {
     if (spent < BUILDER_PR_AUTOMATION_TIMEBOX_MS) return false;
     await this.escalate(
       pullRequest,
-      `${Math.round(spent / 3_600_000)} hours of automated review and fixes, and ${last.count} problem${last.count === 1 ? '' : 's'} remain.`,
+      `${spent >= 2 * 3_600_000 ? `${Math.round(spent / 3_600_000)} hours` : `${Math.round(spent / 60_000)} minutes`} of automated review and fixes, and ${last.count} problem${last.count === 1 ? '' : 's'} remain.`,
     );
     return true;
   }

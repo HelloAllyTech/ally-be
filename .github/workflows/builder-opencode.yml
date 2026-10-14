@@ -149,6 +149,7 @@ jobs:
             echo "::error::No builder-run marker in the issue body; nothing to build."
             exit 1
           fi
+          echo "BUILDER_RUN_ID=${run_id}" >> "$GITHUB_ENV"
           curl -fsS "${API}/api/v1/builder/pipeline/runs/${run_id}/spec" \
             -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-spec.md"
           # The prompt goes to a file the next step reads, not to GITHUB_ENV: a
@@ -218,3 +219,42 @@ jobs:
           USE_GITHUB_TOKEN: 'true'
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      # What this run spent, so Builder can show it and stop a pull request
+      # whose automation has cost too much (maxPrAutomationUsd). Best-effort:
+      # a failure here never fails the build.
+      - name: Fetch the usage summariser
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          repository: HelloAllyTech/ally-be
+          ref: master
+          path: .builder-usage
+          sparse-checkout: scripts/builder/opencode-usage.py
+          sparse-checkout-cone-mode: false
+      - name: Report usage to Builder
+        if: always()
+        continue-on-error: true
+        env:
+          API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          PR_NUMBER: ${{ github.event.issue.pull_request && github.event.issue.number || '' }}
+          KIND: ${{ github.event_name == 'issues' && 'build' || 'fix' }}
+        run: |
+          python3 .builder-usage/scripts/builder/opencode-usage.py > "${RUNNER_TEMP}/usage.json" || echo '{}' > "${RUNNER_TEMP}/usage.json"
+          rm -rf .builder-usage
+          cat "${RUNNER_TEMP}/usage.json"; echo
+          python3 - > "${RUNNER_TEMP}/usage-post.json" <<'PY'
+          import json, os
+          u = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "usage.json")))
+          u.update({
+              "kind": os.environ["KIND"],
+              "repo": os.environ["GITHUB_REPOSITORY"].split("/")[-1],
+              "prNumber": int(os.environ["PR_NUMBER"]) if os.environ.get("PR_NUMBER") else None,
+              "runId": os.environ.get("BUILDER_RUN_ID") or None,
+          })
+          print(json.dumps(u))
+          PY
+          curl -fsS -X POST "${API}/api/v1/builder/pipeline/usage" \
+            -H "x-api-key: ${API_KEY}" -H 'Content-Type: application/json' \
+            -d @"${RUNNER_TEMP}/usage-post.json"

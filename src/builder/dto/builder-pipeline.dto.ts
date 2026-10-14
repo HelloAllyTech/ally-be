@@ -11,6 +11,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -473,4 +474,49 @@ export class SubmitBuilderDesignReviewDto {
   @IsString({ each: true })
   @MaxLength(4_000, { each: true })
   suggestions?: string[];
+}
+
+/**
+ * What an opencode run or a review spent, reported by the Builder workflows
+ * after it finishes (scripts/builder/opencode-usage.py). Attributed to a run
+ * by `runId`, or to a pull request by `repo` + `prNumber`.
+ */
+export class RecordBuilderUsageDto {
+  @IsIn(['build', 'fix', 'review'])
+  kind!: 'build' | 'fix' | 'review';
+
+  @IsString()
+  repo!: string;
+
+  @IsOptional()
+  @IsNumber()
+  prNumber?: number | null;
+
+  @IsOptional()
+  @IsString()
+  runId?: string | null;
+
+  @IsNumber()
+  @Min(0)
+  costUsd!: number;
+
+  @IsOptional()
+  @IsNumber()
+  inputTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  outputTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  cacheReadTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  cacheWriteTokens?: number;
+
+  @IsOptional()
+  @IsObject()
+  models?: Record<string, number>;
 }

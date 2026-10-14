@@ -1596,6 +1596,35 @@ export class BuilderBuildService {
     return run;
   }
 
+  /**
+   * Add spend reported from outside Builder's runner — an opencode issue
+   * build or fix, an in-repo review — to its run and its session. Returns the
+   * session it was attributed to, or null when neither is known.
+   */
+  async recordExternalUsage(
+    runId: string | null,
+    sessionId: string | null,
+    costUsd: number,
+  ): Promise<string | null> {
+    const run = runId
+      ? await this.runRepository.findOne({ where: { id: runId } })
+      : null;
+    const session = run?.sessionId ?? sessionId;
+    if (!session || costUsd <= 0) return session;
+    if (run) {
+      await this.runRepository.update(
+        { id: run.id },
+        { costUsd: String(Number(run.costUsd ?? 0) + costUsd) },
+      );
+    }
+    await this.sessionRepository.increment(
+      { id: session },
+      'totalCostUsd',
+      costUsd,
+    );
+    return session;
+  }
+
   /** The latest review runs' outcomes for a pull request, newest first. */
   async recentReviewOutcomes(
     pullRequestId: string,
