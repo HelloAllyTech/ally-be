@@ -189,18 +189,95 @@ describe('GithubActionsService.getCheckRollup', () => {
     });
   });
 
+  const refused = (status: number) =>
+    Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+
+  /** Answers by URL, since the fallback's calls interleave with the others. */
+  const byUrl = (routes: Record<string, () => Promise<unknown>>) =>
+    mockedAxios.get.mockImplementation((url: string) => {
+      const key = Object.keys(routes).find((path) => url.endsWith(path));
+      return key ? (routes[key]() as any) : Promise.reject(refused(500));
+    });
+
   it('says nothing rather than "none" when the checks cannot be read', async () => {
-    mockedAxios.get
-      .mockRejectedValueOnce(
-        Object.assign(new Error('Not Found'), {
-          response: { status: 404 },
-        }),
-      )
-      .mockResolvedValueOnce(statuses([]));
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(404)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () => Promise.reject(refused(403)),
+    });
 
     // Null, not { state: 'none' }: callers treat null as "could not read" and
     // refuse to act, which is the only safe reading of an unanswered question.
     expect(await service.getCheckRollup('ally-mobile', 'sha')).toBeNull();
+  });
+
+  it('reads the Actions jobs when a fine-grained token is refused the checks API', async () => {
+    // ally-mobile#114: four green checks, a private repo, and a token that
+    // cannot be granted Checks.
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(403)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () =>
+        Promise.resolve({ data: { workflow_runs: [{ id: 1 }, { id: 2 }] } }),
+      '/actions/runs/1/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'Jest', status: 'completed', conclusion: 'success' },
+              { name: 'Typecheck', status: 'completed', conclusion: 'success' },
+            ],
+          },
+        }),
+      '/actions/runs/2/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'docs-guard', status: 'in_progress', conclusion: null },
+            ],
+          },
+        }),
+    });
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toEqual({
+      state: 'pending',
+      failed: [],
+      total: 3,
+    });
+  });
+
+  it('names a failed Actions job read through the fallback', async () => {
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(403)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () =>
+        Promise.resolve({ data: { workflow_runs: [{ id: 1 }] } }),
+      '/actions/runs/1/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'Jest', status: 'completed', conclusion: 'failure' },
+            ],
+          },
+        }),
+    });
+
+    const rollup = await service.getCheckRollup('ally-mobile', 'sha');
+
+    expect(rollup?.state).toBe('failure');
+    expect(rollup?.failed).toEqual(['Jest']);
+  });
+
+  it('does not fall back on errors other than a refusal', async () => {
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(502)),
+      '/status': () => Promise.resolve(statuses([])),
+    });
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toBeNull();
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      expect.stringMatching(/actions\/runs$/),
+      expect.anything(),
+    );
   });
 
   it('still reports a genuinely unchecked commit as none', async () => {

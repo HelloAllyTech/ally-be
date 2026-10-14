@@ -946,7 +946,18 @@ export class GithubActionsService {
             headers: this.headers,
             timeout: 15_000,
           })
-          .then((response) => response.data?.check_runs ?? []),
+          .then((response) => response.data?.check_runs ?? [])
+          .catch((error) => {
+            // A fine-grained token cannot be granted Checks at all, so on a
+            // private repo (ally-mobile, ally-ai-learn) this read is refused
+            // however the token is set up — ally-mobile#114 sat green and
+            // unread. Every check those repos run is an Actions job, and the
+            // Actions API takes the `Actions: read` a fine-grained token can
+            // have. Any other failure still fails the whole read.
+            const status = (error as AxiosError)?.response?.status;
+            if (status !== 403 && status !== 404) throw error;
+            return this.checkRunsFromActions(repo, ref);
+          }),
         axios
           .get(this.url(repo, `commits/${ref}/status`), {
             headers: this.headers,
@@ -1005,6 +1016,41 @@ export class GithubActionsService {
       );
       return null;
     }
+  }
+
+  /**
+   * The Actions jobs that ran on a commit, shaped like check runs (name,
+   * status, conclusion) — what the checks API reports for them, read through
+   * the API a fine-grained token can reach. Only the latest attempt of each
+   * job, as the checks API shows.
+   */
+  private async checkRunsFromActions(
+    repo: string,
+    ref: string,
+  ): Promise<Array<{ name: string; status: string; conclusion: string }>> {
+    const { data } = await axios.get(this.url(repo, 'actions/runs'), {
+      headers: this.headers,
+      params: { head_sha: ref, per_page: 100 },
+      timeout: 15_000,
+    });
+    const jobs = await Promise.all(
+      (data?.workflow_runs ?? []).map(async (run: any) => {
+        const { data: page } = await axios.get(
+          this.url(repo, `actions/runs/${run.id}/jobs`),
+          {
+            headers: this.headers,
+            params: { filter: 'latest', per_page: 100 },
+            timeout: 15_000,
+          },
+        );
+        return page?.jobs ?? [];
+      }),
+    );
+    return jobs.flat().map((job: any) => ({
+      name: String(job?.name ?? ''),
+      status: String(job?.status ?? ''),
+      conclusion: String(job?.conclusion ?? ''),
+    }));
   }
 
   /**
