@@ -99,9 +99,11 @@ describe('AuthService', () => {
     },
     testAccounts: '{}',
     googleAuth: {
-      androidClientId: 'android',
-      iosClientId: 'ios',
-      webClientId: 'web',
+      clientIds: [
+        '111-android.apps.googleusercontent.com',
+        '111-ios.apps.googleusercontent.com',
+        '111-web.apps.googleusercontent.com',
+      ],
     },
     appleAuth: {
       bundleIds: ['com.helloally.app', 'com.helloally.app.dev'],
@@ -1076,6 +1078,152 @@ describe('AuthService', () => {
         `auth_attempt:magic:${tokenHash}`,
       );
       expect(refreshTokenRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyGoogleToken', () => {
+    const roles = { allowedRoles: [UserRole.CLIENT] };
+    const WEB = '111-web.apps.googleusercontent.com';
+    const UNLISTED_OWN = '111-unlisted.apps.googleusercontent.com';
+    const OTHER_PROJECT = '222-web.apps.googleusercontent.com';
+    const tokenInfo = (overrides: Record<string, unknown> = {}) => ({
+      aud: WEB,
+      azp: WEB,
+      email: 'ada@example.com',
+      // tokeninfo returns every field as a string.
+      email_verified: 'true',
+      scopes: ['email'],
+      expiry_date: Date.now() + 3600_000,
+      ...overrides,
+    });
+
+    const mockTokenInfo = (info: Record<string, unknown>) =>
+      jest
+        .spyOn((authService as any).googleClient, 'getTokenInfo')
+        .mockResolvedValue(info as any);
+
+    describe('access token', () => {
+      it.each(mockConfig.googleAuth.clientIds as string[])(
+        'accepts a token issued to the configured client %s',
+        async (clientId) => {
+          mockTokenInfo(tokenInfo({ aud: clientId, azp: clientId }));
+
+          await expect(
+            authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+          ).resolves.toEqual({ email: 'ada@example.com' });
+        },
+      );
+
+      it('accepts a token whose authorised party is a configured client', async () => {
+        mockTokenInfo(tokenInfo({ aud: OTHER_PROJECT, azp: WEB }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).resolves.toEqual({ email: 'ada@example.com' });
+      });
+
+      it('accepts email_verified as a boolean too', async () => {
+        mockTokenInfo(tokenInfo({ email_verified: true }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).resolves.toEqual({ email: 'ada@example.com' });
+      });
+
+      it('accepts an unlisted client in the same Google project, and says so', async () => {
+        mockTokenInfo(tokenInfo({ aud: UNLISTED_OWN, azp: UNLISTED_OWN }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).resolves.toEqual({ email: 'ada@example.com' });
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(UNLISTED_OWN),
+        );
+      });
+
+      it('rejects a token issued to a client in another Google project', async () => {
+        mockTokenInfo(tokenInfo({ aud: OTHER_PROJECT, azp: OTHER_PROJECT }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(OTHER_PROJECT),
+        );
+      });
+
+      it('rejects an audience that is not a Google client id', async () => {
+        mockTokenInfo(tokenInfo({ aud: 'not-a-client', azp: 'not-a-client' }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+      });
+
+      it('rejects a token with no audience at all', async () => {
+        mockTokenInfo(tokenInfo({ aud: undefined, azp: undefined }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+      });
+
+      it.each([
+        ['false', 'false'],
+        ['false (boolean)', false],
+        ['missing', undefined],
+      ])(
+        'rejects a token whose email is not verified (%s)',
+        async (_label, emailVerified) => {
+          mockTokenInfo(tokenInfo({ email_verified: emailVerified }));
+
+          await expect(
+            authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+          ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+        },
+      );
+
+      it('rejects a token with no email', async () => {
+        mockTokenInfo(tokenInfo({ email: undefined }));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+      });
+
+      it('rejects a token Google does not recognise', async () => {
+        jest
+          .spyOn((authService as any).googleClient, 'getTokenInfo')
+          .mockRejectedValue(new Error('invalid_token'));
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
+      });
+    });
+
+    describe('ID token', () => {
+      it('checks the audience against every configured client', async () => {
+        const verifyIdToken = jest
+          .spyOn((authService as any).googleClient, 'verifyIdToken')
+          .mockResolvedValue({
+            getPayload: () => ({ email: 'ada@example.com' }),
+          } as any);
+
+        await expect(
+          authService.verifyGoogleToken({ ...roles, idToken: 'id.jwt' }),
+        ).resolves.toEqual({ email: 'ada@example.com' });
+        expect(verifyIdToken).toHaveBeenCalledWith({
+          idToken: 'id.jwt',
+          audience: mockConfig.googleAuth.clientIds,
+        });
+      });
+    });
+
+    it('throws BadRequest when neither token is sent', async () => {
+      await expect(authService.verifyGoogleToken(roles)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
