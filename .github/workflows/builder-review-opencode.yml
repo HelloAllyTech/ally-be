@@ -79,7 +79,7 @@ jobs:
   pass:
     name: review (${{ matrix.pass }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       # Two at a time: twelve concurrent passes (three reviews) exhausted the
@@ -174,7 +174,7 @@ jobs:
           # A hard budget: probing can go on indefinitely, and a pass that hits
           # the job timeout leaves nothing behind. Warnings go to the
           # transcript, so a quota stall says so instead of going silent.
-          timeout 18m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          timeout 24m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           # No file: the model stalled or stopped early. Run the pass afresh on
           # the fallback model rather than resuming a stalled session.
@@ -184,7 +184,7 @@ jobs:
           if ! done_ok "$out"; then
             echo "::warning::The ${PASS} pass did not finish on ${MODEL}; retrying on ${FALLBACK_MODEL}."
             echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-${PASS}.txt"
-            timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
+            timeout 12m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           fi
           if ! done_ok "$out"; then
@@ -208,7 +208,7 @@ jobs:
     # Not always(): that keeps verify running through a cancellation.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       NODE_OPTIONS: ${{ inputs.node-options }}
     steps:
@@ -312,7 +312,7 @@ jobs:
               body = body.replace("{{" + k + "}}", v)
           print(body)
           PY
-          timeout 20m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          timeout 24m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           # A verdict counts only when it is final and agrees with its findings:
           # approve with no serious finding, request_changes with at least one.
@@ -329,7 +329,7 @@ jobs:
           if ! verdict_ok "$out"; then
             echo "::warning::Verify gave no final verdict on ${MODEL}; retrying on ${FALLBACK_MODEL}."
             echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-verify.txt"
-            timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
+            timeout 12m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           fi
           if ! verdict_ok "$out"; then
