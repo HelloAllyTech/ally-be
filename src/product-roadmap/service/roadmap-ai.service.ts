@@ -10,27 +10,20 @@ import {
 } from 'src/learn/util/autofill-shared.util';
 import { AiService } from 'src/ai/service/ai.service';
 
-import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
 
 /** AI-task-registry row id; the key for per-task model config. */
 const AI_TASK_ID = 'roadmap-ai';
-import {
-  RoadmapOpportunityEffort,
-  RoadmapOpportunityType,
-} from '../enum/roadmap-opportunity.enum';
+import { RoadmapOpportunityType } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_DUPLICATES,
   ROADMAP_LIMITS,
-  ROADMAP_FILEABLE_EFFORTS,
   ROADMAP_PROMPT_CODES,
-  ROADMAP_READINESS_CRITERIA,
 } from '../constants/product-roadmap.constants';
 import {
   DuplicateMatchDto,
   DuplicatesResponseDto,
-  OpportunityInterviewTurnResponseDto,
 } from '../dto/roadmap-response.dto';
 
 const MAX_TOKENS = {
@@ -40,8 +33,6 @@ const MAX_TOKENS = {
   CLAUDE_PROMPT: 2000,
   // A verdict plus a ≤200-char reason per goal, at the 12-goal ceiling, with headroom.
   GOAL_IMPACT: 1600,
-  // A question, five gate verdicts with notes, and — on the last turn — a ≤900-char draft.
-  OPPORTUNITY_INTERVIEW: 2000,
 } as const;
 
 @Injectable()
@@ -54,7 +45,6 @@ export class RoadmapAiService {
     private readonly aiService: AiService,
     private readonly opportunityRepository: RoadmapOpportunityRepository,
     private readonly goalRepository: RoadmapProductGoalRepository,
-    private readonly readinessToken: RoadmapReadinessTokenService,
   ) {}
 
   /**
@@ -97,172 +87,6 @@ export class RoadmapAiService {
       confidence: Number(parsed?.confidence ?? 0),
       rationale: parsed?.rationale ?? '',
     };
-  }
-
-  /**
-   * One turn of the opportunity interview: read the conversation so far, ask the next question,
-   * and report where the five readiness criteria stand.
-   *
-   * THE GATES ARE THE FILING GATE'S OWN CRITERIA, not a second rubric. An interview grading its
-   * own private list can spend eight questions and hand over a draft `create` then refuses —
-   * which is the single worst outcome for a surface whose whole promise is "answer these and it
-   * is fileable". Same constant, same ids, same order as the checklist `GET ai/readiness/criteria` serves.
-   *
-   * FAILS CLOSED, in the direction that costs nothing: an unparsable answer yields no draft and
-   * no gates met, so the admin sees "ask me again" rather than a draft nobody graded. The
-   * opposite default — treating a missing verdict as met — would file ungraded drafts.
-   *
-   * The readiness token is minted here, and ONLY alongside a draft with every gate met, because
-   * that is the only state in which this conversation has established what the token asserts.
-   */
-  async interviewTurn(
-    messages: { role: 'admin' | 'agent'; content: string }[],
-  ): Promise<OpportunityInterviewTurnResponseDto> {
-    const criteria = ROADMAP_READINESS_CRITERIA;
-    const renderedCriteria = criteria
-      .map((c) => `- id: ${c.id}\n  criterion: ${c.label}\n  means: ${c.hint}`)
-      .join('\n');
-
-    const goals = await this.goalRepository.findAllOrdered();
-    const renderedGoals = goals.length
-      ? goals.map((g) => `- ${g.name}`).join('\n')
-      : '(none defined — answer null)';
-
-    // The transcript is rendered into ONE user turn rather than replayed as an Anthropic
-    // messages array. This call is stateless and single-shot, so there are no tool_use blocks
-    // to keep paired (the trap rebuildAnthropicHistory exists for in the Builder agent), and a
-    // flat transcript keeps the whole interview inside one cacheable shape.
-    const transcript = messages.length
-      ? messages
-          .map(
-            (m) =>
-              `${m.role === 'admin' ? 'ADMIN' : 'YOU'}: ${m.content.trim()}`,
-          )
-          .join('\n\n')
-      : '(nothing yet — this is the first turn, so open the interview)';
-
-    const parsed = await this.runJson<{
-      reply?: string;
-      gates?: { id?: string; met?: boolean; note?: string }[];
-      draft?: {
-        description?: string;
-        productGoal?: string | null;
-        effort?: string | null;
-      } | null;
-    }>(
-      ROADMAP_PROMPT_CODES.OPPORTUNITY_INTERVIEW,
-      `Criteria to satisfy:\n${renderedCriteria}\n\n` +
-        `Product goals to choose from:\n${renderedGoals}\n\n` +
-        `Conversation so far:\n"""\n${transcript}\n"""\n\n` +
-        `Take your next turn now.`,
-      MAX_TOKENS.OPPORTUNITY_INTERVIEW,
-      LlmTask.AUTOFILL_ENHANCE_FIELD,
-      'opportunity-interview',
-    );
-
-    const byId = new Map(
-      (parsed?.gates ?? [])
-        .filter((g) => typeof g?.id === 'string')
-        .map((g) => [g.id as string, g]),
-    );
-
-    const gates = criteria.map((criterion) => {
-      const answer = byId.get(criterion.id);
-      // `=== true`, not truthy: "yes" or 1 is not the schema, and an unparsed verdict must
-      // never read as satisfied on something that gates filing.
-      const met = answer?.met === true;
-      return {
-        id: criterion.id,
-        met,
-        note: answer?.note?.trim() || (met ? 'Covered.' : 'Not covered yet.'),
-      };
-    });
-
-    const allMet = gates.every((g) => g.met);
-    const description = parsed?.draft?.description?.trim();
-    const effort = this.validEffort(parsed?.draft?.effort);
-    // The filing gate's size rule, applied here so the interview never hands over a draft that
-    // `create` would then refuse. Unsized counts as too big: "could not tell how big this is" is
-    // not a pass there either. This is the interview's job now that it is the only way to file —
-    // there is no override to fall back on, so the way past the size rule is narrowing the draft.
-    const sizeFileable =
-      effort !== null &&
-      (ROADMAP_FILEABLE_EFFORTS as readonly string[]).includes(effort);
-
-    // A draft is only a draft when every gate is met, there is text, and it is small enough to
-    // file. A model that hands over early is overruled rather than trusted: the checklist the
-    // admin can see is the contract.
-    const draft =
-      allMet && description && sizeFileable
-        ? {
-            description: description.slice(0, ROADMAP_LIMITS.DESCRIPTION_MAX),
-            productGoal: goals.some(
-              (g) => g.name === parsed?.draft?.productGoal,
-            )
-              ? (parsed!.draft!.productGoal as string)
-              : null,
-            effort,
-          }
-        : null;
-
-    // Withheld on size, the model's own reply ("here is your draft") would announce a draft the
-    // admin cannot see, so it is replaced with the question that moves the interview on.
-    const withheldOnSize = allMet && !!description && !sizeFileable;
-    if (withheldOnSize) {
-      this.logger.warn(
-        `[ROADMAP] Opportunity interview drafted a ${effort ?? 'unsized'} opportunity. ` +
-          `Withholding it and asking to narrow rather than handing over a draft that cannot be filed.`,
-      );
-    }
-
-    if (allMet && !description) {
-      this.logger.warn(
-        `[ROADMAP] Opportunity interview reported every gate met but returned no draft. ` +
-          `Continuing the interview rather than filing nothing.`,
-      );
-    }
-
-    return {
-      reply: withheldOnSize
-        ? 'That sounds like more than one opportunity. Which single piece of it would make ' +
-          'the biggest difference on its own, if it shipped first?'
-        : parsed?.reply?.trim() ||
-          'Sorry — I lost that. Could you say it again?',
-      gates,
-      draft,
-      readinessToken: draft
-        ? this.readinessToken.issue({
-            description: draft.description,
-            productGoal: draft.productGoal,
-            failedCriteria: [],
-            proposedEffort: draft.effort,
-          })
-        : null,
-    };
-  }
-
-  /**
-   * A model-proposed size, or null when it is not a live one.
-   *
-   * Shared by the interview and (by intent) anything else that takes a size from an answer:
-   * storing an unvalidated one is how 241 opportunities ended up with meaningless goal data —
-   * see classifyGoal.
-   */
-  private validEffort(
-    proposed?: string | null,
-  ): RoadmapOpportunityEffort | null {
-    const value = proposed?.trim().toLowerCase();
-    const efforts = Object.values(RoadmapOpportunityEffort) as string[];
-    if (value && efforts.includes(value)) {
-      return value as RoadmapOpportunityEffort;
-    }
-    if (value) {
-      this.logger.warn(
-        `[ROADMAP] Interview proposed effort "${value}", which is not a live size. ` +
-          `Handing over unsized instead.`,
-      );
-    }
-    return null;
   }
 
   /** Summarise an interview transcript. Plain text, not JSON — multiline prose in JSON is fragile. */

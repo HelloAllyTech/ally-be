@@ -227,12 +227,12 @@ export class OpportunityInterviewMessageDto {
 }
 
 /**
- * The whole interview so far, sent on every turn.
+ * The whole interview so far, sent on every turn — to the opportunity copilot.
  *
- * STATELESS BY DESIGN: this surface is experimental, and a session table plus a message table
- * plus a migration is a lot of durable schema to commit to an idea that may not survive contact
- * with its first ten users. The cost is that closing the drawer loses the conversation, which
- * the drawer warns about — see OpportunityInterviewDrawer in ally-web.
+ * STATELESS BY DESIGN: a session table plus a message table plus a migration is a lot of
+ * durable schema for a conversation whose only durable output is the opportunity it files.
+ * The cost is that closing the drawer loses the conversation, which the drawer warns about —
+ * see OpportunityInterviewDrawer in ally-web.
  *
  * `messages` may be empty: that is how the client asks for the OPENING question, so the agent
  * writes the first turn rather than the frontend hardcoding a greeting that would then drift
@@ -250,6 +250,22 @@ export class OpportunityInterviewTurnDto {
   @ValidateNested({ each: true })
   @Type(() => OpportunityInterviewMessageDto)
   messages!: OpportunityInterviewMessageDto[];
+
+  /**
+   * The `brief` from the previous turn's response, unchanged. It is how what the copilot found
+   * on one turn survives to the next without a session table — and why it is re-normalised on
+   * the way in rather than trusted: it has been through the browser.
+   */
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description:
+      "The previous turn's `brief`, echoed back. Omit on the first turn.",
+  })
+  @IsOptional()
+  @IsObject()
+  brief?: Record<string, any> | null;
 }
 
 /**

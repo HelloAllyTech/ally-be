@@ -259,4 +259,55 @@ describe('RoadmapOpportunityService — readiness gate', () => {
     expect(verify).not.toHaveBeenCalled();
     expect(opportunityRepository.save).toHaveBeenCalled();
   });
+
+  describe("the copilot's brief", () => {
+    const BRIEF = {
+      strategicFit: [{ goal: 'Cut time-to-first-value', why: 'Fewer steps.' }],
+      evidence: [{ source: 'analytics', claim: '40 a week.', ref: 'q1' }],
+      assessment: {
+        rating: 'promising',
+        summary: 'Clear; needs a metric.',
+        openRecommendations: ['Name a metric.'],
+      },
+    };
+
+    it('checks the brief against the token and stores it normalised', async () => {
+      givenVerdict([]);
+
+      await file({ brief: BRIEF });
+
+      expect(verify).toHaveBeenCalledWith('signed.verdict', {
+        description: DRAFT,
+        productGoal: GOAL,
+        brief: BRIEF,
+      });
+      expect(savedRow().brief).toMatchObject({
+        strategicFit: BRIEF.strategicFit,
+        assessment: { rating: 'promising' },
+        reach: { howMany: null, howOften: null },
+      });
+    });
+
+    it('files with no brief as null, not as an empty brief', async () => {
+      givenVerdict([]);
+
+      await file();
+
+      expect(savedRow().brief).toBeNull();
+    });
+
+    /**
+     * Without a token nothing vouches for the brief, so it would be an unsigned document
+     * labelled as the copilot's judgement — refused even during the tokenless rollout window.
+     */
+    it('refuses a brief that arrives without a token, or on a path that does not verify one', async () => {
+      await expect(
+        file({ brief: BRIEF, readinessToken: undefined }),
+      ).rejects.toThrow(/copilot brief/);
+      await expect(
+        file({ brief: BRIEF }, { enforceReadiness: false }),
+      ).rejects.toThrow(/copilot brief/);
+      expect(opportunityRepository.save).not.toHaveBeenCalled();
+    });
+  });
 });

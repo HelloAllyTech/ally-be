@@ -44,6 +44,10 @@ import {
 import { RoadmapAccessService } from './service/roadmap-access.service';
 import { RoadmapReadinessTokenService } from './service/roadmap-readiness-token.service';
 import { RoadmapAiService } from './service/roadmap-ai.service';
+import { RoadmapStrategyContextService } from './service/roadmap-strategy-context.service';
+import { RoadmapCopilotToolsService } from './service/roadmap-copilot-tools.service';
+import { RoadmapCopilotService } from './service/roadmap-copilot.service';
+import { GlobalSettings } from 'src/settings/entity/global-settings.entity';
 import { RoadmapAllocationService } from './service/roadmap-allocation.service';
 import { RoadmapCommentService } from './service/roadmap-comment.service';
 import { RoadmapInterviewNoteService } from './service/roadmap-content.service';
@@ -122,6 +126,10 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
       // Written by BugHunterMissClassifierService (below) when it records why a
       // reported bug was not found first — a runless timeline event on the finding.
       BugHuntEvent,
+      // The Vision & strategy page is one row here (ROADMAP_STRATEGY_CONTEXT_SETTING). The
+      // entity rather than SettingsModule, for the same reason as BugFinding above: one row
+      // read and written by one service needs no module graph behind it.
+      GlobalSettings,
     ]),
     // AiService — the Weaviate client for duplicate detection.
     AiModule,
@@ -186,6 +194,11 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     RoadmapGoalImpactService,
     RoadmapInterviewNoteService,
     RoadmapAiService,
+    // The opportunity copilot: the guided interview's tool loop, its tools, and the Vision &
+    // strategy page it always reads.
+    RoadmapStrategyContextService,
+    RoadmapCopilotToolsService,
+    RoadmapCopilotService,
     RoadmapVoteGrantSchedulerRegistrationService,
     RoadmapBuilderSchedulerRegistrationService,
     // Classifies a reported bug's repo at intake (RoadmapOpportunityService.create).

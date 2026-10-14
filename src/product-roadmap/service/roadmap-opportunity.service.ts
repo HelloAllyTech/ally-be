@@ -67,10 +67,12 @@ import {
   RoadmapFacetsDto,
   RoadmapReferenceImageUploadUrlResponseDto,
   RoadmapUserRefDto,
+  OpportunityBriefResponseDto,
   RoadmapVoterDto,
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
+import { normaliseOpportunityBrief } from '../util/roadmap-brief.util';
 import { RoadmapGoalImpactService } from './roadmap-goal-impact.service';
 import { RoadmapStrategyGoalService } from './roadmap-strategy-goal.service';
 import { RoadmapVectorService } from './roadmap-vector.service';
@@ -137,6 +139,23 @@ export class RoadmapOpportunityService {
     );
     if (!row) throw new NotFoundException(`Opportunity ${id} not found`);
     return (await this.toResponseList([row]))[0];
+  }
+
+  /**
+   * The copilot's brief for one opportunity, or null when it was filed without one.
+   *
+   * Its own read rather than a field on OpportunityResponseDto — see `hasBrief` there. Selects
+   * the one column so a drawer open does not re-run the scored projection for it.
+   */
+  async getBrief(id: string): Promise<OpportunityBriefResponseDto> {
+    const row = await this.opportunityRepository.findOne({
+      where: { id },
+      select: { id: true, brief: true },
+    });
+    if (!row) throw new NotFoundException(`Opportunity ${id} not found`);
+    return {
+      brief: (row.brief ?? null) as OpportunityBriefResponseDto['brief'],
+    };
   }
 
   /**
@@ -208,9 +227,22 @@ export class RoadmapOpportunityService {
       await this.assertEligibleOwner(dto.ownerUserId);
     }
 
+    // A brief is the copilot's signed case for this draft, so it is only ever stored when the
+    // readiness gate checked it against the token minted over it. Without that check it would
+    // be an unsigned document labelled as the copilot's judgement.
+    if (dto.brief != null && !(extra?.enforceReadiness && dto.readinessToken)) {
+      throw new BadRequestException(
+        "A copilot brief can only be filed together with the copilot's own draft.",
+      );
+    }
+
     if (extra?.enforceReadiness) this.assertReady(userId, dto);
 
     const referenceImages = this.normaliseReferenceImages(dto.referenceImages);
+    // Normalised AFTER the hash check, never before: the token signs what the copilot emitted,
+    // which was already normalised, so this is idempotent on an honest brief and only bounds
+    // what a future write path might forget to.
+    const brief = normaliseOpportunityBrief(dto.brief);
 
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
@@ -228,6 +260,7 @@ export class RoadmapOpportunityService {
         // so both land the same row, but being explicit means the created entity in memory has
         // the same shape as one read back — which is what the response mapper reads.
         referenceImages,
+        brief,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,
@@ -352,6 +385,7 @@ export class RoadmapOpportunityService {
     const verdict = this.readinessToken.verify(dto.readinessToken, {
       description: dto.description,
       productGoal: dto.productGoal,
+      brief: dto.brief,
     });
 
     const failed = [...verdict.failedCriteria];
@@ -672,6 +706,7 @@ export class RoadmapOpportunityService {
       // row read through a raw `opp.*` projection in a mid-deploy window can still arrive
       // without it. An absent array and an empty one mean the same thing to every client.
       referenceImages: row.referenceImages ?? [],
+      hasBrief: row.brief != null,
       builderSessionId: row.builderSessionId ?? null,
       releasedAt: row.releasedAt ?? null,
       plannedMonth: row.plannedMonth ?? null,
