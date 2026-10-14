@@ -8,7 +8,8 @@
  * course it made. Prints a timeline and exits non-zero on the first failure.
  *
  *   node scripts/course-copilot/e2e.mjs                       # interview from scratch
- *   BASE=http://localhost:8001/api EMAIL=admin@example.com OTP=1234 node scripts/course-copilot/e2e.mjs
+ *   OTP=<test-account code> node scripts/course-copilot/e2e.mjs   # OTP is required
+ *   BASE=http://localhost:8001/api EMAIL=admin@example.com OTP=… node scripts/course-copilot/e2e.mjs
  *   SESSION=<uuid> node scripts/course-copilot/e2e.mjs        # resume an existing session
  *   MAX_QUESTIONS=6 node scripts/course-copilot/e2e.mjs       # fast-forward after 6 answers
  *   EDIT="make the first quiz harder" node …                  # one edit-loop turn after the build
@@ -19,7 +20,9 @@
 
 const BASE = process.env.BASE ?? 'http://localhost:8001/api';
 const EMAIL = process.env.EMAIL ?? 'admin@example.com';
-const OTP = process.env.OTP ?? '1234';
+// The local test account's fixed code (TEST_ACCOUNTS in ally-be/.env) — passed
+// in, never written here.
+const OTP = process.env.OTP;
 const ROLES = (process.env.ROLES ?? 'SUPER_DUPER_ADMIN,PLATFORM_ADMIN').split(',');
 const MAX_QUESTIONS = Number(process.env.MAX_QUESTIONS ?? 8);
 const BUILD_TIMEOUT_MS = Number(process.env.BUILD_TIMEOUT_MS ?? 15 * 60_000);
@@ -38,6 +41,7 @@ const fail = (message) => {
 let token;
 
 async function auth() {
+  if (!OTP) fail('Set OTP to the local test account code (TEST_ACCOUNTS in ally-be/.env).');
   const body = { email: EMAIL, allowedRoles: ROLES, appType: 'ADMIN' };
   await fetch(`${BASE}/v2/auth/generate-otp`, post(body));
   const response = await fetch(`${BASE}/v2/auth/verify-otp`, post({ ...body, otp: OTP }));
