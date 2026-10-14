@@ -193,7 +193,8 @@ jobs:
   verify:
     name: review (verify)
     needs: pass
-    if: always()
+    # Not always(): that keeps verify running through a cancellation.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -257,20 +258,30 @@ jobs:
           python3 - <<'PY'
           import glob, json, os
           t = os.environ["RUNNER_TEMP"]
-          pooled = []
+          pooled, complete = [], 0
           for path in sorted(glob.glob(f"{t}/passes/findings-*.json")):
               try:
                   data = json.load(open(path))
               except Exception:
                   continue
+              if not data.get("error"):
+                  complete += 1
               for finding in data.get("findings", []):
                   finding["pass"] = data.get("pass")
                   pooled.append(finding)
           json.dump({"candidates": pooled}, open(f"{t}/candidates.json", "w"), indent=1)
-          print(f"{len(pooled)} candidate finding(s) from the passes")
+          print(f"{len(pooled)} candidate finding(s) from {complete} complete pass(es)")
+          # A pass that timed out or crashed reviewed nothing. Four empty-handed
+          # passes are not a clean pull request, so an incomplete review files
+          # no verdict at all; Builder then retries it.
+          if complete < 4:
+              json.dump({"verdict": "incomplete", "summary": f"Only {complete} of 4 review passes finished; no verdict.", "findings": [], "dropped": []}, open(f"{t}/review.json", "w"))
+              with open(os.environ["GITHUB_ENV"], "a") as env:
+                  env.write("REVIEW_INCOMPLETE=1\n")
           PY
 
       - name: Verify
+        if: env.REVIEW_INCOMPLETE != '1'
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PR: ${{ inputs.pr_number }}
@@ -325,7 +336,7 @@ jobs:
           PY
 
       - name: File the verdict with Builder
-        if: inputs.review_run_id != '' && inputs.builder_pr_id != ''
+        if: inputs.review_run_id != '' && inputs.builder_pr_id != '' && env.REVIEW_INCOMPLETE != '1'
         env:
           API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
           RUN_ID: ${{ inputs.review_run_id }}
