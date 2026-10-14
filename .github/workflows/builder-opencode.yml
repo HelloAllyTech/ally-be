@@ -195,10 +195,21 @@ jobs:
           # in the file fetched above; a person's /oc comment is its own prompt.
           if [ -f "${RUNNER_TEMP}/builder-prompt.md" ]; then
             PROMPT="$(cat "${RUNNER_TEMP}/builder-prompt.md")"
-            export PROMPT
+          else
+            PROMPT="$COMMENT_BODY"
           fi
+          # Standing rules for every run. opencode github pushes the working
+          # tree to the right branch when the agent finishes; an agent that
+          # switches branches itself makes it skip the push ("Agent managed its
+          # own branch"), and the work is lost while the reply says it is done
+          # (ally-mobile#114).
+          PROMPT="${PROMPT}
+
+          Rules for this run: stay on the branch you are on. Do not create, switch or check out branches, do not commit, and do not push: your changes in the working tree are committed and pushed for you when you finish. If you made no change, say so plainly."
+          export PROMPT
           opencode github run
         env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
           MODEL: ${{ vars.BUILDER_MODEL || 'google/gemini-3-flash-preview' }}
           # Never share. opencode defaults to sharing the session on opencode.ai
           # for public repos, and the session holds the private spec: the first

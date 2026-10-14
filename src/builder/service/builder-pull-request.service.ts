@@ -2073,9 +2073,11 @@ export class BuilderPullRequestService {
    *
    *  - The branch moved: opencode pushed, so the items are addressed. CI and
    *    the next review judge whether they really are.
-   *  - opencode's run finished and the branch did not move: it answered
-   *    without changing code (its reply on the PR says why), so the items are
-   *    dismissed rather than asked again.
+   *  - opencode's run finished and the branch did not move: nothing it did
+   *    reached the branch, whatever its reply says — on ally-mobile#114 it
+   *    switched branches, opencode skipped the push, and the reply claimed
+   *    every item fixed. The items go back to PENDING and the round counts,
+   *    so the escalation rules, not a reply, decide when to stop.
    *  - Neither within the timeout: the items go back to PENDING for another
    *    request, which the per-PR ceiling bounds.
    */
@@ -2098,7 +2100,10 @@ export class BuilderPullRequestService {
         event: 'issue_comment',
       });
       if (answer?.status === 'completed') {
-        status = BuilderPrFeedbackStatus.DISMISSED;
+        status = BuilderPrFeedbackStatus.PENDING;
+        this.logger.warn(
+          `[BUILDER] opencode finished on ${pullRequest.repo}#${pullRequest.prNumber} without pushing; its feedback goes back to pending.`,
+        );
       } else if (Date.now() - requestedAt.getTime() > OC_FIX_TIMEOUT_MS) {
         status = BuilderPrFeedbackStatus.PENDING;
       }

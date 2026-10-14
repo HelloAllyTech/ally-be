@@ -1228,7 +1228,7 @@ describe('BuilderPullRequestService', () => {
       expect(github.createIssueComment).not.toHaveBeenCalled();
     });
 
-    it('dismisses it when opencode answered without changing the branch', async () => {
+    it('puts it back to pending when opencode finished without pushing anything', async () => {
       github.findRunSince.mockResolvedValue({
         id: '9',
         status: 'completed',
@@ -1248,7 +1248,7 @@ describe('BuilderPullRequestService', () => {
       );
       expect(feedbackRepository.update).toHaveBeenCalledWith(
         { pullRequestId: 'pr-1', status: 'in_fix' },
-        expect.objectContaining({ status: 'dismissed' }),
+        expect.objectContaining({ status: 'pending' }),
       );
     });
 
