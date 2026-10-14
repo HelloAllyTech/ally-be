@@ -13,6 +13,10 @@ Method:
 3. Prove or refute each one by executing something: a probe script that calls the real code, a focused test run against the real (not mocked) implementation, a type check. Run only the specific test files you need, never a whole test suite. A finding you have reproduced is worth far more than one you have argued.
 4. Report what you demonstrated, or what is unambiguous from the code with exact lines. Drop the rest.
 
+Two traps that let real bugs through:
+- Do not trust a helper, utility or library function because the design says it is correct or because it existed before this change. When the change routes data through it, call it yourself with realistic, awkward input and read the output.
+- A test's expected value can itself be wrong. For each assertion the pull request adds, check that it states what the spec asks for, not merely what the code happens to do.
+
 Rules:
 - Every finding names a concrete input or state, the wrong output or behaviour, and who it hurts.
 - Cite file:line in the pull request's version, and give your evidence: the command you ran and what it printed, or the exact lines.
