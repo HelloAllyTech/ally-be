@@ -197,6 +197,15 @@ import {
     BuilderSteerRepository,
     BuilderAttemptRepository,
   ],
-  exports: [BuilderSessionService, BuilderKnowledgeService],
+  exports: [
+    BuilderSessionService,
+    BuilderKnowledgeService,
+    // The read-only research belt, reused by the roadmap's opportunity copilot so it reads the
+    // same repos, the same Stacks library and the same production evidence through the same
+    // fail-soft wrappers — rather than a second GitHub client and a second deadline policy.
+    BuilderGithubReadService,
+    BuilderStacksService,
+    BuilderEvidenceService,
+  ],
 })
 export class BuilderModule {}

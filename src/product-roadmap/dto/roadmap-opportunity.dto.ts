@@ -390,6 +390,26 @@ export class CreateOpportunityDto {
   readinessToken?: string;
 
   /**
+   * The opportunity copilot's brief for this draft, verbatim from the same turn as
+   * `readinessToken`.
+   *
+   * Accepted only alongside a token that was minted over it — the token binds the brief's hash,
+   * so a filer cannot edit the copilot's assessment on the way in. Loosely typed here on
+   * purpose: its shape is normalised server-side (normaliseOpportunityBrief) after the hash is
+   * checked, and validating it field-by-field here would reject a brief over something the
+   * normaliser would simply have capped.
+   */
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The `brief` from the same copilot turn as `readinessToken`. Refused unless that token was minted over it.',
+  })
+  @IsOptional()
+  @IsObject()
+  brief?: Record<string, any>;
+
+  /**
    * Reference images, attached at filing time.
    *
    * On the CREATE path deliberately, not edit-only: the moment somebody has the screenshot is the

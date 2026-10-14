@@ -800,6 +800,28 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * The roadmap's opportunity copilot — the guided interview that files every opportunity.
+   *
+   * Sonnet by default: each turn is a short tool loop over research (board, analytics, code,
+   * interview notes) followed by a structured answer, which is squarely what it is for, at a
+   * fraction of Opus's per-turn cost. A `roadmap_opportunity_copilot` prompt row naming a
+   * model beats this. When the resolved provider has no key on this environment the copilot
+   * falls back to `fallbackModel` rather than refusing to file anything.
+   */
+  get roadmapCopilot() {
+    return {
+      model: this.configService.get<string>(
+        'ROADMAP_COPILOT_MODEL',
+        'claude-sonnet-5-5',
+      ),
+      fallbackModel: this.configService.get<string>(
+        'ROADMAP_COPILOT_FALLBACK_MODEL',
+        'gpt-5',
+      ),
+    };
+  }
+
   get builder() {
     return {
       // Model per role in the tiered loop. Defaults live in ONE place

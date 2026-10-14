@@ -1432,17 +1432,37 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     tier: LlmModelTier.REASONING,
     trigger:
-      'Someone files a roadmap opportunity (the guided interview), or the board classifies, de-duplicates or assesses one',
+      'The roadmap board classifies, de-duplicates or assesses an opportunity',
     detail:
-      'Interview turns — the only way to file an opportunity — plus goal classification, the ' +
-      "duplicate check's confirmation pass, goal-impact assessment, interview-note summaries, " +
-      "Claude-prompt generation, and the Builder drawer's split/merge guard. The standalone " +
+      "Goal classification, the duplicate check's confirmation pass, goal-impact assessment, " +
+      "interview-note summaries, Claude-prompt generation, and the Builder drawer's split/merge " +
+      'guard. Filing itself moved to the opportunity copilot (its own row). The standalone ' +
       'readiness check, review and enhance calls were removed with the blank filing form.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
     configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: 'the prompt row for each roadmap call',
+  },
+  {
+    id: 'roadmap-opportunity-copilot',
+    task: LlmTask.ROADMAP_OPPORTUNITY_COPILOT,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'Someone files a roadmap opportunity — every turn of the "New opportunity" conversation',
+    detail:
+      'A tool loop per turn: up to 8 research passes (the board, user-interview notes, the ' +
+      'Analytics Agent, UX signals, Bug Hunter findings, GitHub code and wiki, Stacks), then a ' +
+      'structured turn — question, readiness verdicts, draft and brief. One llm_usage row per ' +
+      'pass. The Vision & strategy page, goals and a board snapshot sit in a cached system ' +
+      'prefix. Falls back to ROADMAP_COPILOT_FALLBACK_MODEL when the resolved provider has no ' +
+      'key here. The Analytics Agent it calls records its own usage.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'anthropic',
+    defaultModel: 'claude-sonnet-5-5',
+    configuredBy: 'ROADMAP_COPILOT_MODEL',
+    configPath: 'roadmapCopilot.model',
+    promptOverride: 'roadmap_opportunity_copilot',
   },
   {
     id: 'ai-lab-run',

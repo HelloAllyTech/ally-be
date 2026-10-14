@@ -51,6 +51,7 @@ import {
   OpportunityResponseDto,
   RoadmapFacetsDto,
   RoadmapReferenceImageUploadUrlResponseDto,
+  OpportunityBriefResponseDto,
   RoadmapVoterDto,
   SetAllocationResponseDto,
   OpenBuilderSessionResponseDto,
@@ -179,6 +180,22 @@ export class RoadmapOpportunityController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<OpportunityResponseDto> {
     return this.opportunityService.findOne(user.id, id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/brief')
+  @ApiOperation({
+    summary: "The opportunity copilot's brief, as filed",
+    description:
+      'Strategic fit, reach, evidence, success metric, assumptions, what was dropped and the ' +
+      "copilot's assessment. `brief` is null for anything filed without one. Fetched by the " +
+      'drawer when `hasBrief` is true, rather than riding on every board row.',
+  })
+  @ApiResponse({ status: 200, type: OpportunityBriefResponseDto })
+  findBrief(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OpportunityBriefResponseDto> {
+    return this.opportunityService.getBrief(id);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])

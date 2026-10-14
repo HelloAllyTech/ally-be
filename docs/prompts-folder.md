@@ -256,22 +256,27 @@ output becomes, not whichever folder you copied.
 
 ### Stateless conversational prompts
 
-A fourth shape looks like an agent prompt but is read like a one-shot: `roadmap/opportunity_interview.txt`
-drives a multi-turn interview, yet each turn is an independent `getPromptByCode` call with the
-whole transcript rendered into the user message. There is no session table and no message rows,
-so nothing needs replaying and there are no `tool_use` blocks to keep paired — the trap
-`rebuildAnthropicHistory` (Builder) and `rebuildHistory` (Character) exist for.
+A fourth shape looks like an agent prompt but keeps no session: `roadmap/opportunity_copilot.txt`
+drives a multi-turn interview with research tools, yet each turn is independent, with the whole
+transcript (and the previous turn's working brief) rendered into one user message. Within a
+turn it is a real tool loop — research tool calls and their results are appended in order —
+but nothing survives the turn except what the client sends back, so there is no history to
+rebuild across turns and no `tool_use` blocks left unpaired — the trap `rebuildAnthropicHistory`
+(Builder) and `rebuildHistory` (Character) exist for.
 
-Two rules matter when writing one:
+Three rules matter when writing one:
 
 - **Speaker-label the transcript** you render in (`ADMIN:` / `YOU:`). Without it the model
   cannot tell its own previous questions from the answers and starts re-asking them.
 - **If the prompt grades anything that later gates a write, grade the write's own criteria** —
-  the same constant, the same ids. `opportunity_interview.txt` reports on
+  the same constant, the same ids. `opportunity_copilot.txt` reports on
   `ROADMAP_READINESS_CRITERIA` because its draft is filed with a signed readiness token, and a
   prompt marking its own private rubric would be a signature over a check nobody ran. If you
   edit the criteria, the interview follows automatically; if you edit the prompt to grade
   something else, you have broken the gate rather than the interview.
+- **Return the structured turn through a tool the prompt requires last** (`submit_turn`), not
+  through JSON mode. JSON mode on Anthropic is a forced `tool_choice`, which current Claude
+  models reject, and it cannot coexist with research tools in the same call.
 
 Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are

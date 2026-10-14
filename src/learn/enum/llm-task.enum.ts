@@ -220,6 +220,10 @@ export enum LlmTask {
   BUILDER_RESEARCH = 'builder_research',
   // Bounding interview context growth by summarising older turns.
   BUILDER_INTERVIEW_SUMMARY = 'builder_interview_summary',
+  // The roadmap's opportunity copilot: one pass of the guided interview's tool
+  // loop (research, then a structured turn). Tagged with metadata.iteration so
+  // a turn's passes can be summed.
+  ROADMAP_OPPORTUNITY_COPILOT = 'roadmap_opportunity_copilot',
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
