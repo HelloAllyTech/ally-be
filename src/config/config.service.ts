@@ -800,6 +800,28 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * The roadmap's opportunity copilot — the guided interview that files every opportunity.
+   *
+   * Sonnet by default: each turn is a short tool loop over research (board, analytics, code,
+   * interview notes) followed by a structured answer, which is squarely what it is for, at a
+   * fraction of Opus's per-turn cost. A `roadmap_opportunity_copilot` prompt row naming a
+   * model beats this. When the resolved provider has no key on this environment the copilot
+   * falls back to `fallbackModel` rather than refusing to file anything.
+   */
+  get roadmapCopilot() {
+    return {
+      model: this.configService.get<string>(
+        'ROADMAP_COPILOT_MODEL',
+        'claude-sonnet-5-5',
+      ),
+      fallbackModel: this.configService.get<string>(
+        'ROADMAP_COPILOT_FALLBACK_MODEL',
+        'gpt-5',
+      ),
+    };
+  }
+
   get builder() {
     return {
       // Model per role in the tiered loop. Defaults live in ONE place
@@ -906,6 +928,44 @@ export class AppConfigService {
     return {
       apiUrl: this.configService.get<string>('STACKS_API_URL'),
       apiKey: this.configService.get<string>('STACKS_API_KEY'),
+    };
+  }
+
+  get courseCopilot() {
+    return {
+      // Interview/edit-loop model. The `course_copilot_interviewer_system`
+      // prompt row wins when it names a model — that is the supported way to
+      // change it per environment. Defaults to the REASONING tier rather than a
+      // vendor id, for the reason characterInterview.model gives below.
+      model: this.configService.get<string>(
+        'COURSE_COPILOT_MODEL',
+        this.llmTiers[LlmModelTier.REASONING],
+      ),
+      // Usually unset: the provider is inferred from the model id.
+      provider: this.configService.get<string>('COURSE_COPILOT_PROVIDER'),
+      // Tool round-trips per turn. A normal interview turn is 1-3 (an
+      // update_brief, a lookup, ask_trainer); an edit turn can chain a read,
+      // a regenerate and a meta update.
+      maxToolIterations: Number(
+        this.configService.get<number>(
+          'COURSE_COPILOT_MAX_TOOL_ITERATIONS',
+          10,
+        ),
+      ),
+      // Default per-session spend ceiling, USD. 0 = uncapped.
+      sessionBudgetUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_SESSION_BUDGET_USD', 15),
+      ),
+      // Images have no pricing row; each counts at this flat rate.
+      imageCostUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_IMAGE_COST_USD', 0.1),
+      ),
+      buildConcurrency: Number(
+        this.configService.get<number>('COURSE_COPILOT_BUILD_CONCURRENCY', 4),
+      ),
+      maxNewRoleplays: Number(
+        this.configService.get<number>('COURSE_COPILOT_MAX_NEW_ROLEPLAYS', 4),
+      ),
     };
   }
 

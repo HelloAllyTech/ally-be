@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Annotated Transcript Writer",
+  "description": "Writes one ANNOTATED_ARTIFACT item: a fictional helper conversation (a worked example), up to 6 helpful/unhelpful labels taken from the brief's confirmed behaviours, and an answer key whose notes explain each line's effect. JSON mode; ids and colours assigned in code.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

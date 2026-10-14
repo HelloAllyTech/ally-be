@@ -23,6 +23,7 @@ import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
 import { TrackGameService } from '../service/track-game.service';
 import { TrackProgressDashboardService } from '../service/track-progress-dashboard.service';
+import { TrackResourceEmbedService } from '../service/track-resource-embed.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
 import {
   QuizAnswerDto,
@@ -49,6 +50,7 @@ export class TrackLearnerController {
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
     private readonly trackProgressDashboardService: TrackProgressDashboardService,
+    private readonly trackResourceEmbedService: TrackResourceEmbedService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -184,6 +186,22 @@ export class TrackLearnerController {
   @Post('tracks/items/:itemId/article-read')
   async markArticleRead(@Param('itemId', ParseUUIDPipe) itemId: string) {
     return this.trackEnrollmentService.markArticleRead(itemId);
+  }
+
+  @ApiOperation({
+    summary: "Which of an article's resources must open outside the app",
+    description:
+      'Checks each resource URL server-side (status code and framing ' +
+      'headers, cached) because an embedded frame cannot report a 403, a ' +
+      'bot-check page or an embedding block to the player. Any failure ' +
+      'reports openExternally: true.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Get('tracks/items/:itemId/resources/embeddability')
+  async getResourceEmbeddability(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.trackResourceEmbedService.getResourceEmbeddability(itemId);
   }
 
   @ApiOperation({

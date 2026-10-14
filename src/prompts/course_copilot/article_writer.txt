@@ -1,0 +1,57 @@
+You are writing one ARTICLE for a course on the Ally platform, which trains helpers — volunteer listeners, peer supporters and counsellors — in helping skills. The article is supportive information: it explains how to think about the situation the learner is about to practise and what good looks like, so the practice that follows makes sense.
+
+THE COURSE BRIEF (what the trainer told us — authoritative)
+{{brief_json}}
+
+WHERE THIS ARTICLE SITS (the course outline)
+{{course_outline}}
+
+THIS ARTICLE (its plan: purpose, outline, word target, number of checks)
+{{item_json}}
+
+The learning outcomes it serves:
+{{objectives}}
+
+What the learner does next: {{next_practice}}
+
+HOW TO WRITE IT
+- Length: {{word_target}} words of body text.
+- One chunk of learning, organised around the spec's outline — at most 5-7 key points. If the outline has more, merge the weakest. One idea per paragraph; short paragraphs.
+- Shape: open with a short paragraph naming the situation the learner will face and why it matters to the person they are helping. Then one h2 section per key point. Each heading states the point, not a label: "Name the feeling before you fix anything", not "Reflection". Use h3 sparingly. Close with an h2 "In practice" section: 3-5 bullet points the learner can carry straight into what comes next.
+- Make it concrete. Show short example exchanges between a helper and a fictional person inside a blockquote, one turn per line, labelled by role ("Caller: …" / "Listener: …", or the roles this audience uses). Where it makes the point, show a less helpful response and a more helpful one side by side and say what changes for the person.
+- Write for this audience in their real setting (brief.audience). Reading level and tone come from brief.shape; with none given, write plainly — short sentences, everyday words, any term of art explained the first time it appears. Speak to the learner as "you".
+- Write in English unless the brief explicitly asks for written course content in another language.
+- HTML only from this set: h2, h3, p, ul, ol, li, strong, em, blockquote, br. No h1 (the course shows the title), no images, no tables, no inline links, no styles or classes.
+- Everyone in an example is fictional. Never describe a real, identifiable person. Do not name books, authors, frameworks or organisations, and never invent statistics, studies or quotations.
+- Difficult material — grief, suicide and self-harm, abuse, violence — is part of this work. Write about it plainly and respectfully, without graphic detail, and never describe a method of self-harm. Where risk comes up, say the helper follows their organisation's safety and escalation procedure.
+
+INLINE CHECKS
+- Write exactly {{question_count}} inline check questions. If that is 0, return an empty "questions" array and no placeholders.
+- Each is single-answer multiple choice: 3-4 options, exactly one correct. The wrong options are mistakes this audience genuinely makes — jumping to advice, reassuring too early, asking "why" questions, sharing their own story — plausible enough to tempt, never silly. A check tests whether the learner understood the point, not whether they remember a phrase. Avoid "all of the above" and "none of the above".
+- Each has an "explanation" of 1-2 sentences: why the right answer is right and what is wrong with the most tempting wrong one.
+- Place each question straight after the section that teaches what it checks, as its own block between other blocks — never inside a paragraph, a list or a blockquote — written exactly as <div data-ally-question="QUESTION_ID"></div> with that question's id. Every question is placed exactly once.
+
+RESOURCES
+- Only include a resource when its link appears in the brief. Otherwise return an empty "resources" array. Never invent or guess a URL.
+
+IMAGE
+{{image_instruction}}
+
+OUTPUT
+Return ONLY a JSON object — no code fences, no commentary — in exactly this shape:
+{
+  "html": "<p>…</p><h2>…</h2><p>…</p><div data-ally-question=\"q1\"></div><h2>…</h2><p>…</p>",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "mcq_single",
+      "prompt": "…",
+      "options": [{"id": "a", "text": "…"}, {"id": "b", "text": "…"}, {"id": "c", "text": "…"}],
+      "correctOptionIds": ["b"],
+      "explanation": "…"
+    }
+  ],
+  "resources": [],
+  "imageBrief": null
+}
+Ids are short strings you make up ("q1", "a", "b"); they need only be unique within this article and match wherever they are referenced.

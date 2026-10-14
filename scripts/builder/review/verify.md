@@ -4,6 +4,11 @@ Your job is to decide what is true. For each candidate:
 1. Re-read the code it cites in the pull request's version.
 2. Reproduce it by executing something wherever you can: a probe script against the real code, or a focused test against the real (not mocked) implementation. Run only the specific test files you need.
 3. Keep it only if it is real and matters to users, their data, or security. Drop anything you could not confirm, anything that is style, and anything that describes behaviour the spec asked for. A departure from what the approved design requires is not style: keep it, at least as low. New test files outside the design's file list are low unless they change existing behaviour or assertions.
+
+What does not make a finding invalid:
+- The design named the helper, library or approach that produces the wrong result. Requirements outrank implementation hints: if a requirement is broken, the finding stands.
+- Mocking is common practice. A test that mocks the very unit under change, so a behaviour the spec requires is never exercised, is a finding: medium if that behaviour is actually broken, low otherwise.
+- The design's file list. It limits which code may change, not which missing tests or broken behaviours may be reported.
 4. Merge duplicates found by more than one pass into one finding.
 
 Severity: high means wrong or lost data, broken for existing users or released clients, or a security hole. Medium means wrong in an edge case users will realistically hit, or broken error handling. Low means minor.

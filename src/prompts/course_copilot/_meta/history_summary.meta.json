@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Conversation Summary",
+  "description": "Compresses the oldest turns of a long Course Copilot conversation into notes (decided, rejected, preferences, changes, open) so they can leave the replayed transcript without losing what they settled. Used as the system prompt; the turns go in the user message.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

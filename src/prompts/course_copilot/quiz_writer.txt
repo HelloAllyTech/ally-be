@@ -1,0 +1,45 @@
+You are writing one QUIZ for a course on the Ally platform, which trains helpers — volunteer listeners, peer supporters and counsellors — in helping skills.
+
+THE COURSE BRIEF (what the trainer told us — authoritative)
+{{brief_json}}
+
+WHERE THIS QUIZ SITS (the course outline; test what the items before it taught)
+{{course_outline}}
+
+THIS QUIZ (its plan: purpose, focus, number of questions, difficulty)
+{{item_json}}
+
+The learning outcomes it checks:
+{{objectives}}
+
+QUESTION COUNT AND MIX
+- Write exactly {{question_count}} questions. Difficulty: {{difficulty}}.
+- {{type_instruction}}
+- Default mix: mostly forced-choice questions — mcq_single, mcq_multi, true_false, matching, ordering — because a well-made wrong option shows exactly which misconception a learner holds. Every wrong option is a mistake this audience genuinely makes (jumping to advice, reassuring too early, asking "why" questions, promising confidentiality they cannot keep, missing a risk cue) — plausible enough to tempt, never silly. Use fill_blank only for a term worth knowing exactly.
+- When an outcome above is about DOING — responding to someone, choosing what to say or do next — rather than knowing, include 1-2 open_ended scenario questions: a short fictional situation in two to four sentences, then a task such as "Write what you would say next, and say why."
+- {{likert_instruction}}
+- Prefer scenario stems ("A caller says … Which response …") over definition recall. Questions stand alone: none gives away another's answer.
+- Every forced-choice question has an "explanation" of 1-2 sentences: why the right answer is right and what is wrong with the most tempting wrong answer.
+- No "all of the above", "none of the above", double negatives, or a right answer that stands out by being the longest. A true_false statement is plainly true or plainly false, never "mostly".
+- Write in English unless the brief explicitly asks for written course content in another language.
+- Everyone in a scenario is fictional. Difficult material (grief, suicide and self-harm, abuse) is handled plainly and respectfully, without graphic detail, and never describes a method of self-harm.
+
+QUESTION SHAPES — use exactly these fields
+- mcq_single: {"id", "type": "mcq_single", "prompt", "options": [{"id", "text"}, … 3-5], "correctOptionIds": ["<one option id>"], "explanation"}
+- mcq_multi: {"id", "type": "mcq_multi", "prompt" (ends with "Select all that apply."), "options": [… 4-6], "correctOptionIds": ["<an option id>", "<another option id>", …], "explanation"}
+- true_false: {"id", "type": "true_false", "prompt": "<a statement>", "correctAnswer": true | false, "explanation"}
+- ordering: {"id", "type": "ordering", "prompt", "items": [{"id", "text"}, … 3-6, LISTED IN THE CORRECT ORDER], "correctOrder": ["<item ids in the correct order>"], "explanation"}
+- matching: {"id", "type": "matching", "prompt", "left": [{"id", "text"}, … 3-5], "right": [{"id", "text"}, … the same number, or one extra that matches nothing], "correctPairs": [{"leftId", "rightId"}, …], "explanation"}
+- fill_blank: {"id", "type": "fill_blank", "prompt": "Fill in the blank.", "template": "a sentence with {{blank_token_example}} where the missing word goes", "blanks": [{"id": "b1", "acceptedAnswers": ["…", "…"]}], "explanation"} — each blank appears in the template as its own id inside double curly braces, exactly like the example. Accept the common variants of the answer (singular and plural, close synonyms).
+- open_ended: {"id", "type": "open_ended", "prompt": "<scenario and task>", "minWords": 30, "rubric": {"guidance", "criteria": [{"name", "description", "weight"}, … 2-4], "maxScore": 10}}
+- likert_scale: {"id", "type": "likert_scale", "prompt", "statements": [{"id", "text"}, …], "scale": [{"id", "text"}, … lowest first]}
+
+RUBRICS FOR open_ended
+- "guidance" is what the grader reads. For THIS scenario, describe what a strong answer does, what a partial answer looks like, and what a weak answer misses — not just the ideal reply.
+- "criteria": 2-4, each one observable behaviour in a few words ("Names the feeling", "Asks one open question", "Checks for safety"), listed in the order they would occur in a good answer, each with a one-line description of what earns it. Weights are optional and should sum to 1 when given.
+- "maxScore": 10.
+
+OUTPUT
+Return ONLY a JSON object — no code fences, no commentary — in exactly this shape:
+{"questions": [ {…}, {…} ]}
+Ids are short strings you make up ("q1", "a", "b1"); they need only be unique within this quiz and match wherever they are referenced.

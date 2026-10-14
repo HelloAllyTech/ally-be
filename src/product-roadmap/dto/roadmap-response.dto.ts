@@ -7,6 +7,64 @@ import {
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
 import { RoadmapReferenceImageDto } from './roadmap-opportunity.dto';
+import {
+  RoadmapBriefEvidenceSource,
+  RoadmapBriefRating,
+} from '../type/roadmap-brief.type';
+
+export class RoadmapBriefStrategicFitDto {
+  @ApiProperty({
+    description:
+      'A strategy goal name, or a bet from the Vision & strategy page',
+  })
+  goal!: string;
+  @ApiProperty() why!: string;
+}
+
+export class RoadmapBriefReachDto {
+  @ApiProperty({ nullable: true }) howMany!: string | null;
+  @ApiProperty({ nullable: true }) howOften!: string | null;
+}
+
+export class RoadmapBriefEvidenceDto {
+  @ApiProperty({ enum: RoadmapBriefEvidenceSource })
+  source!: RoadmapBriefEvidenceSource;
+  @ApiProperty() claim!: string;
+  @ApiProperty({
+    nullable: true,
+    description: 'Where to check it — an opportunity code, a path, a query',
+  })
+  ref!: string | null;
+}
+
+export class RoadmapBriefAssessmentDto {
+  @ApiProperty({ enum: RoadmapBriefRating }) rating!: RoadmapBriefRating;
+  @ApiProperty() summary!: string;
+  @ApiProperty({
+    type: [String],
+    description: 'What would move it up a rating; empty once rated strong',
+  })
+  openRecommendations!: string[];
+}
+
+/** The opportunity copilot's brief — see RoadmapOpportunityBrief. */
+export class RoadmapOpportunityBriefDto {
+  @ApiProperty({ type: [RoadmapBriefStrategicFitDto] })
+  strategicFit!: RoadmapBriefStrategicFitDto[];
+  @ApiProperty({ type: RoadmapBriefReachDto }) reach!: RoadmapBriefReachDto;
+  @ApiProperty({ type: [RoadmapBriefEvidenceDto] })
+  evidence!: RoadmapBriefEvidenceDto[];
+  @ApiProperty({ nullable: true }) successMetric!: string | null;
+  @ApiProperty({ type: [String] }) assumptions!: string[];
+  @ApiProperty({ type: [String] }) alternativesDropped!: string[];
+  @ApiProperty({ type: RoadmapBriefAssessmentDto })
+  assessment!: RoadmapBriefAssessmentDto;
+}
+
+export class OpportunityBriefResponseDto {
+  @ApiPropertyOptional({ type: RoadmapOpportunityBriefDto, nullable: true })
+  brief!: RoadmapOpportunityBriefDto | null;
+}
 
 export class RoadmapUserRefDto {
   @ApiProperty() id!: number;
@@ -50,6 +108,13 @@ export class OpportunityResponseDto {
    */
   @ApiProperty({ type: [RoadmapReferenceImageDto] })
   referenceImages!: RoadmapReferenceImageDto[];
+
+  /**
+   * Whether the copilot filed a brief with this opportunity. A flag rather than the brief:
+   * this DTO serves every board row, and a brief can run to ~12 KB — fetch it from
+   * `GET opportunities/:id/brief` when the drawer actually shows it.
+   */
+  @ApiProperty() hasBrief!: boolean;
   /** The Builder session started from this opportunity, or null. Drives the drawer's
    *  button between "Open in Builder Agent" and "Resume in Builder Agent". */
   @ApiPropertyOptional({ nullable: true }) builderSessionId?: string | null;
@@ -392,6 +457,15 @@ export class OpportunityInterviewTurnResponseDto {
    */
   @ApiPropertyOptional({ nullable: true })
   readinessToken!: string | null;
+
+  /**
+   * The copilot's working brief after this turn: strategic fit, reach, evidence it found,
+   * success metric, assumptions, what was dropped, and its assessment. Send it back unchanged
+   * as `brief` on the next turn, and on `POST /opportunities` alongside `readinessToken` —
+   * the token is minted over it. Null until the copilot has anything to put in it.
+   */
+  @ApiPropertyOptional({ type: RoadmapOpportunityBriefDto, nullable: true })
+  brief!: RoadmapOpportunityBriefDto | null;
 }
 
 export class AiTextResponseDto {

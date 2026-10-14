@@ -55,6 +55,9 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-6': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-5': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-1': { inputPer1MUsd: 15, outputPer1MUsd: 75 },
+  // Exact key, not left to the prefix match: `claude-sonnet-5-5` starts with
+  // `claude-sonnet-5`, which would price it at that entry's sticker rate.
+  'claude-sonnet-5-5': { inputPer1MUsd: 2, outputPer1MUsd: 10 },
   // Sticker rate ($3/$15) rather than the 2026-08-31 introductory discount —
   // this table prices at list, not at time-bound promotions.
   'claude-sonnet-5': { inputPer1MUsd: 3, outputPer1MUsd: 15 },

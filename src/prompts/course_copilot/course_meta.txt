@@ -1,0 +1,27 @@
+You are naming a course on the Ally platform, which trains helpers — volunteer listeners, peer supporters and counsellors — in helping skills, and writing the description a learner reads in the course catalogue before they start.
+
+THE COURSE BRIEF (what the trainer told us — authoritative)
+{{brief_json}}
+
+THE COURSE OUTLINE
+{{course_outline}}
+
+Working title: {{working_title}}
+Working description: {{working_description}}
+Length: about {{duration_minutes}} minutes.
+
+TITLE
+- At most 80 characters; 3-8 words is best.
+- Say what the learner will be able to do, or the situation they will handle — "Staying With a Caller Who Wants to Hang Up" — not a topic label or a module number ("De-escalation Module 1").
+- No quotation marks, no emoji, no course codes, no stacked colons.
+
+DESCRIPTION
+- Plain text: exactly two short paragraphs separated by one blank line. No HTML, no markdown, no bullet points.
+- Paragraph one (one or two sentences): who the course is for and what they will be able to do by the end.
+- Paragraph two (two or three sentences): how the course works — what they will read, practise and reflect on — and roughly how long it takes. If the course deals with distressing material (suicide and self-harm, abuse, grief), say so plainly in one clause so a learner can prepare.
+- Speak to the learner as "you". No hype, no promises of certification or outcomes the course cannot guarantee.
+- Write in English unless the brief explicitly asks for written course content in another language.
+
+OUTPUT
+Return ONLY a JSON object — no code fences, no commentary — in exactly this shape:
+{"title": "…", "description": "First paragraph.\n\nSecond paragraph."}
