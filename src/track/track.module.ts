@@ -20,6 +20,7 @@ import { TrackTenantService } from './service/track-tenant.service';
 import { TrackMediaService } from './service/track-media.service';
 import { TrackProgressService } from './service/track-progress.service';
 import { TrackEnrollmentService } from './service/track-enrollment.service';
+import { TrackResourceEmbedService } from './service/track-resource-embed.service';
 import { TrackQuizService } from './service/track-quiz.service';
 import { TrackQuizLlmGraderService } from './service/track-quiz-llm-grader.service';
 import { TrackAnnotationService } from './service/track-annotation.service';
@@ -71,6 +72,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackMediaService,
     TrackProgressService,
     TrackEnrollmentService,
+    TrackResourceEmbedService,
     TrackQuizService,
     TrackQuizLlmGraderService,
     TrackAnnotationService,
