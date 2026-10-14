@@ -23,7 +23,7 @@ Rules:
 - Zero findings is a valid result when the change is sound. Do not invent problems, and do not report style.
 - At most 8 findings, most serious first.
 
-Time: you have about 20 minutes. Write the JSON file below early — as soon as you have your first confirmed finding, or an empty list — and rewrite it as you confirm more. A pass that runs out of time with nothing written has wasted the run; three well-proven findings beat ten half-explored ones.
+Time: you have about 20 minutes. Write the JSON file below early, with "final": false, as soon as you have your first confirmed finding, and rewrite it as you confirm more. When you are done, write it one last time with "final": true. A file without "final": true is treated as unfinished. Three well-proven findings beat ten half-explored ones.
 
 Write this JSON to {{OUT}} and nothing else to that file:
-{"pass": "{{PASS}}", "findings": [{"key": "short-stable-slug", "severity": "high|medium|low", "path": "file in this repo", "line": 123, "title": "one line", "scenario": "concrete input/state -> wrong result, and who it hurts", "evidence": "command + output, or the exact lines", "fix": "the smallest correct fix"}]}
+{"pass": "{{PASS}}", "final": true, "findings": [{"key": "short-stable-slug", "severity": "high|medium|low", "path": "file in this repo", "line": 123, "title": "one line", "scenario": "concrete input/state -> wrong result, and who it hurts", "evidence": "command + output, or the exact lines", "fix": "the smallest correct fix"}]}

@@ -178,15 +178,18 @@ jobs:
             > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           # No file: the model stalled or stopped early. Run the pass afresh on
           # the fallback model rather than resuming a stalled session.
-          if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            echo "::warning::The ${PASS} pass wrote nothing on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+          # Finished means "final": true. An early write is a placeholder, and
+          # a placeholder with no findings yet is not "found nothing".
+          done_ok() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('final') is True and isinstance(d.get('findings'), list) else 1)" "$1" 2>/dev/null; }
+          if ! done_ok "$out"; then
+            echo "::warning::The ${PASS} pass did not finish on ${MODEL}; retrying on ${FALLBACK_MODEL}."
             echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-${PASS}.txt"
             timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           fi
-          if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            echo "::warning::The ${PASS} pass wrote no valid findings file."
-            echo "{\"pass\": \"${PASS}\", \"findings\": [], \"error\": \"no valid output\"}" > "$out"
+          if ! done_ok "$out"; then
+            echo "::warning::The ${PASS} pass did not finish."
+            echo "{\"pass\": \"${PASS}\", \"findings\": [], \"error\": \"did not finish\"}" > "$out"
           fi
           python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(f\"{len(d.get('findings', []))} candidate finding(s)\")" "$out"
 
@@ -311,16 +314,29 @@ jobs:
           PY
           timeout 20m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
-          if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            echo "::warning::Verify wrote nothing on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+          # A verdict counts only when it is final and agrees with its findings:
+          # approve with no serious finding, request_changes with at least one.
+          # The first verify run wrote an early placeholder (request_changes,
+          # no findings), timed out, and was filed as a clean review.
+          verdict_ok() { python3 -c "
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          serious = [f for f in d.get('findings', []) if f.get('severity') in ('high', 'medium')]
+          ok = d.get('final') is True and (
+              (d.get('verdict') == 'approve' and not serious)
+              or (d.get('verdict') == 'request_changes' and serious))
+          sys.exit(0 if ok else 1)" "$1" 2>/dev/null; }
+          if ! verdict_ok "$out"; then
+            echo "::warning::Verify gave no final verdict on ${MODEL}; retrying on ${FALLBACK_MODEL}."
             echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-verify.txt"
             timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           fi
-          python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null || {
-            echo "::error::The verify pass wrote no valid review."
+          if ! verdict_ok "$out"; then
+            echo "::error::Verify gave no final, consistent verdict; nothing will be filed."
+            mv "$out" "${RUNNER_TEMP}/review-unfinished.json" 2>/dev/null || true
             exit 1
-          }
+          fi
 
       - name: Summarise
         if: always()
@@ -346,7 +362,7 @@ jobs:
           PY
 
       - name: File the verdict with Builder
-        if: inputs.review_run_id != '' && inputs.builder_pr_id != '' && env.REVIEW_INCOMPLETE != '1'
+        if: success() && inputs.review_run_id != '' && inputs.builder_pr_id != '' && env.REVIEW_INCOMPLETE != '1'
         env:
           API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
           RUN_ID: ${{ inputs.review_run_id }}
