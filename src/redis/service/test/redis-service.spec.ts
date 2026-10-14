@@ -9,6 +9,7 @@ const mockRedis = {
   scanStream: jest.fn(),
   hincrby: jest.fn(),
   hgetall: jest.fn(),
+  eval: jest.fn(),
 };
 
 jest.mock('ioredis', () => {
@@ -170,6 +171,32 @@ describe('RedisService', () => {
         2,
       );
       expect(result).toBe(5);
+    });
+  });
+
+  describe('incrWithExpiry', () => {
+    it('increments and sets the window in one script on the prefixed key', async () => {
+      mockRedis.eval.mockResolvedValue([1, 900]);
+
+      const result = await service.incrWithExpiry('counter', 900);
+
+      expect(mockRedis.eval).toHaveBeenCalledTimes(1);
+      const [script, numKeys, key, window] = mockRedis.eval.mock.calls[0];
+      expect(script).toContain("redis.call('INCR', KEYS[1])");
+      expect(script).toContain("redis.call('EXPIRE', KEYS[1], ARGV[1])");
+      expect(numKeys).toBe(1);
+      expect(key).toBe('testprefix:counter');
+      expect(window).toBe(900);
+      expect(result).toEqual({ count: 1, ttlSeconds: 900 });
+    });
+
+    it('reports the time left in an existing window', async () => {
+      mockRedis.eval.mockResolvedValue([4, 312]);
+
+      await expect(service.incrWithExpiry('counter', 900)).resolves.toEqual({
+        count: 4,
+        ttlSeconds: 312,
+      });
     });
   });
 

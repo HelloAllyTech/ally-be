@@ -26,6 +26,13 @@ import { LoggerService } from 'src/logger/logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { AuthProvider } from 'src/auth/type/auth.types';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { OtpRateLimitedException } from 'src/auth/exception/login.exception';
+import {
+  OTP_LIMIT_MESSAGES,
+  OTP_LIMITS,
+} from 'src/auth/constants/otp-limits.constants';
+import { TIME } from 'src/common/constants/time.constants';
+import { ErrorCode } from 'src/exception/error-code.enum';
 
 // Mock bcrypt at the module level
 jest.mock('bcrypt', () => ({
@@ -194,6 +201,10 @@ describe('AuthService', () => {
             get: jest.fn(),
             set: jest.fn(),
             del: jest.fn(),
+            // A first hit, unless a test says otherwise: well inside every limit.
+            incrWithExpiry: jest
+              .fn()
+              .mockResolvedValue({ count: 1, ttlSeconds: 300 }),
           },
         },
         {
@@ -1210,6 +1221,324 @@ describe('AuthService', () => {
 
       expect(AuthProvider.APPLE).toBe('apple');
       expect(redisService).toBeDefined();
+    });
+  });
+
+  /**
+   * The limits that stop a 4-digit code being guessed (OTP_LIMITS), driven
+   * through generateOtpV2 / verifyOtpV2 / verifyMagicLink against an in-memory
+   * stand-in for Redis, so codes, links and counters behave as they do live.
+   */
+  describe('login-code limits', () => {
+    const EMAIL = 'learner@example.com';
+    const CODE = '4821';
+    const WRONG = '1111';
+    const roles = [UserRole.CLIENT];
+
+    const learner = {
+      id: 7,
+      email: EMAIL,
+      username: EMAIL,
+      status: UserStatus.ACTIVE,
+      tenantId: 'tenant-1',
+    } as User;
+
+    let store: Map<string, { value: string; ttlSeconds?: number }>;
+
+    beforeEach(() => {
+      store = new Map();
+      redisService.get.mockImplementation(
+        async (key: string) => store.get(key)?.value ?? null,
+      );
+      redisService.set.mockImplementation(
+        async (key: string, value: string, ttl?: number) => {
+          store.set(key, { value: String(value), ttlSeconds: ttl });
+        },
+      );
+      redisService.del.mockImplementation(async (key: string) => {
+        store.delete(key);
+      });
+      (redisService.incrWithExpiry as jest.Mock).mockImplementation(
+        async (key: string, windowSeconds: number) => {
+          const current = store.get(key);
+          const next = {
+            value: String(Number(current?.value ?? 0) + 1),
+            // Later hits never extend the window, as in the real script.
+            ttlSeconds: current?.ttlSeconds ?? windowSeconds,
+          };
+          store.set(key, next);
+          return { count: Number(next.value), ttlSeconds: next.ttlSeconds };
+        },
+      );
+
+      userRepository.findOne.mockResolvedValue(learner);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+      jwtService.signAsync.mockResolvedValue('signed-token');
+      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
+      (AuthUtil.generateOtp as jest.Mock).mockReturnValue(CODE);
+    });
+
+    afterEach(() => {
+      mockConfig.testAccounts = '{}';
+    });
+
+    const requestCode = (email = EMAIL) =>
+      authService.generateOtpV2({ email, allowedRoles: roles });
+    const tryCode = (otp: string, email = EMAIL) =>
+      authService.verifyOtpV2({ email, otp, allowedRoles: roles });
+    const lastMagicLinkToken = (): string => {
+      const calls = (authService as any).eventEmitter.emitAsync.mock.calls;
+      return calls[calls.length - 1][1].magicLinkToken;
+    };
+    const liveMagicLinks = () =>
+      [...store.keys()].filter((key) => key.startsWith('auth_attempt:magic:'));
+
+    /** Wrong guesses until the code is destroyed. */
+    const burnCode = async (email = EMAIL) => {
+      for (let n = 1; n < OTP_LIMITS.MAX_GUESSES_PER_CODE; n++) {
+        await expect(tryCode(WRONG, email)).rejects.toThrow('Invalid OTP');
+      }
+      await expect(tryCode(WRONG, email)).rejects.toThrow(
+        OTP_LIMIT_MESSAGES.CODE_LOCKED,
+      );
+    };
+
+    describe('per code', () => {
+      it('allows 5 checks, so the right code still works on the fifth', async () => {
+        await requestCode();
+        for (let n = 1; n < OTP_LIMITS.MAX_GUESSES_PER_CODE; n++) {
+          await expect(tryCode(WRONG)).rejects.toThrow('Invalid OTP');
+        }
+
+        await expect(tryCode(CODE)).resolves.toMatchObject({
+          accessToken: 'signed-token',
+        });
+      });
+
+      it('destroys the code and its sign-in link on the fifth wrong check, and says to request a new one', async () => {
+        await requestCode();
+        expect(liveMagicLinks()).toHaveLength(1);
+
+        await burnCode();
+
+        expect(liveMagicLinks()).toHaveLength(0);
+        // The right code no longer opens anything: there is no code left.
+        await expect(tryCode(CODE)).rejects.toThrow('Invalid or expired OTP');
+        await expect(
+          authService.verifyMagicLink({
+            token: lastMagicLinkToken(),
+            allowedRoles: roles,
+          }),
+        ).rejects.toThrow('Invalid or expired magic link');
+      });
+
+      it('gives guesses fired in parallel no extra checks', async () => {
+        await requestCode();
+        const guesses = [
+          ...Array(OTP_LIMITS.MAX_GUESSES_PER_CODE + 4).fill(WRONG),
+          CODE,
+        ];
+
+        const results = await Promise.allSettled(
+          guesses.map((otp) => tryCode(otp)),
+        );
+
+        // All ten arrive before any is answered. Four are compared and wrong,
+        // the fifth wrong one destroys the code, and everything after it —
+        // the right code included — is refused without being compared.
+        const messages = results.map((result) =>
+          result.status === 'rejected' ? result.reason.message : 'signed in',
+        );
+        expect(messages).toEqual([
+          ...Array(OTP_LIMITS.MAX_GUESSES_PER_CODE - 1).fill('Invalid OTP'),
+          ...Array(6).fill(OTP_LIMIT_MESSAGES.CODE_LOCKED),
+        ]);
+        expect(jwtService.signAsync).not.toHaveBeenCalled();
+      });
+
+      it('gives a new code a fresh 5 checks', async () => {
+        await requestCode();
+        await burnCode();
+
+        await requestCode();
+        for (let n = 1; n < OTP_LIMITS.MAX_GUESSES_PER_CODE; n++) {
+          await expect(tryCode(WRONG)).rejects.toThrow('Invalid OTP');
+        }
+        await expect(tryCode(CODE)).resolves.toBeDefined();
+      });
+
+      it('treats every spelling of the address as one code with one count', async () => {
+        await requestCode(' Learner@Example.com ');
+
+        await expect(tryCode(WRONG, 'LEARNER@example.com')).rejects.toThrow(
+          'Invalid OTP',
+        );
+        await expect(tryCode(WRONG, 'learner@EXAMPLE.com')).rejects.toThrow(
+          'Invalid OTP',
+        );
+        await expect(tryCode(CODE, EMAIL)).resolves.toBeDefined();
+        // Only one code was ever stored, under the normalised address.
+        expect(store.has('otp:Learner@Example.com')).toBe(false);
+      });
+    });
+
+    describe('per address per day', () => {
+      /** 20 wrong checks spread over 4 codes, each destroyed in turn. */
+      const spendTheDay = async () => {
+        const codes =
+          OTP_LIMITS.MAX_GUESSES_PER_DAY / OTP_LIMITS.MAX_GUESSES_PER_CODE;
+        for (let n = 0; n < codes; n++) {
+          await requestCode();
+          await burnCode();
+        }
+      };
+
+      it('refuses further checks, even of the right code, with a 429 that points at the sign-in link', async () => {
+        await spendTheDay();
+        await requestCode();
+
+        const refusal = await tryCode(CODE).catch((error) => error);
+
+        expect(refusal).toBeInstanceOf(OtpRateLimitedException);
+        expect(refusal.getStatus()).toBe(429);
+        expect(refusal.getResponse()).toMatchObject({
+          message: OTP_LIMIT_MESSAGES.dailyGuesses('24 hours'),
+          errorCode: ErrorCode.RATE_LIMITED,
+          retryAfterSeconds: TIME.DAY_IN_SECONDS,
+        });
+        expect(jwtService.signAsync).not.toHaveBeenCalled();
+      });
+
+      it('still lets the learner in through the emailed link, which resets the count', async () => {
+        await spendTheDay();
+        await requestCode();
+        await expect(tryCode(CODE)).rejects.toThrow(OtpRateLimitedException);
+
+        await expect(
+          authService.verifyMagicLink({
+            token: lastMagicLinkToken(),
+            allowedRoles: roles,
+          }),
+        ).resolves.toBeDefined();
+
+        // Store-reset only, so the code-request window is not what is tested.
+        store.delete(`otp_code_requests:${EMAIL}`);
+        await requestCode();
+        await expect(tryCode(CODE)).resolves.toBeDefined();
+      });
+
+      it('is reset by a successful sign-in, so it only accumulates against someone who never has the code', async () => {
+        await requestCode();
+        await burnCode();
+        await requestCode();
+        await burnCode();
+        await requestCode();
+        await expect(tryCode(CODE)).resolves.toBeDefined();
+
+        expect(store.has(`otp_guesses_day:${EMAIL}`)).toBe(false);
+      });
+    });
+
+    describe('code requests per address', () => {
+      it('sends 5 codes in 15 minutes and refuses the 6th with the wait in words', async () => {
+        for (let n = 1; n <= OTP_LIMITS.MAX_CODES_PER_WINDOW; n++) {
+          await expect(requestCode()).resolves.toMatchObject({
+            success: true,
+          });
+        }
+
+        const refusal = await requestCode().catch((error) => error);
+
+        expect(refusal).toBeInstanceOf(OtpRateLimitedException);
+        expect(refusal.getResponse()).toMatchObject({
+          message: OTP_LIMIT_MESSAGES.generateRequest('15 minutes'),
+          errorCode: ErrorCode.RATE_LIMITED,
+          retryAfterSeconds: 15 * TIME.MINUTE_IN_SECONDS,
+        });
+      });
+
+      it('limits an unknown address the same way, before the lookup, so it reveals nothing about who has an account', async () => {
+        userRepository.findOne.mockResolvedValue(null);
+        for (let n = 1; n <= OTP_LIMITS.MAX_CODES_PER_WINDOW; n++) {
+          await expect(requestCode('nobody@example.com')).rejects.toThrow(
+            NotFoundException,
+          );
+        }
+        userRepository.findOne.mockClear();
+
+        await expect(requestCode('nobody@example.com')).rejects.toThrow(
+          OtpRateLimitedException,
+        );
+        expect(userRepository.findOne).not.toHaveBeenCalled();
+      });
+
+      it('counts every spelling of the address together', async () => {
+        const spellings = [
+          'learner@example.com',
+          'Learner@example.com',
+          ' learner@example.com',
+          'LEARNER@EXAMPLE.COM',
+          'learner@Example.com',
+        ];
+        for (const spelling of spellings) {
+          await requestCode(spelling);
+        }
+
+        await expect(requestCode('lEarner@example.com')).rejects.toThrow(
+          OtpRateLimitedException,
+        );
+      });
+    });
+
+    describe('test accounts', () => {
+      const TEST_EMAIL = 'reviewer@example.com';
+      const TEST_CODE = '2468';
+
+      beforeEach(() => {
+        mockConfig.testAccounts = JSON.stringify({ [TEST_EMAIL]: TEST_CODE });
+      });
+
+      it('are not limited on code requests — no email is sent for them', async () => {
+        for (let n = 1; n <= OTP_LIMITS.MAX_CODES_PER_WINDOW + 3; n++) {
+          await expect(requestCode(TEST_EMAIL)).resolves.toMatchObject({
+            success: true,
+          });
+        }
+      });
+
+      it('are recognised however the address is typed, so their fixed code is never overwritten', async () => {
+        await requestCode('Reviewer@Example.com');
+
+        expect(store.get(`otp:${TEST_EMAIL}`)?.value).toBe(TEST_CODE);
+        expect(AuthUtil.generateOtp).not.toHaveBeenCalled();
+        await expect(tryCode(TEST_CODE, TEST_EMAIL)).resolves.toBeDefined();
+      });
+
+      it('still have their fixed code covered by the per-code and daily limits', async () => {
+        await requestCode(TEST_EMAIL);
+        await burnCode(TEST_EMAIL);
+        await expect(tryCode(TEST_CODE, TEST_EMAIL)).rejects.toThrow(
+          'Invalid OTP',
+        );
+
+        // 5 checks spent above; spend the rest of the day's 20.
+        for (
+          let n = OTP_LIMITS.MAX_GUESSES_PER_CODE;
+          n < OTP_LIMITS.MAX_GUESSES_PER_DAY;
+          n++
+        ) {
+          if (!store.has(`otp:${TEST_EMAIL}`)) {
+            await requestCode(TEST_EMAIL);
+          }
+          await expect(tryCode(WRONG, TEST_EMAIL)).rejects.toThrow(
+            UnauthorizedException,
+          );
+        }
+        await requestCode(TEST_EMAIL);
+        await expect(tryCode(TEST_CODE, TEST_EMAIL)).rejects.toThrow(
+          OtpRateLimitedException,
+        );
+      });
     });
   });
 });

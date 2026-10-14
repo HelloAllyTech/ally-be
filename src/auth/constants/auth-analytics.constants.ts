@@ -56,6 +56,8 @@ export enum AuthFailureReason {
   /** Account exists but holds none of the roles the calling app allows. */
   ROLE_NOT_ALLOWED = 'role_not_allowed',
   ACCOUNT_SUSPENDED = 'account_suspended',
+  /** A per-email login-code limit refused the request (see `OTP_LIMITS`). */
+  RATE_LIMITED = 'rate_limited',
   UNKNOWN_ERROR = 'unknown_error',
 }
 

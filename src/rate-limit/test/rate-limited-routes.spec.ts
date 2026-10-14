@@ -42,6 +42,10 @@ import {
   HelplinePublicController,
 } from 'src/helpline/controller/helpline-public.controller';
 import { HelplineSessionService } from 'src/helpline/service/helpline-session.service';
+import {
+  OTP_LIMIT_MESSAGES,
+  OTP_LIMITS,
+} from 'src/auth/constants/otp-limits.constants';
 import { registeredThrottlers } from '../rate-limit.throttlers';
 
 /**
@@ -277,6 +281,120 @@ describe('Rate-limited routes', () => {
       await verifyFrom('203.0.113.8').expect(200);
     });
   });
+
+  // The per-email limits on these two routes live in AuthService and are tested in
+  // auth-service.spec; this is the per-address ceiling in front of them.
+  describe.each([
+    {
+      route: '/api/v2/auth/generate-otp',
+      body: { email: 'learner@example.com', allowedRoles: ['CLIENT'] },
+      status: 200,
+      message: OTP_LIMIT_MESSAGES.IP_GENERATE,
+    },
+    {
+      route: '/api/v2/auth/verify-otp',
+      body: {
+        email: 'learner@example.com',
+        otp: '4821',
+        allowedRoles: ['CLIENT'],
+      },
+      status: 201,
+      message: OTP_LIMIT_MESSAGES.IP_VERIFY,
+    },
+  ])(
+    'POST $route: 100 per 10 minutes per address',
+    ({ route, body, status, message }) => {
+      let generateOtpV2: jest.Mock;
+      let verifyOtpV2: jest.Mock;
+
+      beforeEach(async () => {
+        generateOtpV2 = jest
+          .fn()
+          .mockResolvedValue({ success: true, expiresIn: 300 });
+        verifyOtpV2 = jest.fn().mockResolvedValue({
+          user: { id: 7, username: 'learner@example.com' },
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          tokenType: 'bearer',
+        });
+        app = await boot(
+          AuthController,
+          [
+            {
+              provide: AuthService,
+              useValue: {
+                generateOtpV2,
+                verifyOtpV2,
+                recordOtpRequest: jest.fn().mockResolvedValue(1),
+                isFirstTimeUser: jest.fn().mockResolvedValue(false),
+              },
+            },
+            { provide: PermissionsService, useValue: {} },
+            {
+              provide: PostHog,
+              useValue: { capture: jest.fn(), alias: jest.fn() },
+            },
+          ],
+          [
+            [JwtAuthGuard, allow],
+            [JwtRefreshAuthGuard, allow],
+            [AuthGuard('jwt'), allow],
+            [PermissionsGuard, allow],
+          ],
+        );
+      });
+
+      // X-Forwarded-For as the load balancer leaves it; RFC 5737 documentation addresses.
+      const callFrom = (xForwardedFor: string) =>
+        request(app.getHttpServer())
+          .post(route)
+          .set('X-Forwarded-For', xForwardedFor)
+          .send(body);
+
+      it('is configured at 100 per 10 minutes', () => {
+        expect(OTP_LIMITS.PER_IP).toEqual({
+          LIMIT: 100,
+          TTL_MS: 10 * TIME.MINUTE_IN_MS,
+        });
+      });
+
+      it('accepts 100 from one address and refuses the 101st with its own message', async () => {
+        for (let n = 1; n <= OTP_LIMITS.PER_IP.LIMIT; n++) {
+          await callFrom('203.0.113.7').expect(status);
+        }
+
+        const refused = await callFrom('203.0.113.7').expect(429);
+
+        expect(refused.headers['retry-after']).toBe('600');
+        expect(refused.body).toMatchObject({
+          message,
+          errorCode: ErrorCode.RATE_LIMITED,
+          retryAfterSeconds: 600,
+        });
+        expect(
+          generateOtpV2.mock.calls.length + verifyOtpV2.mock.calls.length,
+        ).toBe(OTP_LIMITS.PER_IP.LIMIT);
+      });
+
+      it('counts each client behind the load balancer separately, and a spoofed address buys no fresh bucket', async () => {
+        for (let n = 1; n <= OTP_LIMITS.PER_IP.LIMIT; n++) {
+          await callFrom('203.0.113.7').expect(status);
+        }
+        await callFrom('203.0.113.7').expect(429);
+
+        await callFrom('198.51.100.66, 203.0.113.7').expect(429);
+        await callFrom('203.0.113.8').expect(status);
+      });
+
+      it('runs only the otp throttler, at its own numbers', async () => {
+        const accepted = await callFrom('203.0.113.7').expect(status);
+
+        expect(accepted.headers['x-ratelimit-limit-otp']).toBe('100');
+        expect(accepted.headers['x-ratelimit-reset-otp']).toBe('600');
+        expect(accepted.headers).not.toHaveProperty('x-ratelimit-limit');
+      });
+    },
+  );
 
   describe('POST /api/v1/helpline/public/:tenantCode/session: 5 an hour per address', () => {
     let createSession: jest.Mock;

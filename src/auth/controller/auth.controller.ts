@@ -47,6 +47,10 @@ import {
   userDistinctId,
 } from 'src/posthog/posthog.util';
 import { GoogleTokenPayload } from '../type/auth.types';
+import {
+  OTP_LIMIT_MESSAGES,
+  OTP_LIMITS,
+} from '../constants/otp-limits.constants';
 
 @Controller({
   path: 'auth',
@@ -67,14 +71,20 @@ export class AuthController {
     return this.authService.login(loginDto.username, loginDto.password);
   }
 
+  // Per client address, at a ceiling a whole workshop on one network stays
+  // under. The per-email limits that stop brute force live in AuthService,
+  // because only they hold against an attacker with many addresses; see
+  // OTP_LIMITS.
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    limit: OTP_LIMITS.PER_IP.LIMIT,
+    ttl: OTP_LIMITS.PER_IP.TTL_MS,
+    errorMessage: OTP_LIMIT_MESSAGES.IP_GENERATE,
+  })
   @Post('generate-otp')
   @Version('2')
   @HttpCode(HttpStatus.OK)
-  // @RateLimit({
-  //   name: 'otp',
-  //   key: 'ip',
-  //   errorMessage: 'Too many OTP requests. Please try again later.',
-  // })
   async generateOtpV2(
     @Body() generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {
@@ -118,11 +128,13 @@ export class AuthController {
     }
   }
 
-  // @RateLimit({
-  //   name: 'otp',
-  //   key: 'ip',
-  //   errorMessage: 'Too many OTP verification attempts. Please try again later.',
-  // })
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    limit: OTP_LIMITS.PER_IP.LIMIT,
+    ttl: OTP_LIMITS.PER_IP.TTL_MS,
+    errorMessage: OTP_LIMIT_MESSAGES.IP_VERIFY,
+  })
   @Post('verify-otp')
   @Version('2')
   async verifyOtpV2(
