@@ -1729,13 +1729,17 @@ describe('BugFindingService.persistFindings with invalid reportedBugId', () => {
 
   it('handles a non-existent reportedBugId gracefully', async () => {
     repo.save.mockImplementation(async (finding: any) => {
-        if (finding.reportedBugId === 'non-existent-id') {
-            throw new Error('violates foreign key constraint "FK_bug_findings_reported_bug_id"');
-        }
-        return finding;
+      if (finding.reportedBugId === 'non-existent-id') {
+        throw new Error(
+          'violates foreign key constraint "FK_bug_findings_reported_bug_id"',
+        );
+      }
+      return finding;
     });
 
-    await service.persistFindings(RUN, REPO, [raw({ reportedBugId: 'non-existent-id' })]);
+    await service.persistFindings(RUN, REPO, [
+      raw({ reportedBugId: 'non-existent-id' }),
+    ]);
 
     // This is a bit tricky to test without a real DB.
     // The goal is to see that it retries with reportedBugId: null
@@ -1746,17 +1750,21 @@ describe('BugFindingService.persistFindings with invalid reportedBugId', () => {
 
     let saveCalls = 0;
     repo.save.mockImplementation(async (finding: any) => {
-        saveCalls++;
-        if (saveCalls === 1 && finding.reportedBugId === 'non-existent-id') {
-            throw new Error('violates foreign key constraint "FK_bug_findings_reported_bug_id"');
-        }
-        if (saveCalls === 2 && finding.reportedBugId === null) {
-            return finding;
-        }
-        throw new Error('Unexpected call to save');
+      saveCalls++;
+      if (saveCalls === 1 && finding.reportedBugId === 'non-existent-id') {
+        throw new Error(
+          'violates foreign key constraint "FK_bug_findings_reported_bug_id"',
+        );
+      }
+      if (saveCalls === 2 && finding.reportedBugId === null) {
+        return finding;
+      }
+      throw new Error('Unexpected call to save');
     });
 
-    const [result] = await service.persistFindings(RUN, REPO, [raw({ reportedBugId: 'non-existent-id' })]);
+    const [result] = await service.persistFindings(RUN, REPO, [
+      raw({ reportedBugId: 'non-existent-id' }),
+    ]);
     expect(saveCalls).toBe(2);
     expect(result.reportedBugId).toBeNull();
   });
