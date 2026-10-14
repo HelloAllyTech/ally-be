@@ -14,11 +14,15 @@
 # opencode again on the PR's branch. Builder follows the issue to the PR from
 # its own reconcile tick and reports progress on its build page.
 #
-# Pushes and the PR are made with BUILDER_GH_TOKEN, not GITHUB_TOKEN: GitHub
-# does not start workflows (CI included) from events made with GITHUB_TOKEN.
+# Pushes, the PR and its comments are made as the Ally Builder GitHub App
+# (ally-builder[bot]), with a token minted per run from the app's key. Not
+# GITHUB_TOKEN: GitHub does not start workflows (CI included) from events made
+# with GITHUB_TOKEN. Not a person's PAT: the work would show as that person.
+# BUILDER_GH_TOKEN is the fallback only until the app's secrets exist.
 #
-# Secrets (org-level, or set on each repo): GEMINI_API_KEY, BUILDER_GH_TOKEN,
-# ALLY_BE_API_KEY. Variable: ALLY_BE_API_URL (defaults to production).
+# Org-level: variable BUILDER_APP_ID, secrets BUILDER_APP_PRIVATE_KEY,
+# GEMINI_API_KEY, ALLY_BE_API_KEY. Variable ALLY_BE_API_URL (defaults to
+# production).
 name: Builder (opencode)
 
 on:
@@ -39,15 +43,17 @@ on:
     secrets:
       GEMINI_API_KEY:
         required: true
+      BUILDER_APP_PRIVATE_KEY:
+        required: false
       BUILDER_GH_TOKEN:
-        required: true
+        required: false
       ALLY_BE_API_KEY:
         required: true
 
 jobs:
   opencode:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -59,10 +65,21 @@ jobs:
       HUSKY: '0'
       NODE_OPTIONS: ${{ inputs.node-options }}
     steps:
+      # Scoped to this repository. It expires after an hour, so a run must
+      # push within that: the job timeout below matches it, as does Builder's
+      # own (ISSUE_BUILD_TIMEOUT_MS).
+      - name: Builder app token
+        id: app
+        if: vars.BUILDER_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILDER_APP_ID }}
+          private-key: ${{ secrets.BUILDER_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.BUILDER_GH_TOKEN }}
+          token: ${{ steps.app.outputs.token || secrets.BUILDER_GH_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -72,10 +89,21 @@ jobs:
       - name: Install dependencies
         run: ${{ inputs.install-command }}
 
+      # The app's bot user, with its noreply address, so commits show the bot
+      # and its avatar rather than an unlinked name.
       - name: Git identity
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
-          git config user.name "ally-builder[bot]"
-          git config user.email "builder@helloally.ai"
+          if [ -n "$APP_SLUG" ]; then
+            bot_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+            git config user.name "${APP_SLUG}[bot]"
+            git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          else
+            git config user.name "ally-builder[bot]"
+            git config user.email "builder@helloally.ai"
+          fi
 
       # Pinned: an agent whose behaviour changes between one build and the
       # next is not something you can debug. (The published opencode action
@@ -133,5 +161,5 @@ jobs:
           # production run (ally-be#629) published one.
           SHARE: 'false'
           USE_GITHUB_TOKEN: 'true'
-          GITHUB_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app.outputs.token || secrets.BUILDER_GH_TOKEN }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
