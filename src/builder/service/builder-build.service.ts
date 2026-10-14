@@ -85,6 +85,15 @@ import {
  * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
  * 10 inputs and builder-session.yml is already at 9.
  */
+/** How the runner builds: the phase pipeline, or the Ralph loop. */
+export type BuilderLoop = 'pipeline' | 'ralph';
+
+/**
+ * Where a build runs: Builder's own runner (`workflow`), or an issue in the
+ * repo that its builder.yml workflow works into a PR with opencode (`issue`).
+ */
+export type BuilderDispatch = 'workflow' | 'issue';
+
 /** A size decision plus the features it was derived from. */
 export interface BuilderSizing {
   size: BuilderBuildSize;
@@ -108,8 +117,8 @@ export interface BuilderResolvedModels {
   repoCount: number;
   technicalPlanLength: number;
   effort: 'low' | 'medium' | 'high';
-  /** How the runner builds: the phase pipeline, or the Ralph loop. */
-  loop?: 'pipeline' | 'ralph';
+  /** How the runner builds — see BuilderLoop. */
+  loop?: BuilderLoop;
   plannerMaxTurns: number;
   planWords: number;
   budgets: { plan: number; code: number; verify: number; finalise: number };
@@ -243,7 +252,8 @@ export class BuilderBuildService {
       plannerModel?: string;
       verifierModel?: string;
       budgetUsd?: number;
-      loop?: 'pipeline' | 'ralph';
+      loop?: BuilderLoop;
+      dispatch?: BuilderDispatch;
     } = {},
   ): Promise<BuilderBuildRun> {
     const settings = await this.settingsService.get();
@@ -280,9 +290,16 @@ export class BuilderBuildService {
         where: { sessionId: session.id },
       })) === 0;
 
+    // A one-repo-per-build chain that stopped before its last repo is not
+    // finished, whatever the session says: the repos left are still to build.
+    const chainUnfinished =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      Boolean(await this.epicService.nextPending(session.id));
+
     if (
       !BUILDER_STARTABLE_STATUSES.includes(session.status) &&
-      !completedEmptyHanded
+      !completedEmptyHanded &&
+      !chainUnfinished
     ) {
       throw new BadRequestException(
         `A build can only start from a ready PRD — this session is ${session.status.toLowerCase()}.`,
@@ -300,6 +317,25 @@ export class BuilderBuildService {
 
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
+
+    // Unreadable means "as before": resume the previous branch. Sizing already
+    // tolerates an unreadable PRD the same way (classifySession).
+    const doc = await this.prdService
+      .getOrCreateDoc(session.id, session.createdBy)
+      .catch(() => null);
+    const prdVersion = doc?.versionNumber ?? null;
+    const branchSlug = await this.branchSlugForBuild(session, prdVersion);
+
+    // One repo per build: a design that changes several repos becomes a chain
+    // of repo milestones, backend first (BuilderEpicService.ensureRepoMilestones).
+    const designRepos = (doc?.draft?.technicalDesign?.scope ?? [])
+      .map((entry) => String(entry?.repo ?? '').trim())
+      .filter(Boolean);
+    await this.epicService.ensureRepoMilestones(
+      session.id,
+      designRepos,
+      branchSlug,
+    );
 
     // Epic mode dispatches the first milestone rather than the whole PRD. The
     // split itself is proposed and confirmed before this point — a wrong
@@ -321,6 +357,16 @@ export class BuilderBuildService {
 
     // Carry the chosen model onto the session so a resume run and the UI both
     // read the same thing without re-deriving it.
+    const buildMetadata: Record<string, any> = {
+      ...(session.metadata ?? {}),
+      buildOverrides: {
+        loop: overrides.loop ?? null,
+        dispatch: overrides.dispatch ?? null,
+        model: overrides.model ?? null,
+        plannerModel: overrides.plannerModel ?? null,
+        verifierModel: overrides.verifierModel ?? null,
+      },
+    };
     await this.sessionRepository.update(
       { id: session.id },
       {
@@ -331,28 +377,32 @@ export class BuilderBuildService {
         ...(overrides.budgetUsd !== undefined
           ? { budgetUsd: String(overrides.budgetUsd) }
           : {}),
+        // The loop and tiers this build was started with, for the milestones
+        // after the first: advanceEpic dispatches them with no request to
+        // read overrides from, and silently dropping `loop: ralph` halfway
+        // through a chain would change what is being measured.
+        metadata: buildMetadata,
         updatedBy: userId,
       },
     );
 
-    // Unreadable means "as before": resume the previous branch. Sizing already
-    // tolerates an unreadable PRD the same way (classifySession).
-    const prdVersion = await this.prdService
-      .getOrCreateDoc(session.id, session.createdBy)
-      .then((doc) => doc.versionNumber)
-      .catch(() => null);
+    if (milestone) {
+      await this.epicService.markStatus(
+        milestone.id,
+        BuilderMilestoneStatus.BUILDING,
+      );
+    }
 
     return this.dispatchRun({
       session: { ...session, model: models.coder },
       mode: BuilderRunMode.BUILD,
       userId,
-      repos,
+      repos: milestone?.repos?.length ? milestone.repos : repos,
       models,
       milestoneId: milestone?.id ?? undefined,
-      branchSlugOverride:
-        milestone?.branchSlug ??
-        (await this.branchSlugForBuild(session, prdVersion)),
+      branchSlugOverride: milestone?.branchSlug ?? branchSlug,
       prdVersion,
+      dispatch: overrides.dispatch,
     });
   }
 
@@ -675,7 +725,21 @@ export class BuilderBuildService {
       this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
-      const models = this.resolveModels(session, settings);
+      const carried = (session.metadata?.buildOverrides ?? {}) as {
+        loop?: BuilderLoop | null;
+        dispatch?: BuilderDispatch | null;
+        model?: string | null;
+        plannerModel?: string | null;
+        verifierModel?: string | null;
+      };
+      const models = {
+        ...this.resolveModels(session, settings, {
+          model: carried.model ?? undefined,
+          plannerModel: carried.plannerModel ?? undefined,
+          verifierModel: carried.verifierModel ?? undefined,
+        }),
+        ...(carried.loop ? { loop: carried.loop } : {}),
+      };
       await this.sessionRepository.update(
         { id: session.id },
         {
@@ -691,10 +755,11 @@ export class BuilderBuildService {
         session,
         mode: BuilderRunMode.BUILD,
         userId: session.createdBy ?? 0,
-        repos: session.repos ?? [],
+        repos: next.repos?.length ? next.repos : (session.repos ?? []),
         models,
         milestoneId: next.id,
         branchSlugOverride: next.branchSlug,
+        dispatch: carried.dispatch ?? undefined,
       });
       this.logger.info(
         `Builder session ${session.id} advanced to milestone ${next.position}.`,
@@ -710,10 +775,22 @@ export class BuilderBuildService {
         BuilderMilestoneStatus.PENDING,
         message,
       );
+      // FAILED, not COMPLETED: the session has work left, and a person needs
+      // to see why it stopped. On 2026-10-14 ally-mobile's issue could not be
+      // raised (403) and the session read "Completed" with a repo unbuilt.
+      // FAILED is startable, so a restart resumes at this milestone.
+      await this.sessionRepository.update(
+        { id: session.id },
+        {
+          status: BuilderSessionStatus.FAILED,
+          error: `Could not start ${next.title}: ${message}`,
+        },
+      );
       this.logger.warn(
         `Builder session ${session.id} could not start milestone ${next.position}: ${message}`,
       );
-      return false;
+      // Handled: settleRun must not go on to mark the session COMPLETED.
+      return true;
     }
   }
 
@@ -1387,6 +1464,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
+    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1420,6 +1499,88 @@ export class BuilderBuildService {
     }
   }
 
+  /**
+   * Start a build as a GitHub issue in its repo (BUILDER_DISPATCH=issue).
+   *
+   * The issue carries the repo's slice of the PRD and the approved design,
+   * labelled `builder`; the repo's `builder.yml` workflow runs opencode on it
+   * (`opencode github run`), which works on a branch and opens a pull request
+   * that closes the issue. Builder follows the issue to that PR in the
+   * reconcile tick (reconcileIssueRun). One repo per build: a design spanning
+   * several repos is a chain of repo milestones, each its own issue.
+   */
+  private async dispatchAsIssue(
+    session: BuilderSession,
+    run: BuilderBuildRun,
+    repos: string[],
+  ): Promise<void> {
+    if (repos.length !== 1) {
+      throw new BadRequestException(
+        `An issue build covers one repo; this one names ${repos.length}.`,
+      );
+    }
+    const [repo] = repos;
+    // Nothing private in the issue: ally-be, ally-web and ally-ai are public
+    // repos, and the PRD and design are not. The workflow fetches them from
+    // GET /builder/pipeline/runs/:runId/spec with the Builder API key, cut to
+    // this repo's slice, and hands them to opencode; the issue carries only
+    // the run id it needs to do that (in a marker the workflow parses).
+    const body = [
+      `<!-- builder-run: ${run.id} -->`,
+      `Builder build for \`${repo}\` (session \`${session.id.slice(0, 8)}\`, run ${run.sequence}).`,
+      '',
+      'The specification is private: the Builder workflow fetches it from Builder ' +
+        'and opencode works from that. Progress and the pull request appear here and ' +
+        'on the Builder build page.',
+    ].join('\n');
+    const issue = await this.github.createIssue(repo, {
+      title: `Builder build — ${repo} (run ${run.sequence}, ${session.id.slice(0, 8)})`,
+      body,
+      labels: ['builder'],
+    });
+    // The label is what starts the repo's workflow. GitHub drops it without
+    // an error when the token can open issues but not label them — which is
+    // how the first production issue build (ally-be#629, 2026-10-14) sat
+    // unstarted. Try once more, then fail loudly rather than leave a build
+    // that never begins.
+    if (!issue.labels.includes('builder')) {
+      const labels = await this.github.addIssueLabels(repo, issue.number, [
+        'builder',
+      ]);
+      if (!labels.includes('builder')) {
+        throw new Error(
+          `raised ${issue.htmlUrl} but could not label it \`builder\`, so its workflow ` +
+            `will not start. The ally-be GITHUB_TOKEN needs permission to label issues ` +
+            `in ${repo} (triage or write access).`,
+        );
+      }
+    }
+    await this.runRepository.update(
+      { id: run.id },
+      {
+        issueNumber: issue.number,
+        issueUrl: issue.htmlUrl,
+        githubRunUrl: issue.htmlUrl,
+        status: BuilderRunStatus.RUNNING,
+        startedAt: new Date(),
+      },
+    );
+    await this.recordIssueMilestone(
+      {
+        ...run,
+        issueNumber: issue.number,
+        issueUrl: issue.htmlUrl,
+      } as BuilderBuildRun,
+      'issue',
+      `Raised ${repo}#${issue.number} (${issue.htmlUrl}) with this build's PRD and approved design. ` +
+        `opencode picks it up in ${repo}'s Builder workflow.`,
+      BuilderStage.CODING,
+    );
+    this.logger.info(
+      `Builder run ${run.id} raised ${repo}#${issue.number} for session ${session.id}.`,
+    );
+  }
+
   private async dispatchRunLocked(params: {
     session: BuilderSession;
     mode: BuilderRunMode;
@@ -1432,6 +1593,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
+    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1465,6 +1628,7 @@ export class BuilderBuildService {
         // slices stay separately reviewable rather than piling into one branch.
         branchSlug: params.branchSlugOverride ?? session.slug,
         prdVersion: params.prdVersion ?? null,
+        repos,
         branches: params.branches ?? null,
         pullRequestId: params.pullRequestId ?? null,
         milestoneId: params.milestoneId ?? null,
@@ -1475,6 +1639,13 @@ export class BuilderBuildService {
 
     try {
       if (params.onCreated) await params.onCreated(run);
+      if (
+        (params.dispatch ?? this.configService.builder.dispatch) === 'issue' &&
+        mode === BuilderRunMode.BUILD
+      ) {
+        await this.dispatchAsIssue(session, run, repos);
+        return run;
+      }
       await this.github.dispatchWorkflow({
         repo: BUILDER_WORKFLOW_REPO,
         workflow: BUILDER_WORKFLOW_FILE,
@@ -1937,7 +2108,76 @@ export class BuilderBuildService {
     }
   }
 
+  /**
+   * One step of an issue build on the session's feed, posted once.
+   *
+   * An issue build runs in the target repo's own workflow, which reports
+   * nothing to Builder, so the feed is written from here as the PR tick sees
+   * each stage: issue raised, opencode working (with its live log), PR opened,
+   * CI running / failed / passed, fix requested. `key` makes it idempotent
+   * across ticks; `stage` moves the build page's progress rail.
+   */
+  async recordIssueMilestone(
+    run: BuilderBuildRun,
+    key: string,
+    text: string,
+    stage?: BuilderStage,
+  ): Promise<void> {
+    const fresh =
+      (await this.runRepository.findOne({ where: { id: run.id } })) ?? run;
+    const cost = (fresh.cost ?? {}) as Record<string, any>;
+    const posted = (cost.issueTimeline as string[] | undefined) ?? [];
+    if (posted.includes(key)) return;
+    await this.runRepository.update(
+      { id: run.id },
+      { cost: { ...cost, issueTimeline: [...posted, key] } as any },
+    );
+    if (stage) {
+      await this.sessionRepository.update(
+        { id: run.sessionId },
+        { currentStage: stage },
+      );
+      await this.eventService.record(
+        fresh,
+        BuilderEventType.STAGE_CHANGE,
+        { stage },
+        stage,
+      );
+    }
+    await this.eventService.record(
+      fresh,
+      BuilderEventType.TEXT,
+      { text },
+      stage ?? null,
+    );
+  }
+
+  /** The head commit Builder asked opencode to fix, so it asks once per commit. */
+  async recordIssueFixRequest(
+    run: BuilderBuildRun,
+    headSha: string,
+  ): Promise<void> {
+    const fresh =
+      (await this.runRepository.findOne({ where: { id: run.id } })) ?? run;
+    const cost = (fresh.cost ?? {}) as Record<string, any>;
+    const asked = [...((cost.issueFixRequests as string[]) ?? []), headSha];
+    await this.runRepository.update(
+      { id: run.id },
+      { cost: { ...cost, issueFixRequests: asked } as any },
+    );
+  }
+
+  /** Active issue-dispatched builds, for the PR tick to follow (BuilderPullRequestService). */
+  async listActiveIssueRuns(): Promise<BuilderBuildRun[]> {
+    return (await this.runRepository.listActive()).filter((run) =>
+      Boolean(run.issueNumber),
+    );
+  }
+
   private async reconcileRun(run: BuilderBuildRun): Promise<void> {
+    // An issue build has no Builder runner to look for; the PR tick follows
+    // its issue to the pull request instead (reconcileIssueRuns).
+    if (run.issueNumber) return;
     const age = Date.now() - run.dispatchedAt.getTime();
 
     if (!run.githubRunId) {

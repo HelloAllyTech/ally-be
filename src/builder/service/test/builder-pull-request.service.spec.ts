@@ -119,6 +119,10 @@ describe('BuilderPullRequestService', () => {
     buildService = {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
       dispatchReviewRun: jest.fn().mockResolvedValue({ id: 'run-3' }),
+      listActiveIssueRuns: jest.fn().mockResolvedValue([]),
+      settleRun: jest.fn(),
+      recordIssueFixRequest: jest.fn(),
+      recordIssueMilestone: jest.fn(),
     };
 
     releaseService = {
@@ -246,6 +250,150 @@ describe('BuilderPullRequestService', () => {
       await service.recordFromRunner('s1', 'run-1', incoming);
 
       expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('issue-dispatched builds', () => {
+    const issueRun = (overrides: Record<string, unknown> = {}) => ({
+      id: 'run-9',
+      sessionId: 's1',
+      repos: ['ally-be'],
+      issueNumber: 7,
+      issueUrl: 'https://github.com/o/ally-be/issues/7',
+      dispatchedAt: new Date(),
+      cost: null,
+      ...overrides,
+    });
+    const opencodePr = {
+      number: 12,
+      htmlUrl: 'https://github.com/o/ally-be/pull/12',
+      headRef: 'opencode/issue7-20261013141034',
+      headSha: 'sha-1',
+      title: 'Add promptHtml',
+    };
+
+    beforeEach(() => {
+      github.listPullRequests = jest
+        .fn()
+        .mockResolvedValue([
+          { number: 3, headRef: 'someone/else', headSha: 'x', htmlUrl: 'u' },
+          opencodePr,
+        ]);
+      github.getCheckRollup = jest.fn();
+      github.findRunSince = jest.fn().mockResolvedValue(null);
+      github.createIssueComment = jest.fn().mockResolvedValue('url');
+      jest.spyOn(service, 'recordFromRunner').mockResolvedValue([]);
+    });
+
+    it('records the PR opencode opened for the issue and settles the run when CI is green', async () => {
+      buildService.listActiveIssueRuns.mockResolvedValue([issueRun()]);
+      github.getCheckRollup.mockResolvedValue({
+        state: 'success',
+        failed: [],
+        total: 2,
+      });
+
+      await service.reconcileOpenPullRequests();
+
+      expect(service.recordFromRunner).toHaveBeenCalledWith('s1', 'run-9', [
+        expect.objectContaining({
+          repo: 'ally-be',
+          prNumber: 12,
+          branch: opencodePr.headRef,
+        }),
+      ]);
+      expect(buildService.settleRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'run-9' }),
+        'SUCCEEDED',
+        null,
+      );
+      // The feed tells the story: PR opened, then CI passed.
+      expect(
+        buildService.recordIssueMilestone.mock.calls.map(
+          (call: any[]) => call[1],
+        ),
+      ).toEqual(['pr:12', 'ci-pass:sha-1']);
+    });
+
+    it('asks opencode to fix red CI once per head commit, naming the failing checks', async () => {
+      buildService.listActiveIssueRuns.mockResolvedValue([issueRun()]);
+      github.getCheckRollup.mockResolvedValue({
+        state: 'failure',
+        failed: ['check'],
+        total: 1,
+      });
+
+      await service.reconcileOpenPullRequests();
+
+      expect(github.createIssueComment).toHaveBeenCalledWith(
+        'ally-be',
+        12,
+        expect.stringMatching(/^\/oc CI failed on this pull request: check\./),
+      );
+      expect(buildService.recordIssueFixRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'run-9' }),
+        'sha-1',
+      );
+
+      // The same commit again: already asked, so nothing more is posted.
+      github.createIssueComment.mockClear();
+      buildService.listActiveIssueRuns.mockResolvedValue([
+        issueRun({ cost: { issueFixRequests: ['sha-1'] } }),
+      ]);
+      await service.reconcileOpenPullRequests();
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(buildService.settleRun).not.toHaveBeenCalled();
+    });
+
+    it('fails the build when fix requests run out', async () => {
+      buildService.listActiveIssueRuns.mockResolvedValue([
+        issueRun({ cost: { issueFixRequests: ['old-1', 'old-2'] } }),
+      ]);
+      github.getCheckRollup.mockResolvedValue({
+        state: 'failure',
+        failed: ['check'],
+        total: 1,
+      });
+
+      await service.reconcileOpenPullRequests();
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(buildService.settleRun).toHaveBeenCalledWith(
+        expect.anything(),
+        'FAILED',
+        expect.stringMatching(/after 2 fix request/),
+      );
+    });
+
+    it('fails the build when the workflow finished without a PR', async () => {
+      github.listPullRequests.mockResolvedValue([]);
+      github.findRunSince.mockResolvedValue({
+        status: 'completed',
+        htmlUrl: 'run-url',
+      });
+      buildService.listActiveIssueRuns.mockResolvedValue([issueRun()]);
+
+      await service.reconcileOpenPullRequests();
+
+      expect(service.recordFromRunner).not.toHaveBeenCalled();
+      expect(buildService.settleRun).toHaveBeenCalledWith(
+        expect.anything(),
+        'FAILED',
+        expect.stringMatching(/without opening a pull request/),
+      );
+    });
+
+    it('waits while the workflow is still working', async () => {
+      github.listPullRequests.mockResolvedValue([]);
+      github.findRunSince.mockResolvedValue({
+        status: 'in_progress',
+        htmlUrl: 'run-url',
+      });
+      buildService.listActiveIssueRuns.mockResolvedValue([issueRun()]);
+
+      await service.reconcileOpenPullRequests();
+
+      expect(buildService.settleRun).not.toHaveBeenCalled();
     });
   });
 

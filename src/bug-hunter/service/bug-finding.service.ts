@@ -101,6 +101,16 @@ export interface ReportedBugContext {
 export interface BugFindingEnrichment {
   report: ReportedBugContext | null;
   stageOverriddenByName: string | null;
+  /**
+   * The names behind the row's other "who did this" ids — the admin console's
+   * finding drawer prints these instead of "user #7". Null when the id is null
+   * or the account is gone.
+   */
+  descriptionEditedByName: string | null;
+  escalationAnsweredByName: string | null;
+  decidedByName: string | null;
+  releasedByName: string | null;
+  cancelledByName: string | null;
   /** Which CLI/model ran `finding.runId`'s session — null if that run never reported one, or there is no run. */
   engine: string | null;
   model: string | null;
@@ -198,12 +208,21 @@ export class BugFindingService {
       : [];
     const byOpportunityId = new Map(opportunities.map((o) => [o.id, o]));
 
-    // One name lookup covering both the reporters and the stage-pinners.
+    // One name lookup covering the reporters and everyone who acted on a row:
+    // the stage-pinner, the description rewriter, whoever answered, decided,
+    // released or stopped it.
     const userIds = [
       ...new Set(
         [
           ...opportunities.map((o) => o.createdBy),
-          ...findings.map((f) => f.stageOverriddenBy),
+          ...findings.flatMap((f) => [
+            f.stageOverriddenBy,
+            f.descriptionEditedBy,
+            f.escalationAnsweredBy,
+            f.decidedBy,
+            f.releasedBy,
+            f.cancelledBy,
+          ]),
         ].filter((id): id is number => id != null),
       ),
     ];
@@ -214,6 +233,8 @@ export class BugFindingService {
         })
       : [];
     const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
+    const nameOf = (id: number | null | undefined): string | null =>
+      id != null ? (nameById.get(id) ?? null) : null;
 
     // Which CLI/model ran each finding's most recent session — one query for
     // the whole page, same batching discipline as the two lookups above.
@@ -243,10 +264,12 @@ export class BugFindingService {
               reportedAt: opportunity.createdAt,
             }
           : null,
-        stageOverriddenByName:
-          finding.stageOverriddenBy != null
-            ? (nameById.get(finding.stageOverriddenBy) ?? null)
-            : null,
+        stageOverriddenByName: nameOf(finding.stageOverriddenBy),
+        descriptionEditedByName: nameOf(finding.descriptionEditedBy),
+        escalationAnsweredByName: nameOf(finding.escalationAnsweredBy),
+        decidedByName: nameOf(finding.decidedBy),
+        releasedByName: nameOf(finding.releasedBy),
+        cancelledByName: nameOf(finding.cancelledBy),
         engine: run?.engine ?? null,
         model: run?.model ?? null,
       });
@@ -620,35 +643,77 @@ export class BugFindingService {
           ? shipped
           : null;
 
-      const saved = await this.findingRepository.save(
-        this.findingRepository.create({
-          runId,
-          repo,
-          source: finding.source,
-          title: truncateTitle(finding.description),
-          description: finding.description,
-          file: finding.file ?? null,
-          symbol: finding.symbol ?? null,
-          evidence: finding.evidence ?? null,
-          severity: finding.severity ?? null,
-          // Same rows as before — the column defaults these to false, so an
-          // omitted value already landed as false. Naming it just stops the
-          // insert depending on TypeORM skipping an undefined.
-          proven: finding.proven ?? false,
-          touchesGuardedPath: finding.touchesGuardedPath ?? false,
-          reportedBugId: finding.reportedBugId ?? null,
-          dedupeKey,
-          status: BugFindingStatus.NEW,
-          ...(regressionOf || finding.pr
-            ? {
-                metadata: {
-                  ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
-                  ...(finding.pr ? { pr: finding.pr } : {}),
-                },
-              }
-            : {}),
-        }),
-      );
+      let saved: BugFinding;
+      try {
+        saved = await this.findingRepository.save(
+          this.findingRepository.create({
+            runId,
+            repo,
+            source: finding.source,
+            title: truncateTitle(finding.description),
+            description: finding.description,
+            file: finding.file ?? null,
+            symbol: finding.symbol ?? null,
+            evidence: finding.evidence ?? null,
+            severity: finding.severity ?? null,
+            // Same rows as before — the column defaults these to false, so an
+            // omitted value already landed as false. Naming it just stops the
+            // insert depending on TypeORM skipping an undefined.
+            proven: finding.proven ?? false,
+            touchesGuardedPath: finding.touchesGuardedPath ?? false,
+            reportedBugId: finding.reportedBugId ?? null,
+            dedupeKey,
+            status: BugFindingStatus.NEW,
+            ...(regressionOf || finding.pr
+              ? {
+                  metadata: {
+                    ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
+                    ...(finding.pr ? { pr: finding.pr } : {}),
+                  },
+                }
+              : {}),
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('FK_bug_findings_reported_bug_id')
+        ) {
+          this.logger.warn(
+            `Foreign key violation for reportedBugId ${finding.reportedBugId}. Retrying with null.`,
+          );
+          saved = await this.findingRepository.save(
+            this.findingRepository.create({
+              runId,
+              repo,
+              source: finding.source,
+              title: truncateTitle(finding.description),
+              description: finding.description,
+              file: finding.file ?? null,
+              symbol: finding.symbol ?? null,
+              evidence: finding.evidence ?? null,
+              severity: finding.severity ?? null,
+              proven: finding.proven ?? false,
+              touchesGuardedPath: finding.touchesGuardedPath ?? false,
+              reportedBugId: null,
+              dedupeKey,
+              status: BugFindingStatus.NEW,
+              ...(regressionOf || finding.pr
+                ? {
+                    metadata: {
+                      ...(regressionOf
+                        ? { regressionOf: regressionOf.id }
+                        : {}),
+                      ...(finding.pr ? { pr: finding.pr } : {}),
+                    },
+                  }
+                : {}),
+            }),
+          );
+        } else {
+          throw error;
+        }
+      }
 
       if (regressionOf) {
         await this.markRegression(saved, regressionOf, runId);

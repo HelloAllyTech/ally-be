@@ -1,0 +1,33 @@
+# Builder works issues labelled `builder` into pull requests with opencode.
+# The logic is shared: HelloAllyTech/ally-be/.github/workflows/builder-opencode.yml.
+# Only org members can drive it: the label needs write access, and a `/oc`
+# comment is acted on only from an owner, member or collaborator.
+name: Builder
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: builder-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  opencode:
+    if: |
+      (github.event_name == 'issues' && github.event.label.name == 'builder') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')))
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    uses: HelloAllyTech/ally-be/.github/workflows/builder-opencode.yml@master
+    with:
+      node-version: '24'
+      install-command: npm ci
+      node-options: '--max-old-space-size=6144'
+    secrets: inherit

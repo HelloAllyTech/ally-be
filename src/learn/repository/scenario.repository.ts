@@ -67,6 +67,13 @@ export class ScenariosRepository extends Repository<Scenarios> {
       });
     }
 
+    // Cohort narrowing, layer 2 on top of the scenario_tenants join above. Only
+    // the learner catalog passes cohortScope; the admin list deliberately does
+    // not, so an admin keeps seeing the scenarios they have restricted.
+    //
+    // No grace clause for scenarios: a roleplay is a single session with nothing
+    // to resume, so "finish what you started" has no subject here. Courses and
+    // cases, which do have resumable progress, pass one.
     if (filters?.cohortScope && filters.tenantId) {
       applyCohortVisibilityFilter(query, {
         alias: 'scenario',

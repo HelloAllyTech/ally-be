@@ -184,6 +184,17 @@ export class StartBuilderBuildDto {
   @IsOptional()
   @IsIn(['pipeline', 'ralph'])
   loop?: 'pipeline' | 'ralph';
+
+  @ApiPropertyOptional({
+    enum: ['workflow', 'issue'],
+    description:
+      'Where this build runs, overriding BUILDER_DISPATCH for this build and the ' +
+      "repos chained after it. `workflow`: Builder's own runner. `issue`: an issue " +
+      'in each repo that its builder.yml workflow works into a pull request with opencode.',
+  })
+  @IsOptional()
+  @IsIn(['workflow', 'issue'])
+  dispatch?: 'workflow' | 'issue';
 }
 
 export class RaiseBuilderBudgetDto {

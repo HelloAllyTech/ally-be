@@ -842,6 +842,16 @@ export class AppConfigService {
       // coverage.
       slackChannel: this.configService.get<string>('BUILDER_SLACK_CHANNEL'),
       /**
+       * How a build run is started. `workflow` (the default): Builder's own
+       * runner, the builder-session workflow in ally-be. `issue`: an issue in
+       * the target repo, labelled `builder`, which that repo's `builder.yml`
+       * workflow works into a pull request with opencode.
+       */
+      dispatch:
+        this.configService.get<string>('BUILDER_DISPATCH') === 'issue'
+          ? ('issue' as const)
+          : ('workflow' as const),
+      /**
        * Slack user ids allowed to merge and release from the channel.
        *
        * Deny by default: unset means nobody, not everybody. A button in a

@@ -104,6 +104,7 @@ describe('BuilderBuildService', () => {
     nextPending: jest.Mock;
     markStatus: jest.Mock;
     listBySession: jest.Mock;
+    ensureRepoMilestones: jest.Mock;
   };
   let llmUsage: { record: jest.Mock };
   let llmModelsRepository: { find: jest.Mock };
@@ -189,6 +190,7 @@ describe('BuilderBuildService', () => {
       nextPending: jest.fn().mockResolvedValue(null),
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
+      ensureRepoMilestones: jest.fn().mockResolvedValue(undefined),
     };
     // Build-half spend goes to the unified usage store as well as the run row.
     llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
@@ -245,6 +247,191 @@ describe('BuilderBuildService', () => {
           prdService.computeReadiness(...args),
       } as any,
     );
+  });
+
+  describe('issue dispatch', () => {
+    it('raises an issue for a build switched to it, carrying no PRD or design', async () => {
+      (github as any).createIssue = jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-be/issues/41',
+        labels: ['builder'],
+      });
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          summary: 'A confidential product plan nobody outside may read.',
+          requirements: [],
+          technicalPlan: '',
+        },
+        versionNumber: 3,
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be'] }) as any,
+        1,
+        { dispatch: 'issue' },
+      );
+
+      // The per-build switch wins over the default (Builder's own runner).
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      const [repo, issue] = (github as any).createIssue.mock.calls[0];
+      expect(repo).toBe('ally-be');
+      expect(issue.labels).toEqual(['builder']);
+      // ally-be is a public repo: the issue names the run, nothing more.
+      expect(issue.body).toContain(`<!-- builder-run: ${run.id} -->`);
+      expect(issue.body).not.toContain('confidential');
+      expect(issue.title).not.toContain(readySession().title);
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: run.id },
+        expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
+      );
+    });
+  });
+
+  describe('issue dispatch — the label', () => {
+    beforeEach(() => {
+      (github as any).createIssue = jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-be/issues/41',
+        // What GitHub returns when the token may open issues but not label them.
+        labels: [],
+      });
+    });
+
+    it('adds the label GitHub dropped', async () => {
+      (github as any).addIssueLabels = jest.fn().mockResolvedValue(['builder']);
+
+      await service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
+        dispatch: 'issue',
+      });
+
+      expect((github as any).addIssueLabels).toHaveBeenCalledWith(
+        'ally-be',
+        41,
+        ['builder'],
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
+      );
+    });
+
+    it('fails the build, naming the permission, when the label cannot be added', async () => {
+      (github as any).addIssueLabels = jest.fn().mockResolvedValue([]);
+
+      await expect(
+        service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
+          dispatch: 'issue',
+        }),
+      ).rejects.toThrow(
+        /could not label it `builder`.*permission to label issues/,
+      );
+    });
+  });
+
+  describe('a one-repo-per-build chain that stops before its last repo', () => {
+    it('fails the session with the reason, rather than calling it complete', async () => {
+      const run = {
+        id: 'run-11',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+        milestoneId: 'm2',
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        status: BuilderSessionStatus.BUILDING,
+        repos: ['ally-be', 'ally-web', 'ally-mobile'],
+      });
+      runRepository.isLatestForSession.mockResolvedValue(true);
+      epicService.nextPending.mockResolvedValue({
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      });
+      github.dispatchWorkflow.mockRejectedValue(
+        new Error('Request failed with status code 403'),
+      );
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(epicService.markStatus).toHaveBeenCalledWith(
+        'm3',
+        'PENDING',
+        expect.stringMatching(/403/),
+      );
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          status: BuilderSessionStatus.FAILED,
+          error: expect.stringMatching(/Could not start ally-mobile: .*403/),
+        }),
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.COMPLETED }),
+      );
+    });
+
+    it('lets a session marked complete restart while a repo is still to build', async () => {
+      epicService.nextPending.mockResolvedValue({
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      });
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+
+      const run = await service.startBuild(
+        readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+        1,
+      );
+
+      expect(run).toEqual(
+        expect.objectContaining({ milestoneId: 'm3', repos: ['ally-mobile'] }),
+      );
+    });
+  });
+
+  describe('one repo per build', () => {
+    it('dispatches the first repo milestone with its repo only, and keeps the loop for the chain', async () => {
+      epicService.nextPending.mockResolvedValue({
+        id: 'm1',
+        position: 1,
+        repos: ['ally-be'],
+        branchSlug: 'rich-text',
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+        { loop: 'ralph', model: 'gemini-3-flash-preview' },
+      );
+
+      expect(epicService.ensureRepoMilestones).toHaveBeenCalled();
+      expect(epicService.markStatus).toHaveBeenCalledWith('m1', 'BUILDING');
+      const inputs = github.dispatchWorkflow.mock.calls[0][0].inputs;
+      expect(JSON.parse(inputs.repos)).toEqual(['ally-be']);
+      expect(inputs.branch_slug).toBe('rich-text');
+      expect(run).toEqual(
+        expect.objectContaining({ repos: ['ally-be'], milestoneId: 'm1' }),
+      );
+      // advanceEpic has no request to read overrides from; the session does.
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            buildOverrides: expect.objectContaining({
+              loop: 'ralph',
+              model: 'gemini-3-flash-preview',
+            }),
+          }),
+        }),
+      );
+    });
   });
 
   describe('sizing a build', () => {

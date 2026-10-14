@@ -305,3 +305,34 @@ export function computeDesignReadiness(
 
   return { ready: blockers.length === 0, stale, blockers };
 }
+
+/**
+ * The PRD as a build of only `repos` should see it: the approved design's
+ * scope and test map cut to those repos.
+ *
+ * One repo per build means the ally-web run must not be handed ally-be's files
+ * as its scope or ally-be's tests as its obligations — it would either build
+ * them or fail the scope check trying. Contracts stay whole: a changed field is
+ * one contract with readers on both sides, and the client build needs the
+ * server's side of it to read the field correctly. The prose (designMd,
+ * compatibilityMd) stays too; it cannot be cut by repo and it explains why.
+ *
+ * A copy: the stored document, and the product hash computed from it, are
+ * untouched.
+ */
+export function sliceDesignForRepos(
+  doc: BuilderPrdDocument,
+  repos: string[] | null | undefined,
+): BuilderPrdDocument {
+  const design = doc?.technicalDesign;
+  if (!design || !repos?.length) return doc;
+  const keep = new Set(repos);
+  return {
+    ...doc,
+    technicalDesign: {
+      ...design,
+      scope: (design.scope ?? []).filter((entry) => keep.has(entry?.repo)),
+      testMap: (design.testMap ?? []).filter((test) => keep.has(test?.repo)),
+    },
+  };
+}

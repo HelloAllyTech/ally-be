@@ -1,0 +1,137 @@
+# Builder, GitHub-native: opencode works a Builder issue into a pull request.
+#
+# Called from a small `builder.yml` stub in each repo Builder builds in
+# (ally-be, ally-web, ally-mobile, ...), so the logic lives here once.
+#
+# Flow: Builder raises an issue in the repo, labelled `builder`, whose body
+# carries only the run id (`<!-- builder-run: <uuid> -->`). ally-be, ally-web
+# and ally-ai are public repos and the PRD and design are not, so this
+# workflow fetches the spec — platform rules, PRD, and the repo's slice of the
+# approved design — from Builder (GET /builder/pipeline/runs/:id/spec, API key)
+# and hands it to `opencode github run`, which works on a branch and opens a
+# PR that closes the issue. The repo's own CI checks the PR. A `/oc ...`
+# comment on that PR — from Builder when CI fails, or from a person — runs
+# opencode again on the PR's branch. Builder follows the issue to the PR from
+# its own reconcile tick and reports progress on its build page.
+#
+# Pushes and the PR are made with BUILDER_GH_TOKEN, not GITHUB_TOKEN: GitHub
+# does not start workflows (CI included) from events made with GITHUB_TOKEN.
+#
+# Secrets (org-level, or set on each repo): GEMINI_API_KEY, BUILDER_GH_TOKEN,
+# ALLY_BE_API_KEY. Variable: ALLY_BE_API_URL (defaults to production).
+name: Builder (opencode)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node version the repo builds on.
+        type: string
+        default: '24'
+      install-command:
+        description: How the repo installs its dependencies.
+        type: string
+        default: npm ci
+      node-options:
+        description: NODE_OPTIONS for the run (heap size for large builds and lints).
+        type: string
+        default: ''
+    secrets:
+      GEMINI_API_KEY:
+        required: true
+      BUILDER_GH_TOKEN:
+        required: true
+      ALLY_BE_API_KEY:
+        required: true
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      CI: 'true'
+      NX_NO_CLOUD: 'true'
+      NX_DAEMON: 'false'
+      HUSKY: '0'
+      NODE_OPTIONS: ${{ inputs.node-options }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.BUILDER_GH_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: ${{ inputs.install-command }}
+
+      - name: Git identity
+        run: |
+          git config user.name "ally-builder[bot]"
+          git config user.email "builder@helloally.ai"
+
+      # Pinned: an agent whose behaviour changes between one build and the
+      # next is not something you can debug. (The published opencode action
+      # installs whatever is latest.)
+      - name: Install opencode
+        run: npm install -g opencode-ai@1.18.32
+
+      # Issues only: a /oc comment on a PR carries its own instructions.
+      - name: Fetch the build spec from Builder
+        if: github.event_name == 'issues'
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          run_id="$(printf '%s' "$ISSUE_BODY" | grep -oE 'builder-run: [0-9a-f-]{36}' | head -1 | cut -d' ' -f2 || true)"
+          if [ -z "$run_id" ]; then
+            echo "::error::No builder-run marker in the issue body; nothing to build."
+            exit 1
+          fi
+          curl -fsS "${API}/api/v1/builder/pipeline/runs/${run_id}/spec" \
+            -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-spec.md"
+          # The prompt goes to a file the next step reads, not to GITHUB_ENV: a
+          # spec without a trailing newline broke the env-file delimiter on the
+          # first production run (ally-be#629), and env values have size limits
+          # a large design can reach.
+          {
+            echo 'Build the change specified below in this repository. It is the part of an approved'
+            echo 'design that belongs to this repository; other repositories it mentions are separate'
+            echo 'builds. Follow AGENTS.md / CLAUDE.md. Plan with your todo list first. Keep every'
+            echo 'change additive and inside the files the design scopes for this repository. Run the'
+            echo "repository's typecheck, lint and tests and fix what they report; add a test for"
+            echo 'every requirement as the design maps them. Do not push or open a pull request'
+            echo 'yourself; that happens when you finish. End with a short summary of what you changed'
+            echo 'and how you tested it.'
+            echo
+            cat "${RUNNER_TEMP}/builder-spec.md"
+          } > "${RUNNER_TEMP}/builder-prompt.md"
+          echo "Fetched the spec for run ${run_id} ($(wc -c < "${RUNNER_TEMP}/builder-spec.md") bytes)."
+
+      - name: Run opencode
+        run: |
+          # A builder issue carries its prompt in the file fetched above; a /oc
+          # comment carries its own instructions and has none.
+          if [ -f "${RUNNER_TEMP}/builder-prompt.md" ]; then
+            PROMPT="$(cat "${RUNNER_TEMP}/builder-prompt.md")"
+            export PROMPT
+          fi
+          opencode github run
+        env:
+          MODEL: ${{ vars.BUILDER_MODEL || 'google/gemini-3-flash-preview' }}
+          # Never share. opencode defaults to sharing the session on opencode.ai
+          # for public repos, and the session holds the private spec: the first
+          # production run (ally-be#629) published one.
+          SHARE: 'false'
+          USE_GITHUB_TOKEN: 'true'
+          GITHUB_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

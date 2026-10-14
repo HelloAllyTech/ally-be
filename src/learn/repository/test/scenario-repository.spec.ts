@@ -10,8 +10,8 @@ import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { ScenarioStatus } from '../../type/scenario.type';
-import { GetScenarioByIdOptions } from 'src/learn/type/scenario-filter.type';
 import { ScenarioVersion } from '../../entity/scenario-version.entity';
+import { GetScenarioByIdOptions } from 'src/learn/type/scenario-filter.type';
 
 describe('ScenariosRepository', () => {
   let repository: ScenariosRepository;
@@ -193,6 +193,19 @@ describe('ScenariosRepository', () => {
           'scenario.scenario',
         ]),
       );
+    });
+
+    it('should not make a second query to fetch scenario versions', async () => {
+      const scenarios = [
+        { id: 1, title: 'v1 title', description: 'v1 description' },
+      ];
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([scenarios, 1] as any);
+
+      const getRepositorySpy = jest.spyOn(mockDataSource, 'getRepository');
+
+      await repository.getScenarios();
+
+      expect(getRepositorySpy).not.toHaveBeenCalledWith(ScenarioVersion);
     });
   });
 

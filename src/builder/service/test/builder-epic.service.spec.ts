@@ -212,3 +212,106 @@ describe('parseMilestones', () => {
     expect(parseMilestones('I would rather describe it in prose.')).toEqual([]);
   });
 });
+
+describe('BuilderEpicService.ensureRepoMilestones', () => {
+  let repository: any;
+  let service: BuilderEpicService;
+
+  beforeEach(() => {
+    repository = {
+      find: jest.fn().mockResolvedValue([]),
+      update: jest.fn(),
+      save: jest.fn(async (rows) => rows),
+      create: jest.fn((row) => row),
+    };
+    service = new BuilderEpicService(
+      { builder: {} } as any,
+      { getRepository: () => repository } as any,
+      {} as any,
+    );
+  });
+
+  it('makes one milestone per repo the design changes, backend first', async () => {
+    await service.ensureRepoMilestones(
+      'session-1',
+      ['ally-mobile', 'ally-web', 'ally-be', 'ally-web'],
+      'rich-text-v21',
+    );
+
+    const rows = repository.save.mock.calls[0][0];
+    expect(rows.map((row: any) => [row.position, row.repos])).toEqual([
+      [1, ['ally-be']],
+      [2, ['ally-web']],
+      [3, ['ally-mobile']],
+    ]);
+    expect(rows.every((row: any) => row.branchSlug === 'rich-text-v21')).toBe(
+      true,
+    );
+    expect(
+      rows.every((row: any) => row.status === BuilderMilestoneStatus.PENDING),
+    ).toBe(true);
+  });
+
+  it('leaves a one-repo design as a single build', async () => {
+    await service.ensureRepoMilestones(
+      'session-1',
+      ['ally-be', 'ally-be'],
+      'x',
+    );
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it('restarts a failed or interrupted repo milestone instead of skipping it', async () => {
+    repository.find.mockResolvedValue([
+      {
+        id: 'm1',
+        position: 1,
+        repos: ['ally-be'],
+        status: BuilderMilestoneStatus.COMPLETED,
+      },
+      {
+        id: 'm2',
+        position: 2,
+        repos: ['ally-web'],
+        status: BuilderMilestoneStatus.FAILED,
+      },
+      {
+        id: 'm3',
+        position: 3,
+        repos: ['ally-mobile'],
+        status: BuilderMilestoneStatus.PENDING,
+      },
+    ]);
+
+    await service.ensureRepoMilestones(
+      'session-1',
+      ['ally-be', 'ally-web', 'ally-mobile'],
+      'x',
+    );
+
+    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledTimes(1);
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'm2' },
+      { status: BuilderMilestoneStatus.PENDING, error: null },
+    );
+  });
+
+  it('never touches an epic split (milestones without repos)', async () => {
+    repository.find.mockResolvedValue([
+      {
+        id: 'e1',
+        position: 1,
+        repos: null,
+        status: BuilderMilestoneStatus.FAILED,
+      },
+    ]);
+    await service.ensureRepoMilestones(
+      'session-1',
+      ['ally-be', 'ally-web'],
+      'x',
+    );
+    expect(repository.update).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+});
