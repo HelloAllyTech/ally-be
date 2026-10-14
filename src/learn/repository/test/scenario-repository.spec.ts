@@ -10,6 +10,7 @@ import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { ScenarioStatus } from '../../type/scenario.type';
+import { ScenarioVersion } from '../../entity/scenario-version.entity';
 import { GetScenarioByIdOptions } from 'src/learn/type/scenario-filter.type';
 
 describe('ScenariosRepository', () => {
@@ -175,23 +176,17 @@ describe('ScenariosRepository', () => {
 
     it('should return title and description from latest published version', async () => {
       const scenarios = [
-        { id: 1, title: 'v1 title', description: 'v1 description' },
-      ];
-      const versions = [
         {
-          scenarioId: 1,
-          versionNumber: 2,
-          config: { title: 'v2 title', description: 'v2 description' },
-        },
-        {
-          scenarioId: 1,
-          versionNumber: 1,
-          config: { title: 'v1 title', description: 'v1 description' },
+          id: 1,
+          title: 'v1 title',
+          description: 'v1 description',
+          version_title: 'v2 title',
+          version_description: 'v2 description',
         },
       ];
 
       mockQueryBuilder.getManyAndCount.mockResolvedValue([scenarios, 1] as any);
-      const findMock = jest.fn().mockResolvedValue(versions);
+      const findMock = jest.fn();
       jest.spyOn(mockDataSource, 'getRepository').mockReturnValue({
         find: findMock,
       } as any);
@@ -200,7 +195,20 @@ describe('ScenariosRepository', () => {
 
       expect(result.data[0].title).toBe('v2 title');
       expect(result.data[0].description).toBe('v2 description');
-      expect(findMock).toHaveBeenCalled();
+      expect(findMock).not.toHaveBeenCalled();
+    });
+
+    it('should not make a second query to fetch scenario versions', async () => {
+      const scenarios = [
+        { id: 1, title: 'v1 title', description: 'v1 description' },
+      ];
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([scenarios, 1] as any);
+
+      const getRepositorySpy = jest.spyOn(mockDataSource, 'getRepository');
+
+      await repository.getScenarios();
+
+      expect(getRepositorySpy).not.toHaveBeenCalledWith(ScenarioVersion);
     });
   });
 
