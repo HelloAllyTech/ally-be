@@ -38,11 +38,9 @@ jobs:
     steps:
       # The Ally Builder GitHub App, over every repo it is installed on, so
       # pushes, pull requests and comments are ally-builder[bot] rather than a
-      # person. BUILDER_GH_TOKEN is the fallback only until the app's org
-      # variable and secret exist. It only reads here.
+      # person. It only reads here.
       - name: Builder app token
         id: app
-        if: vars.BUILDER_APP_ID != ''
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.BUILDER_APP_ID }}
@@ -52,7 +50,7 @@ jobs:
       # Through GITHUB_ENV, not job env: job env cannot read a step's output.
       - name: Export the Builder token
         env:
-          TOKEN: ${{ steps.app.outputs.token || secrets.BUILDER_GH_TOKEN }}
+          TOKEN: ${{ steps.app.outputs.token }}
         run: |
           echo "::add-mask::${TOKEN}"
           { echo "BUILDER_GH_TOKEN=${TOKEN}"; echo "GH_TOKEN=${TOKEN}"; } >> "$GITHUB_ENV"
@@ -60,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: protocol
-          token: ${{ steps.app.outputs.token || secrets.BUILDER_GH_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
 
       - uses: actions/setup-node@v4
         with:
