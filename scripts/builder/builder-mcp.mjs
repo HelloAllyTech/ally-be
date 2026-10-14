@@ -184,6 +184,7 @@ const currentPhase = () => {
 const ONLY_IN_PHASE = {
   design: 'design',
   design_review: 'design-review',
+  review: 'review',
 };
 
 /**
@@ -510,6 +511,65 @@ const TOOLS = {
       return {
         text: `review stored (${verdict}: ${found.length} defect(s), ${ideas.length} suggestion(s))`,
       };
+    },
+  },
+
+  review: {
+    description:
+      'File your review of the pull request: every defect you found, most ' +
+      'serious first, or none. Call it exactly once, even with no findings — ' +
+      'an empty list is the clean result, and a review that files nothing is ' +
+      'indistinguishable from one that crashed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pullRequestId: {
+          type: 'string',
+          description: "The pull request's id, as the prompt gives it.",
+        },
+        findings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'A short stable slug.' },
+              path: { type: 'string', description: 'File the defect is in.' },
+              line: { type: 'number', description: 'Line in that file.' },
+              body: {
+                type: 'string',
+                description:
+                  'One sentence stating the defect, then the concrete scenario in which it misbehaves.',
+              },
+            },
+            required: ['body'],
+          },
+        },
+      },
+      required: ['pullRequestId', 'findings'],
+    },
+    // The reviewer runs read-only, with no shell, so this is the only way its
+    // findings reach Builder. The prompt used to say `curl`; every review run
+    // read the PR, found what it found, and could not file it.
+    handler: async ({ pullRequestId, findings }) => {
+      const list = (Array.isArray(findings) ? findings : [])
+        .map((finding) => ({
+          key: finding?.key ? String(finding.key) : undefined,
+          path: finding?.path ? String(finding.path) : undefined,
+          line: Number.isFinite(Number(finding?.line)) ? Number(finding.line) : undefined,
+          body: String(finding?.body ?? '').trim(),
+        }))
+        .filter((finding) => finding.body);
+      const result = await request('POST', 'review', {
+        pullRequestId: String(pullRequestId ?? ''),
+        findings: list,
+      });
+      if (!result.ok) {
+        return {
+          isError: true,
+          text: `review NOT stored (${result.status}): ${result.text}`,
+        };
+      }
+      return { text: `review stored (${list.length} finding(s))` };
     },
   },
 

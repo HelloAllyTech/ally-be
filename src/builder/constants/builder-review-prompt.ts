@@ -147,32 +147,13 @@ into somebody's open review.
 
 Equally: if something is genuinely broken, say so plainly however late it is.
 
-**5. Report your findings.** At most ${BUILDER_REVIEW_MAX_FINDINGS}, most
-serious first. Write a JSON file and post it:
+**5. Report your findings** with the \`review\` tool, exactly once: at most
+${BUILDER_REVIEW_MAX_FINDINGS}, most serious first. \`pullRequestId\` is
+\`${pullRequest.id}\`; each finding has a short stable \`key\`, the \`path\`
+and \`line\` it is about, and a \`body\`: one sentence stating the defect, then
+the concrete scenario in which it misbehaves.
 
-\`\`\`json
-{
-  "pullRequestId": "${pullRequest.id}",
-  "findings": [
-    {
-      "key": "short-stable-slug",
-      "path": "src/builder/service/builder-build.service.ts",
-      "line": 662,
-      "body": "One sentence stating the defect, then the concrete scenario in which it misbehaves."
-    }
-  ]
-}
-\`\`\`
-
-\`\`\`bash
-review() {
-  curl -sS -X POST "${context.apiBaseUrl}/api/v1/builder/pipeline/runs/${context.runId}/review" \\
-    -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' -d @"$1" >/dev/null || true
-}
-\`\`\`
-
-Post the report **even when there are no findings** — \`"findings": []\` is the
+File it **even when there are no findings** — an empty \`findings\` list is the
 clean result, and a review that reports nothing at all is indistinguishable
 from one that crashed.
 
