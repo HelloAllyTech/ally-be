@@ -614,11 +614,27 @@ export class BuilderPullRequestService {
     // and the flywheel reads closed-unmerged as its strongest signal.
     if (remote.merged || closedWithoutMerging) {
       await this.staleFeedback(pullRequest.id);
+      if (pullRequest.needsHumanAt && !pullRequest.escalationResolution) {
+        await this.repository.update(
+          { id: pullRequest.id },
+          {
+            escalationResolution: remote.merged ? 'merged' : 'closed',
+            escalationResolvedAt: new Date(),
+          },
+        );
+      }
       if (remote.merged) await this.considerRelease(pullRequest);
       return;
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+
+    // Handed to a person: nothing automatic happens here until they resume
+    // it. The merge prompt still applies — merging is theirs to decide.
+    if (pullRequest.needsHumanAt) {
+      await this.considerMergePrompt(pullRequest, remote);
+      return;
+    }
     if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
 
@@ -1336,6 +1352,26 @@ export class BuilderPullRequestService {
       ? BUILDER_MAX_REPO_REVIEWS_PER_PR
       : BUILDER_MAX_REVIEW_RUNS_PER_PR;
     if (pullRequest.reviewRunCount >= reviewCap) return false;
+    if (isOpencodeBranch(pullRequest.branch)) {
+      const recent = await this.buildService.recentReviewOutcomes(
+        pullRequest.id,
+        2,
+      );
+      if (
+        recent.length === 2 &&
+        recent.every(
+          (status) =>
+            status === BuilderRunStatus.FAILED ||
+            status === BuilderRunStatus.TIMED_OUT,
+        )
+      ) {
+        await this.escalate(
+          pullRequest,
+          'The last two reviews ended without a verdict, so I cannot tell whether this is safe.',
+        );
+        return false;
+      }
+    }
     if (!headSha || pullRequest.reviewedSha === headSha) return false;
     if (rollup?.state !== 'success') return false;
 
@@ -1406,6 +1442,10 @@ export class BuilderPullRequestService {
     this.logger.info(
       `Review run ${runId} reported ${recorded} finding(s) on ${pullRequest.repo}#${pullRequest.prNumber}.`,
     );
+
+    if (isOpencodeBranch(pullRequest.branch)) {
+      await this.considerEscalation(pullRequest, findings, recorded);
+    }
 
     // A clean review is the only thing that can approve. Recorded as a fact on
     // the row rather than acted on only here, because approval is reconsidered
@@ -1499,6 +1539,9 @@ export class BuilderPullRequestService {
     pullRequest: BuilderPullRequest,
     known?: { remote: PullRequestInfo | null; rollup: CheckRollup | null },
   ): Promise<void> {
+    // Waiting on a person: a review that was already in flight must not
+    // approve it behind their back.
+    if (pullRequest.needsHumanAt) return;
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoApproveEnabled) return;
 
@@ -1811,9 +1854,20 @@ export class BuilderPullRequestService {
 
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoFixEnabled) return;
+    const pending = await this.feedbackRepository.countPending(pullRequest.id);
     const ceiling = settings.maxFixRunsPerPr ?? 0;
-    if (ceiling && pullRequest.fixRunCount >= ceiling) return;
-    if (!(await this.feedbackRepository.countPending(pullRequest.id))) return;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) {
+      // Out of rounds with something still open — failing checks or
+      // findings — is a person's call now, not another quiet stop.
+      if (pending) {
+        await this.escalate(
+          pullRequest,
+          `${pullRequest.fixRunCount} fix rounds and ${pending} problem${pending === 1 ? '' : 's'} still open.`,
+        );
+      }
+      return;
+    }
+    if (!pending) return;
     if (await this.buildService.hasRunInFlight(pullRequest.sessionId)) return;
 
     const items = await this.feedbackRepository.listActionable(pullRequest.id);
@@ -1944,6 +1998,154 @@ export class BuilderPullRequestService {
       '',
       ...(lines.length ? lines : ['(No feedback is outstanding.)']),
     ].join('\n');
+  }
+
+  /**
+   * Decide, from the review just filed, whether this pull request is still
+   * converging or needs a person.
+   *
+   * Stacks, "Escalation Criteria for Human-in-the-Loop Review": route to a
+   * person on exceeded thresholds, persistent errors and unresolved conflicts.
+   * Each rule below is one of those:
+   *  - out of rounds: serious findings remain once the fix ceiling is spent;
+   *  - not getting better: two fix rounds in a row that did not reduce them;
+   *  - the same problem twice: a finding that survived two fix rounds, which
+   *    is opencode unable to fix it or disagreeing with it.
+   * A clean review never escalates.
+   */
+  private async considerEscalation(
+    pullRequest: BuilderPullRequest,
+    findings: { key?: string; body?: string }[],
+    count: number,
+  ): Promise<void> {
+    // Keys arrive as "<sha>:<slug>" so a finding that survives a round is
+    // filed as new; the slug is what identifies the problem.
+    const slug = (key?: string) =>
+      String(key ?? '').replace(/^[0-9a-f]{7,40}:/, '');
+    const keys = findings.map((finding) => slug(finding.key)).filter(Boolean);
+    const history = [
+      ...(pullRequest.reviewHistory ?? []),
+      { sha: pullRequest.reviewedSha ?? null, count, keys },
+    ];
+    await this.repository.update(
+      { id: pullRequest.id },
+      { reviewHistory: history },
+    );
+    pullRequest.reviewHistory = history;
+    if (count === 0) return;
+
+    const settings = await this.settingsService.get();
+    const ceiling = settings.maxFixRunsPerPr ?? 0;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) {
+      await this.escalate(
+        pullRequest,
+        `${pullRequest.fixRunCount} fix rounds and ${count} problem${count === 1 ? '' : 's'} remain.`,
+      );
+      return;
+    }
+
+    const [a, b, c] = history.slice(-3);
+    if (c && b.count >= a.count && c.count >= b.count) {
+      await this.escalate(
+        pullRequest,
+        `Two fix rounds in a row did not reduce the problems the review found (still ${count}).`,
+      );
+      return;
+    }
+
+    const survivor = c
+      ? keys.find((key) => a.keys.includes(key) && b.keys.includes(key))
+      : undefined;
+    if (survivor) {
+      const finding = findings.find((item) => slug(item.key) === survivor);
+      const what = String(finding?.body ?? survivor)
+        .split('\n')
+        .map((line) => line.replace(/^\[(high|medium|low)\]\s*/i, '').trim())
+        .find(Boolean);
+      await this.escalate(
+        pullRequest,
+        `The same problem survived two fix rounds: ${what}`,
+      );
+    }
+  }
+
+  /**
+   * Stop automation on one pull request and tell a person why. Idempotent: a
+   * PR already waiting on someone is not escalated (or announced) again.
+   *
+   * Stacks, "Escalate Agent Errors to Human Operators Transparently": the
+   * stop is said, with its reason, rather than left as a loop that went quiet.
+   */
+  private async escalate(
+    pullRequest: BuilderPullRequest,
+    reason: string,
+  ): Promise<void> {
+    if (pullRequest.needsHumanAt) return;
+    const at = new Date();
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        needsHumanAt: at,
+        needsHumanReason: reason,
+        escalationResolution: null,
+        escalationResolvedAt: null,
+      },
+    );
+    pullRequest.needsHumanAt = at;
+    pullRequest.needsHumanReason = reason;
+    this.logger.warn(
+      `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} handed to a person: ${reason}`,
+    );
+    const session = await this.sessionRepository.findOne({
+      where: { id: pullRequest.sessionId },
+    });
+    if (session) {
+      await this.notificationService.prNeedsHuman(session, pullRequest, reason);
+    }
+  }
+
+  /**
+   * Give a pull request back to automation, with a fresh budget of rounds. The
+   * person has steered it (a `/oc` comment, a fix of their own) or decided a
+   * finding was wrong; either way the history that escalated it no longer
+   * describes the branch.
+   */
+  async resumeAutomation(
+    sessionId: string,
+    pullRequestId: string,
+    userId: number,
+  ): Promise<BuilderPullRequest> {
+    const pullRequest = await this.repository.findOne({
+      where: { id: pullRequestId, sessionId },
+    });
+    if (!pullRequest) {
+      throw new NotFoundException(
+        'That pull request is not part of this session.',
+      );
+    }
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        needsHumanAt: null,
+        needsHumanReason: null,
+        escalationResolution: pullRequest.needsHumanAt
+          ? 'resumed'
+          : (pullRequest.escalationResolution ?? null),
+        escalationResolvedAt: pullRequest.needsHumanAt
+          ? new Date()
+          : (pullRequest.escalationResolvedAt ?? null),
+        fixRunCount: 0,
+        reviewRunCount: 0,
+        reviewedSha: null,
+        reviewHistory: [],
+        fixRequestedSha: null,
+        fixRequestedAt: null,
+      },
+    );
+    this.logger.info(
+      `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} given back to automation by user ${userId}.`,
+    );
+    return this.repository.findOneOrFail({ where: { id: pullRequest.id } });
   }
 
   listBySession(sessionId: string): Promise<BuilderPullRequest[]> {

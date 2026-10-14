@@ -311,6 +311,11 @@ export enum BuilderNotificationKind {
    * nobody told would be the loudest silence in this module.
    */
   PR_MERGED_AUTOMATICALLY = 'pr_merged_automatically',
+  /**
+   * Automation stopped on a pull request and handed it to a person: it ran out
+   * of fix rounds, or stopped getting better. Says why, in plain words.
+   */
+  PR_NEEDS_HUMAN = 'pr_needs_human',
 }
 
 /**

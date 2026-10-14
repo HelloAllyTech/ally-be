@@ -92,6 +92,39 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   fixRequestedAt?: Date | null;
 
   /**
+   * Automation handed this pull request to a person: it stopped improving,
+   * or ran out of rounds (BuilderPullRequestService.considerEscalation).
+   * While set, Builder sends no reviews, `/oc` requests or approvals here.
+   * `needsHumanReason` is the plain-language why, shown as written.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  needsHumanAt?: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  needsHumanReason?: string | null;
+
+  /**
+   * How an escalation ended — `resumed` (a person gave it back), `merged` or
+   * `closed` — kept so later builds can learn which escalations were the
+   * agent being stuck and which were the reviewer being wrong.
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  escalationResolution?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  escalationResolvedAt?: Date | null;
+
+  /**
+   * One entry per in-repo review verdict, oldest first: the head it read, how
+   * many serious findings it filed, and their keys. What "is this getting
+   * better?" is decided from.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  reviewHistory?:
+    | { sha: string | null; count: number; keys: string[] }[]
+    | null;
+
+  /**
    * How many review runs this PR has had. Bounded for the same reason fix runs
    * are: a reviewer dispatched on every reconcile tick would re-read an
    * unchanged diff every few minutes and bill for it.

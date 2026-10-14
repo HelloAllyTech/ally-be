@@ -187,6 +187,28 @@ export class BuilderController {
     return this.sessionService.cancelSession(sessionId, user.id);
   }
 
+  @Post('sessions/:sessionId/pull-requests/:pullRequestId/resume-automation')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Give a pull request that needs a person back to automation',
+    description:
+      'Clears the escalation and gives the pull request a fresh budget of ' +
+      'review and fix rounds.',
+  })
+  resumePullRequestAutomation(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('pullRequestId', ParseUUIDPipe) pullRequestId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.pullRequestService.resumeAutomation(
+      sessionId,
+      pullRequestId,
+      user.id,
+    );
+  }
+
   @Post('sessions/:sessionId/pull-requests/:pullRequestId/merge')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.EDIT_BUILDER],

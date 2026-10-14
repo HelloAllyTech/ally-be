@@ -78,6 +78,7 @@ describe('BuilderPullRequestService', () => {
       releaseSkipped: jest.fn(),
       prReadyToMerge: jest.fn(),
       prMergedAutomatically: jest.fn(),
+      prNeedsHuman: jest.fn(),
     };
     settingsService = {
       get: jest.fn().mockResolvedValue({
@@ -120,6 +121,7 @@ describe('BuilderPullRequestService', () => {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
       dispatchReviewRun: jest.fn().mockResolvedValue({ id: 'run-3' }),
       listActiveIssueRuns: jest.fn().mockResolvedValue([]),
+      recentReviewOutcomes: jest.fn().mockResolvedValue([]),
       settleRun: jest.fn(),
       recordIssueFixRequest: jest.fn(),
       recordIssueMilestone: jest.fn(),
@@ -699,6 +701,224 @@ describe('BuilderPullRequestService', () => {
    * An opencode pull request's feedback goes to opencode, as a `/oc` comment
    * carrying only a marker, not to a fix run on the old runner.
    */
+  /**
+   * Automation hands a pull request to a person when it stops converging,
+   * rather than going quiet once a cap is reached.
+   */
+  describe('handing a pull request to a person', () => {
+    const ocPr = (overrides: Record<string, any> = {}) =>
+      openPr({
+        branch: 'opencode/issue113-1',
+        reviewedSha: 'head-3',
+        reviewHistory: [],
+        ...overrides,
+      });
+    const file = (pr: any, findings: { key: string; body: string }[]) => {
+      repository.findOne.mockResolvedValue(pr);
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+      });
+      return service.recordReviewFindings(
+        'review-run',
+        'session-1',
+        'pr-1',
+        findings,
+      );
+    };
+    const finding = (slug: string, sha = 'abc1234') => ({
+      key: `${sha}:${slug}`,
+      body: `[high] ${slug} breaks\n\nscenario`,
+    });
+
+    it('escalates when serious findings remain after the last fix round', async () => {
+      await file(ocPr({ fixRunCount: 3 }), [finding('entities')]);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanAt: expect.any(Date),
+          needsHumanReason: '3 fix rounds and 1 problem remain.',
+        }),
+      );
+      expect(notificationService.prNeedsHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'session-1' }),
+        expect.objectContaining({ id: 'pr-1' }),
+        '3 fix rounds and 1 problem remain.',
+      );
+    });
+
+    it('escalates after two fix rounds in a row that did not reduce the findings', async () => {
+      await file(
+        ocPr({
+          fixRunCount: 2,
+          reviewHistory: [
+            { sha: 'h1', count: 2, keys: ['a', 'b'] },
+            { sha: 'h2', count: 2, keys: ['c', 'd'] },
+          ],
+        }),
+        [finding('e'), finding('f'), finding('g')],
+      );
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason:
+            'Two fix rounds in a row did not reduce the problems the review found (still 3).',
+        }),
+      );
+    });
+
+    it('escalates when the same problem survives two fix rounds', async () => {
+      await file(
+        ocPr({
+          fixRunCount: 2,
+          reviewHistory: [
+            { sha: 'h1', count: 3, keys: ['entities', 'x', 'y'] },
+            { sha: 'h2', count: 2, keys: ['entities', 'z'] },
+          ],
+        }),
+        [finding('entities', 'def5678')],
+      );
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason:
+            'The same problem survived two fix rounds: entities breaks',
+        }),
+      );
+    });
+
+    it('keeps going while the findings are coming down', async () => {
+      await file(
+        ocPr({
+          fixRunCount: 1,
+          reviewHistory: [{ sha: 'h1', count: 3, keys: ['a', 'b', 'c'] }],
+        }),
+        [finding('d')],
+      );
+
+      expect(notificationService.prNeedsHuman).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        {
+          reviewHistory: [
+            { sha: 'h1', count: 3, keys: ['a', 'b', 'c'] },
+            { sha: 'head-3', count: 1, keys: ['d'] },
+          ],
+        },
+      );
+    });
+
+    it('escalates when CI or findings are still open and the rounds are spent', async () => {
+      feedbackRepository.countPending.mockResolvedValue(2);
+      github.createIssueComment = jest.fn();
+      buildService.hasRunInFlight = jest.fn().mockResolvedValue(false);
+
+      await reconcileWith({ headSha: 'head-3' }, ocPr({ fixRunCount: 3 }));
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason: '3 fix rounds and 2 problems still open.',
+        }),
+      );
+    });
+
+    it('escalates when two reviews in a row ended without a verdict', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReviewEnabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+      buildService.recentReviewOutcomes.mockResolvedValue([
+        'FAILED',
+        'TIMED_OUT',
+      ]);
+
+      await reconcileWith(
+        { headSha: 'head-4' },
+        ocPr({ reviewRunCount: 2, reviewedSha: 'head-3' }),
+        { state: 'success', failed: [], total: 3 },
+      );
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason:
+            'The last two reviews ended without a verdict, so I cannot tell whether this is safe.',
+        }),
+      );
+    });
+
+    it('does nothing automatic on a pull request waiting on a person', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReviewEnabled: true,
+        autoFixEnabled: true,
+        autoApproveEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+      feedbackRepository.countPending.mockResolvedValue(1);
+
+      await reconcileWith(
+        { headSha: 'head-9' },
+        ocPr({ needsHumanAt: new Date(), reviewedSha: 'head-3' }),
+        { state: 'success', failed: [], total: 3 },
+      );
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('is not escalated, or announced, twice', async () => {
+      await file(ocPr({ fixRunCount: 3, needsHumanAt: new Date() }), [
+        finding('a'),
+      ]);
+
+      expect(notificationService.prNeedsHuman).not.toHaveBeenCalled();
+    });
+
+    it('resumes with a fresh budget, and records how the escalation ended', async () => {
+      repository.findOne.mockResolvedValue(
+        ocPr({
+          needsHumanAt: new Date(),
+          needsHumanReason: 'x',
+          fixRunCount: 3,
+        }),
+      );
+      repository.findOneOrFail.mockResolvedValue(ocPr());
+
+      await service.resumeAutomation('session-1', 'pr-1', 7);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanAt: null,
+          needsHumanReason: null,
+          escalationResolution: 'resumed',
+          fixRunCount: 0,
+          reviewRunCount: 0,
+          reviewedSha: null,
+          reviewHistory: [],
+        }),
+      );
+    });
+
+    it('refuses to resume a pull request from another session', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.resumeAutomation('session-2', 'pr-1', 7),
+      ).rejects.toThrow(/not part of this session/);
+    });
+  });
+
   describe('the review cap', () => {
     beforeEach(() => {
       settingsService.get.mockResolvedValue({

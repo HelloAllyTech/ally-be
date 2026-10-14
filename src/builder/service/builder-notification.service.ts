@@ -371,6 +371,23 @@ export class BuilderNotificationService {
    * means this same trip has already been reported. A further failed run moves
    * it forward and earns a fresh one — the situation genuinely changed.
    */
+  /**
+   * Automation stopped on one pull request and handed it to a person. Sent
+   * once per escalation — the caller only escalates a PR that is not already
+   * waiting on someone.
+   */
+  async prNeedsHuman(
+    session: BuilderSession,
+    pullRequest: { repo: string; prNumber: number; prUrl: string },
+    reason: string,
+  ): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.PR_NEEDS_HUMAN,
+      `${pullRequest.repo}#${pullRequest.prNumber} needs you: ${reason} I've stopped working on it — have a look at ${pullRequest.prUrl}, then resume it from the build page if you want me to carry on.`,
+    );
+  }
+
   async automationPaused(
     session: BuilderSession,
     failures: number,

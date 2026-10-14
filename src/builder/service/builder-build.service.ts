@@ -1596,6 +1596,19 @@ export class BuilderBuildService {
     return run;
   }
 
+  /** The latest review runs' outcomes for a pull request, newest first. */
+  async recentReviewOutcomes(
+    pullRequestId: string,
+    take: number,
+  ): Promise<BuilderRunStatus[]> {
+    const runs = await this.runRepository.find({
+      where: { pullRequestId, mode: BuilderRunMode.REVIEW },
+      order: { sequence: 'DESC' },
+      take,
+    });
+    return runs.map((run) => run.status);
+  }
+
   /** Whether a run is an in-repo review (dispatchRepoReview). */
   isRepoReview(run: BuilderBuildRun): boolean {
     return (
