@@ -46,6 +46,17 @@ export class CreateTrackDto {
   isGlobal?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      "Public view. When true, the course's share link shows its outline to " +
+      'anyone, including logged-out visitors, while the course is published. ' +
+      'Taking the course still requires access through the learner’s ' +
+      'organisation and group. Defaults to false.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPublicView?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Status of the track',
     enum: TrackStatus,
     default: TrackStatus.DRAFT,
@@ -100,4 +111,10 @@ export class TrackSummaryResponseDto {
     nullable: true,
   })
   competencyIds?: string[] | null;
+
+  @ApiProperty({
+    description:
+      "Whether the course's share link is public (see isPublicView).",
+  })
+  isPublicView!: boolean;
 }

@@ -18,6 +18,22 @@ export enum TrackItemType {
   GAME = 'GAME',
 }
 
+/**
+ * Why a signed-in learner cannot take a course. Returned by the access check
+ * behind a shared course link, so the landing page can say "not available"
+ * without the learner first hitting a 403 mid-flow.
+ */
+export enum TrackAccessDenialReason {
+  /** Deleted, never published, or archived with no enrolment to finish. */
+  NOT_AVAILABLE = 'NOT_AVAILABLE',
+  /** The learner's account carries no organisation. */
+  NO_ORGANIZATION = 'NO_ORGANIZATION',
+  /** The course is not assigned to the learner's organisation. */
+  NOT_IN_ORGANIZATION = 'NOT_IN_ORGANIZATION',
+  /** Assigned to the organisation, but restricted away from their group. */
+  NOT_IN_GROUP = 'NOT_IN_GROUP',
+}
+
 export enum TrackProgressionMode {
   SEQUENTIAL = 'SEQUENTIAL',
 }

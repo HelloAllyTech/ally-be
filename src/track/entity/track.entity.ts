@@ -27,6 +27,14 @@ export class Track extends BaseWithoutTenantEntity {
   @Column({ default: false })
   isGlobal!: boolean;
 
+  // Public view: when on, the course's share link (`/course/:id` on the learner
+  // app) shows its outline to anyone, logged in or not. Off by default for
+  // every course, old and new. It reveals the outline only — taking the course
+  // still needs an account whose organisation and group the course is assigned
+  // to (`assertTrackAvailable`). Served only while the course is ACTIVE.
+  @Column({ default: false })
+  isPublicView!: boolean;
+
   @Column({
     enum: TrackProgressionMode,
     default: TrackProgressionMode.SEQUENTIAL,

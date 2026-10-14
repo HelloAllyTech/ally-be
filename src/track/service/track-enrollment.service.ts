@@ -29,6 +29,7 @@ import {
   ArticleQuestion,
   JournalContent,
   parseArticleQuestionMarkers,
+  TrackAccessDenialReason,
   TrackItemType,
   TrackStatus,
   VideoContent,
@@ -241,6 +242,135 @@ export class TrackEnrollmentService {
       return TrackTranslationFallbackReason.CASE_NOT_TRANSLATED;
     }
     return null;
+  }
+
+  /**
+   * The outline a shared course link shows to anyone, signed in or not.
+   *
+   * Served only while the author has switched public view on and the course is
+   * published; every other case — no such course, deleted, draft, archived,
+   * public view off — is the same 404, so the endpoint cannot be used to learn
+   * which private course ids exist.
+   *
+   * Titles, descriptions, types and the answer-free `contentMeta` counts only:
+   * the same fields the learner detail view shows before a component is
+   * opened, minus progress and the internal scenario/case ids.
+   */
+  async getPublicTrackOutline(trackId: string, languageCode?: string) {
+    let structure: TrackWithStructure;
+    try {
+      structure = await this.trackSharedService.getTrackWithStructure(trackId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException('This course is not available');
+      }
+      throw error;
+    }
+    if (!structure.isPublicView || structure.status !== TrackStatus.ACTIVE) {
+      throw new NotFoundException('This course is not available');
+    }
+
+    const resolvedLanguage =
+      await this.trackLocalizationService.resolveLearnerLanguage(
+        trackId,
+        null,
+        languageCode,
+      );
+    const translation = await this.trackLocalizationService.resolvePublished(
+      trackId,
+      resolvedLanguage,
+    );
+    const translated = this.trackLocalizationService.localizeTrack(
+      structure as any,
+      translation,
+    );
+
+    return {
+      id: structure.id,
+      title: translated.title,
+      description: translated.description,
+      coverImageUrl: structure.coverImageUrl,
+      totalItems: structure.totalItems,
+      simulationsCount: structure.sections.reduce(
+        (sum, section) =>
+          sum +
+          section.items.filter((item) => item.type === TrackItemType.ROLEPLAY)
+            .length,
+        0,
+      ),
+      estimatedDurationMinutes: structure.estimatedDurationMinutes,
+      languageCode: resolvedLanguage,
+      sections: structure.sections.map((section) => {
+        const localizedSection = this.trackLocalizationService.localizeSection(
+          section as any,
+          translation,
+        );
+        return {
+          id: section.id,
+          title: localizedSection.title,
+          description: localizedSection.description,
+          order: section.order,
+          items: section.items.map((item) => {
+            const localized = this.trackLocalizationService.localizeItem(
+              item,
+              translation,
+            );
+            return {
+              id: localized.id,
+              type: localized.type,
+              order: localized.order,
+              title: localized.title,
+              description: localized.description,
+              contentMeta: this.buildContentMeta(localized),
+            };
+          }),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Can the signed-in learner take this course? Answers the question the
+   * shared-link landing page asks right after login, with the same rules as
+   * the detail view and enrolment — an enrolled learner keeps access (even to
+   * an archived course); anyone else needs a published course assigned to
+   * their organisation and open to their group.
+   *
+   * Returns a reason instead of throwing so a "not available for you" answer
+   * is a state the page renders, not an error it has to recover from.
+   */
+  async getTrackAccess(trackId: string): Promise<{
+    hasAccess: boolean;
+    enrolled: boolean;
+    reason: TrackAccessDenialReason | null;
+  }> {
+    const userId = this.requireUserId();
+    const denied = (reason: TrackAccessDenialReason) => ({
+      hasAccess: false,
+      enrolled: false,
+      reason,
+    });
+
+    const track = await this.trackRepository.findOne({
+      where: { id: trackId },
+    });
+    if (!track) {
+      return denied(TrackAccessDenialReason.NOT_AVAILABLE);
+    }
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      userId,
+    );
+    if (enrollment) {
+      return { hasAccess: true, enrolled: true, reason: null };
+    }
+    if (track.status !== TrackStatus.ACTIVE) {
+      return denied(TrackAccessDenialReason.NOT_AVAILABLE);
+    }
+    const denial = await this.findAccessDenial(trackId, userId, false);
+    return denial
+      ? denied(denial)
+      : { hasAccess: true, enrolled: false, reason: null };
   }
 
   /* ---------------------------------------------------------------- *
@@ -1019,36 +1149,54 @@ export class TrackEnrollmentService {
    * asked the question at all.
    */
   private async assertTrackAvailable(track: TrackWithStructure): Promise<void> {
-    const tenantId = ExecutionManager.getTenantId();
-    if (!tenantId) {
-      throw new UnauthorizedException('Tenant not found');
-    }
-    const tenantMapping = await this.trackTenantRepository.findOne({
-      where: { trackId: track.id, tenantId },
-    });
-    if (!tenantMapping) {
-      throw new ForbiddenException(
-        'This track is not available for your organization',
-      );
-    }
-
     const userId = this.requireUserId();
     const enrolment = await this.trackEnrollmentRepository.findByTrackAndUser(
       track.id,
       userId,
     );
+    const denial = await this.findAccessDenial(track.id, userId, !!enrolment);
+    switch (denial) {
+      case TrackAccessDenialReason.NO_ORGANIZATION:
+        throw new UnauthorizedException('Tenant not found');
+      case TrackAccessDenialReason.NOT_IN_ORGANIZATION:
+        throw new ForbiddenException(
+          'This track is not available for your organization',
+        );
+      case TrackAccessDenialReason.NOT_IN_GROUP:
+        throw new ForbiddenException(
+          'This course is not available for your group',
+        );
+    }
+  }
+
+  /**
+   * The two access layers as a value: null when the learner may take the
+   * course, else the first layer that refuses them. `assertTrackAvailable`
+   * turns it into an exception; `getTrackAccess` returns it.
+   */
+  private async findAccessDenial(
+    trackId: string,
+    userId: number,
+    alreadyStarted: boolean,
+  ): Promise<TrackAccessDenialReason | null> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      return TrackAccessDenialReason.NO_ORGANIZATION;
+    }
+    const tenantMapping = await this.trackTenantRepository.findOne({
+      where: { trackId, tenantId },
+    });
+    if (!tenantMapping) {
+      return TrackAccessDenialReason.NOT_IN_ORGANIZATION;
+    }
     const allowed = await this.cohortVisibilityService.canAccess({
       contentType: CohortContentType.TRACK,
-      contentId: track.id,
+      contentId: trackId,
       tenantId,
       userId,
-      alreadyStarted: !!enrolment,
+      alreadyStarted,
     });
-    if (!allowed) {
-      throw new ForbiddenException(
-        'This course is not available for your group',
-      );
-    }
+    return allowed ? null : TrackAccessDenialReason.NOT_IN_GROUP;
   }
 
   private requireUserId(): number {
