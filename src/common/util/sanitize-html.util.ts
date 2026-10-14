@@ -1,4 +1,5 @@
 import * as sanitizeHtml from 'sanitize-html';
+import { unescape } from 'lodash';
 
 const SANITIZE_CONFIG: sanitizeHtml.IOptions = {
   allowedTags: [
@@ -50,7 +51,7 @@ export function htmlToPlainText(html: string | null | undefined): string {
     allowedTags: [],
     allowedAttributes: {},
   });
-  return decoded.replace(/\s+/g, ' ').trim();
+  return unescape(decoded).replace(/\s+/g, ' ').trim();
 }
 
 /**

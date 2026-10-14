@@ -660,11 +660,16 @@ export class TrackService {
         if (item.type === TrackItemType.QUIZ && item.content) {
           const quiz = item.content as QuizContent;
           for (const question of quiz.questions ?? []) {
-            if (question.promptHtml) {
+            if (typeof question.promptHtml === 'string') {
               question.promptHtml = sanitizeDescriptionHtml(
                 question.promptHtml,
               );
               question.prompt = htmlToPlainText(question.promptHtml);
+            } else if (
+              question.promptHtml !== undefined &&
+              question.promptHtml !== null
+            ) {
+              throw new BadRequestException('promptHtml must be a string');
             }
           }
           quiz.settings.passScore =
@@ -677,24 +682,34 @@ export class TrackService {
         if (item.type === TrackItemType.ARTICLE && item.content) {
           const article = item.content as ArticleContent;
           for (const question of article.questions ?? []) {
-            if (question.promptHtml) {
+            if (typeof question.promptHtml === 'string') {
               question.promptHtml = sanitizeDescriptionHtml(
                 question.promptHtml,
               );
               question.prompt = htmlToPlainText(question.promptHtml);
+            } else if (
+              question.promptHtml !== undefined &&
+              question.promptHtml !== null
+            ) {
+              throw new BadRequestException('promptHtml must be a string');
             }
           }
         }
         if (item.type === TrackItemType.VIDEO && item.content) {
           const video = item.content as VideoContent;
           for (const interjection of video.interjections ?? []) {
-            if (interjection.question.promptHtml) {
+            if (typeof interjection.question.promptHtml === 'string') {
               interjection.question.promptHtml = sanitizeDescriptionHtml(
                 interjection.question.promptHtml,
               );
               interjection.question.prompt = htmlToPlainText(
                 interjection.question.promptHtml,
               );
+            } else if (
+              interjection.question.promptHtml !== undefined &&
+              interjection.question.promptHtml !== null
+            ) {
+              throw new BadRequestException('promptHtml must be a string');
             }
           }
           item.completionCriteria = {
@@ -707,9 +722,14 @@ export class TrackService {
         if (item.type === TrackItemType.JOURNAL && item.content) {
           const journal = item.content as JournalContent;
           for (const prompt of journal.prompts ?? []) {
-            if (prompt.promptHtml) {
+            if (typeof prompt.promptHtml === 'string') {
               prompt.promptHtml = sanitizeDescriptionHtml(prompt.promptHtml);
               prompt.prompt = htmlToPlainText(prompt.promptHtml);
+            } else if (
+              prompt.promptHtml !== undefined &&
+              prompt.promptHtml !== null
+            ) {
+              throw new BadRequestException('promptHtml must be a string');
             }
           }
         }

@@ -42,7 +42,9 @@ import {
  * Returns the value to write in place of `field.value`, or `undefined` to
  * leave the source untouched (extraction always returns `undefined`).
  */
-type FieldVisitor = (field: TranslatableField) => string | undefined;
+type FieldVisitor = ((field: TranslatableField) => string | undefined) & {
+  isExtraction?: boolean;
+};
 
 /**
  * Fields that feed grading. Getting one of these wrong does not just read
@@ -142,6 +144,7 @@ function walkQuizQuestion(
   base: string,
 ): void {
   const promptText = question.prompt;
+  let promptHtmlUpdated = false;
   visitField(
     {
       path: `${base}.promptHtml`,
@@ -150,23 +153,26 @@ function walkQuizQuestion(
       set: (value) => {
         question.promptHtml = sanitizeDescriptionHtml(value);
         question.prompt = derivePlainTextFromHtml(value);
+        promptHtmlUpdated = true;
       },
     },
     visit,
   );
-  visitField(
-    {
-      path: `${base}.prompt`,
-      kind: TranslatableFieldKind.PROSE,
-      get: () => question.prompt,
-      set: (value) => {
-        if (!question.promptHtml) {
-          question.prompt = value;
-        }
+  if (!question.promptHtml || !visit.isExtraction) {
+    visitField(
+      {
+        path: `${base}.prompt`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => question.prompt,
+        set: (value) => {
+          if (!promptHtmlUpdated) {
+            question.prompt = value;
+          }
+        },
       },
-    },
-    visit,
-  );
+      visit,
+    );
+  }
   visitField(
     {
       path: `${base}.explanation`,
@@ -394,6 +400,7 @@ function walkJournalContent(
 ): void {
   for (const prompt of content.prompts ?? []) {
     const promptText = prompt.prompt;
+    let promptHtmlUpdated = false;
     visitField(
       {
         path: `content.prompts[${prompt.id}].promptHtml`,
@@ -402,23 +409,26 @@ function walkJournalContent(
         set: (value) => {
           prompt.promptHtml = sanitizeDescriptionHtml(value);
           prompt.prompt = derivePlainTextFromHtml(value);
+          promptHtmlUpdated = true;
         },
       },
       visit,
     );
-    visitField(
-      {
-        path: `content.prompts[${prompt.id}].prompt`,
-        kind: TranslatableFieldKind.PROSE,
-        get: () => prompt.prompt,
-        set: (value) => {
-          if (!prompt.promptHtml) {
-            prompt.prompt = value;
-          }
+    if (!prompt.promptHtml || !visit.isExtraction) {
+      visitField(
+        {
+          path: `content.prompts[${prompt.id}].prompt`,
+          kind: TranslatableFieldKind.PROSE,
+          get: () => prompt.prompt,
+          set: (value) => {
+            if (!promptHtmlUpdated) {
+              prompt.prompt = value;
+            }
+          },
         },
-      },
-      visit,
-    );
+        visit,
+      );
+    }
     visitField(
       {
         path: `content.prompts[${prompt.id}].placeholder`,
@@ -506,10 +516,12 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
 
 function collect(walk: (visit: FieldVisitor) => void): TranslatableField[] {
   const fields: TranslatableField[] = [];
-  walk((field) => {
+  const visitor: FieldVisitor = (field) => {
     fields.push(field);
     return undefined;
-  });
+  };
+  visitor.isExtraction = true;
+  walk(visitor);
   return fields;
 }
 
@@ -543,7 +555,7 @@ function applier(
   fields: TranslatedFieldMap,
   sourceHashes: Map<string, string>,
 ): FieldVisitor {
-  return (field) => {
+  const visitor: FieldVisitor = (field) => {
     const translated = fields[field.path];
     if (!translated?.value) return undefined;
     const liveHash = hashSource(field.value);
@@ -551,6 +563,8 @@ function applier(
     if (translated.sourceHash !== liveHash) return undefined;
     return translated.value;
   };
+  visitor.isExtraction = false;
+  return visitor;
 }
 
 function cloneEntity<T>(entity: T): T {

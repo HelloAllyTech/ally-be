@@ -169,37 +169,57 @@ export class TrackComponentTemplateService {
     if (type === TrackItemType.QUIZ) {
       const quiz = content as QuizContent;
       for (const question of quiz.questions ?? []) {
-        if (question.promptHtml) {
+        if (typeof question.promptHtml === 'string') {
           question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
           question.prompt = htmlToPlainText(question.promptHtml);
+        } else if (
+          question.promptHtml !== undefined &&
+          question.promptHtml !== null
+        ) {
+          throw new BadRequestException('promptHtml must be a string');
         }
       }
     } else if (type === TrackItemType.ARTICLE) {
       const article = content as ArticleContent;
       for (const question of article.questions ?? []) {
-        if (question.promptHtml) {
+        if (typeof question.promptHtml === 'string') {
           question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
           question.prompt = htmlToPlainText(question.promptHtml);
+        } else if (
+          question.promptHtml !== undefined &&
+          question.promptHtml !== null
+        ) {
+          throw new BadRequestException('promptHtml must be a string');
         }
       }
     } else if (type === TrackItemType.VIDEO) {
       const video = content as VideoContent;
       for (const interjection of video.interjections ?? []) {
-        if (interjection.question.promptHtml) {
+        if (typeof interjection.question.promptHtml === 'string') {
           interjection.question.promptHtml = sanitizeDescriptionHtml(
             interjection.question.promptHtml,
           );
           interjection.question.prompt = htmlToPlainText(
             interjection.question.promptHtml,
           );
+        } else if (
+          interjection.question.promptHtml !== undefined &&
+          interjection.question.promptHtml !== null
+        ) {
+          throw new BadRequestException('promptHtml must be a string');
         }
       }
     } else if (type === TrackItemType.JOURNAL) {
       const journal = content as JournalContent;
       for (const prompt of journal.prompts ?? []) {
-        if (prompt.promptHtml) {
+        if (typeof prompt.promptHtml === 'string') {
           prompt.promptHtml = sanitizeDescriptionHtml(prompt.promptHtml);
           prompt.prompt = htmlToPlainText(prompt.promptHtml);
+        } else if (
+          prompt.promptHtml !== undefined &&
+          prompt.promptHtml !== null
+        ) {
+          throw new BadRequestException('promptHtml must be a string');
         }
       }
     }
