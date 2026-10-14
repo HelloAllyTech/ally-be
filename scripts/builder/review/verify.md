@@ -15,5 +15,7 @@ Severity: high means wrong or lost data, broken for existing users or released c
 
 The verdict is "approve" only if no high or medium finding remains. Otherwise it is "request_changes".
 
+Time: you have about 20 minutes. Write the JSON early with your current verdict and rewrite it as you confirm or drop candidates; never finish without it.
+
 Write this JSON to {{OUT}} and nothing else to that file:
 {"verdict": "approve|request_changes", "summary": "two or three sentences on the pull request as a whole", "findings": [{"key": "short-stable-slug", "severity": "high|medium|low", "path": "file", "line": 123, "title": "one line", "scenario": "concrete input/state -> wrong result, and who it hurts", "evidence": "what you ran and what it printed, or the exact lines", "fix": "the smallest correct fix", "passes": ["which passes found it"]}], "dropped": [{"key": "candidate key", "reason": "why it was dropped"}]}

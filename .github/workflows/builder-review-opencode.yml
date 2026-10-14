@@ -77,7 +77,7 @@ jobs:
   pass:
     name: review (${{ matrix.pass }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -164,13 +164,15 @@ jobs:
           PY
           # --auto: the runner is disposable and holds no credential that can
           # write to GitHub; the agent needs to run probes without prompts.
-          opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          # A hard budget: probing can go on indefinitely, and a pass that hits
+          # the job timeout leaves nothing behind.
+          timeout 25m opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           # The model can end its turn before writing the file (it did, on a
           # verify pass). Resume the same session once and ask for the result.
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            opencode run --auto --continue --model "$MODEL" --variant high \
-              "You stopped before writing your result. Finish this pass and write the JSON to ${out} now, exactly as instructed." \
+            timeout 8m opencode run --auto --continue --model "$MODEL" --variant high \
+              "Time is up, or you stopped before writing your result. Stop probing. Finish this pass and write the JSON to ${out} now, exactly as instructed." \
               >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           fi
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
@@ -193,7 +195,7 @@ jobs:
     needs: pass
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       NODE_OPTIONS: ${{ inputs.node-options }}
     steps:
@@ -287,11 +289,11 @@ jobs:
               body = body.replace("{{" + k + "}}", v)
           print(body)
           PY
-          opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          timeout 25m opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            opencode run --auto --continue --model "$MODEL" --variant high \
-              "You stopped before writing your verdict. Finish verifying the candidates and write the JSON to ${out} now, exactly as instructed." \
+            timeout 8m opencode run --auto --continue --model "$MODEL" --variant high \
+              "Time is up, or you stopped before writing your verdict. Stop probing. Finish verifying the candidates and write the JSON to ${out} now, exactly as instructed." \
               >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           fi
           python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null || {
