@@ -70,6 +70,8 @@ import {
   BuilderBuildSize,
   classifyBuildSize,
   prdTechnicalPlanLength,
+  BUILDER_REPO_REVIEW_WORKFLOW,
+  BUILDER_REPO_REVIEW_TIMEOUT_MS,
 } from '../constants/builder.constants';
 
 /**
@@ -1432,9 +1434,13 @@ export class BuilderBuildService {
       repo: string;
       branch: string;
       prNumber: number;
+      runId?: string | null;
     },
     headSha: string,
   ): Promise<BuilderBuildRun | null> {
+    // An opencode pull request is reviewed in its own repo's Actions, where the
+    // code is checked out and the reviewer can run it (builder-review.yml).
+    const inRepo = Boolean(pullRequest.branch?.startsWith('opencode/'));
     const session = await this.sessionRepository.findOne({
       where: { id: pullRequest.sessionId },
     });
@@ -1451,7 +1457,9 @@ export class BuilderBuildService {
     const settings = await this.settingsService.get();
     try {
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
-      this.assertWithinBudget(session, settings.maxRunnerMinutes);
+      // A repo review holds no Builder runner: its minutes are the target
+      // repo's own Actions minutes, like an issue build's.
+      if (!inRepo) this.assertWithinBudget(session, settings.maxRunnerMinutes);
     } catch (error) {
       this.logger.info(
         `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: ${
@@ -1475,6 +1483,8 @@ export class BuilderBuildService {
       1,
     );
 
+    if (inRepo) return this.dispatchRepoReview(session, pullRequest, headSha);
+
     return this.dispatchRun({
       session,
       mode: BuilderRunMode.REVIEW,
@@ -1484,6 +1494,179 @@ export class BuilderBuildService {
       branches: { [pullRequest.repo]: pullRequest.branch },
       pullRequestId: pullRequest.id,
     });
+  }
+
+  /**
+   * Start the in-repo review of an opencode pull request.
+   *
+   * The run row records which kind of review it is (`cost.reviewWorkflow`), so
+   * its findings settle it (BuilderPipelineController.recordReviewFindings),
+   * the tick looks for it in the target repo rather than in ally-be
+   * (reconcileRepoReview), and cancelling it stops the right workflow.
+   *
+   * The workflow reads the spec this pull request was built from, through the
+   * build run that recorded the PR; a PR without one falls back to the latest
+   * build of its repo.
+   */
+  private async dispatchRepoReview(
+    session: BuilderSession,
+    pullRequest: {
+      id: string;
+      repo: string;
+      prNumber: number;
+      runId?: string | null;
+    },
+    headSha: string,
+  ): Promise<BuilderBuildRun | null> {
+    const specRunId =
+      pullRequest.runId ??
+      (
+        await this.runRepository.find({
+          where: { sessionId: session.id, mode: BuilderRunMode.BUILD },
+          order: { sequence: 'DESC' },
+        })
+      ).find((run) => run.repos?.includes(pullRequest.repo))?.id ??
+      null;
+    if (!specRunId) {
+      this.logger.warn(
+        `Not reviewing ${pullRequest.repo}#${pullRequest.prNumber}: no build run to read its spec from.`,
+      );
+      await this.pullRequestRepository.update(
+        { id: pullRequest.id },
+        { reviewedSha: null },
+      );
+      return null;
+    }
+
+    const dispatchedAt = new Date(Date.now() - 5_000);
+    const run = await this.runRepository.save(
+      this.runRepository.create({
+        sessionId: session.id,
+        sequence: await this.runRepository.nextSequence(session.id),
+        mode: BuilderRunMode.REVIEW,
+        status: BuilderRunStatus.QUEUED,
+        engine: BUILDER_ENGINE,
+        model: 'repo review (BUILDER_REVIEW_MODEL)',
+        branchSlug: session.slug,
+        repos: [pullRequest.repo],
+        pullRequestId: pullRequest.id,
+        dispatchedAt,
+        createdBy: session.createdBy ?? 0,
+        cost: { reviewWorkflow: 'repo', reviewedSha: headSha } as any,
+      }),
+    );
+
+    try {
+      await this.github.dispatchWorkflow({
+        repo: pullRequest.repo,
+        workflow: BUILDER_REPO_REVIEW_WORKFLOW,
+        ref: 'master',
+        inputs: {
+          pr_number: String(pullRequest.prNumber),
+          spec_run_id: specRunId,
+          review_run_id: run.id,
+          builder_pr_id: pullRequest.id,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.settleRepoReview(
+        run,
+        BuilderRunStatus.FAILED,
+        `Could not start the review: ${message}`,
+      );
+      return null;
+    }
+
+    await this.runRepository.update(
+      { id: run.id },
+      { status: BuilderRunStatus.RUNNING, startedAt: new Date() },
+    );
+    await this.eventService.record(
+      run,
+      BuilderEventType.TEXT,
+      {
+        text: `Reviewing ${pullRequest.repo}#${pullRequest.prNumber} at ${headSha.slice(0, 7)} in ${pullRequest.repo}'s Actions.`,
+      },
+      null,
+    );
+    this.logger.info(
+      `Builder review run ${run.id} dispatched in ${pullRequest.repo} for #${pullRequest.prNumber} at ${headSha.slice(0, 7)}`,
+    );
+    return run;
+  }
+
+  /** Whether a run is an in-repo review (dispatchRepoReview). */
+  isRepoReview(run: BuilderBuildRun): boolean {
+    return (
+      run.mode === BuilderRunMode.REVIEW &&
+      (run.cost as any)?.reviewWorkflow === 'repo'
+    );
+  }
+
+  /**
+   * Close an in-repo review. Only the run and its pull request's review claim
+   * move: a review changes no code, and settleRun's session rules — a failed
+   * latest run reopening a COMPLETED session as FAILED — would let a review
+   * that crashed fail a build that succeeded.
+   */
+  async settleRepoReview(
+    run: BuilderBuildRun,
+    status: BuilderRunStatus,
+    error: string | null,
+  ): Promise<void> {
+    await this.runRepository.update(
+      { id: run.id },
+      { status, error, completedAt: new Date() },
+    );
+    await this.releaseReviewClaim(run, status);
+  }
+
+  /**
+   * Follow an in-repo review to its end. Its findings settle it the moment
+   * they are filed; this catches the workflow that ended without filing, and
+   * the one that never ended.
+   */
+  private async reconcileRepoReview(run: BuilderBuildRun): Promise<void> {
+    const repo = run.repos?.[0];
+    if (!repo) return;
+    const remote = await this.github.findRunSince({
+      repo,
+      workflow: BUILDER_REPO_REVIEW_WORKFLOW,
+      since: run.dispatchedAt,
+    });
+    if (remote && !run.githubRunUrl) {
+      await this.runRepository.update(
+        { id: run.id },
+        { githubRunId: remote.id, githubRunUrl: remote.htmlUrl },
+      );
+    }
+    if (remote?.status === 'completed') {
+      const current = await this.runRepository.findOne({
+        where: { id: run.id },
+      });
+      if (current && current.status === BuilderRunStatus.RUNNING) {
+        await this.settleRepoReview(
+          current,
+          BuilderRunStatus.FAILED,
+          `The review ended without filing a verdict (${remote.htmlUrl}).`,
+        );
+      }
+      return;
+    }
+    if (
+      Date.now() - run.dispatchedAt.getTime() >
+      BUILDER_REPO_REVIEW_TIMEOUT_MS
+    ) {
+      if (remote && remote.status !== 'completed') {
+        await this.github.cancelRun(repo, remote.id).catch(() => undefined);
+      }
+      await this.settleRepoReview(
+        run,
+        BuilderRunStatus.TIMED_OUT,
+        `No verdict from the review within ${BUILDER_REPO_REVIEW_TIMEOUT_MS / 60_000} minutes.`,
+      );
+    }
   }
 
   /**
@@ -2103,6 +2286,23 @@ export class BuilderBuildService {
       await this.stopIssueBuild(run);
       return;
     }
+    if (this.isRepoReview(run)) {
+      await this.releaseReviewClaim(run, BuilderRunStatus.CANCELLED);
+      const repo = run.repos?.[0];
+      const remote = repo
+        ? await this.github
+            .findRunSince({
+              repo,
+              workflow: BUILDER_REPO_REVIEW_WORKFLOW,
+              since: run.dispatchedAt,
+            })
+            .catch(() => null)
+        : null;
+      if (repo && remote && remote.status !== 'completed') {
+        await this.github.cancelRun(repo, remote.id).catch(() => undefined);
+      }
+      return;
+    }
 
     let githubRunId = run.githubRunId;
     if (!githubRunId && this.github.isConfigured) {
@@ -2297,6 +2497,10 @@ export class BuilderBuildService {
     // An issue build has no Builder runner to look for; the PR tick follows
     // its issue to the pull request instead (reconcileIssueRuns).
     if (run.issueNumber) return;
+    if (this.isRepoReview(run)) {
+      await this.reconcileRepoReview(run);
+      return;
+    }
     const age = Date.now() - run.dispatchedAt.getTime();
 
     if (!run.githubRunId) {

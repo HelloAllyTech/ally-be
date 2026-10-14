@@ -574,4 +574,46 @@ describe('BuilderPipelineController', () => {
       expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
     });
   });
+  describe('an in-repo review filing its verdict', () => {
+    const filing = { pullRequestId: 'pr-114', findings: [] };
+    let controller: BuilderPipelineController;
+
+    beforeEach(() => {
+      controller = app.get(BuilderPipelineController);
+      (controller as any).pullRequestService = {
+        recordReviewFindings: jest.fn().mockResolvedValue(0),
+      };
+      mockBuilderBuildService.settleRepoReview = jest.fn();
+    });
+
+    it('settles the review run: its verdict is its end', async () => {
+      const run = { id: 'review-1', sessionId: 'session-1' };
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue(
+        run,
+      );
+      mockBuilderBuildService.isRepoReview = jest.fn().mockReturnValue(true);
+
+      await expect(
+        controller.recordReviewFindings('review-1', filing as any),
+      ).resolves.toEqual({ ok: true, recorded: 0 });
+
+      expect(mockBuilderBuildService.settleRepoReview).toHaveBeenCalledWith(
+        run,
+        'SUCCEEDED',
+        null,
+      );
+    });
+
+    it("leaves a runner review to the runner's own completion", async () => {
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
+        id: 'review-2',
+        sessionId: 'session-1',
+      });
+      mockBuilderBuildService.isRepoReview = jest.fn().mockReturnValue(false);
+
+      await controller.recordReviewFindings('review-2', filing as any);
+
+      expect(mockBuilderBuildService.settleRepoReview).not.toHaveBeenCalled();
+    });
+  });
 });

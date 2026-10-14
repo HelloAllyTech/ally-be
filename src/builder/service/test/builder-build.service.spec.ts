@@ -1368,6 +1368,134 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('in-repo review of an opencode pull request', () => {
+    const ocPr = {
+      id: 'pr-114',
+      sessionId: 'session-1',
+      repo: 'ally-mobile',
+      branch: 'opencode/issue113-20261014085905',
+      prNumber: 114,
+      runId: 'build-run-15',
+    };
+    const reviewRun = (overrides: Record<string, any> = {}) => ({
+      id: 'review-1',
+      sessionId: 'session-1',
+      mode: BuilderRunMode.REVIEW,
+      status: BuilderRunStatus.RUNNING,
+      repos: ['ally-mobile'],
+      pullRequestId: 'pr-114',
+      dispatchedAt: new Date(Date.now() - 10 * 60_000),
+      cost: { reviewWorkflow: 'repo', reviewedSha: 'abc1234' },
+      ...overrides,
+    });
+
+    it("starts builder-review.yml in the PR's own repo, not ally-be's runner", async () => {
+      const run = await service.dispatchReviewRun(ocPr as never, 'abc1234def');
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledTimes(1);
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith({
+        repo: 'ally-mobile',
+        workflow: 'builder-review.yml',
+        ref: 'master',
+        inputs: {
+          pr_number: '114',
+          spec_run_id: 'build-run-15',
+          review_run_id: run!.id,
+          builder_pr_id: 'pr-114',
+        },
+      });
+      expect(runRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: BuilderRunMode.REVIEW,
+          repos: ['ally-mobile'],
+          pullRequestId: 'pr-114',
+          cost: expect.objectContaining({ reviewWorkflow: 'repo' }),
+        }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: run!.id },
+        expect.objectContaining({ status: BuilderRunStatus.RUNNING }),
+      );
+      expect(pullRequestRepository.update).toHaveBeenCalledWith(
+        { id: 'pr-114' },
+        { reviewedSha: 'abc1234def' },
+      );
+    });
+
+    it('settles only the run and its review claim, never the session', async () => {
+      await service.settleRepoReview(
+        reviewRun() as any,
+        BuilderRunStatus.FAILED,
+        'boom',
+      );
+
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'review-1' },
+        expect.objectContaining({ status: BuilderRunStatus.FAILED }),
+      );
+      // The claim is released so the next tick can review this head again.
+      expect(pullRequestRepository.update).toHaveBeenCalledWith(
+        { id: 'pr-114' },
+        { reviewedSha: null },
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('fails a review whose workflow ended without filing a verdict', async () => {
+      runRepository.listActive.mockResolvedValue([reviewRun()]);
+      runRepository.findOne.mockResolvedValue(reviewRun());
+      github.findRunSince.mockResolvedValue({
+        id: '77',
+        status: 'completed',
+        conclusion: 'failure',
+        htmlUrl: 'https://github.com/o/ally-mobile/actions/runs/77',
+      });
+
+      await service.reconcile();
+
+      expect(github.findRunSince).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repo: 'ally-mobile',
+          workflow: 'builder-review.yml',
+        }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'review-1' },
+        expect.objectContaining({
+          status: BuilderRunStatus.FAILED,
+          error: expect.stringMatching(/without filing a verdict/),
+        }),
+      );
+      expect(github.getRun).not.toHaveBeenCalled();
+    });
+
+    it('cancels the review where it runs', async () => {
+      github.findRunSince.mockResolvedValue({
+        id: '78',
+        status: 'in_progress',
+      });
+
+      await service.cancelRun(reviewRun({ githubRunId: null }) as any, 7);
+
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-mobile', '78');
+      expect(github.cancelRun).not.toHaveBeenCalledWith(
+        'ally-be',
+        expect.anything(),
+      );
+    });
+
+    it('leaves a builder/ branch on the runner review', async () => {
+      await service.dispatchReviewRun(
+        { ...ocPr, branch: 'builder/add-a-thing' } as never,
+        'abc1234def',
+      );
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'ally-be' }),
+      );
+    });
+  });
+
   describe('issue builds — bookkeeping', () => {
     it('does not count an issue build against the runner-minute ceiling', async () => {
       sessionRepository.findOne.mockResolvedValue(readySession());

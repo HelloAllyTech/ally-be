@@ -38,6 +38,7 @@ import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
   BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
+  BUILDER_MAX_REPO_REVIEWS_PER_PR,
   BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
   BUILDER_WORKFLOW_REF,
@@ -1331,8 +1332,10 @@ export class BuilderPullRequestService {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoReviewEnabled) return false;
 
-    if (pullRequest.reviewRunCount >= BUILDER_MAX_REVIEW_RUNS_PER_PR)
-      return false;
+    const reviewCap = isOpencodeBranch(pullRequest.branch)
+      ? BUILDER_MAX_REPO_REVIEWS_PER_PR
+      : BUILDER_MAX_REVIEW_RUNS_PER_PR;
+    if (pullRequest.reviewRunCount >= reviewCap) return false;
     if (!headSha || pullRequest.reviewedSha === headSha) return false;
     if (rollup?.state !== 'success') return false;
 

@@ -415,6 +415,14 @@ export class BuilderPipelineController {
       dto.pullRequestId,
       dto.findings ?? [],
     );
+    // An in-repo review reports nothing else: its verdict is its end.
+    if (this.buildService.isRepoReview(run)) {
+      await this.buildService.settleRepoReview(
+        run,
+        BuilderRunStatus.SUCCEEDED,
+        null,
+      );
+    }
     return { ok: true, recorded };
   }
 

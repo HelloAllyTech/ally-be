@@ -699,6 +699,51 @@ describe('BuilderPullRequestService', () => {
    * An opencode pull request's feedback goes to opencode, as a `/oc` comment
    * carrying only a marker, not to a fix run on the old runner.
    */
+  describe('the review cap', () => {
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReviewEnabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+    });
+
+    it('lets an opencode PR be reviewed after each fix round, up to its own cap', async () => {
+      await reconcileWith(
+        { headSha: 'head-3' },
+        openPr({
+          branch: 'opencode/issue1-1',
+          reviewRunCount: 2,
+          reviewedSha: 'head-2',
+        }),
+        { state: 'success', failed: [], total: 3 },
+      );
+      expect(buildService.dispatchReviewRun).toHaveBeenCalled();
+
+      buildService.dispatchReviewRun.mockClear();
+      await reconcileWith(
+        { headSha: 'head-5' },
+        openPr({
+          branch: 'opencode/issue1-1',
+          reviewRunCount: 4,
+          reviewedSha: 'head-4',
+        }),
+        { state: 'success', failed: [], total: 3 },
+      );
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('keeps the runner review at two per PR', async () => {
+      await reconcileWith(
+        { headSha: 'head-3' },
+        openPr({ reviewRunCount: 2, reviewedSha: 'head-2' }),
+        { state: 'success', failed: [], total: 3 },
+      );
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+  });
+
   describe('feedback on an opencode pull request', () => {
     const ocPr = (overrides: Record<string, any> = {}) =>
       openPr({ branch: 'opencode/issue113-20261014085905', ...overrides });

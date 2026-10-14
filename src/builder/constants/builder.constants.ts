@@ -179,6 +179,20 @@ export const BUILDER_OWN_ACTORS = [
 export const BUILDER_MAX_REVIEW_RUNS_PER_PR = 2;
 
 /**
+ * The code review for an opencode pull request runs in the target repo's own
+ * Actions (`builder-review.yml`, calling ally-be's builder-review-opencode.yml),
+ * with the code checked out so it can prove what it reports.
+ *
+ * It reviews every head CI turns green, so it caps higher than the runner's
+ * review: a finding goes to opencode as `/oc`, opencode pushes, and the fix is
+ * reviewed in turn — one more review than the per-PR fix ceiling allows.
+ */
+export const BUILDER_REPO_REVIEW_WORKFLOW = 'builder-review.yml';
+export const BUILDER_MAX_REPO_REVIEWS_PER_PR = 4;
+/** Four parallel passes and a verify pass; anything past this has hung. */
+export const BUILDER_REPO_REVIEW_TIMEOUT_MS = 90 * 60_000;
+
+/**
  * How long a dispatched release may run before it is called failed.
  *
  * Matches Bug Hunter's 90 minutes, for the same reason: an ally-be release runs
