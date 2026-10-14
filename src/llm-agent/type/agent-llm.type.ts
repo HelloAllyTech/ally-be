@@ -115,8 +115,10 @@ export interface AgentStreamRequest {
    * translate, which is the reason it is a flag here rather than something a
    * caller does in its prompt: OpenAI has a real json_object response format,
    * Gemini has a JSON response mime type, and Anthropic has neither — it gets
-   * a single forced tool whose input IS the object, the same approach ally-ai's
-   * dispatch module uses.
+   * a single tool whose input IS the object, the same approach ally-ai's
+   * dispatch module uses. That tool is forced where the model accepts a forced
+   * `tool_choice`; the newest Claude models reject one with a 400, so there it
+   * is offered under `auto` with an instruction to call it.
    *
    * This replaces the assistant-turn prefill trick (`{` as a trailing assistant
    * message) that the autofill path used. The Claude 4.6+ family rejects that

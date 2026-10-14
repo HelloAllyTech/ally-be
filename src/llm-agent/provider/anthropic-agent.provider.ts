@@ -1,10 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
+import {
+  claudeModelAcceptsForcedToolChoice,
+  modelSupportsTemperature,
+} from 'src/common/util/llm-model.util';
 import {
   AgentContentBlock,
   AgentStopReason,
   AgentStreamEvent,
   AgentStreamRequest,
+  AgentSystemBlock,
 } from '../type/agent-llm.type';
 import { systemBlocks } from '../util/agent-system.util';
 import { IAgentLlmProvider } from './agent-llm-provider.interface';
@@ -16,6 +20,14 @@ import { IAgentLlmProvider } from './agent-llm-provider.interface';
  * block, and the adapter looks for it when turning the result back into text.
  */
 const JSON_MODE_TOOL = 'emit_json';
+
+/**
+ * Appended to the system prompt in JSON mode on a model that rejects a forced
+ * `tool_choice`, where the instruction is what steers the model to the tool.
+ */
+const JSON_MODE_INSTRUCTION =
+  `Respond by calling the ${JSON_MODE_TOOL} tool exactly once, with the ` +
+  'JSON object as its input. Do not answer in prose.';
 
 const STOP_REASONS: Record<string, AgentStopReason> = {
   end_turn: 'end_turn',
@@ -42,6 +54,11 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
     const client =
       this.clientOverride ?? new Anthropic({ apiKey: this.apiKey });
 
+    // A caller that brought its own tools keeps them; see the spec.
+    const jsonTool = Boolean(request.jsonMode) && !request.tools?.length;
+    const forceJsonTool =
+      jsonTool && claudeModelAcceptsForcedToolChoice(request.model);
+
     const stream = client.messages.stream(
       {
         model: request.model,
@@ -50,7 +67,14 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
         // block and the boundary after the last cached one is what the API
         // reuses next turn. A caller passing a plain string gets a single
         // uncached block, which is byte-identical to what it sent before.
-        system: systemBlocks(request.system).map((block) => ({
+        system: [
+          ...systemBlocks(request.system),
+          // Appended, uncached, after every cached span: the prefix the cache
+          // matched last turn is untouched.
+          ...(jsonTool && !forceJsonTool
+            ? [{ text: JSON_MODE_INSTRUCTION }]
+            : []),
+        ].map((block: AgentSystemBlock) => ({
           type: 'text' as const,
           text: block.text,
           ...(block.cache
@@ -59,13 +83,19 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
         })),
         messages: request.messages as any,
         ...(request.tools?.length ? { tools: request.tools as any } : {}),
-        // No JSON mode on this API. The alternative the autofill path used was
-        // prefilling the assistant turn with `{`, which the 4.6+ family
-        // rejects with a 400 ("does not support assistant message prefill") —
-        // so JSON-expecting autofill was broken on every current Claude model.
-        // A single forced tool makes emitting a conforming object the model's
-        // only available move, and the API enforces it.
-        ...(request.jsonMode && !request.tools?.length
+        // The object comes back as the input of a single tool. Prefilling the
+        // assistant turn with `{` — what the autofill path used to do — is a
+        // 400 on the 4.6+ family. Structured outputs (`output_config.format`)
+        // and strict tools would be the native route, but both need a closed
+        // schema (`additionalProperties: false` on every object) and jsonMode
+        // promises any object with no schema to close.
+        //
+        // Where the model accepts it, a forced `tool_choice` makes calling the
+        // tool the model's only available move and the API enforces it. The
+        // newest models reject a forced choice outright, so there it is `auto`
+        // plus an instruction naming the tool — and if the model answers in
+        // prose anyway, the prose falls through to the caller's own parse.
+        ...(jsonTool
           ? {
               tools: [
                 {
@@ -79,7 +109,9 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
                   },
                 },
               ],
-              tool_choice: { type: 'tool', name: JSON_MODE_TOOL },
+              tool_choice: forceJsonTool
+                ? { type: 'tool', name: JSON_MODE_TOOL }
+                : { type: 'auto', disable_parallel_tool_use: true },
             }
           : {}),
         ...(request.temperature !== undefined &&
@@ -110,8 +142,7 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
     yield {
       type: 'final',
       message: {
-        // In JSON mode the object arrives as the forced tool's input, not as
-        // text. Presenting it back AS text keeps the neutral contract — every
+        // In JSON mode the object arrives as the tool's input, not as text. Presenting it back AS text keeps the neutral contract — every
         // caller of this adapter reads text blocks — so no orchestrator needs
         // a provider-shaped branch to unwrap it.
         content: request.jsonMode ? jsonBlocksAsText(content) : content,
@@ -128,11 +159,11 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
 }
 
 /**
- * Rewrites the forced-tool result as a text block carrying its JSON.
+ * Rewrites the JSON tool's result as a text block carrying its JSON.
  *
  * Falls through untouched when the block is absent — a turn cut off at
- * max_tokens truncates it, and the caller's own parse failure is a better
- * error than a silently empty result here.
+ * max_tokens truncates it, and under `auto` the model may answer in prose —
+ * and the caller's own parse is a better judge than a silently empty result.
  */
 const jsonBlocksAsText = (
   content: AgentContentBlock[],

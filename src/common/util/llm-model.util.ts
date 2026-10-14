@@ -128,6 +128,37 @@ export const modelSupportsTemperature = (model?: string | null): boolean => {
 };
 
 /**
+ * Claude models known to accept a forced `tool_choice` (`any` / `tool`).
+ *
+ * Claude Opus 5.5, Sonnet 5.5, Fable 5.1 and Mythos 5.1 reject one with a 400
+ * ("tool_choice: type 'tool' and 'any' are not supported for this model"),
+ * and nothing suggests the releases after them will take it back. So these
+ * patterns name the models that DO accept it: 3.x and 4.x, the bare 5 of each
+ * line (`claude-opus-5`, not `claude-opus-5-5`), and Haiku 5.5. An optional
+ * trailing date snapshot is allowed where the API issues one.
+ */
+const FORCED_TOOL_CHOICE_MODELS: RegExp[] = [
+  /^claude-3/,
+  /^claude-(opus|sonnet|haiku)-4(-|$)/,
+  /^claude-(opus|sonnet|fable|mythos)-5(-\d{8})?$/,
+  /^claude-haiku-5-5(-\d{8})?$/,
+];
+
+/**
+ * Whether a Claude model accepts a forced `tool_choice`. An allowlist, so an
+ * unrecognised model — including the next release — answers false: guessing
+ * wrong that way costs a weaker guarantee, guessing wrong the other way costs
+ * the call.
+ */
+export const claudeModelAcceptsForcedToolChoice = (
+  model?: string | null,
+): boolean => {
+  if (!model) return false;
+  const name = model.trim().toLowerCase();
+  return FORCED_TOOL_CHOICE_MODELS.some((pattern) => pattern.test(name));
+};
+
+/**
  * Resolve the effective temperature for a call site given the precedence
  * sources (later args win): code default → prompt-level → request/simulation.
  * Returns undefined (omit) when the chosen model rejects a custom temperature.
