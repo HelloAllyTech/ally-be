@@ -1,7 +1,9 @@
 # Builder, GitHub-native: opencode works a Builder issue into a pull request.
 #
 # Called from a small `builder.yml` stub in each repo Builder builds in
-# (ally-be, ally-web, ally-mobile, ...), so the logic lives here once.
+# (ally-be, ally-web, ally-mobile, ally-ai, ally-ai-learn), so the logic lives
+# here once. `runtime: python` sets the repo up with Poetry instead of npm;
+# opencode itself is a Node CLI, so Node is installed either way.
 #
 # Flow: Builder raises an issue in the repo, labelled `builder`, whose body
 # carries only the run id (`<!-- builder-run: <uuid> -->`). ally-be, ally-web
@@ -28,14 +30,22 @@ name: Builder (opencode)
 on:
   workflow_call:
     inputs:
+      runtime:
+        description: node or python — what the repo builds with.
+        type: string
+        default: node
       node-version:
-        description: Node version the repo builds on.
+        description: Node version the repo builds on (and opencode runs on).
         type: string
         default: '24'
-      install-command:
-        description: How the repo installs its dependencies.
+      python-version:
+        description: Python version, for runtime python.
         type: string
-        default: npm ci
+        default: '3.12'
+      install-command:
+        description: How the repo installs its dependencies. Defaults per runtime.
+        type: string
+        default: ''
       node-options:
         description: NODE_OPTIONS for the run (heap size for large builds and lints).
         type: string
@@ -84,10 +94,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: npm
+          cache: ${{ inputs.runtime == 'node' && 'npm' || '' }}
+
+      # The same setup as the Python repos' own CI (test.yml), so what opencode
+      # runs here is what the pull request's checks will run.
+      - uses: actions/setup-python@v5
+        if: inputs.runtime == 'python'
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        if: inputs.runtime == 'python'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
 
       - name: Install dependencies
-        run: ${{ inputs.install-command }}
+        env:
+          INSTALL: ${{ inputs.install-command || (inputs.runtime == 'python' && 'poetry install --no-interaction --with dev' || 'npm ci') }}
+        run: eval "$INSTALL"
+
+      # The project's virtualenv first on PATH, so `pytest`, `flake8` and
+      # `python` are the repo's own whether or not opencode says `poetry run`.
+      # .venv is gitignored in both Python repos, so it is never committed.
+      - name: Put the virtualenv on PATH
+        if: inputs.runtime == 'python'
+        run: echo "${GITHUB_WORKSPACE}/.venv/bin" >> "$GITHUB_PATH"
 
       # The app's bot user, with its noreply address, so commits show the bot
       # and its avatar rather than an unlinked name.
