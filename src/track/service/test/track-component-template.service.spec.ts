@@ -244,6 +244,43 @@ describe('TrackComponentTemplateService', () => {
         expect.objectContaining({ createdBy: 42, updatedBy: 42 }),
       );
     });
+
+    it('derives prompt from promptHtml and sanitizes promptHtml on create', async () => {
+      const content = {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: 'mcq_single',
+            promptHtml: '<h1>Quiz</h1><script>alert(1)</script>',
+            options: [
+              { id: 'a', text: 'A' },
+              { id: 'b', text: 'B' },
+            ],
+            correctOptionIds: ['a'],
+          },
+        ],
+      };
+
+      await service.create({
+        type: TrackItemType.QUIZ,
+        title: 'Quiz Template',
+        content,
+      });
+
+      expect(mockRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            questions: [
+              expect.objectContaining({
+                promptHtml: '<h1>Quiz</h1>',
+                prompt: 'Quiz',
+              }),
+            ],
+          }),
+        }),
+      );
+    });
   });
 
   describe('getById', () => {
@@ -299,6 +336,41 @@ describe('TrackComponentTemplateService', () => {
         expect.objectContaining({ title: 'Updated title', updatedBy: 100 }),
       );
       expect(result.title).toBe('Updated title');
+    });
+
+    it('derives prompt from promptHtml and sanitizes promptHtml on update', async () => {
+      const existing = makeTemplate({
+        id: 'template-uuid-1',
+        type: TrackItemType.JOURNAL,
+      });
+      mockRepo.findOne
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce({ ...existing });
+
+      const content = {
+        prompts: [
+          {
+            id: 'j1',
+            promptHtml: '<h1>Journal</h1><script>alert(1)</script>',
+          },
+        ],
+      };
+
+      await service.update('template-uuid-1', { content });
+
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        'template-uuid-1',
+        expect.objectContaining({
+          content: expect.objectContaining({
+            prompts: [
+              expect.objectContaining({
+                promptHtml: '<h1>Journal</h1>',
+                prompt: 'Journal',
+              }),
+            ],
+          }),
+        }),
+      );
     });
   });
 

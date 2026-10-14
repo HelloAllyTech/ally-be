@@ -52,3 +52,10 @@ export function htmlToPlainText(html: string | null | undefined): string {
   });
   return decoded.replace(/\s+/g, ' ').trim();
 }
+
+/**
+ * Derives a safe plain-text version of rich text content.
+ */
+export function derivePlainTextFromHtml(html: string): string {
+  return htmlToPlainText(sanitizeDescriptionHtml(html));
+}

@@ -5,11 +5,21 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { In } from 'typeorm';
+import {
+  htmlToPlainText,
+  sanitizeDescriptionHtml,
+} from 'src/common/util/sanitize-html.util';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { TrackComponentTemplate } from '../entity/track-component-template.entity';
 import { TrackComponentTemplateRepository } from '../repository/track-component-template.repository';
 import { TrackItemType } from '../type/track.type';
+import {
+  ArticleContent,
+  JournalContent,
+  VideoContent,
+} from '../type/track.type';
+import { QuizContent } from '../type/quiz.type';
 import {
   CreateTrackComponentTemplateDto,
   SUPPORTED_TRACK_COMPONENT_TEMPLATE_TYPES,
@@ -62,6 +72,8 @@ export class TrackComponentTemplateService {
   ): Promise<TrackComponentTemplate> {
     this.assertSupportedType(dto.type);
 
+    this.applyContentDerivations(dto.type, dto.content);
+
     validateTrackItemContent({
       type: dto.type,
       content: dto.content,
@@ -95,6 +107,7 @@ export class TrackComponentTemplateService {
     const existing = await this.getById(id);
 
     if (dto.content !== undefined) {
+      this.applyContentDerivations(existing.type, dto.content);
       validateTrackItemContent({
         type: existing.type,
         content: dto.content,
@@ -147,6 +160,48 @@ export class TrackComponentTemplateService {
       throw new BadRequestException(
         `Component templates do not support type ${type}. Supported types: ${SUPPORTED_TRACK_COMPONENT_TEMPLATE_TYPES.join(', ')}.`,
       );
+    }
+  }
+
+  private applyContentDerivations(type: TrackItemType, content: any): void {
+    if (!content) return;
+
+    if (type === TrackItemType.QUIZ) {
+      const quiz = content as QuizContent;
+      for (const question of quiz.questions ?? []) {
+        if (question.promptHtml) {
+          question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
+          question.prompt = htmlToPlainText(question.promptHtml);
+        }
+      }
+    } else if (type === TrackItemType.ARTICLE) {
+      const article = content as ArticleContent;
+      for (const question of article.questions ?? []) {
+        if (question.promptHtml) {
+          question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
+          question.prompt = htmlToPlainText(question.promptHtml);
+        }
+      }
+    } else if (type === TrackItemType.VIDEO) {
+      const video = content as VideoContent;
+      for (const interjection of video.interjections ?? []) {
+        if (interjection.question.promptHtml) {
+          interjection.question.promptHtml = sanitizeDescriptionHtml(
+            interjection.question.promptHtml,
+          );
+          interjection.question.prompt = htmlToPlainText(
+            interjection.question.promptHtml,
+          );
+        }
+      }
+    } else if (type === TrackItemType.JOURNAL) {
+      const journal = content as JournalContent;
+      for (const prompt of journal.prompts ?? []) {
+        if (prompt.promptHtml) {
+          prompt.promptHtml = sanitizeDescriptionHtml(prompt.promptHtml);
+          prompt.prompt = htmlToPlainText(prompt.promptHtml);
+        }
+      }
     }
   }
 }

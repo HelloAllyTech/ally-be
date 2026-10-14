@@ -1,4 +1,8 @@
 import { createHash } from 'crypto';
+import {
+  derivePlainTextFromHtml,
+  sanitizeDescriptionHtml,
+} from 'src/common/util/sanitize-html.util';
 import { Track } from '../entity/track.entity';
 import { TrackItem } from '../entity/track-item.entity';
 import { TrackSection } from '../entity/track-section.entity';
@@ -137,13 +141,29 @@ function walkQuizQuestion(
   visit: FieldVisitor,
   base: string,
 ): void {
-  const prompt = question.prompt;
+  const promptText = question.prompt;
+  visitField(
+    {
+      path: `${base}.promptHtml`,
+      kind: TranslatableFieldKind.HTML,
+      get: () => question.promptHtml,
+      set: (value) => {
+        question.promptHtml = sanitizeDescriptionHtml(value);
+        question.prompt = derivePlainTextFromHtml(value);
+      },
+    },
+    visit,
+  );
   visitField(
     {
       path: `${base}.prompt`,
       kind: TranslatableFieldKind.PROSE,
       get: () => question.prompt,
-      set: (value) => (question.prompt = value),
+      set: (value) => {
+        if (!question.promptHtml) {
+          question.prompt = value;
+        }
+      },
     },
     visit,
   );
@@ -153,7 +173,7 @@ function walkQuizQuestion(
       kind: TranslatableFieldKind.PROSE,
       get: () => question.explanation,
       set: (value) => (question.explanation = value),
-      context: prompt,
+      context: promptText,
     },
     visit,
   );
@@ -171,7 +191,7 @@ function walkQuizQuestion(
       set: (value) => {
         if (question.media) question.media.alt = value;
       },
-      context: prompt,
+      context: promptText,
     },
     visit,
   );
@@ -188,7 +208,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.LABEL,
           get: () => option.text,
           set: (value) => (option.text = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -219,7 +239,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.BLANK_TEMPLATE,
           get: () => question.template,
           set: (value) => (question.template = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -231,7 +251,7 @@ function walkQuizQuestion(
               kind: TranslatableFieldKind.SHORT_ANSWER,
               get: () => blank.acceptedAnswers[index],
               set: (value) => (blank.acceptedAnswers[index] = value),
-              context: prompt,
+              context: promptText,
             },
             visit,
           );
@@ -247,7 +267,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.RUBRIC,
           get: () => question.rubric?.guidance,
           set: (value) => (question.rubric.guidance = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -258,7 +278,7 @@ function walkQuizQuestion(
             kind: TranslatableFieldKind.RUBRIC,
             get: () => criterion.name,
             set: (value) => (criterion.name = value),
-            context: prompt,
+            context: promptText,
           },
           visit,
         );
@@ -268,7 +288,7 @@ function walkQuizQuestion(
             kind: TranslatableFieldKind.RUBRIC,
             get: () => criterion.description,
             set: (value) => (criterion.description = value),
-            context: prompt,
+            context: promptText,
           },
           visit,
         );
@@ -376,10 +396,26 @@ function walkJournalContent(
     const promptText = prompt.prompt;
     visitField(
       {
+        path: `content.prompts[${prompt.id}].promptHtml`,
+        kind: TranslatableFieldKind.HTML,
+        get: () => prompt.promptHtml,
+        set: (value) => {
+          prompt.promptHtml = sanitizeDescriptionHtml(value);
+          prompt.prompt = derivePlainTextFromHtml(value);
+        },
+      },
+      visit,
+    );
+    visitField(
+      {
         path: `content.prompts[${prompt.id}].prompt`,
         kind: TranslatableFieldKind.PROSE,
         get: () => prompt.prompt,
-        set: (value) => (prompt.prompt = value),
+        set: (value) => {
+          if (!prompt.promptHtml) {
+            prompt.prompt = value;
+          }
+        },
       },
       visit,
     );

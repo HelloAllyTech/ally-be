@@ -290,6 +290,36 @@ describe('applyItemFields', () => {
     expect(source.title).toBe('Spotting risk');
   });
 
+  it('re-derives prompt from translated promptHtml', () => {
+    const source = item({
+      type: TrackItemType.QUIZ,
+      content: {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: QuizQuestionType.MCQ_SINGLE,
+            prompt: 'Original prompt',
+            promptHtml: '<p>Original <strong>prompt</strong></p>',
+            options: [{ id: 'o1', text: 'A' }],
+            correctOptionIds: ['o1'],
+          },
+        ],
+      } as any,
+    });
+
+    const fields = translateAll(source);
+    // Simulation of translated promptHtml
+    fields['content.questions[q1].promptHtml'].value =
+      '<h1>Translated</h1><p>Prompt</p>';
+
+    const localized = applyItemFields(source, fields);
+    const question = (localized.content as any).questions[0];
+
+    expect(question.promptHtml).toBe('<h1>Translated</h1><p>Prompt</p>');
+    expect(question.prompt).toBe('Translated Prompt');
+  });
+
   it('falls back to English for a field whose source has since changed', () => {
     const source = item({
       type: TrackItemType.ARTICLE,
