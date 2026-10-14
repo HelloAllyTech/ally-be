@@ -191,6 +191,12 @@ export const BUILDER_REPO_REVIEW_WORKFLOW = 'builder-review.yml';
 export const BUILDER_MAX_REPO_REVIEWS_PER_PR = 4;
 /** Four parallel passes and a verify pass; anything past this has hung. */
 export const BUILDER_REPO_REVIEW_TIMEOUT_MS = 90 * 60_000;
+/**
+ * How long review-and-fix may run on one pull request, from its first review,
+ * before it goes to a person whatever rounds are left. A loop that is still
+ * churning after this is not going to converge on its own.
+ */
+export const BUILDER_PR_AUTOMATION_TIMEBOX_MS = 3 * 60 * 60_000;
 
 /**
  * How long a dispatched release may run before it is called failed.

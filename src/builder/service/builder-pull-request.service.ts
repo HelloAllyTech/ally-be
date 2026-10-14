@@ -39,6 +39,7 @@ import {
   BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
   BUILDER_MAX_REPO_REVIEWS_PER_PR,
+  BUILDER_PR_AUTOMATION_TIMEBOX_MS,
   BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
   BUILDER_WORKFLOW_REF,
@@ -631,7 +632,11 @@ export class BuilderPullRequestService {
 
     // Handed to a person: nothing automatic happens here until they resume
     // it. The merge prompt still applies — merging is theirs to decide.
-    if (pullRequest.needsHumanAt) {
+    if (
+      pullRequest.needsHumanAt ||
+      (isOpencodeBranch(pullRequest.branch) &&
+        (await this.timeBoxSpent(pullRequest)))
+    ) {
       await this.considerMergePrompt(pullRequest, remote);
       return;
     }
@@ -2025,7 +2030,12 @@ export class BuilderPullRequestService {
     const keys = findings.map((finding) => slug(finding.key)).filter(Boolean);
     const history = [
       ...(pullRequest.reviewHistory ?? []),
-      { sha: pullRequest.reviewedSha ?? null, count, keys },
+      {
+        sha: pullRequest.reviewedSha ?? null,
+        count,
+        keys,
+        at: new Date().toISOString(),
+      },
     ];
     await this.repository.update(
       { id: pullRequest.id },
@@ -2043,6 +2053,7 @@ export class BuilderPullRequestService {
       );
       return;
     }
+    if (await this.timeBoxSpent(pullRequest)) return;
 
     const [a, b, c] = history.slice(-3);
     if (c && b.count >= a.count && c.count >= b.count) {
@@ -2067,6 +2078,29 @@ export class BuilderPullRequestService {
         `The same problem survived two fix rounds: ${what}`,
       );
     }
+  }
+
+  /**
+   * The time box: review-and-fix has run on this pull request for
+   * BUILDER_PR_AUTOMATION_TIMEBOX_MS since its first review, and its latest
+   * review still had serious findings. Escalates, and says whether it did.
+   * Checked on every tick as well as on each verdict, so a loop waiting on
+   * opencode or CI still stops on time.
+   */
+  private async timeBoxSpent(
+    pullRequest: BuilderPullRequest,
+  ): Promise<boolean> {
+    const history = pullRequest.reviewHistory ?? [];
+    const first = history.find((entry) => entry.at)?.at;
+    const last = history[history.length - 1];
+    if (!first || !last || last.count === 0) return false;
+    const spent = Date.now() - new Date(first).getTime();
+    if (spent < BUILDER_PR_AUTOMATION_TIMEBOX_MS) return false;
+    await this.escalate(
+      pullRequest,
+      `${Math.round(spent / 3_600_000)} hours of automated review and fixes, and ${last.count} problem${last.count === 1 ? '' : 's'} remain.`,
+    );
+    return true;
   }
 
   /**

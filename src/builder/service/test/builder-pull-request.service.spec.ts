@@ -805,7 +805,7 @@ describe('BuilderPullRequestService', () => {
         {
           reviewHistory: [
             { sha: 'h1', count: 3, keys: ['a', 'b', 'c'] },
-            { sha: 'head-3', count: 1, keys: ['d'] },
+            { sha: 'head-3', count: 1, keys: ['d'], at: expect.any(String) },
           ],
         },
       );
@@ -874,6 +874,46 @@ describe('BuilderPullRequestService', () => {
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
       expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
       expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('escalates on the time box while waiting on opencode or CI', async () => {
+      const fourHoursAgo = new Date(Date.now() - 4 * 3_600_000).toISOString();
+      feedbackRepository.countPending.mockResolvedValue(0);
+
+      await reconcileWith(
+        { headSha: 'head-4' },
+        ocPr({
+          fixRunCount: 1,
+          reviewHistory: [
+            { sha: 'h1', count: 2, keys: ['a', 'b'], at: fourHoursAgo },
+          ],
+        }),
+      );
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          needsHumanReason:
+            '4 hours of automated review and fixes, and 2 problems remain.',
+        }),
+      );
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('lets a clean pull request past the time box alone', async () => {
+      const fourHoursAgo = new Date(Date.now() - 4 * 3_600_000).toISOString();
+
+      await reconcileWith(
+        { headSha: 'head-4' },
+        ocPr({
+          reviewHistory: [
+            { sha: 'h1', count: 2, keys: ['a'], at: fourHoursAgo },
+            { sha: 'h2', count: 0, keys: [], at: fourHoursAgo },
+          ],
+        }),
+      );
+
+      expect(notificationService.prNeedsHuman).not.toHaveBeenCalled();
     });
 
     it('is not escalated, or announced, twice', async () => {

@@ -121,7 +121,7 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'jsonb', nullable: true })
   reviewHistory?:
-    | { sha: string | null; count: number; keys: string[] }[]
+    | { sha: string | null; count: number; keys: string[]; at?: string }[]
     | null;
 
   /**
