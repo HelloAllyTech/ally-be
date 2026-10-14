@@ -53,7 +53,7 @@ src/prompts/
 
 ### Agent system prompts
 
-A folder like `builder/` (or `character_interview/`, `roleplay_copilot/`) holds the *system*
+A folder like `builder/` (or `character_interview/`, `course_copilot/`) holds the *system*
 prompt for a long-running agent rather than a one-shot generation. Two things differ:
 
 - It is read by code through `PromptSharedService.getPromptByCode('<folder>_<file>')`, not
@@ -148,6 +148,26 @@ it — but if the production prompt row is dashboard-overridden, only the tool s
 tool is inert, which is why this is safe; the reverse is not. Guidance that reaches the model
 without the tool existing would produce calls to a tool that isn't there. **Add the tool first,
 then the guidance, and treat the dashboard override as the thing that actually ships.**
+
+### Course Copilot (`course_copilot/`)
+
+One agent prompt and ten one-shot specialist prompts, all under the "Course Copilot" category
+(see [`course-copilot.md`](./course-copilot.md)):
+
+- `interviewer_system.txt` is the agent system prompt (above): read through
+  `getPromptByCode('course_copilot_interviewer_system')`, cached for a minute, with a hardcoded
+  fallback, and **set the interview model on this row** — its provider/model win over
+  `COURSE_COPILOT_MODEL`. The platform rules (limits, item types) are appended in code, not
+  written here, because the tools enforce them.
+- The specialists (`blueprint_planner`, `article_writer`, `quiz_writer`, `journal_writer`,
+  `annotation_writer`, `course_meta`, `course_reviewer`, `image_prompt`, `roleplay_brief`,
+  `history_summary`) are templates with `{{variables}}` rendered by `renderTemplate`, called in
+  JSON mode. Unlike the agent prompt they **throw** when the row is missing — a course built
+  from a fallback prompt would be quietly worse rather than visibly broken.
+- Like `character_interview/`, each specialist's output shape is **also validated in code**
+  (`src/course-copilot/service/specialists/*` normalise ids and shapes, then run the track
+  validator). The same rule applies: if a prompt may be dashboard-overridden, a changed output
+  shape needs the normaliser to accept the old one too.
 
 ### Which prompts the dashboard actually drives
 
