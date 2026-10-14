@@ -292,9 +292,18 @@ export class BuilderBuildService {
 
     // A one-repo-per-build chain that stopped before its last repo is not
     // finished, whatever the session says: the repos left are still to build.
+    // That includes a milestone a failed start left BUILDING (10-14: the
+    // ally-mobile issue 403'd and the chain could not be restarted) — so long
+    // as nothing for the session is actually running.
     const chainUnfinished =
       session.status === BuilderSessionStatus.COMPLETED &&
-      Boolean(await this.epicService.nextPending(session.id));
+      Boolean(await this.epicService.unbuiltRepoMilestone(session.id)) &&
+      (await this.runRepository.count({
+        where: {
+          sessionId: session.id,
+          status: In([BuilderRunStatus.QUEUED, BuilderRunStatus.RUNNING]),
+        },
+      })) === 0;
 
     if (
       !BUILDER_STARTABLE_STATUSES.includes(session.status) &&
@@ -393,17 +402,31 @@ export class BuilderBuildService {
       );
     }
 
-    return this.dispatchRun({
-      session: { ...session, model: models.coder },
-      mode: BuilderRunMode.BUILD,
-      userId,
-      repos: milestone?.repos?.length ? milestone.repos : repos,
-      models,
-      milestoneId: milestone?.id ?? undefined,
-      branchSlugOverride: milestone?.branchSlug ?? branchSlug,
-      prdVersion,
-      dispatch: overrides.dispatch,
-    });
+    try {
+      return await this.dispatchRun({
+        session: { ...session, model: models.coder },
+        mode: BuilderRunMode.BUILD,
+        userId,
+        repos: milestone?.repos?.length ? milestone.repos : repos,
+        models,
+        milestoneId: milestone?.id ?? undefined,
+        branchSlugOverride: milestone?.branchSlug ?? branchSlug,
+        prdVersion,
+        dispatch: overrides.dispatch,
+      });
+    } catch (error) {
+      // Nothing started, so the milestone is still to build — as advanceEpic
+      // leaves it when the next repo's dispatch fails.
+      if (milestone) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.epicService.markStatus(
+          milestone.id,
+          BuilderMilestoneStatus.PENDING,
+          message,
+        );
+      }
+      throw error;
+    }
   }
 
   /**

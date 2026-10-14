@@ -102,6 +102,7 @@ describe('BuilderBuildService', () => {
   let exemplarService: { archiveSession: jest.Mock };
   let epicService: {
     nextPending: jest.Mock;
+    unbuiltRepoMilestone: jest.Mock;
     markStatus: jest.Mock;
     listBySession: jest.Mock;
     ensureRepoMilestones: jest.Mock;
@@ -188,6 +189,7 @@ describe('BuilderBuildService', () => {
     // an ordinary single-milestone build.
     epicService = {
       nextPending: jest.fn().mockResolvedValue(null),
+      unbuiltRepoMilestone: jest.fn().mockResolvedValue(null),
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
       ensureRepoMilestones: jest.fn().mockResolvedValue(undefined),
@@ -376,13 +378,15 @@ describe('BuilderBuildService', () => {
     });
 
     it('lets a session marked complete restart while a repo is still to build', async () => {
-      epicService.nextPending.mockResolvedValue({
+      const mobile = {
         id: 'm3',
         position: 3,
         title: 'ally-mobile',
         repos: ['ally-mobile'],
         branchSlug: 'rich-text',
-      });
+      };
+      epicService.unbuiltRepoMilestone.mockResolvedValue(mobile);
+      epicService.nextPending.mockResolvedValue(mobile);
       pullRequestRepository.count = jest.fn().mockResolvedValue(2);
 
       const run = await service.startBuild(
@@ -393,6 +397,69 @@ describe('BuilderBuildService', () => {
       expect(run).toEqual(
         expect.objectContaining({ milestoneId: 'm3', repos: ['ally-mobile'] }),
       );
+    });
+  });
+
+  describe('a start whose dispatch fails', () => {
+    const mobile = {
+      id: 'm3',
+      position: 3,
+      title: 'ally-mobile',
+      repos: ['ally-mobile'],
+      branchSlug: 'rich-text',
+    };
+
+    it('puts the milestone back to build rather than leaving it BUILDING', async () => {
+      epicService.nextPending.mockResolvedValue(mobile);
+      github.dispatchWorkflow.mockRejectedValue(
+        new Error('Request failed with status code 403'),
+      );
+
+      await expect(
+        service.startBuild(readySession() as any, 1),
+      ).rejects.toThrow(/403/);
+
+      expect(epicService.markStatus).toHaveBeenCalledWith('m3', 'BUILDING');
+      expect(epicService.markStatus).toHaveBeenLastCalledWith(
+        'm3',
+        'PENDING',
+        expect.stringMatching(/403/),
+      );
+    });
+
+    it('can be restarted when an earlier failed start left the milestone BUILDING', async () => {
+      // 10-14: the session read COMPLETED, ally-mobile read BUILDING, nothing ran.
+      epicService.unbuiltRepoMilestone.mockResolvedValue({
+        ...mobile,
+        status: 'BUILDING',
+      });
+      // ensureRepoMilestones puts it back to PENDING before the lookup.
+      epicService.nextPending.mockResolvedValue(mobile);
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+
+      await expect(
+        service.startBuild(
+          readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+          1,
+        ),
+      ).resolves.toEqual(expect.objectContaining({ milestoneId: 'm3' }));
+      expect(epicService.ensureRepoMilestones).toHaveBeenCalled();
+    });
+
+    it('refuses while a run for the session is still in flight', async () => {
+      epicService.unbuiltRepoMilestone.mockResolvedValue({
+        ...mobile,
+        status: 'BUILDING',
+      });
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+      runRepository.count.mockResolvedValue(1);
+
+      await expect(
+        service.startBuild(
+          readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+          1,
+        ),
+      ).rejects.toThrow(/can only start from a ready PRD/);
     });
   });
 
