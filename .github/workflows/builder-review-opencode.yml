@@ -71,15 +71,20 @@ env:
   NX_DAEMON: 'false'
   HUSKY: '0'
   MODEL: ${{ vars.BUILDER_REVIEW_MODEL || 'google/gemini-3.1-pro-preview' }}
+  # Used when the main model writes nothing in its budget (a stall, a quota).
+  FALLBACK_MODEL: ${{ vars.BUILDER_REVIEW_FALLBACK_MODEL || 'google/gemini-3.5-flash' }}
   API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
 
 jobs:
   pass:
     name: review (${{ matrix.pass }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
     strategy:
       fail-fast: false
+      # Two at a time: twelve concurrent passes (three reviews) exhausted the
+      # model's quota and every pass hung on silent retries.
+      max-parallel: 2
       matrix:
         pass: [spec, compat, safety, tests]
     env:
@@ -166,13 +171,17 @@ jobs:
           # write to GitHub; the agent needs to run probes without prompts.
           # A hard budget: probing can go on indefinitely, and a pass that hits
           # the job timeout leaves nothing behind.
-          timeout 25m opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          # A hard budget: probing can go on indefinitely, and a pass that hits
+          # the job timeout leaves nothing behind. Warnings go to the
+          # transcript, so a quota stall says so instead of going silent.
+          timeout 18m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
-          # The model can end its turn before writing the file (it did, on a
-          # verify pass). Resume the same session once and ask for the result.
+          # No file: the model stalled or stopped early. Run the pass afresh on
+          # the fallback model rather than resuming a stalled session.
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            timeout 8m opencode run --auto --continue --model "$MODEL" --variant high \
-              "Time is up, or you stopped before writing your result. Stop probing. Finish this pass and write the JSON to ${out} now, exactly as instructed." \
+            echo "::warning::The ${PASS} pass wrote nothing on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+            echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-${PASS}.txt"
+            timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
           fi
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
@@ -196,7 +205,7 @@ jobs:
     # Not always(): that keeps verify running through a cancellation.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
     env:
       NODE_OPTIONS: ${{ inputs.node-options }}
     steps:
@@ -300,11 +309,12 @@ jobs:
               body = body.replace("{{" + k + "}}", v)
           print(body)
           PY
-          timeout 25m opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+          timeout 20m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
-            timeout 8m opencode run --auto --continue --model "$MODEL" --variant high \
-              "Time is up, or you stopped before writing your verdict. Stop probing. Finish verifying the candidates and write the JSON to ${out} now, exactly as instructed." \
+            echo "::warning::Verify wrote nothing on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+            echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-verify.txt"
+            timeout 15m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
               >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
           fi
           python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null || {
