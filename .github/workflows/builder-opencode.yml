@@ -128,6 +128,10 @@ jobs:
           opencode github run
         env:
           MODEL: ${{ vars.BUILDER_MODEL || 'google/gemini-3-flash-preview' }}
+          # Never share. opencode defaults to sharing the session on opencode.ai
+          # for public repos, and the session holds the private spec: the first
+          # production run (ally-be#629) published one.
+          SHARE: 'false'
           USE_GITHUB_TOKEN: 'true'
           GITHUB_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
