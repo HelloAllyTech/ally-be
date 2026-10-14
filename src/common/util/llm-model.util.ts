@@ -82,14 +82,42 @@ export const isGemini3OrLater = (model?: string | null): boolean => {
 };
 
 /**
+ * Claude models known to accept a custom `temperature`.
+ *
+ * Claude Opus 4.7 and 4.8, Opus 5 and 5.5, Sonnet 5, Fable 5 and 5.1 (and
+ * Mythos) reject `temperature` outright with a 400; Sonnet 5.5 and Haiku 5.5
+ * reject any non-default value, so omitting it is the only safe request. Since
+ * nothing suggests the releases after them will take it back, these patterns
+ * name the models that DO accept it: 3.x, Opus and Sonnet 4.0 to 4.6, and
+ * Haiku 4.5. An optional trailing date snapshot is allowed where the API
+ * issues one (`claude-opus-4-20250514`, `claude-haiku-4-5-20251001`).
+ */
+const TEMPERATURE_CLAUDE_MODELS: RegExp[] = [
+  /^claude-3/,
+  /^claude-(opus|sonnet)-4(-[0-6])?(-\d{8})?$/,
+  /^claude-haiku-4-5(-\d{8})?$/,
+];
+
+/**
+ * Whether a Claude model accepts a custom `temperature`. An allowlist, so an
+ * unrecognised Claude model — including the next release — answers false:
+ * guessing wrong that way costs the caller's tuning, guessing wrong the other
+ * way costs the call.
+ */
+const claudeModelAcceptsTemperature = (name: string): boolean =>
+  TEMPERATURE_CLAUDE_MODELS.some((pattern) => pattern.test(name));
+
+/**
  * Whether a model accepts a custom `temperature`. OpenAI reasoning models
  * (o-series, gpt-5 family) only allow the default and 400 on any other value;
- * Gemini 3+ deprecated it (see {@link isGemini3OrLater}).
- * Unknown/empty models default to true.
+ * Gemini 3+ deprecated it (see {@link isGemini3OrLater}); Claude models from
+ * Opus 4.7 on reject it (see {@link TEMPERATURE_CLAUDE_MODELS}).
+ * Other unknown/empty models default to true.
  */
 export const modelSupportsTemperature = (model?: string | null): boolean => {
   if (!model) return true;
   const name = model.trim().toLowerCase();
+  if (name.startsWith('claude')) return claudeModelAcceptsTemperature(name);
   return !(
     name.startsWith('o1') ||
     name.startsWith('o3') ||

@@ -22,6 +22,11 @@ describe('LLM model registry', () => {
     expect(byId('gemini-2.5-pro')?.supportsTemperature).toBe(true);
     expect(byId('gpt-5')?.supportsTemperature).toBe(false);
     expect(byId('gpt-5-mini')?.supportsTemperature).toBe(false);
+    expect(byId('claude-sonnet-4-6')?.supportsTemperature).toBe(true);
+    expect(byId('claude-haiku-4-5')?.supportsTemperature).toBe(true);
+    // Opus 4.7 rejects a temperature with a 400, so the picker disables the
+    // control rather than offer a setting the call cannot send.
+    expect(byId('claude-opus-4-7')?.supportsTemperature).toBe(false);
   });
 
   describe('getLlmModels(runtime)', () => {
