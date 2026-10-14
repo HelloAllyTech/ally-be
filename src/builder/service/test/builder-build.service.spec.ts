@@ -328,6 +328,74 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('a one-repo-per-build chain that stops before its last repo', () => {
+    it('fails the session with the reason, rather than calling it complete', async () => {
+      const run = {
+        id: 'run-11',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+        milestoneId: 'm2',
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        status: BuilderSessionStatus.BUILDING,
+        repos: ['ally-be', 'ally-web', 'ally-mobile'],
+      });
+      runRepository.isLatestForSession.mockResolvedValue(true);
+      epicService.nextPending.mockResolvedValue({
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      });
+      github.dispatchWorkflow.mockRejectedValue(
+        new Error('Request failed with status code 403'),
+      );
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(epicService.markStatus).toHaveBeenCalledWith(
+        'm3',
+        'PENDING',
+        expect.stringMatching(/403/),
+      );
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          status: BuilderSessionStatus.FAILED,
+          error: expect.stringMatching(/Could not start ally-mobile: .*403/),
+        }),
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.COMPLETED }),
+      );
+    });
+
+    it('lets a session marked complete restart while a repo is still to build', async () => {
+      epicService.nextPending.mockResolvedValue({
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      });
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+
+      const run = await service.startBuild(
+        readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+        1,
+      );
+
+      expect(run).toEqual(
+        expect.objectContaining({ milestoneId: 'm3', repos: ['ally-mobile'] }),
+      );
+    });
+  });
+
   describe('one repo per build', () => {
     it('dispatches the first repo milestone with its repo only, and keeps the loop for the chain', async () => {
       epicService.nextPending.mockResolvedValue({

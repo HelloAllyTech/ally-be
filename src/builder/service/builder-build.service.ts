@@ -290,9 +290,16 @@ export class BuilderBuildService {
         where: { sessionId: session.id },
       })) === 0;
 
+    // A one-repo-per-build chain that stopped before its last repo is not
+    // finished, whatever the session says: the repos left are still to build.
+    const chainUnfinished =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      Boolean(await this.epicService.nextPending(session.id));
+
     if (
       !BUILDER_STARTABLE_STATUSES.includes(session.status) &&
-      !completedEmptyHanded
+      !completedEmptyHanded &&
+      !chainUnfinished
     ) {
       throw new BadRequestException(
         `A build can only start from a ready PRD — this session is ${session.status.toLowerCase()}.`,
@@ -768,10 +775,22 @@ export class BuilderBuildService {
         BuilderMilestoneStatus.PENDING,
         message,
       );
+      // FAILED, not COMPLETED: the session has work left, and a person needs
+      // to see why it stopped. On 2026-10-14 ally-mobile's issue could not be
+      // raised (403) and the session read "Completed" with a repo unbuilt.
+      // FAILED is startable, so a restart resumes at this milestone.
+      await this.sessionRepository.update(
+        { id: session.id },
+        {
+          status: BuilderSessionStatus.FAILED,
+          error: `Could not start ${next.title}: ${message}`,
+        },
+      );
       this.logger.warn(
         `Builder session ${session.id} could not start milestone ${next.position}: ${message}`,
       );
-      return false;
+      // Handled: settleRun must not go on to mark the session COMPLETED.
+      return true;
     }
   }
 
