@@ -34,6 +34,11 @@ import { BuilderSteerService } from '../service/builder-steer.service';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
+import {
+  autonomyLevelOf,
+  nextAutonomyLevel,
+  switchesForAutonomyLevel,
+} from '../util/builder-autonomy.util';
 import { BuilderSettingsService } from '../service/builder-settings.service';
 import { BuilderNotificationService } from '../service/builder-notification.service';
 import { BuilderLessonCuratorService } from '../service/builder-lesson-curator.service';
@@ -63,6 +68,7 @@ import {
   BUILDER_SSE_PING_INTERVAL_MS,
   BUILDER_TURN_LOCK_PREFIX,
   BUILDER_TURN_LOCK_TTL_SECONDS,
+  BUILDER_PR_AUTOMATION_TIMEBOX_MS,
 } from '../constants/builder.constants';
 import { BUILDER_REPOS } from '../constants/builder-repos.constants';
 
@@ -750,9 +756,22 @@ export class BuilderController {
   async getSettings() {
     // `dispatch` is the server's default for a new build (BUILDER_DISPATCH),
     // read-only here: the start dialog defaults to it and can override it.
+    const settings = await this.settingsService.get();
+    const autonomyLevel = autonomyLevelOf(settings);
+    const trackRecord = await this.pullRequestService.trackRecord();
+    // The next level is suggested only once it has been earned: a full window
+    // of clean reviews that people then merged exactly as reviewed, with no
+    // release that failed its health check (Stacks, "Progressive Delegation").
+    const earned =
+      trackRecord.mergedAsReviewed >= trackRecord.window &&
+      trackRecord.unhealthyReleases === 0;
     return {
-      ...(await this.settingsService.get()),
+      ...settings,
       dispatch: this.buildService.defaultDispatch(),
+      autonomyLevel,
+      trackRecord,
+      suggestedLevel: earned ? nextAutonomyLevel(autonomyLevel) : null,
+      automationTimeboxMs: BUILDER_PR_AUTOMATION_TIMEBOX_MS,
     };
   }
 
@@ -803,6 +822,10 @@ export class BuilderController {
           : {}),
         ...(dto.verifierModel !== undefined
           ? { verifierModel: dto.verifierModel || null }
+          : {}),
+        // The level sets the switches, and wins over any given alongside it.
+        ...(dto.autonomyLevel
+          ? switchesForAutonomyLevel(dto.autonomyLevel)
           : {}),
       },
       user.id,

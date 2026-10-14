@@ -54,6 +54,9 @@ describe('BuilderPullRequestService', () => {
       increment: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
       listReconcilable: jest.fn().mockResolvedValue([]),
+      // No release has failed its health check: automatic merges and
+      // releases are not held.
+      count: jest.fn().mockResolvedValue(0),
     };
     feedbackRepository = {
       upsertIfNew: jest.fn().mockResolvedValue(true),
@@ -956,6 +959,135 @@ describe('BuilderPullRequestService', () => {
       await expect(
         service.resumeAutomation('session-2', 'pr-1', 7),
       ).rejects.toThrow(/not part of this session/);
+    });
+  });
+
+  describe('after a release: the health check, and the brake it pulls', () => {
+    const released = (overrides: Record<string, any> = {}) =>
+      openPr({
+        repo: 'ally-be',
+        merged: true,
+        releaseState: 'released',
+        releaseTag: 'v1.2.3',
+        releasedAt: new Date(Date.now() - 10 * 60_000),
+        releaseHealthCheckedAt: null,
+        ...overrides,
+      });
+    let fetchMock: jest.SpyInstance;
+
+    beforeEach(() => {
+      (service as any).configService = {
+        ...(service as any).configService,
+        builderHealthUrls: { 'ally-be': 'https://api.example/api/health' },
+      };
+      notificationService.releaseFailed = jest.fn();
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+      });
+      fetchMock = jest.spyOn(global, 'fetch' as any);
+      jest.spyOn(global, 'setTimeout').mockImplementation(((fn: () => void) => {
+        fn();
+        return 0 as any;
+      }) as any);
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('marks a release unhealthy, says so, and stops the line', async () => {
+      repository.find.mockResolvedValue([released()]);
+      fetchMock.mockResolvedValue({ ok: false } as any);
+
+      await service.checkReleaseHealth();
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          releaseState: 'unhealthy',
+          releaseHealthCheckedAt: expect.any(Date),
+        }),
+      );
+      expect(notificationService.releaseFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'session-1' }),
+        'ally-be',
+        42,
+        'v1.2.3',
+        expect.stringMatching(
+          /health check is failing.*stopped automatic merges and releases/,
+        ),
+        null,
+      );
+    });
+
+    it('records a healthy release and leaves it released', async () => {
+      repository.find.mockResolvedValue([released()]);
+      fetchMock.mockResolvedValue({ ok: true } as any);
+
+      await service.checkReleaseHealth();
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        { releaseHealthCheckedAt: expect.any(Date) },
+      );
+      expect(notificationService.releaseFailed).not.toHaveBeenCalled();
+    });
+
+    it('waits for a fresh release to settle before checking it', async () => {
+      repository.find.mockResolvedValue([released({ releasedAt: new Date() })]);
+
+      await service.checkReleaseHealth();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('never calls a repo with no health URL healthy — it is not checked', async () => {
+      repository.find.mockResolvedValue([released({ repo: 'ally-ai' })]);
+
+      await service.checkReleaseHealth();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        { releaseHealthCheckedAt: expect.any(Date) },
+      );
+    });
+
+    it('holds automatic merges while a recent release is unhealthy', async () => {
+      repository.count.mockResolvedValue(1);
+
+      await expect(service.releaseIsUnhealthy()).resolves.toBe(true);
+    });
+  });
+
+  describe('the track record', () => {
+    it('counts clean reviews, merges as reviewed, escalations and unhealthy releases', async () => {
+      const pr = (o: Record<string, any>) =>
+        openPr({
+          branch: 'opencode/i-1',
+          reviewHistory: [{ sha: 'a', count: 0, keys: [] }],
+          ...o,
+        });
+      repository.find.mockResolvedValue([
+        pr({ reviewPassedSha: 'h1', headSha: 'h1', merged: true }),
+        pr({ reviewPassedSha: 'h2', headSha: 'h3', merged: true }),
+        pr({ needsHumanAt: new Date() }),
+        pr({
+          reviewPassedSha: 'h4',
+          headSha: 'h4',
+          merged: true,
+          releaseState: 'unhealthy',
+        }),
+        openPr({ branch: 'opencode/i-2', reviewHistory: null }),
+      ]);
+
+      await expect(service.trackRecord(10)).resolves.toEqual({
+        window: 10,
+        cleanReviewed: 3,
+        mergedAsReviewed: 2,
+        escalated: 1,
+        unhealthyReleases: 1,
+      });
     });
   });
 

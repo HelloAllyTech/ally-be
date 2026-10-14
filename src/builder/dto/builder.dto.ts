@@ -332,6 +332,17 @@ export class UpdateBuilderSettingsDto {
   maxFixRunsPerPr?: number;
 
   @ApiPropertyOptional({
+    description:
+      'How much Builder does on its own, as one level: off, assist (review, ' +
+      'fix, approve), auto_merge (also merge), auto (also release). Sets the ' +
+      'individual switches; given together with them, the level wins.',
+    enum: ['off', 'assist', 'auto_merge', 'auto'],
+  })
+  @IsOptional()
+  @IsIn(['off', 'assist', 'auto_merge', 'auto'])
+  autonomyLevel?: 'off' | 'assist' | 'auto_merge' | 'auto';
+
+  @ApiPropertyOptional({
     description: 'Planner-tier model for new runs (null = platform default)',
   })
   @IsOptional()

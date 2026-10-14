@@ -184,6 +184,18 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 40, nullable: true })
   releaseTag?: string | null;
 
+  /** When the release reached production (releaseState became `released`). */
+  @Column({ type: 'timestamp', nullable: true })
+  releasedAt?: Date | null;
+
+  /**
+   * When Builder checked the service after the release. `releaseState`
+   * becomes `unhealthy` when that check failed, which stops automatic merges
+   * and releases until a person looks.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  releaseHealthCheckedAt?: Date | null;
+
   @Column({ type: 'varchar', length: 40, nullable: true })
   releaseRunId?: string | null;
 

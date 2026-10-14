@@ -204,6 +204,24 @@ export class AppConfigService {
    * local port purely so a dev environment fails with an obvious connection
    * error instead of a confusing undefined-URL one.
    */
+  /**
+   * Where Builder checks a service is healthy after releasing it, by release
+   * target (RELEASE_TARGETS key). BUILDER_HEALTH_URLS (JSON) overrides; a
+   * target with no URL is reported as not checked, never as healthy.
+   */
+  get builderHealthUrls(): Record<string, string> {
+    const defaults: Record<string, string> = {
+      'ally-be': `${this.publicApiBaseUrl}/api/health`,
+      'ally-web:admin': 'https://admin.helloally.ai',
+    };
+    try {
+      const raw = this.configService.get<string>('BUILDER_HEALTH_URLS', '');
+      return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
+    } catch {
+      return defaults;
+    }
+  }
+
   get publicApiBaseUrl(): string {
     return this.configService.get<string>(
       'PUBLIC_API_BASE_URL',

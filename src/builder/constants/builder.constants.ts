@@ -197,6 +197,13 @@ export const BUILDER_REPO_REVIEW_TIMEOUT_MS = 90 * 60_000;
  * churning after this is not going to converge on its own.
  */
 export const BUILDER_PR_AUTOMATION_TIMEBOX_MS = 3 * 60 * 60_000;
+/** How long after a release lands before its health is checked. */
+export const BUILDER_RELEASE_SETTLE_MS = 5 * 60_000;
+export const BUILDER_HEALTH_RETRY_MS = 30_000;
+/** How long a failed post-release health check holds automatic merges and releases. */
+export const BUILDER_UNHEALTHY_HOLD_MS = 24 * 60 * 60_000;
+/** How many recent opencode PRs the track record reads. */
+export const BUILDER_TRACK_RECORD_WINDOW = 10;
 
 /**
  * How long a dispatched release may run before it is called failed.

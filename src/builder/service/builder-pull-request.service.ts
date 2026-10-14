@@ -7,7 +7,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { In } from 'typeorm';
+import { In, IsNull, Like, MoreThan } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
@@ -44,6 +44,10 @@ import {
   BUILDER_RELEASE_TIMEOUT_MS,
   BUILDER_WORKFLOW_REF,
   isUnfixableCheck,
+  BUILDER_RELEASE_SETTLE_MS,
+  BUILDER_HEALTH_RETRY_MS,
+  BUILDER_UNHEALTHY_HOLD_MS,
+  BUILDER_TRACK_RECORD_WINDOW,
 } from '../constants/builder.constants';
 import { resolveReleaseTargets } from 'src/release/constants/release-targets.constants';
 import { ProductionReleaseService } from 'src/release/service/production-release.service';
@@ -709,6 +713,7 @@ export class BuilderPullRequestService {
   ): Promise<boolean> {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoMergeEnabled) return false;
+    if (await this.releaseIsUnhealthy()) return false;
 
     if (remote.merged || remote.state !== 'open') return false;
     if (remote.mergeableState !== 'clean') return false;
@@ -967,6 +972,7 @@ export class BuilderPullRequestService {
 
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoReleaseEnabled) return;
+    if (await this.releaseIsUnhealthy()) return;
 
     const { files, truncated } = await this.github.listPullRequestFiles(
       pullRequest.repo,
@@ -1170,6 +1176,11 @@ export class BuilderPullRequestService {
 
     await this.reportCredentialHealth();
     await this.reconcileFailedReleases();
+    await this.checkReleaseHealth().catch((error) =>
+      this.logger.warn(
+        `Could not check release health: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
 
     const releasing = await this.repository.find({
       where: { releaseState: 'releasing' },
@@ -1212,6 +1223,9 @@ export class BuilderPullRequestService {
           { id: pullRequest.id },
           {
             releaseState: verdict.state === 'succeeded' ? 'released' : 'failed',
+            ...(verdict.state === 'succeeded'
+              ? { releasedAt: new Date() }
+              : {}),
             ...(verdict.runUrl ? { releaseRunUrl: verdict.runUrl } : {}),
           },
         );
@@ -1247,6 +1261,150 @@ export class BuilderPullRequestService {
         );
       }
     }
+  }
+
+  /**
+   * After a release lands, check the service it went to is answering.
+   *
+   * Stacks, "Canary Deployments for Safe Agent Iteration": an automatic
+   * release is only safe with a check after it and a stop when it fails. A
+   * pipeline that went green is not the same as a service that works.
+   *
+   * Runs once per released pull request, a few minutes after it went live,
+   * against each of its release targets that has a health URL
+   * (AppConfigService.builderHealthUrls); three tries, half a minute apart.
+   * A failure marks the PR `unhealthy`, which stops every automatic merge and
+   * release (releaseIsUnhealthy) and tells the admin. Rolling back is a
+   * person's call: this stops the line, it does not undo the release.
+   */
+  async checkReleaseHealth(): Promise<void> {
+    const due = await this.repository.find({
+      where: { releaseState: 'released', releaseHealthCheckedAt: IsNull() },
+    });
+    for (const pullRequest of due) {
+      const releasedAt = pullRequest.releasedAt?.getTime() ?? 0;
+      if (!releasedAt || Date.now() - releasedAt < BUILDER_RELEASE_SETTLE_MS)
+        continue;
+      const urls = this.healthUrlsFor(pullRequest.repo);
+      const failing: string[] = [];
+      for (const url of urls) {
+        if (!(await this.answersHealthy(url))) failing.push(url);
+      }
+      await this.repository.update(
+        { id: pullRequest.id },
+        {
+          releaseHealthCheckedAt: new Date(),
+          ...(failing.length ? { releaseState: 'unhealthy' } : {}),
+        },
+      );
+      if (!urls.length) {
+        this.logger.info(
+          `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} released; no health URL for it, so not checked.`,
+        );
+        continue;
+      }
+      if (!failing.length) continue;
+      this.logger.warn(
+        `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} released but unhealthy: ${failing.join(', ')}. Automatic merges and releases stopped.`,
+      );
+      const session = await this.sessionRepository.findOne({
+        where: { id: pullRequest.sessionId },
+      });
+      if (session) {
+        await this.notificationService.releaseFailed(
+          session,
+          pullRequest.repo,
+          pullRequest.prNumber,
+          pullRequest.releaseTag ?? null,
+          `Deployed, but the health check is failing (${failing.join(', ')}). I've stopped automatic merges and releases until someone checks the service.`,
+          pullRequest.releaseRunUrl ?? null,
+        );
+      }
+    }
+  }
+
+  /** The health URLs for a repo's release targets; empty when none is known. */
+  private healthUrlsFor(repo: string): string[] {
+    const urls = this.configService.builderHealthUrls;
+    return Object.entries(urls)
+      .filter(([target]) => target === repo || target.startsWith(`${repo}:`))
+      .map(([, url]) => url);
+  }
+
+  private async answersHealthy(url: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt)
+        await new Promise((resolve) =>
+          setTimeout(resolve, BUILDER_HEALTH_RETRY_MS),
+        );
+      try {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) return true;
+      } catch {
+        // retried below
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Whether a recent release failed its health check. While one has, Builder
+   * merges and releases nothing on its own — the line stops until a person
+   * has looked (and cleared it by fixing forward or rolling back).
+   */
+  async releaseIsUnhealthy(): Promise<boolean> {
+    const since = new Date(Date.now() - BUILDER_UNHEALTHY_HOLD_MS);
+    return (
+      (await this.repository.count({
+        where: {
+          releaseState: 'unhealthy',
+          releaseHealthCheckedAt: MoreThan(since),
+        },
+      })) > 0
+    );
+  }
+
+  /**
+   * How Builder's recent opencode pull requests went, for deciding whether
+   * it has earned more autonomy. Stacks, "Progressive Delegation: Staged
+   * Autonomy Growth": widen autonomy as the agent proves reliable.
+   *
+   * Over the last `window` opencode PRs that got at least one review verdict:
+   * how many were approved clean, how many a person then merged exactly as
+   * reviewed (the merged head is the head the clean review read), how many
+   * needed a person, and how many releases failed their health check.
+   */
+  async trackRecord(window = BUILDER_TRACK_RECORD_WINDOW): Promise<{
+    window: number;
+    cleanReviewed: number;
+    mergedAsReviewed: number;
+    escalated: number;
+    unhealthyReleases: number;
+  }> {
+    const recent = (
+      await this.repository.find({
+        where: { branch: Like('opencode/%') },
+        order: { createdAt: 'DESC' },
+        take: window * 3,
+      })
+    )
+      .filter((pr) => (pr.reviewHistory?.length ?? 0) > 0)
+      .slice(0, window);
+    return {
+      window,
+      cleanReviewed: recent.filter((pr) => Boolean(pr.reviewPassedSha)).length,
+      mergedAsReviewed: recent.filter(
+        (pr) =>
+          pr.merged && pr.reviewPassedSha && pr.headSha === pr.reviewPassedSha,
+      ).length,
+      escalated: recent.filter(
+        (pr) => pr.needsHumanAt || pr.escalationResolution,
+      ).length,
+      unhealthyReleases: recent.filter((pr) => pr.releaseState === 'unhealthy')
+        .length,
+    };
   }
 
   /**
