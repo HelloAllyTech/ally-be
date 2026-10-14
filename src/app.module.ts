@@ -72,6 +72,7 @@ import { LogsModule } from './logs/logs.module';
 import { PostHogModule } from './posthog/posthog.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { ProductUpdatesModule } from './product-updates/product-updates.module';
+import { PublicRoadmapModule } from './public-roadmap/public-roadmap.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { FoundationalSkillsModule } from './foundational-skills/foundational-skills.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
@@ -151,6 +152,7 @@ import { HelplineModule } from './helpline/helpline.module';
     LogsModule,
     ChangelogModule,
     ProductUpdatesModule,
+    PublicRoadmapModule,
     UxSignalsModule,
     FoundationalSkillsModule,
     MobileReleasesModule,

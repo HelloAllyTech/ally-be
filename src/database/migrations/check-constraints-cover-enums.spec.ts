@@ -31,6 +31,10 @@ import {
 } from '../../product-updates/constants/product-update.constants';
 import { ProductUpdateSourceStatus } from '../../product-updates/entity/product-update-source.entity';
 import {
+  ROADMAP_CATEGORIES,
+  ROADMAP_STAGES,
+} from '../../public-roadmap/constants/public-roadmap.constants';
+import {
   AgentMemoryAgent,
   AgentMemoryEmbeddingStatus,
   AgentMemoryStatus,
@@ -196,6 +200,8 @@ describe('CHECK constraints cover their enums', () => {
     ],
     ['CHK_product_updates_kind', [...UPDATE_KINDS]],
     ['CHK_product_updates_audience', [...UPDATE_AUDIENCES]],
+    ['CHK_public_roadmap_items_category', [...ROADMAP_CATEGORIES]],
+    ['CHK_public_roadmap_items_stage', [...ROADMAP_STAGES]],
     [
       'CHK_product_update_sources_status',
       Object.values(ProductUpdateSourceStatus),
