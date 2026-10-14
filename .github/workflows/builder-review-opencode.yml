@@ -166,6 +166,13 @@ jobs:
           # write to GitHub; the agent needs to run probes without prompts.
           opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
+          # The model can end its turn before writing the file (it did, on a
+          # verify pass). Resume the same session once and ask for the result.
+          if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
+            opencode run --auto --continue --model "$MODEL" --variant high \
+              "You stopped before writing your result. Finish this pass and write the JSON to ${out} now, exactly as instructed." \
+              >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
+          fi
           if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
             echo "::warning::The ${PASS} pass wrote no valid findings file."
             echo "{\"pass\": \"${PASS}\", \"findings\": [], \"error\": \"no valid output\"}" > "$out"
@@ -282,6 +289,11 @@ jobs:
           PY
           opencode run --auto --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
             > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
+          if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null; then
+            opencode run --auto --continue --model "$MODEL" --variant high \
+              "You stopped before writing your verdict. Finish verifying the candidates and write the JSON to ${out} now, exactly as instructed." \
+              >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
+          fi
           python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$out" 2>/dev/null || {
             echo "::error::The verify pass wrote no valid review."
             exit 1
