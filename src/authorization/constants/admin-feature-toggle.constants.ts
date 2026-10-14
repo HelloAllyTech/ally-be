@@ -87,6 +87,10 @@ export enum FeatureToggleKey {
   // Builder: the PRD-interview + coding agent that opens PRs
   BUILDER = 'builder',
 
+  // Course Copilot: the agent that interviews a trainer and builds a whole
+  // DRAFT course (Track 2.0) from the answers, then edits it on request.
+  COURSE_COPILOT = 'course_copilot',
+
   // Operational, all-scenarios/all-sessions bulk actions (translate-passive,
   // checklist-item translation, V2V test sessions) — historically gated to
   // SUPER_ADMIN-tier specifically so MULTI_TENANT_ADMIN, who holds the
@@ -331,6 +335,15 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Builder',
     description:
       'Interview an agent into a PRD, then have it build the feature and open pull requests for review — from the Builder tab or from a Product Roadmap card.',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.COURSE_COPILOT,
+    label: 'Course Copilot',
+    description:
+      'Interview an agent about a course, approve its blueprint, and have it generate the whole course — articles, quizzes, journals, annotated transcripts, games and roleplays — as a draft you can edit by chatting or in the course editor.',
+    // Backfilled ON for platform-tier admins by 1977710000000-AddCourseCopilotAccess;
+    // like every key added after the role-collapse cutover, this is inert.
     legacyGrants: SUPER_ADMIN_TIER,
   },
   {

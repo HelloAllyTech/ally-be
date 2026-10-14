@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Journal Writer",
+  "description": "Writes the 1-3 reflection prompts of one JOURNAL item as an after-action review of the practice block it follows: what happened, why, and what the learner will do differently. JSON mode.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

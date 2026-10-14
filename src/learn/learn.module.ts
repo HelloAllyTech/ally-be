@@ -139,6 +139,7 @@ import { BehaviorTranslationService } from './service/behavior-translation.servi
 import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
 import { AutofillService } from './service/autofill.service';
+import { AgentBuilderChainService } from './service/agent-builder-chain.service';
 import { ScenarioTranslationGateway } from './gateway/scenario-translation.gateway';
 import { ScenarioTranslationNotificationService } from './service/scenario-translation-notification.service';
 
@@ -310,6 +311,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
     AutofillService,
+    AgentBuilderChainService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
     ScenarioTranslationNotificationService,
@@ -338,6 +340,12 @@ import { SettingsModule } from 'src/settings/settings.module';
     // Exported for SessionEventModule's EventBuilderService, which runs the
     // same per-field prompt-render-and-complete path against its own prompts.
     AutofillService,
+    // Exported for CourseCopilotModule, which builds each new roleplay a
+    // course needs through the Agent Builder field chain, server-side.
+    AgentBuilderChainService,
+    // Exported for CourseCopilotModule: the interview grounds outcomes and
+    // annotation labels in each competency's helpful/unhelpful behaviours.
+    CompetencyService,
   ],
 })
 export class LearnModule {}

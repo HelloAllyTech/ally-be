@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Quiz Writer",
+  "description": "Writes one QUIZ item: mostly forced-choice questions whose distractors are the audience's real misconceptions, every one explained, plus 1-2 rubric-graded open-ended scenario questions when the outcome is about doing. Likert self-rating only when asked. JSON mode; answer keys checked in code.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

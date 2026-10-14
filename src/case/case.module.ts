@@ -37,6 +37,7 @@ import { LanguageModule } from 'src/language/language.module';
     CaseSessionItemRepository,
     CaseSessionRepository,
   ],
-  exports: [CaseSharedService, CaseSessionService],
+  // CaseService: Course Copilot assembles a case from roleplays it generated.
+  exports: [CaseSharedService, CaseSessionService, CaseService],
 })
 export class CaseModule {}

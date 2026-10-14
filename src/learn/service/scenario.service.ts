@@ -181,6 +181,7 @@ import {
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { LlmTask } from '../enum/llm-task.enum';
 import { ScenarioVoiceLanguage } from '../type/scenario-language-voice.type';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
@@ -3642,9 +3643,15 @@ export class ScenarioService {
    * spoken language from the catalog, against the brief and the persona the
    * wizard just generated, filling the mandatory Language-Voice mapping that
    * those languages are otherwise unreachable through at runtime.
+   *
+   * `options.usageMetadata` is for server-side callers (Course Copilot's
+   * AgentBuilderChainService): it is merged with `{ field }` onto the usage
+   * row so a course's spend can be summed per session. The HTTP route never
+   * passes it, and without it the call is made exactly as before.
    */
   async generateAgentBuilderField(
     dto: GenerateAgentBuilderFieldDto,
+    options?: { usageMetadata?: Record<string, any> },
   ): Promise<GenerateAgentBuilderFieldResponseDto> {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
 
@@ -3716,14 +3723,28 @@ export class ScenarioService {
 
     // The prompt row's own model/temperature is honoured inside the completion
     // layer (the wizard sends none); an explicit request override still wins.
-    const raw = await this.autofillService.generateContentFromPrompt(
-      promptCode,
-      variables,
-      expectJson,
-      model,
-      dto.temperature,
-      dto.provider,
-    );
+    // Two shapes on purpose: the wizard's call keeps its original arguments
+    // exactly, and only a caller with metadata to attribute adds the trailing
+    // task + options pair.
+    const raw = options?.usageMetadata
+      ? await this.autofillService.generateContentFromPrompt(
+          promptCode,
+          variables,
+          expectJson,
+          model,
+          dto.temperature,
+          dto.provider,
+          LlmTask.AUTOFILL_AGENT_FIELD,
+          { usageMetadata: { ...options.usageMetadata, field } },
+        )
+      : await this.autofillService.generateContentFromPrompt(
+          promptCode,
+          variables,
+          expectJson,
+          model,
+          dto.temperature,
+          dto.provider,
+        );
 
     if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
       return { field, value: this.parseSpokenLanguages(raw, catalog) };

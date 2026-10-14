@@ -931,6 +931,44 @@ export class AppConfigService {
     };
   }
 
+  get courseCopilot() {
+    return {
+      // Interview/edit-loop model. The `course_copilot_interviewer_system`
+      // prompt row wins when it names a model — that is the supported way to
+      // change it per environment. Defaults to the REASONING tier rather than a
+      // vendor id, for the reason characterInterview.model gives below.
+      model: this.configService.get<string>(
+        'COURSE_COPILOT_MODEL',
+        this.llmTiers[LlmModelTier.REASONING],
+      ),
+      // Usually unset: the provider is inferred from the model id.
+      provider: this.configService.get<string>('COURSE_COPILOT_PROVIDER'),
+      // Tool round-trips per turn. A normal interview turn is 1-3 (an
+      // update_brief, a lookup, ask_trainer); an edit turn can chain a read,
+      // a regenerate and a meta update.
+      maxToolIterations: Number(
+        this.configService.get<number>(
+          'COURSE_COPILOT_MAX_TOOL_ITERATIONS',
+          10,
+        ),
+      ),
+      // Default per-session spend ceiling, USD. 0 = uncapped.
+      sessionBudgetUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_SESSION_BUDGET_USD', 15),
+      ),
+      // Images have no pricing row; each counts at this flat rate.
+      imageCostUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_IMAGE_COST_USD', 0.1),
+      ),
+      buildConcurrency: Number(
+        this.configService.get<number>('COURSE_COPILOT_BUILD_CONCURRENCY', 4),
+      ),
+      maxNewRoleplays: Number(
+        this.configService.get<number>('COURSE_COPILOT_MAX_NEW_ROLEPLAYS', 4),
+      ),
+    };
+  }
+
   get characterInterview() {
     return {
       // Character-library interview agent model.
