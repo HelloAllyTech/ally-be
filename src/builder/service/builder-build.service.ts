@@ -324,8 +324,14 @@ export class BuilderBuildService {
 
     await this.assertDesignApproved(session);
 
+    // An issue build runs opencode on the target repo's own Actions with the
+    // repo's model (BUILDER_MODEL), so Builder's runner-minute ceiling and its
+    // model choices do not apply to it.
+    const asIssue =
+      (overrides.dispatch ?? this.configService.builder.dispatch) === 'issue';
+
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
-    this.assertWithinBudget(session, settings.maxRunnerMinutes);
+    if (!asIssue) this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
     // Unreadable means "as before": resume the previous branch. Sizing already
     // tolerates an unreadable PRD the same way (classifySession).
@@ -362,7 +368,7 @@ export class BuilderBuildService {
       // carries per-run settings; workflow_dispatch allows no more inputs.
       ...(overrides.loop ? { loop: overrides.loop } : {}),
     };
-    await this.assertModelsAreReal(models);
+    if (!asIssue) await this.assertModelsAreReal(models);
 
     // Carry the chosen model onto the session so a resume run and the UI both
     // read the same thing without re-deriving it.
@@ -407,7 +413,13 @@ export class BuilderBuildService {
         session: { ...session, model: models.coder },
         mode: BuilderRunMode.BUILD,
         userId,
-        repos: milestone?.repos?.length ? milestone.repos : repos,
+        // A one-repo design builds in the repo it names, whatever else the
+        // session lists: an issue build covers exactly one repo.
+        repos: milestone?.repos?.length
+          ? milestone.repos
+          : asIssue && designRepos.length === 1
+            ? designRepos
+            : repos,
         models,
         milestoneId: milestone?.id ?? undefined,
         branchSlugOverride: milestone?.branchSlug ?? branchSlug,
@@ -745,7 +757,11 @@ export class BuilderBuildService {
       // between milestones is stale for the rest of the series, and the
       // refusal lands on the milestone as its reason for waiting.
       await this.assertDesignApproved(session);
-      this.assertWithinBudget(session, settings.maxRunnerMinutes);
+      const carriedDispatch =
+        session.metadata?.buildOverrides?.dispatch ??
+        this.configService.builder.dispatch;
+      if (carriedDispatch !== 'issue')
+        this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
       const carried = (session.metadata?.buildOverrides ?? {}) as {
@@ -2083,6 +2099,11 @@ export class BuilderBuildService {
       }
     }
 
+    if (run.issueNumber) {
+      await this.stopIssueBuild(run);
+      return;
+    }
+
     let githubRunId = run.githubRunId;
     if (!githubRunId && this.github.isConfigured) {
       // Not correlated yet — one best-effort lookup inline rather than waiting
@@ -2101,6 +2122,39 @@ export class BuilderBuildService {
     } catch (error) {
       this.logger.warn(
         `GitHub cancel failed for Builder run ${run.id} (harmless if it had already finished): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Stop an issue build where it actually runs: opencode's `builder.yml` run
+   * in the target repo, and the issue that started it.
+   *
+   * Looking for ally-be's own runner here, as a runner build does, found
+   * whatever `builder-session.yml` run was dispatched after this one — another
+   * session's design or review — and cancelled it. A pull request opencode
+   * already opened is left open: it is work a person may still want.
+   * Best-effort throughout; the run is already CANCELLED.
+   */
+  private async stopIssueBuild(run: BuilderBuildRun): Promise<void> {
+    const repo = run.repos?.[0];
+    if (!repo || !run.issueNumber || !this.github.isConfigured) return;
+    try {
+      const working = await this.github.findRunSince({
+        repo,
+        workflow: 'builder.yml',
+        since: run.dispatchedAt,
+        event: 'issues',
+      });
+      if (working && working.status !== 'completed') {
+        await this.github.cancelRun(repo, working.id);
+      }
+      await this.github.closeIssue(repo, run.issueNumber);
+    } catch (error) {
+      this.logger.warn(
+        `Could not stop issue build ${run.id} in ${repo}#${run.issueNumber}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -2145,6 +2199,19 @@ export class BuilderBuildService {
     key: string,
     text: string,
     stage?: BuilderStage,
+    extra: {
+      /** The opencode Actions run's log, kept on the run for the UI's link. */
+      workflowRunUrl?: string;
+      /** The repo's CI verdict, also recorded as a structured CI_RESULT event. */
+      ci?: {
+        repo: string;
+        prNumber: number;
+        prUrl: string;
+        sha: string;
+        state: 'success' | 'failure' | 'pending';
+        failed: string[];
+      };
+    } = {},
   ): Promise<void> {
     const fresh =
       (await this.runRepository.findOne({ where: { id: run.id } })) ?? run;
@@ -2153,8 +2220,24 @@ export class BuilderBuildService {
     if (posted.includes(key)) return;
     await this.runRepository.update(
       { id: run.id },
-      { cost: { ...cost, issueTimeline: [...posted, key] } as any },
+      {
+        cost: {
+          ...cost,
+          issueTimeline: [...posted, key],
+          ...(extra.workflowRunUrl
+            ? { issueWorkflowRunUrl: extra.workflowRunUrl }
+            : {}),
+        } as any,
+      },
     );
+    if (extra.ci) {
+      await this.eventService.record(
+        fresh,
+        BuilderEventType.CI_RESULT,
+        extra.ci,
+        stage ?? null,
+      );
+    }
     if (stage) {
       await this.sessionRepository.update(
         { id: run.sessionId },
@@ -2188,6 +2271,11 @@ export class BuilderBuildService {
       { id: run.id },
       { cost: { ...cost, issueFixRequests: asked } as any },
     );
+  }
+
+  /** How a build starts when the request does not say (BUILDER_DISPATCH). */
+  defaultDispatch(): BuilderDispatch {
+    return this.configService.builder.dispatch;
   }
 
   /**
@@ -2424,14 +2512,20 @@ export class BuilderBuildService {
     error: string | null,
   ): Promise<void> {
     const completedAt = new Date();
-    const runnerMinutes = Math.max(
-      0,
-      Math.round(
-        (completedAt.getTime() -
-          (run.startedAt ?? run.dispatchedAt).getTime()) /
-          60_000,
-      ),
-    );
+    // An issue build holds no Builder runner: opencode runs on the target
+    // repo's own Actions, and the time from issue to CI verdict is mostly
+    // waiting on that repo's CI. Counting it would spend the session's
+    // runner-minute ceiling on minutes Builder never used.
+    const runnerMinutes = run.issueNumber
+      ? null
+      : Math.max(
+          0,
+          Math.round(
+            (completedAt.getTime() -
+              (run.startedAt ?? run.dispatchedAt).getTime()) /
+              60_000,
+          ),
+        );
 
     await this.runRepository.update(
       { id: run.id },
@@ -2445,11 +2539,13 @@ export class BuilderBuildService {
     });
     if (!session) return;
 
-    await this.sessionRepository.increment(
-      { id: session.id },
-      'runnerMinutes',
-      runnerMinutes,
-    );
+    if (runnerMinutes) {
+      await this.sessionRepository.increment(
+        { id: session.id },
+        'runnerMinutes',
+        runnerMinutes,
+      );
+    }
 
     // A design run never moves the session, whatever its outcome — like a
     // review, it changes no code, and the session is PRD_READY before and

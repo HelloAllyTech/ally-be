@@ -1280,6 +1280,21 @@ export class GithubActionsService {
     }
   }
 
+  /** Closes an issue as not planned — a build that was stopped. Throws on failure. */
+  async closeIssue(repo: string, number: number): Promise<void> {
+    this.requireConfigured();
+    try {
+      await axios.patch(
+        this.url(repo, `issues/${number}`),
+        { state: 'closed', state_reason: 'not_planned' },
+        { headers: this.headers, timeout: 15_000 },
+      );
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      throw this.toReadableError(error, `Could not close ${repo}#${number}`);
+    }
+  }
+
   async createIssueComment(
     repo: string,
     number: number,
