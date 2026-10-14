@@ -342,7 +342,7 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Course Copilot',
     description:
       'Interview an agent about a course, approve its blueprint, and have it generate the whole course — articles, quizzes, journals, annotated transcripts, games and roleplays — as a draft you can edit by chatting or in the course editor.',
-    // Backfilled ON for platform-tier admins by 1977100000000-AddCourseCopilotAccess;
+    // Backfilled ON for platform-tier admins by 1977710000000-AddCourseCopilotAccess;
     // like every key added after the role-collapse cutover, this is inert.
     legacyGrants: SUPER_ADMIN_TIER,
   },

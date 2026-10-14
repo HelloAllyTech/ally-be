@@ -21,8 +21,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * CHECKs and would propose dropping them. Every CHECK here is listed in
  * check-constraints-cover-enums.spec.ts against the enum it guards.
  */
-export class CreateCourseCopilotTables1977000000000 implements MigrationInterface {
-  name = 'CreateCourseCopilotTables1977000000000';
+export class CreateCourseCopilotTables1977700000000 implements MigrationInterface {
+  name = 'CreateCourseCopilotTables1977700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

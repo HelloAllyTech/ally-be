@@ -32,8 +32,8 @@ const PERMISSIONS = ['view:admin:course-copilot', 'edit:admin:course-copilot'];
 
 const FEATURE_KEY = 'course_copilot';
 
-export class AddCourseCopilotAccess1977100000000 implements MigrationInterface {
-  name = 'AddCourseCopilotAccess1977100000000';
+export class AddCourseCopilotAccess1977710000000 implements MigrationInterface {
+  name = 'AddCourseCopilotAccess1977710000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const name of PERMISSIONS) {

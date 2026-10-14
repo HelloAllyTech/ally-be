@@ -824,7 +824,7 @@ how the admin drawer shows an experiment's spend.
 
 The admin agent that interviews a trainer, proposes a course blueprint, builds a DRAFT Track 2.0 course
 from it and edits it on request. How it works: [`docs/course-copilot.md`](docs/course-copilot.md). Four
-hand-written-SQL tables (migration `1977000000000`), every enum column a CHECK listed in
+hand-written-SQL tables (migration `1977700000000`), every enum column a CHECK listed in
 `check-constraints-cover-enums.spec.ts`. **Not multi-tenant** — sessions are private to their creator
 (`createdBy`, checked on every read); `tenant_id` is carried for the later tenant-admin release only.
 The session → course link lives on the session; **nothing is added to `tracks`**, and archiving a
