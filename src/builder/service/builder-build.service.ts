@@ -34,14 +34,11 @@ import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
-import { renderPlatformRules } from '../constants/builder-platform-rules';
-import { renderPrd } from '../constants/builder-build-prompt';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
 import {
   computeDesignReadiness,
   createDraftingDesign,
   productHashOf,
-  sliceDesignForRepos,
 } from '../util/builder-technical-design.util';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
@@ -90,6 +87,12 @@ import {
  */
 /** How the runner builds: the phase pipeline, or the Ralph loop. */
 export type BuilderLoop = 'pipeline' | 'ralph';
+
+/**
+ * Where a build runs: Builder's own runner (`workflow`), or an issue in the
+ * repo that its builder.yml workflow works into a PR with opencode (`issue`).
+ */
+export type BuilderDispatch = 'workflow' | 'issue';
 
 /** A size decision plus the features it was derived from. */
 export interface BuilderSizing {
@@ -250,6 +253,7 @@ export class BuilderBuildService {
       verifierModel?: string;
       budgetUsd?: number;
       loop?: BuilderLoop;
+      dispatch?: BuilderDispatch;
     } = {},
   ): Promise<BuilderBuildRun> {
     const settings = await this.settingsService.get();
@@ -350,6 +354,7 @@ export class BuilderBuildService {
       ...(session.metadata ?? {}),
       buildOverrides: {
         loop: overrides.loop ?? null,
+        dispatch: overrides.dispatch ?? null,
         model: overrides.model ?? null,
         plannerModel: overrides.plannerModel ?? null,
         verifierModel: overrides.verifierModel ?? null,
@@ -390,6 +395,7 @@ export class BuilderBuildService {
       milestoneId: milestone?.id ?? undefined,
       branchSlugOverride: milestone?.branchSlug ?? branchSlug,
       prdVersion,
+      dispatch: overrides.dispatch,
     });
   }
 
@@ -714,6 +720,7 @@ export class BuilderBuildService {
 
       const carried = (session.metadata?.buildOverrides ?? {}) as {
         loop?: BuilderLoop | null;
+        dispatch?: BuilderDispatch | null;
         model?: string | null;
         plannerModel?: string | null;
         verifierModel?: string | null;
@@ -745,6 +752,7 @@ export class BuilderBuildService {
         models,
         milestoneId: next.id,
         branchSlugOverride: next.branchSlug,
+        dispatch: carried.dispatch ?? undefined,
       });
       this.logger.info(
         `Builder session ${session.id} advanced to milestone ${next.position}.`,
@@ -1437,6 +1445,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
+    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1491,19 +1501,21 @@ export class BuilderBuildService {
       );
     }
     const [repo] = repos;
-    const doc = await this.prdService.getOrCreateDoc(
-      session.id,
-      session.createdBy,
-    );
+    // Nothing private in the issue: ally-be, ally-web and ally-ai are public
+    // repos, and the PRD and design are not. The workflow fetches them from
+    // GET /builder/pipeline/runs/:runId/spec with the Builder API key, cut to
+    // this repo's slice, and hands them to opencode; the issue carries only
+    // the run id it needs to do that (in a marker the workflow parses).
     const body = [
-      `> Raised by Builder for session \`${session.id}\` (run ${run.sequence}). ` +
-        `This issue is the \`${repo}\` part of an approved design; any other repos it ` +
-        `changes are built separately, after this one.`,
-      renderPlatformRules(null),
-      renderPrd(sliceDesignForRepos(doc.draft, [repo])),
-    ].join('\n\n---\n\n');
+      `<!-- builder-run: ${run.id} -->`,
+      `Builder build for \`${repo}\` (session \`${session.id.slice(0, 8)}\`, run ${run.sequence}).`,
+      '',
+      'The specification is private: the Builder workflow fetches it from Builder ' +
+        'and opencode works from that. Progress and the pull request appear here and ' +
+        'on the Builder build page.',
+    ].join('\n');
     const issue = await this.github.createIssue(repo, {
-      title: `${session.title} — ${repo}`.slice(0, 250),
+      title: `Builder build — ${repo} (run ${run.sequence}, ${session.id.slice(0, 8)})`,
       body,
       labels: ['builder'],
     });
@@ -1545,6 +1557,8 @@ export class BuilderBuildService {
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
+    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
+    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1590,7 +1604,7 @@ export class BuilderBuildService {
     try {
       if (params.onCreated) await params.onCreated(run);
       if (
-        this.configService.builder.dispatch === 'issue' &&
+        (params.dispatch ?? this.configService.builder.dispatch) === 'issue' &&
         mode === BuilderRunMode.BUILD
       ) {
         await this.dispatchAsIssue(session, run, repos);

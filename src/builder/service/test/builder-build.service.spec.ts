@@ -249,6 +249,43 @@ describe('BuilderBuildService', () => {
     );
   });
 
+  describe('issue dispatch', () => {
+    it('raises an issue for a build switched to it, carrying no PRD or design', async () => {
+      (github as any).createIssue = jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-be/issues/41',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          summary: 'A confidential product plan nobody outside may read.',
+          requirements: [],
+          technicalPlan: '',
+        },
+        versionNumber: 3,
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be'] }) as any,
+        1,
+        { dispatch: 'issue' },
+      );
+
+      // The per-build switch wins over the default (Builder's own runner).
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      const [repo, issue] = (github as any).createIssue.mock.calls[0];
+      expect(repo).toBe('ally-be');
+      expect(issue.labels).toEqual(['builder']);
+      // ally-be is a public repo: the issue names the run, nothing more.
+      expect(issue.body).toContain(`<!-- builder-run: ${run.id} -->`);
+      expect(issue.body).not.toContain('confidential');
+      expect(issue.title).not.toContain(readySession().title);
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: run.id },
+        expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
+      );
+    });
+  });
+
   describe('one repo per build', () => {
     it('dispatches the first repo milestone with its repo only, and keeps the loop for the chain', async () => {
       epicService.nextPending.mockResolvedValue({
