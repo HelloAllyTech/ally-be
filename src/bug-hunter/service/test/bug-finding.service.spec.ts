@@ -1676,3 +1676,96 @@ describe('BugFindingService.recordPreExistingFailure', () => {
     expect(created.description).toContain(PRE_REPO);
   });
 });
+
+describe('BugFindingService.persistFindings with invalid reportedBugId', () => {
+  let service: BugFindingService;
+  let repo: jest.Mocked<
+    Pick<
+      BugFindingRepository,
+      | 'findByReportedBugId'
+      | 'listStaleNeedsInput'
+      | 'findOpenByDedupeKey'
+      | 'findRecentlyDeclinedByDedupeKey'
+      | 'findRecentlyShippedByDedupeKey'
+      | 'update'
+      | 'save'
+      | 'create'
+      | 'findOne'
+    >
+  >;
+
+  beforeEach(() => {
+    repo = {
+      findByReportedBugId: jest.fn().mockResolvedValue(null),
+      listStaleNeedsInput: jest.fn().mockResolvedValue([]),
+      findOpenByDedupeKey: jest.fn().mockResolvedValue(null),
+      findRecentlyDeclinedByDedupeKey: jest.fn().mockResolvedValue(null),
+      findRecentlyShippedByDedupeKey: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue(undefined),
+      create: jest.fn().mockImplementation((v) => v),
+      save: jest.fn().mockImplementation((v) => {
+        if (v.reportedBugId === 'non-existent') {
+          return Promise.reject(new Error('violates foreign key constraint'));
+        }
+        return Promise.resolve({ id: 'new-1', ...v });
+      }),
+      findOne: jest.fn().mockResolvedValue(row()),
+    } as never;
+
+    service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn().mockResolvedValue(undefined),
+        wasRaisedSince: jest.fn().mockResolvedValue(false),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      userRepository(),
+      bugHunterService(),
+      classifier(),
+      missClassifier(),
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+  });
+
+  it('handles a non-existent reportedBugId gracefully', async () => {
+    repo.save.mockImplementation(async (finding: any) => {
+      if (finding.reportedBugId === 'non-existent-id') {
+        throw new Error(
+          'violates foreign key constraint "FK_bug_findings_reported_bug_id"',
+        );
+      }
+      return finding;
+    });
+
+    await service.persistFindings(RUN, REPO, [
+      raw({ reportedBugId: 'non-existent-id' }),
+    ]);
+
+    // This is a bit tricky to test without a real DB.
+    // The goal is to see that it retries with reportedBugId: null
+    // For now, let's just assert that it doesn't throw.
+    // A better test would be to have the mock for `save` check the value of `reportedBugId`
+    // and throw only if it's not null.
+    // Let's modify the mock for that.
+
+    let saveCalls = 0;
+    repo.save.mockImplementation(async (finding: any) => {
+      saveCalls++;
+      if (saveCalls === 1 && finding.reportedBugId === 'non-existent-id') {
+        throw new Error(
+          'violates foreign key constraint "FK_bug_findings_reported_bug_id"',
+        );
+      }
+      if (saveCalls === 2 && finding.reportedBugId === null) {
+        return finding;
+      }
+      throw new Error('Unexpected call to save');
+    });
+
+    const [result] = await service.persistFindings(RUN, REPO, [
+      raw({ reportedBugId: 'non-existent-id' }),
+    ]);
+    expect(saveCalls).toBe(2);
+    expect(result.reportedBugId).toBeNull();
+  });
+});
