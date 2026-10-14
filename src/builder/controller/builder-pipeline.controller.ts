@@ -44,7 +44,10 @@ import {
   buildDesignPrompt,
   buildDesignReviewPrompt,
 } from '../constants/builder-design-prompt';
-import { computeDesignReadiness } from '../util/builder-technical-design.util';
+import {
+  computeDesignReadiness,
+  sliceDesignForRepos,
+} from '../util/builder-technical-design.util';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
 import {
   BUILDER_EVENT_BATCH_MAX,
@@ -134,11 +137,18 @@ export class BuilderPipelineController {
   private async loadRunContext(runId: string) {
     const run = await this.buildService.getRunOrFail(runId);
     const session = await this.sessionService.getSession(run.sessionId);
-    const doc = await this.prdService.getOrCreateDoc(
+    const stored = await this.prdService.getOrCreateDoc(
       session.id,
       session.createdBy,
     );
-    const repos = (session.repos ?? [])
+    // A run built for some of the session's repos (one repo per build) is
+    // served the PRD, design and repo list for those repos only. Older runs
+    // recorded none and read the session's, as they always did.
+    const runRepos = run.repos?.length ? run.repos : (session.repos ?? []);
+    const doc = run.repos?.length
+      ? { ...stored, draft: sliceDesignForRepos(stored.draft, run.repos) }
+      : stored;
+    const repos = runRepos
       .map((repo) => findBuilderRepo(repo))
       .filter(Boolean) as typeof BUILDER_REPOS;
     return { run, session, doc, repos };

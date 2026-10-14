@@ -14,6 +14,7 @@ import {
   BUILDER_MILESTONES_MAX,
   BUILDER_MILESTONES_MIN,
 } from '../constants/builder.constants';
+import { orderReposForBuild } from '../constants/builder-repos.constants';
 
 /**
  * Epic mode: cut a large PRD into slices that each ship on their own.
@@ -53,6 +54,69 @@ export class BuilderEpicService {
       where: { sessionId },
       order: { position: 'ASC' },
     });
+  }
+
+  /**
+   * One repo per build: a milestone per repo the approved design changes,
+   * backend first, for the epic chain to run in order.
+   *
+   * A build that held ally-be, ally-web and ally-mobile in one loop carried
+   * three toolchains, three test suites and three sets of pre-existing
+   * failures at once, and that is where the 2026-10-13 runs spent their time.
+   * Each repo is now its own run and its own pull request; the next starts
+   * when the previous one's gate and review pass, built against the same
+   * approved design's contracts rather than the previous repo's code.
+   *
+   * Does nothing for a session that already has milestones (an epic split, or
+   * repo milestones from an earlier start) or a design inside one repo. On a
+   * restart, a repo milestone that failed or was interrupted goes back to
+   * PENDING so the chain resumes from it rather than skipping past it.
+   */
+  async ensureRepoMilestones(
+    sessionId: string,
+    designRepos: string[],
+    branchSlug: string,
+  ): Promise<void> {
+    const existing = await this.listBySession(sessionId);
+    if (existing.length) {
+      const stalled = existing.filter(
+        (milestone) =>
+          milestone.repos?.length &&
+          (milestone.status === BuilderMilestoneStatus.FAILED ||
+            milestone.status === BuilderMilestoneStatus.BUILDING ||
+            milestone.status === BuilderMilestoneStatus.WAITING_FOR_INPUT),
+      );
+      for (const milestone of stalled) {
+        await this.repository.update(
+          { id: milestone.id },
+          { status: BuilderMilestoneStatus.PENDING, error: null },
+        );
+      }
+      return;
+    }
+
+    const repos = orderReposForBuild(designRepos);
+    if (repos.length < 2) return;
+
+    await this.repository.save(
+      repos.map((repo, index) =>
+        this.repository.create({
+          sessionId,
+          position: index + 1,
+          title: repo,
+          summaryMd: `The ${repo} slice of the approved technical design.`,
+          requirementIds: null,
+          repos: [repo],
+          status: BuilderMilestoneStatus.PENDING,
+          // One branch name across the repos: each is its own repository, so
+          // the same name never collides, and it reads as one feature.
+          branchSlug,
+        }),
+      ),
+    );
+    this.logger.info(
+      `Builder session ${sessionId}: one build per repo, in order ${repos.join(' → ')}.`,
+    );
   }
 
   /**

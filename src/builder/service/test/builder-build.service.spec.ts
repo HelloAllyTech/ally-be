@@ -104,6 +104,7 @@ describe('BuilderBuildService', () => {
     nextPending: jest.Mock;
     markStatus: jest.Mock;
     listBySession: jest.Mock;
+    ensureRepoMilestones: jest.Mock;
   };
   let llmUsage: { record: jest.Mock };
   let llmModelsRepository: { find: jest.Mock };
@@ -189,6 +190,7 @@ describe('BuilderBuildService', () => {
       nextPending: jest.fn().mockResolvedValue(null),
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
+      ensureRepoMilestones: jest.fn().mockResolvedValue(undefined),
     };
     // Build-half spend goes to the unified usage store as well as the run row.
     llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
@@ -245,6 +247,44 @@ describe('BuilderBuildService', () => {
           prdService.computeReadiness(...args),
       } as any,
     );
+  });
+
+  describe('one repo per build', () => {
+    it('dispatches the first repo milestone with its repo only, and keeps the loop for the chain', async () => {
+      epicService.nextPending.mockResolvedValue({
+        id: 'm1',
+        position: 1,
+        repos: ['ally-be'],
+        branchSlug: 'rich-text',
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+        { loop: 'ralph', model: 'gemini-3-flash-preview' },
+      );
+
+      expect(epicService.ensureRepoMilestones).toHaveBeenCalled();
+      expect(epicService.markStatus).toHaveBeenCalledWith('m1', 'BUILDING');
+      const inputs = github.dispatchWorkflow.mock.calls[0][0].inputs;
+      expect(JSON.parse(inputs.repos)).toEqual(['ally-be']);
+      expect(inputs.branch_slug).toBe('rich-text');
+      expect(run).toEqual(
+        expect.objectContaining({ repos: ['ally-be'], milestoneId: 'm1' }),
+      );
+      // advanceEpic has no request to read overrides from; the session does.
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            buildOverrides: expect.objectContaining({
+              loop: 'ralph',
+              model: 'gemini-3-flash-preview',
+            }),
+          }),
+        }),
+      );
+    });
   });
 
   describe('sizing a build', () => {

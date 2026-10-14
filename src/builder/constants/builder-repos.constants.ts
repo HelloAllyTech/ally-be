@@ -154,6 +154,33 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
 
 export const BUILDER_REPO_NAMES: string[] = BUILDER_REPOS.map((r) => r.repo);
 
+/**
+ * The order a cross-repo feature builds in, one repo per build: the backend
+ * that owns the data first, then the AI services that read it, then the
+ * clients. A client built before the backend it calls would be tested against
+ * a contract nothing serves yet.
+ */
+export const BUILDER_REPO_BUILD_ORDER: string[] = [
+  'ally-be',
+  'ally-ai',
+  'ally-ai-learn',
+  'ally-web',
+  'ally-mobile',
+];
+
+/** `repos`, deduplicated, in build order; unknown names last, as given. */
+export function orderReposForBuild(repos: string[]): string[] {
+  const unique = [...new Set(repos.map((repo) => repo.trim()).filter(Boolean))];
+  const rank = (repo: string) => {
+    const index = BUILDER_REPO_BUILD_ORDER.indexOf(repo);
+    return index === -1 ? BUILDER_REPO_BUILD_ORDER.length : index;
+  };
+  return unique
+    .map((repo, index) => ({ repo, index }))
+    .sort((a, b) => rank(a.repo) - rank(b.repo) || a.index - b.index)
+    .map(({ repo }) => repo);
+}
+
 export function findBuilderRepo(
   repo: string,
 ): BuilderRepoDefinition | undefined {

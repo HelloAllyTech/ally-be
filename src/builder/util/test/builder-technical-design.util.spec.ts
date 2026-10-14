@@ -8,6 +8,7 @@ import {
   createDraftingDesign,
   productHashOf,
   scopeGlobToRegExp,
+  sliceDesignForRepos,
 } from '../builder-technical-design.util';
 
 const prd = (): BuilderPrdDocument => ({
@@ -303,5 +304,56 @@ describe('computeDesignReadiness', () => {
     expect(readiness.blockers).toEqual([
       expect.stringMatching(/PRD changed after this design was drafted/),
     ]);
+  });
+});
+
+describe('sliceDesignForRepos', () => {
+  const doc = (): BuilderPrdDocument =>
+    designedPrd({
+      scope: [
+        { repo: 'ally-be', files: ['src/quiz/**/*.ts'] },
+        { repo: 'ally-web', files: ['apps/admin/Quiz.tsx'] },
+      ],
+      testMap: [
+        {
+          requirementId: 'R1',
+          repo: 'ally-be',
+          file: 'src/quiz/a.spec.ts',
+          asserts: 'x',
+        },
+        {
+          requirementId: 'R1',
+          repo: 'ally-web',
+          file: 'apps/admin/Quiz.spec.tsx',
+          asserts: 'y',
+        },
+      ],
+    });
+
+  it('keeps only the run’s repos in scope and the test map, and every contract', () => {
+    const sliced = sliceDesignForRepos(doc(), ['ally-web']);
+    expect(sliced.technicalDesign!.scope.map((s) => s.repo)).toEqual([
+      'ally-web',
+    ]);
+    expect(sliced.technicalDesign!.testMap.map((t) => t.repo)).toEqual([
+      'ally-web',
+    ]);
+    expect(sliced.technicalDesign!.contracts).toEqual(
+      doc().technicalDesign!.contracts,
+    );
+  });
+
+  it('leaves the stored document and its product hash alone', () => {
+    const original = doc();
+    const hash = productHashOf(original);
+    sliceDesignForRepos(original, ['ally-web']);
+    expect(original.technicalDesign!.scope).toHaveLength(2);
+    expect(productHashOf(original)).toBe(hash);
+  });
+
+  it('is a no-op without repos or without a design', () => {
+    const original = doc();
+    expect(sliceDesignForRepos(original, null)).toBe(original);
+    expect(sliceDesignForRepos(prd(), ['ally-be'])).toEqual(prd());
   });
 });

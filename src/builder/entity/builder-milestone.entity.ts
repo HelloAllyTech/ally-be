@@ -52,6 +52,14 @@ export class BuilderMilestone extends BaseWithoutTenantEntity {
   @Column({ type: 'text', nullable: true })
   technicalNotesMd?: string | null;
 
+  /**
+   * The repos this milestone builds. Null for an epic milestone, which builds
+   * every repo the session names; set for a repo milestone (one repo per
+   * build, backend first).
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  repos?: string[] | null;
+
   @Column({
     type: 'varchar',
     length: 20,

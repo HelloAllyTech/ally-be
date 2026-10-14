@@ -282,6 +282,7 @@ describe('Builder bookkeeping — the outcome sweep runs over sessions', () => {
       // No open pull requests anywhere: the loop below the sweep sees nothing.
       repository: { listReconcilable: jest.fn().mockResolvedValue([]) },
       github: { isConfigured: true },
+      buildService: { listActiveIssueRuns: jest.fn().mockResolvedValue([]) },
       logger: { info: jest.fn(), warn: jest.fn() },
       clearStaleSessionError: jest.fn(async (id: string) => {
         settled.push(id);
@@ -334,6 +335,7 @@ describe('Builder bookkeeping — the outcome sweep runs over sessions', () => {
       },
       repository: { listReconcilable: jest.fn().mockResolvedValue([]) },
       github: { isConfigured: true },
+      buildService: { listActiveIssueRuns: jest.fn().mockResolvedValue([]) },
       logger: { info: jest.fn(), warn: jest.fn() },
       clearStaleSessionError,
     });

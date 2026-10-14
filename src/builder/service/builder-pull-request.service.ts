@@ -1,3 +1,4 @@
+import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import {
   BadRequestException,
   ForbiddenException,
@@ -14,7 +15,7 @@ import {
   PullRequestInfo,
 } from 'src/github/service/github-actions.service';
 import { AppConfigService } from 'src/config/config.service';
-import { BuilderEventType } from '../enum/builder.enum';
+import { BuilderEventType, BuilderRunStatus } from '../enum/builder.enum';
 import { buildVerificationComment } from '../util/verification-pr-comment.util';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
@@ -53,6 +54,13 @@ import { ProductionReleaseService } from 'src/release/service/production-release
  * have to keep learning about CI and merges that happen after the agent is
  * gone.
  */
+/** The workflow in a target repo that works a Builder issue into a PR. */
+const ISSUE_BUILD_WORKFLOW = 'builder.yml';
+/** How long an issue may go without a pull request before the build fails. */
+const ISSUE_BUILD_TIMEOUT_MS = 60 * 60_000;
+/** `/oc` fix requests Builder makes on red CI before failing the build. */
+const ISSUE_FIX_REQUESTS = 2;
+
 @Injectable()
 export class BuilderPullRequestService {
   private readonly logger = LoggerService.getInstance(
@@ -373,6 +381,8 @@ export class BuilderPullRequestService {
 
     if (!this.github.isConfigured) return;
 
+    await this.reconcileIssueRuns();
+
     for (const pullRequest of await this.repository.listReconcilable()) {
       try {
         await this.reconcileOne(pullRequest);
@@ -384,6 +394,146 @@ export class BuilderPullRequestService {
         );
       }
     }
+  }
+
+  /**
+   * Follow each issue-dispatched build (BUILDER_DISPATCH=issue) to its pull
+   * request.
+   *
+   * The repo's `builder.yml` workflow runs opencode on the issue Builder
+   * raised; `opencode github run` works on a branch named
+   * `opencode/issue<N>-<time>` and opens a PR that closes the issue. Here:
+   *   - the PR, once it exists, is recorded like a runner-opened one, so the
+   *     PR panel, CI status, review and release flows all apply to it;
+   *   - CI green on its head settles the run SUCCEEDED, which advances a
+   *     one-repo-per-build chain to the next repo's issue (advanceEpic);
+   *   - CI red asks opencode to fix it, once per head commit, with a `/oc`
+   *     comment naming the failing checks — up to ISSUE_FIX_REQUESTS times;
+   *   - the workflow finishing with no PR, or no PR within the timeout, fails
+   *     the run with the issue linked.
+   */
+  private async reconcileIssueRuns(): Promise<void> {
+    for (const run of await this.buildService.listActiveIssueRuns()) {
+      try {
+        await this.reconcileIssueRun(run);
+      } catch (error) {
+        this.logger.warn(
+          `Could not follow issue build ${run.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  private async reconcileIssueRun(run: BuilderBuildRun): Promise<void> {
+    const repo = run.repos?.[0];
+    if (!repo || !run.issueNumber) return;
+    const prefix = `opencode/issue${run.issueNumber}-`;
+    const pr = ((await this.github.listPullRequests(repo)) ?? []).find(
+      (candidate) => candidate.headRef?.startsWith(prefix),
+    );
+
+    if (!pr?.number) {
+      const workflowRun = await this.github.findRunSince({
+        repo,
+        workflow: ISSUE_BUILD_WORKFLOW,
+        since: run.dispatchedAt,
+      });
+      if (workflowRun && workflowRun.status !== 'completed') {
+        await this.buildService.recordIssueMilestone(
+          run,
+          `working:${workflowRun.id}`,
+          `opencode is working on ${repo}#${run.issueNumber}. Live log: ${workflowRun.htmlUrl}`,
+          BuilderStage.CODING,
+        );
+      }
+      if (workflowRun?.status === 'completed') {
+        await this.buildService.settleRun(
+          run,
+          BuilderRunStatus.FAILED,
+          `opencode finished without opening a pull request (${workflowRun.htmlUrl}). Its reply is on ${run.issueUrl}.`,
+        );
+      } else if (
+        Date.now() - run.dispatchedAt.getTime() >
+        ISSUE_BUILD_TIMEOUT_MS
+      ) {
+        await this.buildService.settleRun(
+          run,
+          BuilderRunStatus.FAILED,
+          `No pull request for ${run.issueUrl} within ${ISSUE_BUILD_TIMEOUT_MS / 60_000} minutes.`,
+        );
+      }
+      return;
+    }
+
+    await this.recordFromRunner(run.sessionId, run.id, [
+      {
+        repo,
+        branch: pr.headRef ?? undefined,
+        prNumber: pr.number,
+        prUrl: pr.htmlUrl,
+        title: pr.title ?? undefined,
+      },
+    ]);
+    await this.buildService.recordIssueMilestone(
+      run,
+      `pr:${pr.number}`,
+      `opencode opened ${pr.htmlUrl}${pr.title ? ` — "${pr.title}"` : ''}. CI checks it next.`,
+      BuilderStage.GATE,
+    );
+    if (!pr.headSha) return;
+    const sha = pr.headSha.slice(0, 7);
+    const rollup = await this.github.getCheckRollup(repo, pr.headSha);
+    if (rollup?.state === 'success') {
+      await this.buildService.recordIssueMilestone(
+        run,
+        `ci-pass:${pr.headSha}`,
+        `CI passed on ${sha}. The build is done; ${pr.htmlUrl} is ready for review.`,
+      );
+      await this.buildService.settleRun(run, BuilderRunStatus.SUCCEEDED, null);
+      return;
+    }
+    if (rollup?.state !== 'failure') {
+      await this.buildService.recordIssueMilestone(
+        run,
+        `ci-pending:${pr.headSha}`,
+        `CI is running on ${sha}.`,
+      );
+      return;
+    }
+    await this.buildService.recordIssueMilestone(
+      run,
+      `ci-fail:${pr.headSha}`,
+      `CI failed on ${sha}: ${rollup.failed.join(', ') || 'see the checks'}.`,
+    );
+
+    // Once per head commit: a new commit after the request means opencode
+    // answered it, and CI is judging the answer.
+    const asked = ((run.cost as any)?.issueFixRequests ?? []) as string[];
+    if (asked.includes(pr.headSha)) return;
+    if (asked.length >= ISSUE_FIX_REQUESTS) {
+      await this.buildService.settleRun(
+        run,
+        BuilderRunStatus.FAILED,
+        `CI still fails on ${pr.htmlUrl} after ${asked.length} fix request(s): ${rollup.failed.join(', ')}.`,
+      );
+      return;
+    }
+    await this.github.createIssueComment(
+      repo,
+      pr.number,
+      `/oc CI failed on this pull request: ${rollup.failed.join(', ') || 'see the checks'}. ` +
+        'Read the failing checks, fix the cause on this branch, and keep every check passing. ' +
+        'Do not change a test to make it pass unless the test itself is wrong, and say so if it is.',
+    );
+    await this.buildService.recordIssueFixRequest(run, pr.headSha);
+    await this.buildService.recordIssueMilestone(
+      run,
+      `fix:${pr.headSha}`,
+      `Asked opencode to fix the failing checks on ${pr.htmlUrl} (request ${asked.length + 1} of ${ISSUE_FIX_REQUESTS}).`,
+      BuilderStage.REMEDIATING,
+    );
   }
 
   /**

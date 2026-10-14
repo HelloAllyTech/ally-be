@@ -1165,6 +1165,30 @@ export class GithubActionsService {
    * a comment that could not be posted must never fail the thing it was
    * commenting on.
    */
+  /**
+   * Opens an issue — how Builder hands a repo's slice of an approved design to
+   * the `builder.yml` workflow in that repo, which runs opencode on it. Throws
+   * rather than returning null: a build whose issue was never created has
+   * nothing running, and the caller fails the run with the reason.
+   */
+  async createIssue(
+    repo: string,
+    params: { title: string; body: string; labels?: string[] },
+  ): Promise<{ number: number; htmlUrl: string }> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, 'issues'),
+        { title: params.title, body: params.body, labels: params.labels ?? [] },
+        { headers: this.headers, timeout: 15_000 },
+      );
+      return { number: Number(data.number), htmlUrl: String(data.html_url) };
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      throw error;
+    }
+  }
+
   async createIssueComment(
     repo: string,
     number: number,

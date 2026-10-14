@@ -117,6 +117,25 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   milestoneId?: string | null;
 
+  /**
+   * The repos this run was dispatched to work in. The prompts, spec and design
+   * scope served to the run are cut to these. Null on runs from before it was
+   * recorded, which read the session's repos as they always did.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  repos?: string[] | null;
+
+  /**
+   * Issue-dispatched builds (BUILDER_DISPATCH=issue): the issue Builder raised
+   * in the run's repo for its `builder.yml` workflow to work into a pull
+   * request. Null for runs on Builder's own runner.
+   */
+  @Column({ type: 'int', nullable: true })
+  issueNumber?: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  issueUrl?: string | null;
+
   @Column({ type: 'bigint', nullable: true })
   githubRunId?: string | null;
 
