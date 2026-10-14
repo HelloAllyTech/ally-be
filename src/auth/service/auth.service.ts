@@ -64,6 +64,11 @@ export class AuthService {
   );
   private static readonly APPLE_ISSUER = 'https://appleid.apple.com';
 
+  /** A Google OAuth client id is `<project number>-<suffix>.apps.googleusercontent.com`. */
+  private static googleProjectNumber(clientId: string): string | undefined {
+    return /^(\d+)-[\w-]+\.apps\.googleusercontent\.com$/.exec(clientId)?.[1];
+  }
+
   constructor(
     private dataSource: DataSource,
     private jwtService: JwtService,
@@ -784,15 +789,9 @@ export class AuthService {
 
   async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenPayload> {
     try {
-      const allowedAudiences = [
-        this.configService.googleAuth.androidClientId,
-        this.configService.googleAuth.iosClientId,
-        this.configService.googleAuth.webClientId,
-      ] as string[];
-
       const ticket = await this.googleClient.verifyIdToken({
         idToken,
-        audience: allowedAudiences,
+        audience: this.configService.googleAuth.clientIds,
       });
 
       const payload = ticket.getPayload();
@@ -806,13 +805,47 @@ export class AuthService {
     }
   }
 
+  /**
+   * Google describes an access token issued to any OAuth client, so a valid
+   * token only proves who the user is when it was issued to one of Ally's own
+   * clients: one of the configured ids or, failing that, another client in the
+   * same Google Cloud project. The fallback is there because nothing makes the
+   * web apps' client id appear in the server's list, and only Ally can create
+   * clients in its own project.
+   */
   async verifyGoogleAccessToken(
     accessToken: string,
   ): Promise<GoogleTokenPayload> {
     try {
       const tokenInfo = await this.googleClient.getTokenInfo(accessToken);
 
-      if (!tokenInfo.email) {
+      const { clientIds } = this.configService.googleAuth;
+      const issuedTo = [tokenInfo.aud, tokenInfo.azp].filter(
+        (id): id is string => !!id,
+      );
+      if (!issuedTo.some((id) => clientIds.includes(id))) {
+        const ownProjects = new Set(
+          clientIds.map(AuthService.googleProjectNumber).filter(Boolean),
+        );
+        const sameProjectClient = issuedTo.find((id) =>
+          ownProjects.has(AuthService.googleProjectNumber(id)),
+        );
+        // Client ids aren't personal data. Logged so an unlisted client,
+        // ours or not, shows up straight away.
+        if (!sameProjectClient) {
+          this.logger.warn(
+            `Rejected a Google access token issued to client ${issuedTo[0] ?? 'unknown'}`,
+          );
+          throw new UnauthorizedException('Invalid Google token');
+        }
+        this.logger.warn(
+          `Accepted a Google access token from unlisted client ${sameProjectClient} in Ally's Google project; add it to GOOGLE_WEB_CLIENT_ID`,
+        );
+      }
+
+      // The typings say boolean, but tokeninfo returns every field as a
+      // string, so a verified address arrives as 'true'.
+      if (!tokenInfo.email || String(tokenInfo.email_verified) !== 'true') {
         throw new UnauthorizedException('Invalid Google token');
       }
 

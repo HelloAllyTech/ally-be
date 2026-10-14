@@ -28,4 +28,25 @@ describe('AppConfigService', () => {
       expect(make({}).learnMetadataFetchEnabled).toBe(false);
     });
   });
+
+  describe('googleAuth.clientIds', () => {
+    it('combines the web, iOS and Android client ids', () => {
+      expect(
+        make({
+          GOOGLE_WEB_CLIENT_ID: 'web',
+          GOOGLE_IOS_CLIENT_ID: 'ios',
+          GOOGLE_ANDROID_CLIENT_ID: 'android',
+        }).googleAuth.clientIds,
+      ).toEqual(['web', 'ios', 'android']);
+    });
+
+    it('accepts a comma-separated list in each and drops blanks', () => {
+      expect(
+        make({
+          GOOGLE_WEB_CLIENT_ID: 'web-a, web-b,',
+          GOOGLE_IOS_CLIENT_ID: 'ios',
+        }).googleAuth.clientIds,
+      ).toEqual(['web-a', 'web-b', 'ios']);
+    });
+  });
 });
