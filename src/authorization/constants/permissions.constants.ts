@@ -673,10 +673,12 @@ const ADMIN_PERMISSIONS = [
   // were revoked by 1974700000000-RevokeTenantAdminOrgSettingsGrants. Tenant
   // content access is managed from the admin console.
 
-  // Text helpline: a tenant ADMIN supervises their own org's helpline and is
-  // the one who grants LISTENER / HELPLINE_SUPERVISOR from Helpline → Team.
-  // Written to `group_permissions` by 1975750000000-AddHelplinePermissions.
-  ...HELPLINE_SUPERVISOR_PERMISSIONS,
+  // Text helpline: team management only. The workspace (lobby, chats, monitor,
+  // QA) belongs to LISTENER / HELPLINE_SUPERVISOR, so an org admin who should
+  // take or supervise chats is given one of those groups like anyone else —
+  // and only then reaches Helpline → Team to staff it. The supervisor set was
+  // granted by 1975750000000 and revoked by
+  // 1976600000000-RevokeTenantAdminHelplineWorkspaceGrants.
   PERMISSIONS.EDIT_HELPLINE_TEAM,
 
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT

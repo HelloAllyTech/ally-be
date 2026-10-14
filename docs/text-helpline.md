@@ -32,7 +32,7 @@ Product invariants (never trade these away):
 |---|---|---|
 | Reuse `chats` / `messages` / `queue_entries` | **New tables** `helpline_chats`, `helpline_messages`; the queue is `helpline_chats.status = 'WAITING'` | `chats` is read raw by Scribe analytics (`scribe-analytics.repository.ts`, `scribe-adoption-analytics.repository.ts`) and the call-log/custom-field services. Text chats in `chats` would silently inflate Scribe adoption metrics and surface in Scribe call logs. A one-table queue makes the atomic claim a single `UPDATE … WHERE status='WAITING'`. |
 | `@socket.io/redis-adapter` on the Nest IO adapter for all namespaces | **`MessageBrokerService` fan-out** for the `/helpline-chat` namespace only | Existing gateways already fan out across replicas via the broker and then emit to *local* rooms; a global Redis adapter would make every one of those local emits cluster-wide → N× duplicate delivery on the microphone/telephony gateways. The broker pattern is the codebase's established one and needs no new dependency. |
-| Org admin grants LISTENER from "Org Settings → access management" | **Helpline → Team** tab (tenant ADMIN, `edit:helpline:team`) | The consumer Org. Settings mirror was removed 2026-09-30. Team is scoped to granting/revoking exactly two groups in the caller's tenant. |
+| Org admin grants LISTENER from "Org Settings → access management" | **Helpline → Team** tab (tenant ADMIN, `edit:helpline:team`, who must also be a Listener or Supervisor to reach it — §2) | The consumer Org. Settings mirror was removed 2026-09-30. Team is scoped to granting/revoking exactly two groups in the caller's tenant. |
 | Tenant ADMIN gets `edit:helpline:settings` | Settings (incl. emergency text) are edited by **platform admins** in the admin console, `EDIT_GLOBAL_SETTINGS` | Matches the post-2026-09-30 rule that per-tenant settings live only in the admin console. |
 | KIRAN 1800-599-0019 in default resources | **Dropped** | Verified 2026-10-05: KIRAN was merged into Tele-MANAS and phased out. Defaults: Tele-MANAS **14416** / **1-800-891-4416** (24×7, free), emergency **112**. |
 | ally-mobile `ALLOWED_ROLES` gets LISTENER | **Not changed** | v1 has no listener mobile surface (plan §12 non-goal); a LISTENER-only account has nothing to do in the app. Revisit with the mobile listener work. |
@@ -61,12 +61,20 @@ EDIT_HELPLINE_TEAM:     'edit:helpline:team'
 |---|---|
 | `LISTENER` (new) | the first 8 above |
 | `HELPLINE_SUPERVISOR` (new) | LISTENER + `view:helpline:monitor`, `edit:helpline:whisper`, `edit:helpline:transfer`, `view:helpline:qa` |
-| `ADMIN` (existing, tenant) | HELPLINE_SUPERVISOR set + `edit:helpline:team` |
+| `ADMIN` (existing, tenant) | `edit:helpline:team` only — see below |
 
 `UserRole` gains `LISTENER`, `HELPLINE_SUPERVISOR` (ally-be enum + helpline app enum + helpline
 `ALLOWED_ROLES`). Migration writes `permissions`, `groups`, `group_permissions` idempotently
-(`NOT EXISTS` style of `1968000000000-CreateEvaluatorRole.ts`). The 30-min permission cache means
-ADMIN's new grants lag up to 30 min after deploy.
+(`NOT EXISTS` style of `1968000000000-CreateEvaluatorRole.ts`).
+
+**The workspace is for Listeners and Supervisors only.** ADMIN originally held the whole
+HELPLINE_SUPERVISOR set too, which showed the Helpline tab — and opened crisis chats — to every org
+admin. `1976600000000-RevokeTenantAdminHelplineWorkspaceGrants` took it back, leaving ADMIN with
+`edit:helpline:team` alone. That opens nothing by itself: Team sits inside the workspace, which needs
+`view:helpline:lobby` or `view:helpline:monitor`. So an org admin reaches Team only once they also
+hold LISTENER or HELPLINE_SUPERVISOR. Ally staff grant the first ones from the admin console's
+**Change role** picker, which lists both groups. Permissions are cached in Redis for 30 minutes, so a
+revoke lags up to that long after deploy.
 
 Every listener HTTP route: `@AuthPermissions([...])` **plus** `@RequireHelplineEnabled()` (new guard,
 reads `TenantFeatureService.isEnabledForTenant(PreferenceName.TEXT_HELPLINE_ENABLED, user.tenantId)`,
@@ -461,7 +469,7 @@ interface QaDetailDto extends QaListItemDto {
   // rubric's own descriptions; basicMissing leaves out a conditional basic the talker never made possible.
   // evidence.quote is re-derived from the (decrypted) message by offsets — '' once the chat is erased.
 }
-interface TeamMemberDto { userId: number; name: string; email: string; isListener: boolean; isSupervisor: boolean; isAdmin: boolean }
+interface TeamMemberDto { userId: number; name: string; email: string; isListener: boolean; isSupervisor: boolean }
 ```
 
 ---

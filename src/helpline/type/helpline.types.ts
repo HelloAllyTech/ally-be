@@ -396,7 +396,6 @@ export interface TeamMemberDto {
   email: string;
   isListener: boolean;
   isSupervisor: boolean;
-  isAdmin: boolean;
 }
 
 // ── §5.4 Admin ──────────────────────────────────────────────────────────────
