@@ -32,12 +32,18 @@ describe('ElevenLabs category mapping', () => {
 });
 
 describe('isElevenLabsV3Model', () => {
-  it.each(['eleven_v3', 'ELEVEN_V3', 'eleven_v3_preview'])(
-    'detects %s',
-    (m) => {
-      expect(isElevenLabsV3Model(m)).toBe(true);
-    },
-  );
+  it.each([
+    'eleven_v3',
+    'ELEVEN_V3',
+    'eleven_v3_preview',
+    'eleven_v3_conversational',
+    // v4 is the same kind of model: a custom voice's training is skipped
+    // until ElevenLabs retrains the voice for v4, so the v3 rules apply.
+    'eleven_v4',
+    'eleven_v4_turbo',
+  ])('detects %s', (m) => {
+    expect(isElevenLabsV3Model(m)).toBe(true);
+  });
 
   it.each([
     'eleven_multilingual_v2',
@@ -123,6 +129,34 @@ describe('getElevenLabsModelRecommendation', () => {
         'eleven_multilingual_v2',
       ),
     ).toBe(false);
+  });
+
+  it('flags v4 for a PVC the same way until ElevenLabs lists v4 for it', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        'eleven_v4',
+        ElevenLabsVoiceType.PVC,
+        ['eleven_multilingual_v2'],
+        'eleven_multilingual_v2',
+      ),
+    ).toBe(false);
+    // A voice retrained for v4 shows v4 in its fine-tune list: their word wins.
+    expect(
+      getElevenLabsModelRecommendation(
+        'eleven_v4',
+        ElevenLabsVoiceType.PVC,
+        ['eleven_multilingual_v2', 'eleven_v4'],
+        'eleven_multilingual_v2',
+      ),
+    ).toBeNull();
+    expect(
+      getElevenLabsModelRecommendation(
+        'eleven_v4_turbo',
+        ElevenLabsVoiceType.IVC,
+        [],
+        null,
+      ),
+    ).toBeNull();
   });
 
   it('stays silent about v3 for a voice type it suits', () => {

@@ -519,8 +519,9 @@ export class ElevenLabsVoiceSyncService {
     if (listedV3.length) {
       this.logger.warn(
         `[ELEVENLABS_V3] ElevenLabs now lists ${listedV3.join(', ')} among the fine-tuned models for a ` +
-          `${voiceType ?? 'unknown'} voice. v3 previously appeared for no voice at all, so the v3 advisory ` +
-          `and V3_COMPATIBLE_VOICE_TYPES should be re-checked against their current guidance.`,
+          `${voiceType ?? 'unknown'} voice. v3 previously appeared for no voice at all (v4 is expected to, ` +
+          `once a voice is retrained for it), so the v3/v4 advisory and V3_COMPATIBLE_VOICE_TYPES should ` +
+          `be re-checked against their current guidance.`,
       );
     }
 

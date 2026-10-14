@@ -73,9 +73,17 @@ export const V3_COMPATIBLE_VOICE_TYPES: ElevenLabsVoiceType[] = [
   ElevenLabsVoiceType.PREMADE,
 ];
 
-/** Whether a model string names an ElevenLabs v3 model. */
+/**
+ * Whether a model string names one of ElevenLabs' generative families — v3
+ * (eleven_v3, eleven_v3_conversational) or v4 (eleven_v4, eleven_v4_turbo).
+ * v4 skips a professional clone's training exactly as v3 does until ElevenLabs
+ * has retrained that voice for v4, at which point they list v4 among the
+ * voice's fine-tuned models and `getElevenLabsModelRecommendation` defers to
+ * that. The name is historical: every rule here was written for v3 and now
+ * covers both families.
+ */
 export const isElevenLabsV3Model = (model?: string | null): boolean =>
-  /v3/i.test(String(model ?? ''));
+  /v3|v4/i.test(String(model ?? ''));
 
 /**
  * Whether v3 is a sound choice for a voice of this type — what
