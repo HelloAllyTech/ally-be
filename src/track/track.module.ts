@@ -101,6 +101,11 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackProgressService,
     TrackMemoryService,
     TrackLocalizationService,
+    // Course Copilot writes courses through the same service the editor uses,
+    // so its output passes the same validator and structural lock.
+    TrackService,
+    TrackTenantService,
+    TrackTranslationService,
   ],
 })
 export class TrackModule {}

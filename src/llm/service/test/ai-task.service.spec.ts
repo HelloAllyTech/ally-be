@@ -38,6 +38,7 @@ const configStub = {
     suggestionsModel: 'claude-sonnet-4-6',
   },
   characterInterview: { model: 'gpt-5-mini' },
+  courseCopilot: { model: 'gpt-5-mini' },
   llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
   promptTranslation: { defaultModel: 'gemini-2.5-pro' },
   aiChat: { model: 'gpt-4o-mini' },

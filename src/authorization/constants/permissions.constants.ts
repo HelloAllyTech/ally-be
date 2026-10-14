@@ -363,6 +363,14 @@ const PERMISSIONS = {
   VIEW_BUILDER: 'view:admin:builder',
   EDIT_BUILDER: 'edit:admin:builder',
 
+  // === COURSE COPILOT ===
+  // VIEW reads a session (transcript, blueprint, build state); EDIT runs the
+  // interview, approves blueprints and lets the agent write courses and
+  // roleplays. Like Builder there is no delete — a session is archived, and
+  // the course it made outlives it.
+  VIEW_COURSE_COPILOT: 'view:admin:course-copilot',
+  EDIT_COURSE_COPILOT: 'edit:admin:course-copilot',
+
   // === PRODUCT ROADMAP ===
   // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
   // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
@@ -525,6 +533,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.DELETE_AI_LAB,
   PERMISSIONS.VIEW_BUILDER,
   PERMISSIONS.EDIT_BUILDER,
+  PERMISSIONS.VIEW_COURSE_COPILOT,
+  PERMISSIONS.EDIT_COURSE_COPILOT,
   // Product Roadmap: SUPER_ADMIN can see the board and vote on it. The management
   // surface (EDIT_PRODUCT_ROADMAP) is deliberately withheld here and granted only to
   // SUPER_DUPER_ADMIN below.

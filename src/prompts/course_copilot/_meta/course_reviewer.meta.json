@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Course Reviewer",
+  "description": "Critic pass after a build: reviews the course outline and inline content against a fixed rubric (outcome coverage, capstone, progression, reflection, answer-key accuracy, duplication, audience fit, safety, publish readiness) and returns at most 10 fix/consider findings, each with an optional one-click edit. JSON mode.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

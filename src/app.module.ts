@@ -23,6 +23,7 @@ import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
 import { AnalyticsSuggestionsModule } from './analytics-suggestions/analytics-suggestions.module';
 import { BugHunterModule } from './bug-hunter/bug-hunter.module';
 import { BuilderModule } from './builder/builder.module';
+import { CourseCopilotModule } from './course-copilot/course-copilot.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -105,6 +106,7 @@ import { HelplineModule } from './helpline/helpline.module';
     AnalyticsSuggestionsModule,
     BugHunterModule,
     BuilderModule,
+    CourseCopilotModule,
     TenantModule,
     CommonModule,
     SettingsModule,

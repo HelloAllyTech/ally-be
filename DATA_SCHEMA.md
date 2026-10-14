@@ -820,6 +820,33 @@ enum column is a CHECK listed in `check-constraints-cover-enums.spec.ts`.
 `LlmTask.SKILL_EXPERIMENT_JUDGE` / `SKILL_EXPERIMENT_DESIGNER` with `metadata.experimentId`, which is
 how the admin drawer shows an experiment's spend.
 
+### 3.19 Course Copilot (`course-copilot`)
+
+The admin agent that interviews a trainer, proposes a course blueprint, builds a DRAFT Track 2.0 course
+from it and edits it on request. How it works: [`docs/course-copilot.md`](docs/course-copilot.md). Four
+hand-written-SQL tables (migration `1977000000000`), every enum column a CHECK listed in
+`check-constraints-cover-enums.spec.ts`. **Not multi-tenant** — sessions are private to their creator
+(`createdBy`, checked on every read); `tenant_id` is carried for the later tenant-admin release only.
+The session → course link lives on the session; **nothing is added to `tracks`**, and archiving a
+session never touches the course it made. Courses, roleplays and cases are written through their
+owners' services (`TrackService.upsertStructure`, `ScenarioService.createScenarios`,
+`CaseService.createCase`), so the copilot's output passes the same validators as the editor's.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `course_copilot_sessions` | BaseWithoutTenant | `id` (uuid), `title`, `mode` (CHECK `CREATE`/`EDIT`), `status` (CHECK `INTERVIEWING`/`AWAITING_BLUEPRINT`/`BUILDING`/`BUILD_FAILED`/`EDITING`/`ARCHIVED`), `trackId` (uuid FK → `tracks` ON DELETE SET NULL), `brief` (jsonb), `blueprint` / `approvedBlueprint` (jsonb), `blueprintVersion` (int), `trackIdMap` (jsonb `{sections, items}`), `budgetUsd` (numeric(10,2), 0 = uncapped), `generatedScenarioIds` / `generatedCaseIds` / `generatedCharacterIds` (jsonb arrays), `metadata` (jsonb), `lastMessageSeq` / `lastEventSeq` (int), `tenant_id` (varchar, nullable), `createdBy`/`updatedBy`, `deletedAt` | `trackIdMap` maps blueprint section/item ids to the track rows the build created: `upsertStructure` refuses ids it did not mint, so the first write creates and the map makes every later write an update. `blueprintVersion` is the optimistic-concurrency check for the tree editor and for approval. `metadata` holds `interviewSummary {uptoSeq,text}`, `changeLog[]` (newest 50), `libraryContext` (the cached prompt block, frozen per session), `pendingConfirmation` / `lastConfirmed` (publish/assign/duplicate confirmations) and `buildCompletedAt` (after which job results are inserted into the live course instead of rewriting it from the blueprint). Both counters are atomic `UPDATE … RETURNING` allocators |
+| `course_copilot_messages` | BaseWithoutTenant | `id` (uuid), `sessionId` (FK ON DELETE CASCADE), `seq`, `role` (CHECK `user`/`assistant`), `content`, `toolCalls`/`toolResults`/`metadata` (jsonb); UNIQUE `(sessionId, seq)` | The `builder_messages` shape: append-only, no soft delete, replayed into the model each turn; the streaming row is checkpointed mid-turn (`metadata.streaming`). The post-build reviewer message is an assistant row with `metadata.reviewNotes` and `metadata.suggestedActions` |
+| `course_copilot_jobs` | BaseWithoutTenant | `id` (uuid), `sessionId` (FK ON DELETE CASCADE), `kind` (CHECK, 14 values — `article`, `quiz`, `roleplay_new`, `cover_image`, `course_review` …), `blueprintItemId`, `dependsOn` (jsonb uuid[]), `status` (CHECK `queued`/`running`/`done`/`failed`/`skipped`/`held`), `attempts`, `input`/`result` (jsonb), `error`, `costUsd`, `startedAt`/`finishedAt`/`heartbeatAt`; idx `(sessionId, status)` | The build's durable queue. A job claims itself with a conditional `queued → running` UPDATE and settles with a conditional `running → …` one, so overlapping runners after a deploy are harmless; the five-minute `course-copilot.reconcile` tick fails jobs whose heartbeat is older than 10 minutes and restarts sessions with queued work |
+| `course_copilot_events` | BaseWithoutTenant | `id` (uuid), `sessionId` (FK ON DELETE CASCADE), `seq`, `type` (CHECK, 13 values — `job_started`, `job_done`, `structure_written`, `budget_hold`, `build_finished` …), `payload` (jsonb, capped at 8 KB); UNIQUE `(sessionId, seq)` | Append-only progress log, pushed on the `/course-copilot` socket and paged with `GET sessions/:id?afterSeq=` (the guarantee — a push only reaches clients on the process running the build) |
+
+**Cost telemetry:** every model call records to `llm_usage` under a `COURSE_COPILOT_*` task (the
+roleplay chain under `AUTOFILL_AGENT_FIELD`) with `metadata.courseCopilotSessionId` (+ `jobId` during a
+build); the session budget sums those rows, counting images at `COURSE_COPILOT_IMAGE_COST_USD` because
+images have no pricing row. Roleplays the copilot generates are `scenarios` rows with
+`category = 'COURSE_COPILOT'`, ACTIVE (a course can only reference active roleplays), non-global and
+unassigned — learners reach them through the course, whose `track_tenants` row is what authorises a
+roleplay started from a course item.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -889,6 +916,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | Whether a roleplay ran as a voice call or a text chat, and who may use text chat | `scenario_sessions.interactionMode`; the org switch is a `preference` row `TEXT_CHAT_ROLEPLAY_ENABLED`, the per-scenario offer is `scenarios.metadata.textChatEnabled` |
 | Per-turn AI latency / performance | `scenario_session_turn_metrics` |
 | Character-library interview-agent conversations | `character_interview_sessions`, `character_interview_messages` |
+| Which copilot conversation built a course, and what its build did | `course_copilot_sessions.trackId` → `course_copilot_jobs` / `_events`; roleplays it generated are `scenarios.category = 'COURSE_COPILOT'` |
 | Simulation start latency (time to first word) | `scenario_session_start_metrics` |
 | Live coaching hints shown during a roleplay | `scenario_session_supervisor_notes` |
 | What the supervisor carries about a learner between debriefs | `learner_supervisor_memory` |

@@ -20,6 +20,14 @@ import {
   BuilderSteerStatus,
 } from '../../builder/enum/builder.enum';
 import {
+  CourseCopilotEventType,
+  CourseCopilotJobKind,
+  CourseCopilotJobStatus,
+  CourseCopilotMessageRole,
+  CourseCopilotMode,
+  CourseCopilotSessionStatus,
+} from '../../course-copilot/enum/course-copilot.enum';
+import {
   BugHuntLookupKind,
   BugHuntPhase,
 } from '../../bug-hunter/enum/bug-hunt-telemetry.enum';
@@ -265,6 +273,18 @@ describe('CHECK constraints cover their enums', () => {
       'CHK_skill_experiment_events_type',
       Object.values(SkillExperimentEventType),
     ],
+    ['CHK_course_copilot_sessions_mode', Object.values(CourseCopilotMode)],
+    [
+      'CHK_course_copilot_sessions_status',
+      Object.values(CourseCopilotSessionStatus),
+    ],
+    [
+      'CHK_course_copilot_messages_role',
+      Object.values(CourseCopilotMessageRole),
+    ],
+    ['CHK_course_copilot_jobs_kind', Object.values(CourseCopilotJobKind)],
+    ['CHK_course_copilot_jobs_status', Object.values(CourseCopilotJobStatus)],
+    ['CHK_course_copilot_events_type', Object.values(CourseCopilotEventType)],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

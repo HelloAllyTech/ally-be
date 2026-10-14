@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Article Writer",
+  "description": "Writes one ARTICLE item for a helper-training course: supportive reading organised around at most 5-7 key points, 600-900 words by default, with optional single-answer inline checks anchored by data-ally-question placeholders. JSON mode; html sanitised and ids re-minted in code.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

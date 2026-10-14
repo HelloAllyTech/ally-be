@@ -1024,7 +1024,9 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'spoken languages costs three sets of those. Two further calls are ' +
       'sequenced rather than parallel: `spoken_languages` decides which ' +
       'languages to fan out over, and `language_voices` then casts a voice ' +
-      'per language from the voice catalog.',
+      'per language from the voice catalog. Also invoked server-side by ' +
+      'Course Copilot (AgentBuilderChainService) for each new roleplay a ' +
+      'course needs — the same chain, tagged with courseCopilotSessionId.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
@@ -1783,12 +1785,210 @@ const BUG_HUNTER_TASKS: AiTaskEntry[] = [
  * live voice path first because it is the highest volume, then the offline
  * analysis, then the surfaces an admin clicks, then the autonomous agents.
  */
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Course Copilot — ally-be src/course-copilot (docs/course-copilot.md).
+ *
+ * One orchestrating interview agent plus one-shot specialists. Every call
+ * tags `metadata.courseCopilotSessionId` (and `jobId` during a build), which
+ * is what the session's budget ceiling sums. The specialists' prompt rows
+ * live under `course_copilot/` in Prompt Management.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const COURSE_COPILOT_TASKS: AiTaskEntry[] = [
+  {
+    id: 'course-copilot-interview',
+    task: LlmTask.COURSE_COPILOT_INTERVIEW,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A trainer talks to Course Copilot about the course they want',
+    detail:
+      'Streamed interview / edit turn, capped at COURSE_COPILOT_MAX_TOOL_ITERATIONS ' +
+      '(10) tool round-trips, plus one tool-less wrap-up call when the cap is hit. ' +
+      'The system prompt and a per-session library context block are cached; the ' +
+      'brief, blueprint or course outline rides on the newest user turn. Runs on ' +
+      'any of the three providers through AgentLlmProviderFactory — the prompt ' +
+      'row wins, so set the model there (Claude Sonnet recommended for tool-use ' +
+      'reliability in production).',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'COURSE_COPILOT_MODEL / COURSE_COPILOT_PROVIDER',
+    promptOverride: 'course_copilot_interviewer_system',
+    // Drives AgentLlmProviderFactory directly, like the character interview,
+    // so `courseCopilot.model` is genuinely what it reads — no tier.
+    configPath: 'courseCopilot.model',
+  },
+  {
+    id: 'course-copilot-blueprint',
+    task: LlmTask.COURSE_COPILOT_BLUEPRINT,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot drafts a course blueprint for approval',
+    detail:
+      'One call per propose_blueprint, from the interview brief. JSON mode. The ' +
+      'output is normalised and checked against the course limits before the ' +
+      'trainer sees it.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_blueprint_planner',
+  },
+  {
+    id: 'course-copilot-article',
+    task: LlmTask.COURSE_COPILOT_ARTICLE,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot writes an article for a course',
+    detail:
+      'One call per article item during a build, or per add/regenerate in the ' +
+      'edit loop; a second "repair" call only when the track validator rejects ' +
+      'the first. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_article_writer',
+  },
+  {
+    id: 'course-copilot-quiz',
+    task: LlmTask.COURSE_COPILOT_QUIZ,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot writes a quiz for a course',
+    detail:
+      'One call per quiz item (plus one repair call on a validator rejection). ' +
+      'JSON mode; answer keys are checked in code before anything is written.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_quiz_writer',
+  },
+  {
+    id: 'course-copilot-journal',
+    task: LlmTask.COURSE_COPILOT_JOURNAL,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
+    trigger: 'Course Copilot writes reflection prompts for a course',
+    detail: 'One short call per journal item. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'course_copilot_journal_writer',
+  },
+  {
+    id: 'course-copilot-annotation',
+    task: LlmTask.COURSE_COPILOT_ANNOTATION,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot writes an annotated transcript exercise',
+    detail:
+      'One call per annotated-artifact item: a fictional transcript plus the ' +
+      'helpful/unhelpful labels and the answer key. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_annotation_writer',
+  },
+  {
+    id: 'course-copilot-meta',
+    task: LlmTask.COURSE_COPILOT_META,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
+    trigger: "Course Copilot polishes a course's title and description",
+    detail: 'One call per build. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'course_copilot_course_meta',
+  },
+  {
+    id: 'course-copilot-review',
+    task: LlmTask.COURSE_COPILOT_REVIEW,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot reviews a course it has just built',
+    detail:
+      'One critic pass after every build job settles: outcome coverage, ' +
+      'difficulty progression, quiz keys against article facts, missing trigger ' +
+      'warnings. At most 10 findings, posted to the chat. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_course_reviewer',
+  },
+  {
+    id: 'course-copilot-summary',
+    task: LlmTask.COURSE_COPILOT_SUMMARY,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
+    trigger: 'A Course Copilot conversation grows long',
+    detail:
+      'Summarises the oldest turns once the transcript passes 40 messages, keyed ' +
+      'by the last summarised seq so it is computed once per boundary. A failure ' +
+      'falls back to full replay.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'course_copilot_history_summary',
+  },
+  {
+    id: 'course-copilot-roleplay-brief',
+    task: LlmTask.COURSE_COPILOT_ROLEPLAY_BRIEF,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger: 'Course Copilot specifies a new roleplay for a course',
+    detail:
+      'Turns one blueprint roleplay slot into the actor brief the Agent Builder ' +
+      'field chain takes; the chain itself then runs on the autofill-agent-field ' +
+      'row. JSON mode.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_roleplay_brief',
+  },
+  {
+    id: 'course-copilot-image-prompt',
+    task: LlmTask.COURSE_COPILOT_IMAGE_PROMPT,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
+    trigger: 'Course Copilot writes the prompt for a course or article image',
+    detail: 'One call per image job, before the image call itself.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'course_copilot_image_prompt',
+  },
+  {
+    id: 'course-copilot-image',
+    task: LlmTask.COURSE_COPILOT_IMAGE,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'Course Copilot generates a course cover or an article image',
+    detail:
+      'One image per cover / article-image job (≤ 12 per course), uploaded to ' +
+      'the learn-media bucket under track-media/image/. Images have no pricing ' +
+      'row, so the session budget counts each at COURSE_COPILOT_IMAGE_COST_USD.',
+    kind: AiTaskKind.IMAGE,
+    provider: 'openai',
+    defaultModel: 'gpt-image-1',
+    configuredBy: 'OPENAI_IMAGE_MODEL / GEMINI_IMAGE_MODEL',
+    configPath: 'openai.imageModel',
+  },
+];
+
 export const AI_TASK_REGISTRY: AiTaskEntry[] = [
   ...AI_LEARN_TASKS,
   ...ALLY_AI_TASKS,
   ...ALLY_BE_TASKS,
   ...BUILDER_TASKS,
   ...BUG_HUNTER_TASKS,
+  ...COURSE_COPILOT_TASKS,
 ];
 
 /**
