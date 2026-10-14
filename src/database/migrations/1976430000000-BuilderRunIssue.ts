@@ -9,8 +9,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * (`opencode github run`). The run records the issue it raised so the
  * reconcile tick can follow it to that pull request.
  */
-export class BuilderRunIssue1976410000000 implements MigrationInterface {
-  name = 'BuilderRunIssue1976410000000';
+export class BuilderRunIssue1976430000000 implements MigrationInterface {
+  name = 'BuilderRunIssue1976430000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

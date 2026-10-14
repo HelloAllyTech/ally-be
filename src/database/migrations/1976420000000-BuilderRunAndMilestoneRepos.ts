@@ -16,8 +16,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * the run are cut to it. It was a workflow input only, so the server rendered
  * every run's prompt for the whole session.
  */
-export class BuilderRunAndMilestoneRepos1976400000000 implements MigrationInterface {
-  name = 'BuilderRunAndMilestoneRepos1976400000000';
+export class BuilderRunAndMilestoneRepos1976420000000 implements MigrationInterface {
+  name = 'BuilderRunAndMilestoneRepos1976420000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
