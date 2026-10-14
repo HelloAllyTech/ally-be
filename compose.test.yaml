@@ -2,6 +2,13 @@
 # Usage: docker-compose -f compose.test.yaml up --abort-on-container-exit
 # Or use the test scripts in package.json
 
+# Its own project. Unnamed, it took the directory's name — `ally-be`, the same
+# project as docker-compose.yml — and test-docker.sh's `--remove-orphans` then
+# removed the dev stack (app, postgres, redis, localstack) as "orphans" of the
+# test run. Running the Docker tests should never take down a developer's
+# local backend.
+name: ally-be-test
+
 services:
   # PostgreSQL database for tests
   postgres-test:
