@@ -60,6 +60,11 @@ const ISSUE_BUILD_WORKFLOW = 'builder.yml';
 const ISSUE_BUILD_TIMEOUT_MS = 60 * 60_000;
 /** `/oc` fix requests Builder makes on red CI before failing the build. */
 const ISSUE_FIX_REQUESTS = 2;
+/** How long a `/oc` request on feedback may go unanswered before it is retried. */
+const OC_FIX_TIMEOUT_MS = 60 * 60_000;
+/** A branch opencode made (`opencode github run`), so its fixes go by `/oc`. */
+const isOpencodeBranch = (branch?: string | null): boolean =>
+  Boolean(branch?.startsWith('opencode/'));
 
 @Injectable()
 export class BuilderPullRequestService {
@@ -439,6 +444,7 @@ export class BuilderPullRequestService {
         repo,
         workflow: ISSUE_BUILD_WORKFLOW,
         since: run.dispatchedAt,
+        event: 'issues',
       });
       if (workflowRun && workflowRun.status !== 'completed') {
         await this.buildService.recordIssueMilestone(
@@ -581,6 +587,9 @@ export class BuilderPullRequestService {
           : {}),
       },
     );
+    // What the steps below read is the head just fetched, not the one the row
+    // was loaded with: a `/oc` request records it, and settles on it moving.
+    pullRequest.headSha = remote.headSha ?? null;
 
     // A PR that is gone has nothing left to act on. Marked rather than
     // deleted: "we saw this and it stopped mattering" is the useful record,
@@ -1738,6 +1747,10 @@ export class BuilderPullRequestService {
    * rather than a fourth `if` in this method.
    */
   private async considerFixRun(pullRequest: BuilderPullRequest): Promise<void> {
+    if (isOpencodeBranch(pullRequest.branch)) {
+      await this.considerOpencodeFix(pullRequest);
+      return;
+    }
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoFixEnabled) return;
 
@@ -1748,6 +1761,169 @@ export class BuilderPullRequestService {
     if (!pending) return;
 
     await this.buildService.dispatchFixRun(pullRequest);
+  }
+
+  /**
+   * Feedback on an opencode pull request goes to opencode, as a `/oc` comment,
+   * not to a fix run on the old runner.
+   *
+   * opencode made the branch, knows it, and is what the repo's `builder.yml`
+   * runs on a `/oc` comment; a second agent on the same branch is two
+   * authors of one change. The comment carries only a marker: the findings
+   * themselves are fetched privately by the workflow
+   * (GET /builder/pipeline/pull-requests/:id/fix-request), because ally-be,
+   * ally-web and ally-ai are public and a review reads against a private
+   * design — the same reason a build issue carries only its run id.
+   *
+   * The same guards as a fix run: the kill switch, the per-PR ceiling, and
+   * nothing in flight for the session (while the issue build runs, red CI is
+   * its to fix — reconcileIssueRun). One request at a time: opencode reports
+   * no per-item outcome, so the request stays open until the branch moves
+   * (settleOpencodeFix).
+   */
+  private async considerOpencodeFix(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    if (pullRequest.fixRequestedAt) {
+      await this.settleOpencodeFix(pullRequest);
+      return;
+    }
+
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoFixEnabled) return;
+    const ceiling = settings.maxFixRunsPerPr ?? 0;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) return;
+    if (!(await this.feedbackRepository.countPending(pullRequest.id))) return;
+    if (await this.buildService.hasRunInFlight(pullRequest.sessionId)) return;
+
+    const items = await this.feedbackRepository.listActionable(pullRequest.id);
+    if (!items.length) return;
+
+    const commentUrl = await this.github.createIssueComment(
+      pullRequest.repo,
+      pullRequest.prNumber,
+      `/oc Address Builder's review feedback on this pull request ` +
+        `(${items.length} item${items.length === 1 ? '' : 's'}). ` +
+        'Fix each one on this branch and keep every check passing. ' +
+        'Say which you fixed, and for any you disagree with, why.\n\n' +
+        `<!-- builder-feedback: ${pullRequest.id} -->`,
+    );
+    if (!commentUrl) return;
+
+    await this.feedbackRepository.update(
+      { id: In(items.map((item) => item.id)) },
+      {
+        status: BuilderPrFeedbackStatus.IN_FIX,
+        fixRunId: null,
+        replyUrl: commentUrl,
+      },
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        fixRunCount: pullRequest.fixRunCount + 1,
+        fixRequestedSha: pullRequest.headSha ?? null,
+        fixRequestedAt: new Date(),
+      },
+    );
+    this.logger.info(
+      `[BUILDER] Asked opencode to address ${items.length} feedback item(s) on ${pullRequest.repo}#${pullRequest.prNumber}: ${commentUrl}`,
+    );
+  }
+
+  /**
+   * Close an outstanding `/oc` request once opencode has answered it.
+   *
+   *  - The branch moved: opencode pushed, so the items are addressed. CI and
+   *    the next review judge whether they really are.
+   *  - opencode's run finished and the branch did not move: it answered
+   *    without changing code (its reply on the PR says why), so the items are
+   *    dismissed rather than asked again.
+   *  - Neither within the timeout: the items go back to PENDING for another
+   *    request, which the per-PR ceiling bounds.
+   */
+  private async settleOpencodeFix(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    const requestedAt = pullRequest.fixRequestedAt as Date;
+    const moved =
+      Boolean(pullRequest.headSha) &&
+      pullRequest.headSha !== pullRequest.fixRequestedSha;
+
+    let status: BuilderPrFeedbackStatus | null = null;
+    if (moved) {
+      status = BuilderPrFeedbackStatus.ADDRESSED;
+    } else {
+      const answer = await this.github.findRunSince({
+        repo: pullRequest.repo,
+        workflow: ISSUE_BUILD_WORKFLOW,
+        since: requestedAt,
+        event: 'issue_comment',
+      });
+      if (answer?.status === 'completed') {
+        status = BuilderPrFeedbackStatus.DISMISSED;
+      } else if (Date.now() - requestedAt.getTime() > OC_FIX_TIMEOUT_MS) {
+        status = BuilderPrFeedbackStatus.PENDING;
+      }
+    }
+    if (!status) return;
+
+    await this.feedbackRepository.update(
+      { pullRequestId: pullRequest.id, status: BuilderPrFeedbackStatus.IN_FIX },
+      {
+        status,
+        ...(status === BuilderPrFeedbackStatus.PENDING
+          ? {}
+          : { addressedAt: new Date() }),
+      },
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      { fixRequestedSha: null, fixRequestedAt: null },
+    );
+    this.logger.info(
+      `[BUILDER] opencode's fix request on ${pullRequest.repo}#${pullRequest.prNumber} settled: feedback ${status}.`,
+    );
+  }
+
+  /**
+   * The feedback an outstanding `/oc` request hands opencode, as its prompt.
+   * Read by the repo's `builder.yml` (builder-opencode.yml) when a `/oc`
+   * comment carries Builder's `builder-feedback` marker.
+   */
+  async fixRequestPrompt(pullRequestId: string): Promise<string> {
+    const pullRequest = await this.repository.findOne({
+      where: { id: pullRequestId },
+    });
+    if (!pullRequest) {
+      throw new NotFoundException(`No Builder pull request ${pullRequestId}.`);
+    }
+    const items = (
+      await this.feedbackRepository.listActionable(pullRequest.id)
+    ).filter((item) => item.status === BuilderPrFeedbackStatus.IN_FIX);
+    const lines = items.map((item, index) => {
+      const where = item.path
+        ? ` (${item.path}${item.line ? `:${item.line}` : ''})`
+        : '';
+      const source =
+        item.kind === BuilderPrFeedbackKind.AGENT_REVIEW
+          ? 'Review finding'
+          : item.kind === BuilderPrFeedbackKind.CI_FAILURE
+            ? 'Failing check'
+            : `Comment from ${item.author ?? 'a reviewer'}`;
+      return `${index + 1}. ${source}${where}:\n${String(item.body ?? '').trim()}`;
+    });
+    return [
+      `Address this feedback on pull request #${pullRequest.prNumber}, on its own branch.`,
+      'Fix each item where it is right. Where you disagree, change nothing for it and',
+      "say why in your reply. Keep every check passing: run the repository's typecheck,",
+      'lint and tests and fix what they report. Do not change a test to make it pass',
+      'unless the test itself is wrong, and say so if it is. Change nothing outside',
+      'what the feedback asks for. End with a short list of what you fixed, what you',
+      'disagreed with, and how you tested it.',
+      '',
+      ...(lines.length ? lines : ['(No feedback is outstanding.)']),
+    ].join('\n');
   }
 
   listBySession(sessionId: string): Promise<BuilderPullRequest[]> {

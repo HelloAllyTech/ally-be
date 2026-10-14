@@ -169,10 +169,30 @@ jobs:
           } > "${RUNNER_TEMP}/builder-prompt.md"
           echo "Fetched the spec for run ${run_id} ($(wc -c < "${RUNNER_TEMP}/builder-spec.md") bytes)."
 
+      # Builder's own `/oc` requests on review feedback carry only a marker, for
+      # the same reason the issue does: the findings read against a private
+      # design. A person's `/oc` comment has no marker and is its own prompt.
+      - name: Fetch Builder's fix request
+        if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'builder-feedback:')
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          pr_id="$(printf '%s' "$COMMENT_BODY" | grep -oE 'builder-feedback: [0-9a-f-]{36}' | head -1 | cut -d' ' -f2 || true)"
+          if [ -z "$pr_id" ]; then
+            echo "::error::Malformed builder-feedback marker; nothing to fix."
+            exit 1
+          fi
+          curl -fsS "${API}/api/v1/builder/pipeline/pull-requests/${pr_id}/fix-request" \
+            -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-prompt.md"
+          echo "Fetched the fix request for ${pr_id} ($(wc -c < "${RUNNER_TEMP}/builder-prompt.md") bytes)."
+
       - name: Run opencode
         run: |
-          # A builder issue carries its prompt in the file fetched above; a /oc
-          # comment carries its own instructions and has none.
+          # A builder issue, or Builder's own /oc fix request, carries its prompt
+          # in the file fetched above; a person's /oc comment is its own prompt.
           if [ -f "${RUNNER_TEMP}/builder-prompt.md" ]; then
             PROMPT="$(cat "${RUNNER_TEMP}/builder-prompt.md")"
             export PROMPT

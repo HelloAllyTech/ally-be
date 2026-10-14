@@ -291,6 +291,12 @@ export class GithubActionsService {
     repo: string;
     workflow: string;
     since: Date;
+    /**
+     * The event that started the run. A Builder `builder.yml` run starts on
+     * `issues` or `issue_comment`, never `workflow_dispatch`, so filtering on
+     * the dispatch event never found one.
+     */
+    event?: string;
   }): Promise<WorkflowRun | null> {
     this.requireConfigured();
     try {
@@ -298,13 +304,17 @@ export class GithubActionsService {
         this.url(params.repo, `actions/workflows/${params.workflow}/runs`),
         {
           headers: this.headers,
-          params: { event: 'workflow_dispatch', per_page: 30 },
+          params: { event: params.event ?? 'workflow_dispatch', per_page: 30 },
           timeout: 15_000,
         },
       );
       const candidates = (data?.workflow_runs ?? [])
         .map((run: any) => this.toWorkflowRun(run))
         .filter((run: WorkflowRun) => run.createdAt >= params.since)
+        // A workflow whose job condition is false still records a run, as
+        // `skipped`: `builder.yml` does so for every comment and every other
+        // label in the repo. Those are not the run anyone is looking for.
+        .filter((run: WorkflowRun) => run.conclusion !== 'skipped')
         .sort(
           (a: WorkflowRun, b: WorkflowRun) =>
             a.createdAt.getTime() - b.createdAt.getTime(),

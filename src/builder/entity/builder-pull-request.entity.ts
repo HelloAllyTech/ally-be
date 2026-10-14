@@ -79,6 +79,19 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   fixRunCount!: number;
 
   /**
+   * The head commit an outstanding `/oc` fix request was made against, and
+   * when. Set only on opencode pull requests, where feedback is handed to
+   * opencode as a `/oc` comment rather than to a fix run: opencode reports no
+   * per-item outcome, so a new head commit is how Builder learns it answered.
+   * Null when no request is outstanding.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  fixRequestedSha?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  fixRequestedAt?: Date | null;
+
+  /**
    * How many review runs this PR has had. Bounded for the same reason fix runs
    * are: a reviewer dispatched on every reconcile tick would re-read an
    * unchanged diff every few minutes and bill for it.

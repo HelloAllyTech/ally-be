@@ -2190,6 +2190,14 @@ export class BuilderBuildService {
     );
   }
 
+  /**
+   * Whether the session has a run in flight or parked on a question — the
+   * guard dispatchFixRun applies, for fixes that are not a run (`/oc`).
+   */
+  async hasRunInFlight(sessionId: string): Promise<boolean> {
+    return (await this.runRepository.countBlockingRuns(sessionId)) > 0;
+  }
+
   /** Active issue-dispatched builds, for the PR tick to follow (BuilderPullRequestService). */
   async listActiveIssueRuns(): Promise<BuilderBuildRun[]> {
     return (await this.runRepository.listActive()).filter((run) =>

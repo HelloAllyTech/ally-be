@@ -901,6 +901,24 @@ export class BuilderPipelineController {
       .join('\n\n---\n\n');
   }
 
+  /**
+   * The feedback a `/oc` fix request hands opencode on one of its pull
+   * requests. Fetched by builder-opencode.yml when the `/oc` comment carries
+   * Builder's `builder-feedback` marker, so findings never appear in a public
+   * repo's comments (BuilderPullRequestService.considerOpencodeFix).
+   */
+  @Get('pull-requests/:pullRequestId/fix-request')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'The feedback an outstanding /oc fix request asks opencode to address',
+  })
+  async getFixRequest(
+    @Param('pullRequestId', ParseUUIDPipe) pullRequestId: string,
+  ): Promise<string> {
+    return this.pullRequestService.fixRequestPrompt(pullRequestId);
+  }
+
   @Get('runs/:runId/design-review-prompt')
   @Header('Content-Type', 'text/plain; charset=utf-8')
   @ApiOperation({

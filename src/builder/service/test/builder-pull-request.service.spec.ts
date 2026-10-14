@@ -695,6 +695,198 @@ describe('BuilderPullRequestService', () => {
     });
   });
 
+  /**
+   * An opencode pull request's feedback goes to opencode, as a `/oc` comment
+   * carrying only a marker, not to a fix run on the old runner.
+   */
+  describe('feedback on an opencode pull request', () => {
+    const ocPr = (overrides: Record<string, any> = {}) =>
+      openPr({ branch: 'opencode/issue113-20261014085905', ...overrides });
+    const finding = {
+      id: 'fb-1',
+      kind: 'agent_review',
+      status: 'pending',
+      author: 'builder-review',
+      body: 'promptHtml is not sanitized before render.',
+      path: 'src/journal.tsx',
+      line: 12,
+    };
+
+    beforeEach(() => {
+      github.createIssueComment = jest
+        .fn()
+        .mockResolvedValue('https://github.com/org/ally-be/pull/42#c1');
+      github.findRunSince = jest.fn().mockResolvedValue(null);
+      buildService.hasRunInFlight = jest.fn().mockResolvedValue(false);
+    });
+
+    it('asks opencode with a marker-only /oc comment instead of a fix run', async () => {
+      feedbackRepository.countPending.mockResolvedValue(1);
+      feedbackRepository.listActionable.mockResolvedValue([finding]);
+
+      await reconcileWith({ headSha: 'head-1' }, ocPr());
+
+      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+      const [repo, number, body] = github.createIssueComment.mock.calls[0];
+      expect([repo, number]).toEqual(['ally-be', 42]);
+      expect(body).toMatch(/^\/oc /);
+      expect(body).toContain('<!-- builder-feedback: pr-1 -->');
+      // ally-be, ally-web and ally-ai are public: the finding stays private.
+      expect(body).not.toContain('sanitized');
+      expect(feedbackRepository.update).toHaveBeenCalledWith(
+        { id: expect.anything() },
+        expect.objectContaining({
+          status: 'in_fix',
+          fixRunId: null,
+          replyUrl: 'https://github.com/org/ally-be/pull/42#c1',
+        }),
+      );
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          fixRunCount: 1,
+          fixRequestedSha: 'head-1',
+          fixRequestedAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('leaves red CI to the issue build while that run is in flight', async () => {
+      feedbackRepository.countPending.mockResolvedValue(1);
+      buildService.hasRunInFlight.mockResolvedValue(true);
+
+      await reconcileWith({ headSha: 'head-1' }, ocPr());
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+    });
+
+    it('respects the per-PR ceiling and the autoFix switch', async () => {
+      feedbackRepository.countPending.mockResolvedValue(1);
+      await reconcileWith({ headSha: 'head-1' }, ocPr({ fixRunCount: 3 }));
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: false,
+        maxFixRunsPerPr: 3,
+      });
+      await reconcileWith({ headSha: 'head-1' }, ocPr());
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('marks the feedback addressed once opencode moves the branch', async () => {
+      await reconcileWith(
+        { headSha: 'head-2' },
+        ocPr({ fixRequestedSha: 'head-1', fixRequestedAt: new Date() }),
+      );
+
+      expect(feedbackRepository.update).toHaveBeenCalledWith(
+        { pullRequestId: 'pr-1', status: 'in_fix' },
+        expect.objectContaining({ status: 'addressed' }),
+      );
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        { fixRequestedSha: null, fixRequestedAt: null },
+      );
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('dismisses it when opencode answered without changing the branch', async () => {
+      github.findRunSince.mockResolvedValue({
+        id: '9',
+        status: 'completed',
+        conclusion: 'success',
+      });
+
+      await reconcileWith(
+        { headSha: 'head-1' },
+        ocPr({ fixRequestedSha: 'head-1', fixRequestedAt: new Date() }),
+      );
+
+      expect(github.findRunSince).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workflow: 'builder.yml',
+          event: 'issue_comment',
+        }),
+      );
+      expect(feedbackRepository.update).toHaveBeenCalledWith(
+        { pullRequestId: 'pr-1', status: 'in_fix' },
+        expect.objectContaining({ status: 'dismissed' }),
+      );
+    });
+
+    it('waits while opencode is still working, then retries after the timeout', async () => {
+      github.findRunSince.mockResolvedValue({ id: '9', status: 'in_progress' });
+      await reconcileWith(
+        { headSha: 'head-1' },
+        ocPr({ fixRequestedSha: 'head-1', fixRequestedAt: new Date() }),
+      );
+      expect(feedbackRepository.update).not.toHaveBeenCalledWith(
+        { pullRequestId: 'pr-1', status: 'in_fix' },
+        expect.anything(),
+      );
+
+      github.findRunSince.mockResolvedValue(null);
+      await reconcileWith(
+        { headSha: 'head-1' },
+        ocPr({
+          fixRequestedSha: 'head-1',
+          fixRequestedAt: new Date(Date.now() - 61 * 60_000),
+        }),
+      );
+      expect(feedbackRepository.update).toHaveBeenCalledWith(
+        { pullRequestId: 'pr-1', status: 'in_fix' },
+        { status: 'pending' },
+      );
+    });
+
+    it('still sends a builder/ branch to a fix run', async () => {
+      feedbackRepository.countPending.mockResolvedValue(1);
+
+      await reconcileWith({ headSha: 'head-1' }, openPr());
+
+      expect(buildService.dispatchFixRun).toHaveBeenCalled();
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('hands the workflow the claimed feedback as its prompt', async () => {
+      repository.findOne.mockResolvedValue(ocPr());
+      feedbackRepository.listActionable.mockResolvedValue([
+        { ...finding, status: 'in_fix' },
+        {
+          id: 'fb-2',
+          kind: 'ci_failure',
+          status: 'in_fix',
+          body: 'The check "Jest" failed on head-1.',
+        },
+        {
+          id: 'fb-3',
+          kind: 'review_comment',
+          status: 'pending',
+          body: 'later',
+        },
+      ]);
+
+      const prompt = await service.fixRequestPrompt('pr-1');
+
+      expect(prompt).toContain('pull request #42');
+      expect(prompt).toContain(
+        '1. Review finding (src/journal.tsx:12):\npromptHtml is not sanitized before render.',
+      );
+      expect(prompt).toContain('2. Failing check:\nThe check "Jest" failed');
+      // Only what the outstanding request claimed.
+      expect(prompt).not.toContain('later');
+    });
+
+    it('404s for a pull request Builder does not know', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(service.fixRequestPrompt('nope')).rejects.toThrow(
+        /No Builder pull request/,
+      );
+    });
+  });
+
   describe('the auto-fix decision', () => {
     const withPendingFeedback = (count = 1) =>
       feedbackRepository.countPending.mockResolvedValue(count);

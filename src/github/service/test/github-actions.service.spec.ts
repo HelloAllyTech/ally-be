@@ -308,6 +308,83 @@ describe('GithubActionsService.getCheckRollup', () => {
   });
 });
 
+describe('GithubActionsService.findRunSince', () => {
+  let service: GithubActionsService;
+  const configService = {
+    githubToken: 'gh-token',
+    githubOrg: 'helloallytech',
+  } as unknown as AppConfigService;
+  const since = new Date('2026-10-14T08:54:00Z');
+  const run = (id: number, createdAt: string, conclusion: string | null) => ({
+    id,
+    html_url: `https://github.com/r/${id}`,
+    status: conclusion ? 'completed' : 'in_progress',
+    conclusion,
+    created_at: createdAt,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new GithubActionsService(configService);
+  });
+
+  it('finds a builder.yml run started by an issue, not only by a dispatch', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { workflow_runs: [run(7, '2026-10-14T08:54:09Z', null)] },
+    } as any);
+
+    const found = await service.findRunSince({
+      repo: 'ally-mobile',
+      workflow: 'builder.yml',
+      since,
+      event: 'issues',
+    });
+
+    expect(found?.id).toBe('7');
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('actions/workflows/builder.yml/runs'),
+      expect.objectContaining({
+        params: expect.objectContaining({ event: 'issues' }),
+      }),
+    );
+  });
+
+  it('passes over runs whose job was skipped (every other comment and label)', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        workflow_runs: [
+          run(5, '2026-10-14T08:54:05Z', 'skipped'),
+          run(6, '2026-10-14T08:55:00Z', null),
+        ],
+      },
+    } as any);
+
+    const found = await service.findRunSince({
+      repo: 'ally-mobile',
+      workflow: 'builder.yml',
+      since,
+      event: 'issue_comment',
+    });
+
+    expect(found?.id).toBe('6');
+  });
+
+  it('still defaults to dispatched runs', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { workflow_runs: [] },
+    } as any);
+
+    await service.findRunSince({ repo: 'ally-be', workflow: 'x.yml', since });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        params: expect.objectContaining({ event: 'workflow_dispatch' }),
+      }),
+    );
+  });
+});
+
 describe('GithubActionsService.deleteBranch', () => {
   let service: GithubActionsService;
   const configService = {
