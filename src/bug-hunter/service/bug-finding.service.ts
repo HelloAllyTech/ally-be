@@ -643,35 +643,76 @@ export class BugFindingService {
           ? shipped
           : null;
 
-      const saved = await this.findingRepository.save(
-        this.findingRepository.create({
-          runId,
-          repo,
-          source: finding.source,
-          title: truncateTitle(finding.description),
-          description: finding.description,
-          file: finding.file ?? null,
-          symbol: finding.symbol ?? null,
-          evidence: finding.evidence ?? null,
-          severity: finding.severity ?? null,
-          // Same rows as before — the column defaults these to false, so an
-          // omitted value already landed as false. Naming it just stops the
-          // insert depending on TypeORM skipping an undefined.
-          proven: finding.proven ?? false,
-          touchesGuardedPath: finding.touchesGuardedPath ?? false,
-          reportedBugId: finding.reportedBugId ?? null,
-          dedupeKey,
-          status: BugFindingStatus.NEW,
-          ...(regressionOf || finding.pr
-            ? {
-                metadata: {
-                  ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
-                  ...(finding.pr ? { pr: finding.pr } : {}),
-                },
-              }
-            : {}),
-        }),
-      );
+      try {
+        saved = await this.findingRepository.save(
+          this.findingRepository.create({
+            runId,
+            repo,
+            source: finding.source,
+            title: truncateTitle(finding.description),
+            description: finding.description,
+            file: finding.file ?? null,
+            symbol: finding.symbol ?? null,
+            evidence: finding.evidence ?? null,
+            severity: finding.severity ?? null,
+            // Same rows as before — the column defaults these to false, so an
+            // omitted value already landed as false. Naming it just stops the
+            // insert depending on TypeORM skipping an undefined.
+            proven: finding.proven ?? false,
+            touchesGuardedPath: finding.touchesGuardedPath ?? false,
+            reportedBugId: finding.reportedBugId ?? null,
+            dedupeKey,
+            status: BugFindingStatus.NEW,
+            ...(regressionOf || finding.pr
+              ? {
+                  metadata: {
+                    ...(regressionOf ? { regressionOf: regressionOf.id } : {}),
+                    ...(finding.pr ? { pr: finding.pr } : {}),
+                  },
+                }
+              : {}),
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('FK_bug_findings_reported_bug_id')
+        ) {
+          this.logger.warn(
+            `Foreign key violation for reportedBugId ${finding.reportedBugId}. Retrying with null.`,
+          );
+          saved = await this.findingRepository.save(
+            this.findingRepository.create({
+              runId,
+              repo,
+              source: finding.source,
+              title: truncateTitle(finding.description),
+              description: finding.description,
+              file: finding.file ?? null,
+              symbol: finding.symbol ?? null,
+              evidence: finding.evidence ?? null,
+              severity: finding.severity ?? null,
+              proven: finding.proven ?? false,
+              touchesGuardedPath: finding.touchesGuardedPath ?? false,
+              reportedBugId: null,
+              dedupeKey,
+              status: BugFindingStatus.NEW,
+              ...(regressionOf || finding.pr
+                ? {
+                    metadata: {
+                      ...(regressionOf
+                        ? { regressionOf: regressionOf.id }
+                        : {}),
+                      ...(finding.pr ? { pr: finding.pr } : {}),
+                    },
+                  }
+                : {}),
+            }),
+          );
+        } else {
+          throw error;
+        }
+      }
 
       if (regressionOf) {
         await this.markRegression(saved, regressionOf, runId);
