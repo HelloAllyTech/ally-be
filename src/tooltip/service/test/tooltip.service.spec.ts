@@ -8,6 +8,7 @@ import { CreateTooltipDto } from '../../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../../dto/update-tooltip.dto';
 import { NotFoundException } from 'src/exception/custom.exception';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 describe('TooltipService', () => {
   let service: TooltipService;
@@ -46,6 +47,13 @@ describe('TooltipService', () => {
             createUpdateTooltipTranslations: jest
               .fn()
               .mockResolvedValue(undefined),
+            getTooltipsWithTranslations: jest.fn(),
+          },
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: {
+            getLanguageByLanguageCode: jest.fn(),
           },
         },
       ],
@@ -308,6 +316,62 @@ describe('TooltipService', () => {
       const result = await service.getActiveTooltips();
 
       expect(result).toEqual([]);
+    });
+
+    it('should return translated tooltips when language code is provided', async () => {
+      const activeTooltips = [mockTooltip];
+      tooltipRepository.getActiveTooltips.mockResolvedValue(activeTooltips);
+      const language = {
+        id: 2,
+        value: 'es',
+        label: 'Spanish',
+        translationCode: 'es',
+        active: true,
+        llmProviderConfig: {},
+        sttProviderConfig: {},
+        evalConfig: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const sharedLanguageService = service[
+        'sharedLanguageService'
+      ] as jest.Mocked<SharedLanguageService>;
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+        language,
+      );
+      const translatedTooltips = [{ ...mockTooltip, tipText: 'translated' }];
+      translationService.getTooltipsWithTranslations.mockResolvedValue(
+        translatedTooltips,
+      );
+
+      const result = await service.getActiveTooltips('es');
+
+      expect(
+        sharedLanguageService.getLanguageByLanguageCode,
+      ).toHaveBeenCalledWith('es');
+      expect(
+        translationService.getTooltipsWithTranslations,
+      ).toHaveBeenCalledWith(activeTooltips, language.id);
+      expect(result).toEqual(translatedTooltips);
+    });
+
+    it('should return untranslated tooltips when language code is invalid', async () => {
+      const activeTooltips = [mockTooltip];
+      tooltipRepository.getActiveTooltips.mockResolvedValue(activeTooltips);
+      const sharedLanguageService = service[
+        'sharedLanguageService'
+      ] as jest.Mocked<SharedLanguageService>;
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(null);
+
+      const result = await service.getActiveTooltips('invalid');
+
+      expect(
+        sharedLanguageService.getLanguageByLanguageCode,
+      ).toHaveBeenCalledWith('invalid');
+      expect(
+        translationService.getTooltipsWithTranslations,
+      ).not.toHaveBeenCalled();
+      expect(result).toEqual(activeTooltips);
     });
   });
 });

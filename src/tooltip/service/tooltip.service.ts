@@ -4,6 +4,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import isDuplicateKeyException, {
   NotFoundException,
 } from 'src/exception/custom.exception';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 import { CreateTooltipDto } from '../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../dto/update-tooltip.dto';
@@ -23,6 +24,7 @@ export class TooltipService {
   constructor(
     private readonly tooltipRepository: TooltipRepository,
     private readonly translationService: TooltipTranslationService,
+    private readonly sharedLanguageService: SharedLanguageService,
   ) {}
 
   async createTooltip(createDto: CreateTooltipDto): Promise<Tooltip> {
@@ -81,7 +83,20 @@ export class TooltipService {
     return this.tooltipRepository.getTooltips(search, options);
   }
 
-  async getActiveTooltips() {
-    return this.tooltipRepository.getActiveTooltips();
+  async getActiveTooltips(languageCode?: string) {
+    const tooltips = await this.tooltipRepository.getActiveTooltips();
+    if (languageCode) {
+      const language =
+        await this.sharedLanguageService.getLanguageByLanguageCode(
+          languageCode,
+        );
+      if (language) {
+        return this.translationService.getTooltipsWithTranslations(
+          tooltips as Tooltip[],
+          language.id,
+        );
+      }
+    }
+    return tooltips;
   }
 }
