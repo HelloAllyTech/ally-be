@@ -330,12 +330,17 @@ jobs:
           BUILDER_PR_ID: ${{ inputs.builder_pr_id }}
         run: |
           set -euo pipefail
+          HEAD_SHA="$(git rev-parse --short HEAD)"
+          export HEAD_SHA
           python3 - > "${RUNNER_TEMP}/filed.json" <<'PY'
           import json, os
           r = json.load(open(f"{os.environ['RUNNER_TEMP']}/review.json"))
+          # Keyed by the commit reviewed: Builder ignores a finding it has
+          # already recorded, so a problem that survives a fix round must come
+          # back as new, not be swallowed as a duplicate of the old one.
           findings = [
               {
-                  "key": f.get("key"),
+                  "key": f"{os.environ['HEAD_SHA']}:{f.get('key')}",
                   "path": f.get("path"),
                   "line": f.get("line") if isinstance(f.get("line"), int) else None,
                   "body": f"[{f.get('severity')}] {f.get('title')}\n\n{f.get('scenario')}\n\nFix: {f.get('fix')}",
