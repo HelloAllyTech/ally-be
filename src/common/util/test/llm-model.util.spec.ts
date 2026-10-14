@@ -1,4 +1,5 @@
 import {
+  claudeModelAcceptsForcedToolChoice,
   isOpenAiModel,
   isGeminiModel,
   modelSupportsTemperature,
@@ -17,6 +18,41 @@ describe('llm-model.util', () => {
       [undefined, false],
     ])('isOpenAiModel(%s) = %s', (model, expected) => {
       expect(isOpenAiModel(model as string | undefined)).toBe(expected);
+    });
+  });
+
+  describe('claudeModelAcceptsForcedToolChoice', () => {
+    it.each([
+      // Known to accept a forced tool_choice.
+      ['claude-3-haiku-20240307', true],
+      ['claude-3-5-sonnet-20241022', true],
+      ['claude-opus-4-20250514', true],
+      ['claude-opus-4-1', true],
+      ['claude-sonnet-4-5-20250929', true],
+      ['claude-sonnet-4-6', true],
+      ['claude-haiku-4-5', true],
+      ['claude-opus-4-8', true],
+      ['claude-opus-5', true],
+      ['claude-sonnet-5', true],
+      ['claude-fable-5', true],
+      ['claude-mythos-5', true],
+      ['claude-haiku-5-5', true],
+      ['  Claude-Sonnet-4-6 ', true],
+      // Reject one with a 400.
+      ['claude-opus-5-5', false],
+      ['claude-sonnet-5-5', false],
+      ['claude-fable-5-1', false],
+      ['claude-mythos-5-1', false],
+      // Unrecognised: not known to accept, so treated as rejecting.
+      ['claude-opus-6', false],
+      ['claude-mythos-preview', false],
+      ['gpt-4o', false],
+      ['', false],
+      [undefined, false],
+    ])('claudeModelAcceptsForcedToolChoice(%s) = %s', (model, expected) => {
+      expect(
+        claudeModelAcceptsForcedToolChoice(model as string | undefined),
+      ).toBe(expected);
     });
   });
 
