@@ -64,7 +64,9 @@ const EDIT = { permissions: [PERMISSIONS.EDIT_COURSE_COPILOT] };
 @ApiSecurity('access-token')
 @Controller('/v1/course-copilot')
 export class CourseCopilotController {
-  private readonly logger = LoggerService.getInstance(CourseCopilotController.name);
+  private readonly logger = LoggerService.getInstance(
+    CourseCopilotController.name,
+  );
 
   constructor(
     private readonly sessionService: CourseCopilotSessionService,
@@ -77,8 +79,13 @@ export class CourseCopilotController {
 
   @Post('sessions')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Start a session, or open one on an existing course (EDIT mode)' })
-  createSession(@Body() dto: CreateCourseCopilotSessionDto, @CurrentUser() user: TokenUser) {
+  @ApiOperation({
+    summary: 'Start a session, or open one on an existing course (EDIT mode)',
+  })
+  createSession(
+    @Body() dto: CreateCourseCopilotSessionDto,
+    @CurrentUser() user: TokenUser,
+  ) {
     return this.sessionService.createSession(user, { trackId: dto.trackId });
   }
 
@@ -92,18 +99,27 @@ export class CourseCopilotController {
   @Get('sessions/:sessionId')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, VIEW)
   @ApiQuery({ name: 'afterSeq', required: false })
-  @ApiOperation({ summary: 'A session with transcript, jobs, events after afterSeq, outline and budget' })
+  @ApiOperation({
+    summary:
+      'A session with transcript, jobs, events after afterSeq, outline and budget',
+  })
   getSession(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Query('afterSeq') afterSeq: string | undefined,
     @CurrentUser() user: TokenUser,
   ) {
-    return this.sessionService.getDetail(sessionId, user.id, Number(afterSeq) || 0);
+    return this.sessionService.getDetail(
+      sessionId,
+      user.id,
+      Number(afterSeq) || 0,
+    );
   }
 
   @Put('sessions/:sessionId/blueprint')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Save the blueprint as edited in the tree (version-checked)' })
+  @ApiOperation({
+    summary: 'Save the blueprint as edited in the tree (version-checked)',
+  })
   async updateBlueprint(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() dto: UpdateCourseCopilotBlueprintDto,
@@ -115,22 +131,35 @@ export class CourseCopilotController {
 
   @Post('sessions/:sessionId/blueprint/approve')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Approve the blueprint: create the DRAFT course and start the build' })
+  @ApiOperation({
+    summary:
+      'Approve the blueprint: create the DRAFT course and start the build',
+  })
   async approveBlueprint(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() dto: ApproveCourseCopilotBlueprintDto,
     @CurrentUser() user: TokenUser,
   ) {
     const session = await this.sessionService.getOwned(sessionId, user.id);
-    const approved = await this.blueprintService.approve(session, dto.version, user.id);
-    await this.buildService.createJobsForBlueprint(approved, approved.approvedBlueprint!);
+    const approved = await this.blueprintService.approve(
+      session,
+      dto.version,
+      user.id,
+    );
+    await this.buildService.createJobsForBlueprint(
+      approved,
+      approved.approvedBlueprint!,
+    );
     this.buildService.start(approved.id);
     return this.sessionService.getDetail(sessionId, user.id);
   }
 
   @Post('sessions/:sessionId/build/retry')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Re-queue failed or skipped jobs (all of them when jobIds is omitted)' })
+  @ApiOperation({
+    summary:
+      'Re-queue failed or skipped jobs (all of them when jobIds is omitted)',
+  })
   async retryBuild(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() dto: RetryCourseCopilotBuildDto,
@@ -166,7 +195,10 @@ export class CourseCopilotController {
 
   @Post('sessions/:sessionId/budget')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Raise the ceiling (0 = uncapped); releases jobs held at the old one' })
+  @ApiOperation({
+    summary:
+      'Raise the ceiling (0 = uncapped); releases jobs held at the old one',
+  })
   async raiseBudget(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() dto: RaiseCourseCopilotBudgetDto,
@@ -174,12 +206,16 @@ export class CourseCopilotController {
   ) {
     const session = await this.sessionService.getOwned(sessionId, user.id);
     await this.buildService.raiseBudget(session, dto.budgetUsd);
-    return this.costService.budget(await this.sessionService.getOwned(sessionId, user.id));
+    return this.costService.budget(
+      await this.sessionService.getOwned(sessionId, user.id),
+    );
   }
 
   @Post('sessions/:sessionId/archive')
   @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
-  @ApiOperation({ summary: 'Archive the session (the course it made is untouched)' })
+  @ApiOperation({
+    summary: 'Archive the session (the course it made is untouched)',
+  })
   async archive(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @CurrentUser() user: TokenUser,
@@ -223,10 +259,16 @@ export class CourseCopilotController {
     // One turn at a time per session: two streams would interleave tool loops
     // over the same transcript and the same course.
     const lockKey = `${COURSE_COPILOT_TURN_LOCK_PREFIX}:${sessionId}`;
-    if (!(await this.redisService.acquireLock(lockKey, COURSE_COPILOT_TURN_LOCK_TTL_SECONDS))) {
+    if (
+      !(await this.redisService.acquireLock(
+        lockKey,
+        COURSE_COPILOT_TURN_LOCK_TTL_SECONDS,
+      ))
+    ) {
       safeWrite('error', {
         code: COURSE_COPILOT_ERROR_CODES.TURN_IN_PROGRESS,
-        message: 'A reply is still being written for this session. Wait for it to finish.',
+        message:
+          'A reply is still being written for this session. Wait for it to finish.',
       });
       res.end();
       return;
@@ -239,7 +281,11 @@ export class CourseCopilotController {
 
     try {
       try {
-        for await (const frame of this.orchestrator.streamTurn(sessionId, dto, user.id)) {
+        for await (const frame of this.orchestrator.streamTurn(
+          sessionId,
+          dto,
+          user.id,
+        )) {
           safeWrite(frame.event, frame.data);
           // Stop / reload / closed tab: end the loop so the generator settles
           // the transcript row and the lock is released now, not at its TTL.
@@ -251,21 +297,26 @@ export class CourseCopilotController {
           error instanceof NotFoundException
             ? COURSE_COPILOT_ERROR_CODES.SESSION_NOT_FOUND
             : COURSE_COPILOT_ERROR_CODES.STREAM_FAILED;
-        this.logger.error(`Course Copilot stream failed for ${sessionId}: ${detail}`);
+        this.logger.error(
+          `Course Copilot stream failed for ${sessionId}: ${detail}`,
+        );
         safeWrite('error', {
           code,
-          message: error instanceof HttpException ? detail : STREAM_FAILED_MESSAGE,
+          message:
+            error instanceof HttpException ? detail : STREAM_FAILED_MESSAGE,
         });
       }
     } finally {
       clearInterval(heartbeat);
-      await this.redisService.releaseLock(lockKey).catch((error) =>
-        this.logger.warn(
-          `Failed to release Course Copilot turn lock for ${sessionId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        ),
-      );
+      await this.redisService
+        .releaseLock(lockKey)
+        .catch((error) =>
+          this.logger.warn(
+            `Failed to release Course Copilot turn lock for ${sessionId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
       if (!res.writableEnded) res.end();
     }
   }

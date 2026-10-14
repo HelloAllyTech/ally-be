@@ -124,14 +124,21 @@ export class CourseCopilotBlueprintService {
     // Library picks must still be live: a roleplay archived since the
     // interview cannot be referenced by a course.
     problems.push(...(await this.staleLibraryProblems(blueprint)));
-    return { blueprint, problems, warnings: blueprintWarnings(blueprint, brief) };
+    return {
+      blueprint,
+      problems,
+      warnings: blueprintWarnings(blueprint, brief),
+    };
   }
 
   async response(
     session: CourseCopilotSession,
   ): Promise<CourseCopilotBlueprintResponse | null> {
     if (!session.blueprint) return null;
-    const { blueprint, problems } = await this.evaluate(session, session.blueprint);
+    const { blueprint, problems } = await this.evaluate(
+      session,
+      session.blueprint,
+    );
     return {
       blueprint,
       version: session.blueprintVersion,
@@ -186,11 +193,14 @@ export class CourseCopilotBlueprintService {
 
     const brief = session.brief ?? {};
     const competencyIds = [
-      ...new Set([...(blueprint.competencyIds ?? []), ...(brief.competencyIds ?? [])]),
+      ...new Set([
+        ...(blueprint.competencyIds ?? []),
+        ...(brief.competencyIds ?? []),
+      ]),
     ].slice(0, TRACK_MAX_COMPETENCIES);
     const coverImageUrl =
       blueprint.cover?.mode === 'library'
-        ? blueprint.cover.imageUrl ?? brief.look?.coverImageUrl
+        ? (blueprint.cover.imageUrl ?? brief.look?.coverImageUrl)
         : undefined;
 
     // Claim the transition first: a double-clicked Approve must create one
@@ -240,7 +250,9 @@ export class CourseCopilotBlueprintService {
     this.logger.info(
       `Course Copilot ${session.id}: blueprint v${session.blueprintVersion} approved → track ${track.id}`,
     );
-    return (await this.sessionRepository.findOne({ where: { id: session.id } }))!;
+    return (await this.sessionRepository.findOne({
+      where: { id: session.id },
+    }))!;
   }
 
   private async store(
@@ -250,8 +262,9 @@ export class CourseCopilotBlueprintService {
   ): Promise<CourseCopilotBlueprintResponse> {
     const { blueprint, problems } = await this.evaluate(session, raw);
     const rows: { blueprintVersion: number }[] =
-      await this.sessionRepository.manager.query(
-        `UPDATE "course_copilot_sessions"
+      await this.sessionRepository.manager
+        .query(
+          `UPDATE "course_copilot_sessions"
             SET "blueprint" = $2::jsonb,
                 "blueprintVersion" = "blueprintVersion" + 1,
                 "title" = $3,
@@ -259,14 +272,19 @@ export class CourseCopilotBlueprintService {
                 "updatedAt" = now()
           WHERE id = $1
           RETURNING "blueprintVersion"`,
-        [
-          session.id,
-          JSON.stringify(blueprint),
-          blueprint.title?.slice(0, 200) || session.title,
-          extra.status ?? null,
-        ],
-      ).then((result: any) => (Array.isArray(result?.[0]) ? result[0] : result));
-    const version = Number(rows?.[0]?.blueprintVersion ?? session.blueprintVersion + 1);
+          [
+            session.id,
+            JSON.stringify(blueprint),
+            blueprint.title?.slice(0, 200) || session.title,
+            extra.status ?? null,
+          ],
+        )
+        .then((result: any) =>
+          Array.isArray(result?.[0]) ? result[0] : result,
+        );
+    const version = Number(
+      rows?.[0]?.blueprintVersion ?? session.blueprintVersion + 1,
+    );
     session.blueprint = blueprint;
     session.blueprintVersion = version;
     if (extra.status) session.status = extra.status;
@@ -309,7 +327,7 @@ export class CourseCopilotBlueprintService {
       scenarioId: scenario.id,
       title: scenario.title ?? `Roleplay ${scenario.id}`,
       competency: scenario.competencyId
-        ? names.get(scenario.competencyId) ?? null
+        ? (names.get(scenario.competencyId) ?? null)
         : null,
       difficulty: (scenario as any).difficultyLevel ?? null,
     }));

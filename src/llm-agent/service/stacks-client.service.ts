@@ -52,9 +52,7 @@ export const STACKS_TIMEOUT_MS = 20_000;
  */
 @Injectable()
 export class StacksClientService {
-  private readonly logger = LoggerService.getInstance(
-    StacksClientService.name,
-  );
+  private readonly logger = LoggerService.getInstance(StacksClientService.name);
 
   constructor(private readonly configService: AppConfigService) {}
 

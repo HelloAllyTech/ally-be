@@ -169,8 +169,8 @@ export class CourseCopilotJobRepository extends Repository<CourseCopilotJob> {
     const rows = returningRows<{ id: string }>(
       await this.manager.query(
         `UPDATE "course_copilot_jobs"
-            SET "status" = $2, "result" = COALESCE($3::jsonb, "result"),
-                "error" = $4, "finishedAt" = now(), "updatedAt" = now()
+            SET "status" = $2::varchar, "result" = COALESCE($3::jsonb, "result"),
+                "error" = $4::text, "finishedAt" = now(), "updatedAt" = now()
           WHERE id = $1 AND "status" = 'running'
           RETURNING id`,
         [
@@ -206,10 +206,12 @@ export class CourseCopilotJobRepository extends Repository<CourseCopilotJob> {
     const rows = returningRows<{ id: string }>(
       await this.manager.query(
         `UPDATE "course_copilot_jobs"
-            SET "status" = $3,
-                "error" = CASE WHEN $4::boolean THEN $5 ELSE "error" END,
+            SET "status" = $3::varchar,
+                "error" = CASE WHEN $4::boolean THEN $5::text ELSE "error" END,
                 "attempts" = CASE WHEN $6::boolean THEN 0 ELSE "attempts" END,
-                "finishedAt" = CASE WHEN $3 IN ('done','failed','skipped') THEN now() ELSE NULL END,
+                -- Explicit casts: $3 appears twice and Postgres refuses to
+                -- deduce one type for it from a column and an IN list.
+                "finishedAt" = CASE WHEN $3::varchar IN ('done','failed','skipped') THEN now() ELSE NULL END,
                 "updatedAt" = now()
           WHERE id = ANY($1::uuid[]) AND "status" = ANY($2::varchar[])
           RETURNING id`,
@@ -231,8 +233,8 @@ export class CourseCopilotJobRepository extends Repository<CourseCopilotJob> {
     return this.createQueryBuilder('job')
       .where('job.status = :status', { status: CourseCopilotJobStatus.RUNNING })
       .andWhere(
-        `COALESCE(job."heartbeatAt", job."startedAt", job."createdAt") < now() - (:ms || ' milliseconds')::interval`,
-        { ms: String(staleMs) },
+        `COALESCE(job."heartbeatAt", job."startedAt", job."createdAt") < now() - make_interval(secs => :seconds)`,
+        { seconds: Math.round(staleMs / 1000) },
       )
       .getMany();
   }

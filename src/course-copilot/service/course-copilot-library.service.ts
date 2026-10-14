@@ -134,9 +134,7 @@ export class CourseCopilotLibraryService {
     return rows.map((row) => ({ id: row.id, name: row.name }));
   }
 
-  async listCoverImages(
-    limit = 12,
-  ): Promise<{ id: string; url: string }[]> {
+  async listCoverImages(limit = 12): Promise<{ id: string; url: string }[]> {
     const rows = await this.dataSource
       .getRepository(ScenarioCoverImageLibrary)
       .find({ order: { createdAt: 'DESC' }, take: Math.min(limit, 40) });
@@ -145,12 +143,16 @@ export class CourseCopilotLibraryService {
 
   gameCatalogue(): { key: string; description: string }[] {
     const descriptions: Record<string, string> = {
-      [TrackGameKey.TREX_RUNNER]: 'Endless runner — jump the obstacles. A quick reset between heavy sections.',
-      [TrackGameKey.TIC_TAC_TOE]: 'Noughts and crosses against the computer. Two-minute breather.',
-      [TrackGameKey.MEMORY_MATCH]: 'Flip cards to find pairs. Calm, focus-resetting.',
+      [TrackGameKey.TREX_RUNNER]:
+        'Endless runner — jump the obstacles. A quick reset between heavy sections.',
+      [TrackGameKey.TIC_TAC_TOE]:
+        'Noughts and crosses against the computer. Two-minute breather.',
+      [TrackGameKey.MEMORY_MATCH]:
+        'Flip cards to find pairs. Calm, focus-resetting.',
       [TrackGameKey.CUB_N_PUP]: 'A gentle puzzle with two animal friends.',
       [TrackGameKey.SNAKE]: 'Classic snake. Fast, playful break.',
-      [TrackGameKey.SPROUT]: 'Grow a plant by tending it — slow and restful, good after a hard roleplay.',
+      [TrackGameKey.SPROUT]:
+        'Grow a plant by tending it — slow and restful, good after a hard roleplay.',
     };
     return Object.values(TrackGameKey).map((key) => ({
       key,
@@ -187,7 +189,11 @@ export class CourseCopilotLibraryService {
   async getActiveScenarios(ids: number[]): Promise<Scenarios[]> {
     if (!ids.length) return [];
     return this.dataSource.getRepository(Scenarios).find({
-      where: { id: In(ids), status: ScenarioStatus.ACTIVE, deletedAt: IsNull() },
+      where: {
+        id: In(ids),
+        status: ScenarioStatus.ACTIVE,
+        deletedAt: IsNull(),
+      },
     });
   }
 
@@ -266,7 +272,10 @@ export class CourseCopilotLibraryService {
     });
   }
 
-  private async searchCases(query: string, limit: number): Promise<LibraryHit[]> {
+  private async searchCases(
+    query: string,
+    limit: number,
+  ): Promise<LibraryHit[]> {
     const rows = await this.dataSource.getRepository(Case).find({
       where: {
         status: CaseStatus.ACTIVE,
@@ -288,9 +297,10 @@ export class CourseCopilotLibraryService {
     limit: number,
   ): Promise<LibraryHit[]> {
     try {
-      const { characters } = await this.characterService.getScenarioCharacters(
-        { search: query?.trim() || undefined, limit },
-      );
+      const { characters } = await this.characterService.getScenarioCharacters({
+        search: query?.trim() || undefined,
+        limit,
+      });
       return (characters ?? []).map((character: any) => ({
         kind: 'character' as const,
         id: character.id,
@@ -305,7 +315,9 @@ export class CourseCopilotLibraryService {
             .filter(Boolean)
             .join(', '),
         ),
-        extra: { hasVoices: Boolean(Object.keys(character.voices ?? {}).length) },
+        extra: {
+          hasVoices: Boolean(Object.keys(character.voices ?? {}).length),
+        },
       }));
     } catch (error) {
       // Character scope needs a request user; outside one this is empty, not fatal.

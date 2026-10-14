@@ -41,7 +41,10 @@ import { CourseMetaSpecialist } from './specialists/course-meta.specialist';
 import { CourseReviewSpecialist } from './specialists/course-review.specialist';
 import { ImagePromptSpecialist } from './specialists/image-prompt.specialist';
 import { RoleplayBriefSpecialist } from './specialists/roleplay-brief.specialist';
-import { CourseCopilotJobSkip, CourseCopilotMediaService } from './course-copilot-media.service';
+import {
+  CourseCopilotJobSkip,
+  CourseCopilotMediaService,
+} from './course-copilot-media.service';
 import { CourseCopilotStructureService } from './course-copilot-structure.service';
 import { CourseCopilotSessionService } from './course-copilot-session.service';
 import { CourseCopilotLibraryService } from './course-copilot-library.service';
@@ -49,13 +52,13 @@ import { CourseCopilotLibraryService } from './course-copilot-library.service';
 const textOf = (html: unknown, max = 4_000): string => {
   const text =
     typeof html === 'string'
-      ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      ? html
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
       : '';
   return text.length > max ? `${text.slice(0, max)}…` : text;
 };
-
-/** Edit tools a reviewer finding may suggest — the chip sends it as a chat turn. */
-const REVIEW_ACTION_LABEL = 'Apply';
 
 /**
  * Runs one job: the specialist (or library lookup) for its kind, plus the
@@ -105,7 +108,11 @@ export class CourseCopilotJobExecutorService {
       case CourseCopilotJobKind.QUIZ:
       case CourseCopilotJobKind.JOURNAL:
       case CourseCopilotJobKind.ANNOTATED_ARTIFACT: {
-        const context = await this.specialistContext(session, job, usageMetadata);
+        const context = await this.specialistContext(
+          session,
+          job,
+          usageMetadata,
+        );
         const specialist = {
           [CourseCopilotJobKind.ARTICLE]: this.article,
           [CourseCopilotJobKind.QUIZ]: this.quiz,
@@ -153,18 +160,26 @@ export class CourseCopilotJobExecutorService {
   ): Promise<SpecialistContext> {
     const item = job.input?.item as CourseBlueprintItem;
     let blueprint = session.approvedBlueprint ?? session.blueprint ?? null;
-    let section = blueprint?.sections.find((s) => s.id === job.input?.sectionId);
+    let section = blueprint?.sections.find(
+      (s) => s.id === job.input?.sectionId,
+    );
     // Edit-loop jobs have no blueprint node of their own: describe the live
     // course as one so the specialist still knows where the item sits.
-    if (!blueprint || !section || job.input?.placement || job.input?.replaceTrackItemId) {
+    if (
+      !blueprint ||
+      !section ||
+      job.input?.placement ||
+      job.input?.replaceTrackItemId
+    ) {
       const track = session.trackId
         ? await this.structureService.getTrack(session.trackId)
         : null;
       if (track) {
         blueprint = this.blueprintFromTrack(track, session, item, job.input);
         section =
-          blueprint.sections.find((s) => s.items.some((i) => i.id === item.id)) ??
-          blueprint.sections[0];
+          blueprint.sections.find((s) =>
+            s.items.some((i) => i.id === item.id),
+          ) ?? blueprint.sections[0];
       }
     }
     if (!blueprint || !section) {
@@ -184,7 +199,8 @@ export class CourseCopilotJobExecutorService {
             },
           }
         : {}),
-      ...(Array.isArray(job.input?.repairErrors) && job.input.repairErrors.length
+      ...(Array.isArray(job.input?.repairErrors) &&
+      job.input.repairErrors.length
         ? { repairErrors: job.input.repairErrors }
         : {}),
       usageMetadata,
@@ -214,9 +230,10 @@ export class CourseCopilotJobExecutorService {
           source: { kind: 'new' as const },
           spec: {},
         }));
-      const placeAfter = input?.placement?.trackSectionId === section.id
-        ? input.placement.afterTrackItemId
-        : undefined;
+      const placeAfter =
+        input?.placement?.trackSectionId === section.id
+          ? input.placement.afterTrackItemId
+          : undefined;
       const replaceIndex = section.items.findIndex(
         (item) => item.id === input?.replaceTrackItemId,
       );
@@ -251,7 +268,9 @@ export class CourseCopilotJobExecutorService {
 
   private gameContent(item: CourseBlueprintItem): CourseCopilotJobResult {
     const requested = String(item?.spec?.gameKey ?? '');
-    const gameKey = (Object.values(TrackGameKey) as string[]).includes(requested)
+    const gameKey = (Object.values(TrackGameKey) as string[]).includes(
+      requested,
+    )
       ? (requested as TrackGameKey)
       : TrackGameKey.TREX_RUNNER;
     const content = {
@@ -260,7 +279,11 @@ export class CourseCopilotJobExecutorService {
         ? { intro: item.spec.intro.trim() }
         : {}),
     };
-    validateTrackItemContent({ type: TrackItemType.GAME, content, title: item?.title });
+    validateTrackItemContent({
+      type: TrackItemType.GAME,
+      content,
+      title: item?.title,
+    });
     return { content, summary: gameKey };
   }
 
@@ -282,12 +305,20 @@ export class CourseCopilotJobExecutorService {
         ? { durationSeconds: Number(item.spec.durationSeconds) }
         : {}),
     };
-    validateTrackItemContent({ type: TrackItemType.VIDEO, content, title: item.title });
+    validateTrackItemContent({
+      type: TrackItemType.VIDEO,
+      content,
+      title: item.title,
+    });
     return { content, summary: `${source} video` };
   }
 
-  private async roleplayRef(item: CourseBlueprintItem): Promise<CourseCopilotJobResult> {
-    const scenarioId = Number((item?.source as any)?.scenarioId ?? item?.spec?.scenarioId);
+  private async roleplayRef(
+    item: CourseBlueprintItem,
+  ): Promise<CourseCopilotJobResult> {
+    const scenarioId = Number(
+      (item?.source as any)?.scenarioId ?? item?.spec?.scenarioId,
+    );
     const [scenario] = scenarioId
       ? await this.library.getActiveScenarios([scenarioId])
       : [];
@@ -299,8 +330,12 @@ export class CourseCopilotJobExecutorService {
     return { scenarioId: scenario.id, summary: `Uses "${scenario.title}"` };
   }
 
-  private async caseRef(item: CourseBlueprintItem): Promise<CourseCopilotJobResult> {
-    const caseId = String((item?.source as any)?.caseId ?? item?.spec?.caseId ?? '');
+  private async caseRef(
+    item: CourseBlueprintItem,
+  ): Promise<CourseCopilotJobResult> {
+    const caseId = String(
+      (item?.source as any)?.caseId ?? item?.spec?.caseId ?? '',
+    );
     const caseRow = caseId ? await this.library.getActiveCase(caseId) : null;
     if (!caseRow) {
       throw new CourseCopilotJobSkip(
@@ -332,12 +367,15 @@ export class CourseCopilotJobExecutorService {
       .slice(0, COURSE_COPILOT_LIMITS.languagesPerRoleplay);
     const competencyIds = brief.competencyIds ?? [];
     if (!competencyIds.length) {
-      throw new Error('A new roleplay needs a competency, and the brief has none.');
+      throw new Error(
+        'A new roleplay needs a competency, and the brief has none.',
+      );
     }
     const track = session.trackId
       ? await this.structureService.getTrack(session.trackId).catch(() => null)
       : null;
-    const imageryOn = (brief.look?.articleImages ?? 'none') !== 'none' ||
+    const imageryOn =
+      (brief.look?.articleImages ?? 'none') !== 'none' ||
       brief.look?.cover === 'generate';
 
     const created = await this.structureService.asOwner(session, () =>
@@ -351,13 +389,15 @@ export class CourseCopilotJobExecutorService {
           languageIds,
           personaGender: actor.personaGender,
           personaAge: actor.personaAge,
-          difficultyLevel: (actor.difficultyLevel as ScenarioDifficultyLevel) ?? undefined,
+          difficultyLevel:
+            (actor.difficultyLevel as ScenarioDifficultyLevel) ?? undefined,
           triggerWarningIds: Array.isArray(spec.triggerWarningIds)
             ? spec.triggerWarningIds.map(String)
             : undefined,
-          coverImageUrl: imageryOn ? track?.coverImageUrl ?? null : null,
+          coverImageUrl: imageryOn ? (track?.coverImageUrl ?? null) : null,
           titleHint: actor.title ?? item.title,
-          characterId: typeof spec.characterId === 'string' ? spec.characterId : undefined,
+          characterId:
+            typeof spec.characterId === 'string' ? spec.characterId : undefined,
           saveCharacter: spec.saveCharacter === true,
           category: COURSE_COPILOT_SCENARIO_CATEGORY,
           provenance:
@@ -371,9 +411,17 @@ export class CourseCopilotJobExecutorService {
         },
       ),
     );
-    await this.sessionService.addGenerated(session.id, 'scenario', created.scenarioId);
+    await this.sessionService.addGenerated(
+      session.id,
+      'scenario',
+      created.scenarioId,
+    );
     if (created.characterId) {
-      await this.sessionService.addGenerated(session.id, 'character', created.characterId);
+      await this.sessionService.addGenerated(
+        session.id,
+        'character',
+        created.characterId,
+      );
     }
     return {
       scenarioId: created.scenarioId,
@@ -390,7 +438,9 @@ export class CourseCopilotJobExecutorService {
     const members = (job.dependsOn ?? []).length
       ? await this.jobRepository.find({ where: { id: In(job.dependsOn) } })
       : [];
-    const order = new Map((job.dependsOn ?? []).map((id, index) => [id, index]));
+    const order = new Map(
+      (job.dependsOn ?? []).map((id, index) => [id, index]),
+    );
     const scenarioIds = members
       .filter((member) => member.status === CourseCopilotJobStatus.DONE)
       .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
@@ -406,7 +456,8 @@ export class CourseCopilotJobExecutorService {
       ? await this.structureService.getTrack(session.trackId).catch(() => null)
       : null;
     const coverImageUrl =
-      scenarios.find((s) => s.coverImageUrl)?.coverImageUrl ?? track?.coverImageUrl;
+      scenarios.find((s) => s.coverImageUrl)?.coverImageUrl ??
+      track?.coverImageUrl;
     if (!coverImageUrl) {
       throw new CourseCopilotJobSkip(
         'A published case needs a cover image and none was available — create the case in the editor once the course has a cover.',
@@ -458,7 +509,11 @@ export class CourseCopilotJobExecutorService {
         description: meta.description,
       } as any),
     );
-    return { title: meta.title, description: meta.description, summary: meta.title };
+    return {
+      title: meta.title,
+      description: meta.description,
+      summary: meta.title,
+    };
   }
 
   private async coverImage(
@@ -492,7 +547,9 @@ export class CourseCopilotJobExecutorService {
       usageMetadata,
     });
     await this.structureService.asOwner(session, () =>
-      this.trackService.updateTrack(session.trackId!, { coverImageUrl: imageUrl } as any),
+      this.trackService.updateTrack(session.trackId!, {
+        coverImageUrl: imageUrl,
+      } as any),
     );
     return { imageUrl, summary: 'Cover image set' };
   }
@@ -510,14 +567,18 @@ export class CourseCopilotJobExecutorService {
     const reason = this.media.unavailableReason();
     if (reason) throw new CourseCopilotJobSkip(reason);
     const articleJob = job.input?.articleJobId
-      ? await this.jobRepository.findOne({ where: { id: job.input.articleJobId } })
+      ? await this.jobRepository.findOne({
+          where: { id: job.input.articleJobId },
+        })
       : null;
     const html: string = articleJob?.result?.content?.html ?? '';
     const brief =
       articleJob?.result?.imageBrief ??
       job.input?.imageBrief ??
       textOf(html, 400);
-    const title = String(job.input?.title ?? articleJob?.input?.title ?? 'Article');
+    const title = String(
+      job.input?.title ?? articleJob?.input?.title ?? 'Article',
+    );
     const prompt = await this.imagePrompt.write({
       sessionId: session.id,
       brief: session.brief ?? {},
@@ -542,7 +603,11 @@ export class CourseCopilotJobExecutorService {
       articleJob?.result?.content &&
       !session.metadata?.buildCompletedAt
     ) {
-      const content = this.withImage(articleJob.result.content, figure, imageUrl);
+      const content = this.withImage(
+        articleJob.result.content,
+        figure,
+        imageUrl,
+      );
       await this.jobRepository.update(
         { id: articleJob.id },
         { result: { ...articleJob.result, content } as any },
@@ -554,7 +619,9 @@ export class CourseCopilotJobExecutorService {
           ? session.trackIdMap?.items?.[articleJob.blueprintItemId]
           : undefined);
       if (!trackItemId) {
-        throw new CourseCopilotJobSkip('The article this image was for is gone.');
+        throw new CourseCopilotJobSkip(
+          'The article this image was for is gone.',
+        );
       }
       await this.structureService.mutate(session, (sections) => {
         for (const section of sections) {
@@ -595,7 +662,8 @@ export class CourseCopilotJobExecutorService {
     session: CourseCopilotSession,
     usageMetadata: Record<string, any>,
   ): Promise<CourseCopilotJobResult> {
-    if (!session.trackId) throw new CourseCopilotJobSkip('No course to review.');
+    if (!session.trackId)
+      throw new CourseCopilotJobSkip('No course to review.');
     const track = await this.structureService.getTrack(session.trackId);
     const findings: CourseReviewFinding[] = await this.review.review({
       sessionId: session.id,
@@ -614,15 +682,8 @@ export class CourseCopilotJobExecutorService {
       content,
       metadata: {
         reviewNotes: { findings },
-        suggestedActions: findings
-          .filter((finding) => finding.severity === 'fix')
-          .slice(0, 4)
-          .map((finding) => ({
-            label: `${REVIEW_ACTION_LABEL}: ${finding.note.length > 60 ? `${finding.note.slice(0, 57)}…` : finding.note}`,
-            message: `Apply this review finding${
-              finding.itemId ? ` (item ${finding.itemId})` : ''
-            }: ${finding.note}`,
-          })),
+        // No suggestedActions: the chat renders an Apply action on each
+        // finding that names a tool, so chips would repeat them.
       },
       createdBy: null,
     });
@@ -645,15 +706,33 @@ export class CourseCopilotJobExecutorService {
         const content = (item.content ?? {}) as any;
         lines.push(
           `\n### [${item.id}] ${item.order}. ${item.type} — ${item.title}` +
-            (item.completionCriteria ? ` rule=${JSON.stringify(item.completionCriteria)}` : ''),
+            (item.completionCriteria
+              ? ` rule=${JSON.stringify(item.completionCriteria)}`
+              : ''),
         );
         switch (item.type) {
-          case TrackItemType.ARTICLE:
-            lines.push(textOf(content.html, 2_500));
+          case TrackItemType.ARTICLE: {
+            // Whole articles: an excerpt cut mid-sentence reads to the
+            // reviewer as a truncated article, which it then reports.
+            const full = textOf(content.html, 100_000);
+            lines.push(
+              full.length > 9_000
+                ? `${full.slice(0, 9_000)} [digest excerpt — the article continues; not a defect]`
+                : full,
+            );
             break;
+          }
           case TrackItemType.QUIZ:
             for (const question of (content.questions ?? []).slice(0, 20)) {
-              lines.push(`- (${question.type}) ${question.prompt ?? question.template ?? ''}`);
+              // fill_blank carries its text in `template`, often with an empty prompt.
+              lines.push(
+                `- (${question.type}) ${[question.prompt, question.template].filter((part: unknown) => typeof part === 'string' && part.trim()).join(' — ')}`,
+              );
+              if (Array.isArray(question.blanks)) {
+                lines.push(
+                  `  blanks: ${question.blanks.map((blank: any) => `${blank.id} = ${(blank.acceptedAnswers ?? []).join(' / ')}`).join('; ')}`,
+                );
+              }
               const options = question.options ?? question.items ?? [];
               if (options.length) {
                 lines.push(
@@ -666,7 +745,8 @@ export class CourseCopilotJobExecutorService {
             }
             break;
           case TrackItemType.JOURNAL:
-            for (const prompt of content.prompts ?? []) lines.push(`- ${prompt.prompt}`);
+            for (const prompt of content.prompts ?? [])
+              lines.push(`- ${prompt.prompt}`);
             break;
           case TrackItemType.ANNOTATED_ARTIFACT:
             lines.push(
@@ -685,6 +765,8 @@ export class CourseCopilotJobExecutorService {
       }
     }
     const digest = lines.join('\n');
-    return digest.length > 60_000 ? `${digest.slice(0, 60_000)}\n…[truncated]` : digest;
+    return digest.length > 120_000
+      ? `${digest.slice(0, 120_000)}\n…[digest ends here — the course continues; not a defect]`
+      : digest;
   }
 }

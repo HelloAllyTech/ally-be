@@ -39,13 +39,15 @@ export class CourseCopilotSchedulerRegistrationService
     // Delayed so boot finishes first; a no-op when nothing is building.
     this.bootTimer = setTimeout(() => {
       this.bootTimer = null;
-      this.buildService.reconcile().catch((error) =>
-        this.logger.warn(
-          `Course Copilot boot reconcile failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        ),
-      );
+      this.buildService
+        .reconcile()
+        .catch((error) =>
+          this.logger.warn(
+            `Course Copilot boot reconcile failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
     }, COURSE_COPILOT_BOOT_RECONCILE_DELAY_MS);
     this.bootTimer.unref?.();
   }

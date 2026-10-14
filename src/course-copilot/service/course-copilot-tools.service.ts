@@ -45,7 +45,7 @@ const ASK_TRAINER: AgentToolDefinition = {
     'Ask the trainer ONE question and wait — the turn ends here and the answer arrives as ' +
     'their next message. The ONLY way to ask anything; never ask in prose. Use a select kind ' +
     'with 2-4 concrete options, each with a one-line description of its trade-off, and mark ' +
-    'exactly one recommended:true (the one you would defend). allowCustom is always on. Give a ' +
+    'exactly one recommended:true (the one you would defend). allowCustom is on by default. Give a ' +
     'rationale whenever the reason for asking is not obvious (a contradiction, an assumption).',
   input_schema: {
     type: 'object',
@@ -80,7 +80,8 @@ const ASK_TRAINER: AgentToolDefinition = {
 
 const JSON_PATCH_OPS = {
   type: 'array',
-  description: 'RFC-6902 operations (add / replace / remove). Paths are JSON pointers.',
+  description:
+    'RFC-6902 operations (add / replace / remove). Paths are JSON pointers.',
   items: {
     type: 'object',
     properties: {
@@ -118,7 +119,8 @@ const INTERVIEW_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'list_competencies',
-    description: 'Shared competencies a course can be tagged with: [{id, name}]. Filter by name.',
+    description:
+      'Shared competencies a course can be tagged with: [{id, name}]. Filter by name.',
     input_schema: {
       type: 'object',
       properties: { query: { type: 'string' } },
@@ -131,7 +133,9 @@ const INTERVIEW_TOOLS: AgentToolDefinition[] = [
       'outcomes, annotation labels and roleplay scoring.',
     input_schema: {
       type: 'object',
-      properties: { competencyIds: { type: 'array', items: { type: 'string' } } },
+      properties: {
+        competencyIds: { type: 'array', items: { type: 'string' } },
+      },
       required: ['competencyIds'],
     },
   },
@@ -149,7 +153,8 @@ const INTERVIEW_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'list_cover_images',
-    description: 'Recent images in the cover library: [{id, url}] — offer them for "pick from the library".',
+    description:
+      'Recent images in the cover library: [{id, url}] — offer them for "pick from the library".',
     input_schema: {
       type: 'object',
       properties: { limit: { type: 'number' } },
@@ -165,7 +170,10 @@ const INTERVIEW_TOOLS: AgentToolDefinition[] = [
     input_schema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['roleplay', 'case', 'character', 'template'] },
+        kind: {
+          type: 'string',
+          enum: ['roleplay', 'case', 'character', 'template'],
+        },
         query: { type: 'string' },
         competencyIds: { type: 'array', items: { type: 'string' } },
         limit: { type: 'number' },
@@ -193,7 +201,8 @@ const INTERVIEW_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'design_guidance_get',
-    description: 'Read full guidance chunks by id (from design_guidance_search).',
+    description:
+      'Read full guidance chunks by id (from design_guidance_search).',
     input_schema: {
       type: 'object',
       properties: { ids: { type: 'array', items: { type: 'string' } } },
@@ -214,7 +223,8 @@ const PROPOSE_BLUEPRINT: AgentToolDefinition = {
     properties: {
       notes: {
         type: 'string',
-        description: 'Anything the planner should honour that is not in the brief.',
+        description:
+          'Anything the planner should honour that is not in the brief.',
       },
     },
   },
@@ -339,20 +349,26 @@ export class CourseCopilotToolsService {
         };
       }
       case 'list_cover_images': {
-        const images = await this.library.listCoverImages(Number(input?.limit) || 12);
+        const images = await this.library.listCoverImages(
+          Number(input?.limit) || 12,
+        );
         return {
           modelResult: { ok: true, images },
           summary: `Looked up ${images.length} cover images`,
         };
       }
       case 'search_library': {
-        const kind = ['roleplay', 'case', 'character', 'template'].includes(input?.kind)
+        const kind = ['roleplay', 'case', 'character', 'template'].includes(
+          input?.kind,
+        )
           ? input.kind
           : 'roleplay';
         const hits = await this.library.search(
           kind,
           String(input?.query ?? ''),
-          Array.isArray(input?.competencyIds) ? input.competencyIds.map(String) : undefined,
+          Array.isArray(input?.competencyIds)
+            ? input.competencyIds.map(String)
+            : undefined,
           Number(input?.limit) || 8,
         );
         return {
@@ -387,7 +403,9 @@ export class CourseCopilotToolsService {
         }
         return {
           modelResult: result,
-          summary: result.ok ? 'Read design guidance' : 'Design guidance is unavailable this turn',
+          summary: result.ok
+            ? 'Read design guidance'
+            : 'Design guidance is unavailable this turn',
         };
       }
       case 'propose_blueprint':
@@ -422,7 +440,9 @@ export class CourseCopilotToolsService {
   }
 
   /** Builder's question normalisation: ids minted here, one recommendation at most. */
-  buildQuestion(input: Record<string, any>): Record<string, any> & { id: string; prompt: string } {
+  buildQuestion(
+    input: Record<string, any>,
+  ): Record<string, any> & { id: string; prompt: string } {
     const selectKinds = ['singleSelect', 'multiSelect', 'dropdown'];
     let kind = String(input?.kind ?? 'freeText');
     if (![...selectKinds, 'freeText'].includes(kind)) kind = 'freeText';
@@ -435,10 +455,16 @@ export class CourseCopilotToolsService {
       ...(input?.rationale ? { rationale: String(input.rationale) } : {}),
       ...(options.length ? { options } : {}),
       // A select with no escape hatch forces a wrong answer: on by default.
-      allowCustom: isSelect ? input?.allowCustom !== false : Boolean(input?.allowCustom),
+      allowCustom: isSelect
+        ? input?.allowCustom !== false
+        : Boolean(input?.allowCustom),
       ...(input?.allowNone ? { allowNone: true } : {}),
-      ...(typeof input?.minSelections === 'number' ? { minSelections: input.minSelections } : {}),
-      ...(typeof input?.maxSelections === 'number' ? { maxSelections: input.maxSelections } : {}),
+      ...(typeof input?.minSelections === 'number'
+        ? { minSelections: input.minSelections }
+        : {}),
+      ...(typeof input?.maxSelections === 'number'
+        ? { maxSelections: input.maxSelections }
+        : {}),
     };
   }
 
@@ -458,7 +484,9 @@ export class CourseCopilotToolsService {
           return {
             id,
             label,
-            ...(source.description ? { description: String(source.description) } : {}),
+            ...(source.description
+              ? { description: String(source.description) }
+              : {}),
             ...(source.recommended ? { recommended: true } : {}),
           };
         }
@@ -483,7 +511,11 @@ export class CourseCopilotToolsService {
     const ops = (Array.isArray(input?.ops) ? input.ops : []) as JsonPatchOp[];
     if (!ops.length) {
       return {
-        modelResult: { ok: false, error: 'no_ops', message: 'update_brief needs at least one operation.' },
+        modelResult: {
+          ok: false,
+          error: 'no_ops',
+          message: 'update_brief needs at least one operation.',
+        },
         summary: 'Brief patch rejected: no operations',
       };
     }
@@ -505,7 +537,8 @@ export class CourseCopilotToolsService {
           ...(ignoredKeys.length
             ? {
                 ignoredKeys: ignoredKeys.map(
-                  (key) => `${key} — not a brief field, so it was NOT stored. Put it in /notes.`,
+                  (key) =>
+                    `${key} — not a brief field, so it was NOT stored. Put it in /notes.`,
                 ),
               }
             : {}),
@@ -575,12 +608,15 @@ export class CourseCopilotToolsService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`propose_blueprint failed for ${context.session.id}: ${message}`);
+      this.logger.error(
+        `propose_blueprint failed for ${context.session.id}: ${message}`,
+      );
       return {
         modelResult: {
           ok: false,
           error: 'planner_failed',
-          message: 'Planning the course failed. Tell the trainer and offer to try again.',
+          message:
+            'Planning the course failed. Tell the trainer and offer to try again.',
         },
         summary: 'Planning the course failed',
       };
@@ -599,23 +635,28 @@ export class CourseCopilotToolsService {
       };
     }
     try {
-      const response = await this.blueprintService.applyPatch(context.session, ops);
+      const response = await this.blueprintService.applyPatch(
+        context.session,
+        ops,
+      );
       return {
         modelResult: {
           ok: true,
           version: response.version,
           estimate: response.estimate,
           problems: response.problems,
-          sections: response.blueprint.sections.map((section, sectionIndex) => ({
-            index: sectionIndex,
-            title: section.title,
-            items: section.items.map((item, itemIndex) => ({
-              index: itemIndex,
-              id: item.id,
-              type: item.type,
-              title: item.title,
-            })),
-          })),
+          sections: response.blueprint.sections.map(
+            (section, sectionIndex) => ({
+              index: sectionIndex,
+              title: section.title,
+              items: section.items.map((item, itemIndex) => ({
+                index: itemIndex,
+                id: item.id,
+                type: item.type,
+                title: item.title,
+              })),
+            }),
+          ),
         },
         summary: 'Blueprint updated',
         events: [{ event: 'blueprint', data: response as any }],
@@ -631,6 +672,8 @@ export class CourseCopilotToolsService {
 
   /** For the orchestrator: frames a tool produced that must also be persisted. */
   static questionsFrom(frames: CourseCopilotSseFrame[] | undefined) {
-    return (frames ?? []).filter((frame) => frame.event === 'question').map((f) => f.data);
+    return (frames ?? [])
+      .filter((frame) => frame.event === 'question')
+      .map((f) => f.data);
   }
 }

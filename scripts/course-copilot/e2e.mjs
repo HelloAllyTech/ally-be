@@ -135,9 +135,14 @@ async function main() {
     log(`session ${sessionId}`);
   }
 
-  let frames = await turn(sessionId, SEED);
+  // Resuming a session that already has a blueprint (or a course): skip the interview.
+  const existing = process.env.SESSION
+    ? await api('GET', `/v1/course-copilot/sessions/${sessionId}`)
+    : null;
+  const resumeAt = existing?.session.status;
+  let frames = resumeAt && resumeAt !== 'INTERVIEWING' ? [] : await turn(sessionId, SEED);
   let asked = 0;
-  for (let guard = 0; guard < 30; guard++) {
+  for (let guard = 0; guard < 30 && frames.length; guard++) {
     const done = frames.find((f) => f.event === 'done')?.data;
     const errored = frames.find((f) => f.event === 'error');
     if (errored) fail(`turn errored: ${errored.data.code} ${errored.data.message}`);
@@ -161,6 +166,15 @@ async function main() {
   }
 
   let detail = await api('GET', `/v1/course-copilot/sessions/${sessionId}`);
+  if (detail.session.status === 'AWAITING_BLUEPRINT') {
+    await approveAndBuild();
+  } else if (detail.session.status !== 'BUILDING' && detail.session.status !== 'EDITING') {
+    fail(`expected AWAITING_BLUEPRINT, got ${detail.session.status}`);
+  }
+  await watchBuild();
+  return;
+
+  async function approveAndBuild() {
   if (detail.session.status !== 'AWAITING_BLUEPRINT') {
     fail(`expected AWAITING_BLUEPRINT, got ${detail.session.status}`);
   }
@@ -178,6 +192,9 @@ async function main() {
     version: detail.session.blueprintVersion,
   });
   log(`approved → course ${approved.session.trackId}, ${approved.jobs.length} jobs`);
+  }
+
+  async function watchBuild() {
 
   const deadline = Date.now() + BUILD_TIMEOUT_MS;
   let lastSeq = 0;
@@ -215,6 +232,7 @@ async function main() {
     log(`course patches: ${patches.map((p) => p.data.summary).join(' | ') || 'none'}`);
   }
   log(`done — session ${sessionId}, course ${detail.session.trackId}`);
+  }
 }
 
 main().catch((error) => fail(error?.stack ?? String(error)));

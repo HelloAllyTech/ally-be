@@ -73,7 +73,9 @@ export class UpdateCourseCopilotBlueprintDto {
   @IsObject()
   blueprint!: CourseBlueprint;
 
-  @ApiProperty({ description: 'The blueprint version the edit was made against' })
+  @ApiProperty({
+    description: 'The blueprint version the edit was made against',
+  })
   @IsInt()
   @Min(0)
   version!: number;
@@ -87,7 +89,10 @@ export class ApproveCourseCopilotBlueprintDto {
 }
 
 export class RetryCourseCopilotBuildDto {
-  @ApiPropertyOptional({ type: [String], description: 'Jobs to retry; omit for every failed or skipped job' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Jobs to retry; omit for every failed or skipped job',
+  })
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })

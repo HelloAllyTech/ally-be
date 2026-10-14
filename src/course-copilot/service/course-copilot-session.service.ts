@@ -167,7 +167,10 @@ export class CourseCopilotSessionService {
       : [];
     const byId = new Map(tracks.map((track) => [track.id, track]));
     return sessions.map((session) =>
-      this.toSummary(session, session.trackId ? byId.get(session.trackId) : null),
+      this.toSummary(
+        session,
+        session.trackId ? byId.get(session.trackId) : null,
+      ),
     );
   }
 
@@ -296,7 +299,10 @@ export class CourseCopilotSessionService {
     sessionId: string,
     entry: Omit<CourseChangeLogEntry, 'at'>,
   ): Promise<CourseChangeLogEntry> {
-    const full: CourseChangeLogEntry = { at: new Date().toISOString(), ...entry };
+    const full: CourseChangeLogEntry = {
+      at: new Date().toISOString(),
+      ...entry,
+    };
     await this.sessionRepository.manager.query(
       `UPDATE "course_copilot_sessions" s
           SET "metadata" = jsonb_set(
@@ -350,7 +356,7 @@ export class CourseCopilotSessionService {
       title:
         session.title && session.title !== 'New course'
           ? session.title
-          : track?.title ?? session.title,
+          : (track?.title ?? session.title),
       mode: session.mode,
       status: session.status,
       trackId: session.trackId ?? null,
@@ -398,7 +404,10 @@ export class CourseCopilotSessionService {
       skippedReason: job.result?.skippedReason ?? null,
       startedAt: iso(job.startedAt),
       finishedAt: iso(job.finishedAt),
-      costUsd: job.costUsd !== null && job.costUsd !== undefined ? Number(job.costUsd) : null,
+      costUsd:
+        job.costUsd !== null && job.costUsd !== undefined
+          ? Number(job.costUsd)
+          : null,
       scenarioId: job.result?.scenarioId ?? null,
       caseId: job.result?.caseId ?? null,
     };

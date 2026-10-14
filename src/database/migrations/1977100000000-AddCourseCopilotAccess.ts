@@ -28,10 +28,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  */
 const GROUPS = ['PLATFORM_ADMIN', 'SUPER_ADMIN', 'SUPER_DUPER_ADMIN'];
 
-const PERMISSIONS = [
-  'view:admin:course-copilot',
-  'edit:admin:course-copilot',
-];
+const PERMISSIONS = ['view:admin:course-copilot', 'edit:admin:course-copilot'];
 
 const FEATURE_KEY = 'course_copilot';
 

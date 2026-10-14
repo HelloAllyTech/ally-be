@@ -916,7 +916,10 @@ export class AppConfigService {
       // update_brief, a lookup, ask_trainer); an edit turn can chain a read,
       // a regenerate and a meta update.
       maxToolIterations: Number(
-        this.configService.get<number>('COURSE_COPILOT_MAX_TOOL_ITERATIONS', 10),
+        this.configService.get<number>(
+          'COURSE_COPILOT_MAX_TOOL_ITERATIONS',
+          10,
+        ),
       ),
       // Default per-session spend ceiling, USD. 0 = uncapped.
       sessionBudgetUsd: Number(

@@ -103,7 +103,11 @@ export class CourseCopilotStructureService {
   /** Per-session write coalescing (in-process; the Redis lock covers other tasks). */
   private readonly pending = new Map<
     string,
-    { timer: NodeJS.Timeout | null; running: Promise<void> | null; dirty: boolean }
+    {
+      timer: NodeJS.Timeout | null;
+      running: Promise<void> | null;
+      dirty: boolean;
+    }
   >();
 
   constructor(
@@ -173,7 +177,11 @@ export class CourseCopilotStructureService {
 
   async buildOutline(
     track: TrackWithStructure,
-    options: { withPreview?: boolean; generatedScenarioIds?: number[]; generatedCaseIds?: string[] } = {},
+    options: {
+      withPreview?: boolean;
+      generatedScenarioIds?: number[];
+      generatedCaseIds?: string[];
+    } = {},
   ): Promise<CourseOutlineWithPreview> {
     const items = track.sections.flatMap((section) => section.items);
     const scenarioIds = [
@@ -242,7 +250,7 @@ export class CourseCopilotStructureService {
                     : undefined,
                   caseRow: item.caseId ? caseById.get(item.caseId) : undefined,
                   caseItems: item.caseId
-                    ? caseItemCounts.get(item.caseId) ?? 0
+                    ? (caseItemCounts.get(item.caseId) ?? 0)
                     : 0,
                   generatedScenario: Boolean(
                     item.scenarioId && generatedScenarios.has(item.scenarioId),
@@ -368,7 +376,10 @@ export class CourseCopilotStructureService {
    * editor gets) when learners are enrolled and the change is structural.
    */
   async mutate<T>(
-    session: Pick<CourseCopilotSession, 'id' | 'trackId' | 'createdBy' | 'tenantId'>,
+    session: Pick<
+      CourseCopilotSession,
+      'id' | 'trackId' | 'createdBy' | 'tenantId'
+    >,
     fn: (
       sections: UpsertTrackSectionDto[],
       track: TrackWithStructure,
@@ -552,7 +563,8 @@ export class CourseCopilotStructureService {
       );
 
       // What each written row stands for, by position, to read ids back after.
-      const plan: { sectionBp: string | null; itemBps: (string | null)[] }[] = [];
+      const plan: { sectionBp: string | null; itemBps: (string | null)[] }[] =
+        [];
       const sections: UpsertTrackSectionDto[] = [];
 
       for (const bpSection of blueprint.sections) {
@@ -649,23 +661,31 @@ export class CourseCopilotStructureService {
         : {}),
     };
     switch (bpItem.type) {
-      case TrackItemType.ROLEPLAY:
+      case TrackItemType.ROLEPLAY: {
+        const rule = {
+          ...(criteria.minScore !== undefined
+            ? { minScore: criteria.minScore }
+            : {}),
+          ...(criteria.minDurationSeconds !== undefined
+            ? { minDurationSeconds: criteria.minDurationSeconds }
+            : {}),
+        };
+        // Undefined rather than {}: an empty rule is still a value, and a
+        // regenerated roleplay would replace the item's real rule with it.
         return {
           ...base,
           scenarioId: result.scenarioId,
-          completionCriteria: {
-            ...(criteria.minScore !== undefined ? { minScore: criteria.minScore } : {}),
-            ...(criteria.minDurationSeconds !== undefined
-              ? { minDurationSeconds: criteria.minDurationSeconds }
-              : {}),
-          },
+          completionCriteria: Object.keys(rule).length ? rule : undefined,
         };
+      }
       case TrackItemType.CASE:
         return {
           ...base,
           caseId: result.caseId,
           completionCriteria:
-            criteria.minScore !== undefined ? { minScore: criteria.minScore } : undefined,
+            criteria.minScore !== undefined
+              ? { minScore: criteria.minScore }
+              : undefined,
         };
       case TrackItemType.QUIZ:
       case TrackItemType.ANNOTATED_ARTIFACT:
@@ -673,7 +693,9 @@ export class CourseCopilotStructureService {
           ...base,
           content: result.content,
           completionCriteria:
-            criteria.passScore !== undefined ? { passScore: criteria.passScore } : undefined,
+            criteria.passScore !== undefined
+              ? { passScore: criteria.passScore }
+              : undefined,
         };
       case TrackItemType.VIDEO:
         return {
@@ -694,17 +716,29 @@ export class CourseCopilotStructureService {
 
   // ── Sizes and previews ───────────────────────────────────────────────────
 
-  sizeOf(type: TrackItemType, content: any, item?: { scenarioId?: number | null; caseId?: string | null }): string {
+  sizeOf(
+    type: TrackItemType,
+    content: any,
+    item?: { scenarioId?: number | null; caseId?: string | null },
+  ): string {
     switch (type) {
       case TrackItemType.ARTICLE: {
         const words = textOf(content?.html).split(' ').filter(Boolean).length;
-        const checks = Array.isArray(content?.questions) ? content.questions.length : 0;
+        const checks = Array.isArray(content?.questions)
+          ? content.questions.length
+          : 0;
         return `${words} words${checks ? ` · ${plural(checks, 'check')}` : ''}`;
       }
       case TrackItemType.QUIZ:
-        return plural(Array.isArray(content?.questions) ? content.questions.length : 0, 'question');
+        return plural(
+          Array.isArray(content?.questions) ? content.questions.length : 0,
+          'question',
+        );
       case TrackItemType.JOURNAL:
-        return plural(Array.isArray(content?.prompts) ? content.prompts.length : 0, 'prompt');
+        return plural(
+          Array.isArray(content?.prompts) ? content.prompts.length : 0,
+          'prompt',
+        );
       case TrackItemType.ANNOTATED_ARTIFACT:
         return `${plural(Array.isArray(content?.units) ? content.units.length : 0, 'line')} · ${plural(
           Array.isArray(content?.labels) ? content.labels.length : 0,
@@ -724,7 +758,12 @@ export class CourseCopilotStructureService {
   }
 
   private previewOf(
-    item: { type: TrackItemType; content?: any; scenarioId?: number | null; caseId?: string | null },
+    item: {
+      type: TrackItemType;
+      content?: any;
+      scenarioId?: number | null;
+      caseId?: string | null;
+    },
     refs: {
       scenario?: Scenarios;
       caseRow?: Case;
@@ -741,19 +780,30 @@ export class CourseCopilotStructureService {
           type: 'ARTICLE',
           excerpt: text.length > 240 ? `${text.slice(0, 239)}…` : text,
           wordCount: text.split(' ').filter(Boolean).length,
-          questionCount: Array.isArray(content.questions) ? content.questions.length : 0,
-          resourceCount: Array.isArray(content.resources) ? content.resources.length : 0,
-          imageUrls: Array.isArray(content.imageUrls) ? content.imageUrls.slice(0, 3) : [],
+          questionCount: Array.isArray(content.questions)
+            ? content.questions.length
+            : 0,
+          resourceCount: Array.isArray(content.resources)
+            ? content.resources.length
+            : 0,
+          imageUrls: Array.isArray(content.imageUrls)
+            ? content.imageUrls.slice(0, 3)
+            : [],
         };
       }
       case TrackItemType.QUIZ: {
-        const questions = Array.isArray(content.questions) ? content.questions : [];
+        const questions = Array.isArray(content.questions)
+          ? content.questions
+          : [];
         return {
           type: 'QUIZ',
           questionCount: questions.length,
           passScore: content.settings?.passScore ?? null,
-          sampleQuestion: questions[0]?.prompt ?? questions[0]?.template ?? null,
-          questionTypes: [...new Set<string>(questions.map((q: any) => String(q.type)))],
+          sampleQuestion:
+            questions[0]?.prompt ?? questions[0]?.template ?? null,
+          questionTypes: [
+            ...new Set<string>(questions.map((q: any) => String(q.type))),
+          ],
         };
       }
       case TrackItemType.JOURNAL:
@@ -767,8 +817,12 @@ export class CourseCopilotStructureService {
         return {
           type: 'ANNOTATED_ARTIFACT',
           unitCount: Array.isArray(content.units) ? content.units.length : 0,
-          labels: (Array.isArray(content.labels) ? content.labels : []).map((l: any) => String(l.text ?? '')),
-          targetCount: Array.isArray(content.targets) ? content.targets.length : 0,
+          labels: (Array.isArray(content.labels) ? content.labels : []).map(
+            (l: any) => String(l.text ?? ''),
+          ),
+          targetCount: Array.isArray(content.targets)
+            ? content.targets.length
+            : 0,
           intro: content.intro ?? null,
         };
       case TrackItemType.ROLEPLAY:
@@ -788,14 +842,24 @@ export class CourseCopilotStructureService {
           generated: refs.generatedCase,
         };
       case TrackItemType.GAME:
-        return { type: 'GAME', gameKey: content.gameKey ?? null, intro: content.intro ?? null };
+        return {
+          type: 'GAME',
+          gameKey: content.gameKey ?? null,
+          intro: content.intro ?? null,
+        };
       case TrackItemType.VIDEO:
       default:
-        return { type: 'VIDEO', source: content.source ?? null, url: content.url ?? null };
+        return {
+          type: 'VIDEO',
+          source: content.source ?? null,
+          url: content.url ?? null,
+        };
     }
   }
 
-  private async caseItemCounts(caseIds: string[]): Promise<Map<string, number>> {
+  private async caseItemCounts(
+    caseIds: string[],
+  ): Promise<Map<string, number>> {
     if (!caseIds.length) return new Map();
     const rows: { caseId: string; count: string }[] = await this.dataSource
       .getRepository(CaseItem)

@@ -113,13 +113,18 @@ export class CourseCopilotCostService {
   jobEstimate(kind: CourseCopilotJobKind, languages = 1): number {
     const base = COURSE_COPILOT_JOB_COST_ESTIMATE_USD[kind] ?? 0;
     if (kind === CourseCopilotJobKind.ROLEPLAY_NEW) {
-      return base + Math.max(0, languages - 1) * COURSE_COPILOT_EXTRA_LANGUAGE_COST_USD;
+      return (
+        base +
+        Math.max(0, languages - 1) * COURSE_COPILOT_EXTRA_LANGUAGE_COST_USD
+      );
     }
     return base;
   }
 
   /** Actual spend so far, USD. */
-  async spent(session: Pick<CourseCopilotSession, 'id' | 'createdAt'>): Promise<number> {
+  async spent(
+    session: Pick<CourseCopilotSession, 'id' | 'createdAt'>,
+  ): Promise<number> {
     const rows: {
       model: string;
       task: string;
@@ -177,7 +182,9 @@ export class CourseCopilotCostService {
     return round2(usd);
   }
 
-  async budget(session: CourseCopilotSession): Promise<CourseCopilotBudgetView> {
+  async budget(
+    session: CourseCopilotSession,
+  ): Promise<CourseCopilotBudgetView> {
     const ceiling = Number(session.budgetUsd) || 0;
     const [spentUsd, held] = await Promise.all([
       this.spent(session),
@@ -188,7 +195,8 @@ export class CourseCopilotCostService {
     return {
       ceilingUsd: ceiling,
       spentUsd,
-      remainingUsd: ceiling > 0 ? round2(Math.max(0, ceiling - spentUsd)) : null,
+      remainingUsd:
+        ceiling > 0 ? round2(Math.max(0, ceiling - spentUsd)) : null,
       held,
     };
   }

@@ -47,10 +47,20 @@ import {
 } from './course-copilot-structure.service';
 
 const BUILD_LOCK_TTL_SECONDS = 120;
+
+/** Generated fine, but could not be put into the course. Not retried. */
+export class CourseCopilotPlacementError extends Error {
+  constructor(message: string) {
+    super(`Could not add it to the course: ${message}`);
+    this.name = 'CourseCopilotPlacementError';
+  }
+}
 const IDLE_POLL_MS = 1_000;
 
 /** The job kind that realises a blueprint item. */
-export function jobKindForItem(item: CourseBlueprintItem): CourseCopilotJobKind {
+export function jobKindForItem(
+  item: CourseBlueprintItem,
+): CourseCopilotJobKind {
   const fromLibrary = item.source?.kind === 'library';
   switch (item.type) {
     case TrackItemType.ARTICLE:
@@ -251,11 +261,15 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         attempts: 0,
       }),
     );
-    await this.eventService.record(session.id, CourseCopilotEventType.JOB_QUEUED, {
-      jobId: saved.id,
-      kind: saved.kind,
-      title: saved.input?.title ?? saved.kind,
-    });
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.JOB_QUEUED,
+      {
+        jobId: saved.id,
+        kind: saved.kind,
+        title: saved.input?.title ?? saved.kind,
+      },
+    );
     this.start(session.id);
     return saved;
   }
@@ -269,7 +283,9 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       .catch((error) =>
         this.logger.error(
           `Course Copilot build ${sessionId} crashed: ${
-            error instanceof Error ? error.stack ?? error.message : String(error)
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error)
           }`,
         ),
       )
@@ -299,7 +315,10 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
 
     try {
       while (!this.stopping) {
-        if (Date.now() - lastLockRefresh > (BUILD_LOCK_TTL_SECONDS * 1000) / 3) {
+        if (
+          Date.now() - lastLockRefresh >
+          (BUILD_LOCK_TTL_SECONDS * 1000) / 3
+        ) {
           // Re-arm the lock: releasing then re-acquiring is safe because we
           // hold it, and the TTL is the only thing that frees it if we die.
           await this.redis.releaseLock(lockKey).catch(() => undefined);
@@ -310,7 +329,10 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         const session = await this.sessionRepository.findOne({
           where: { id: sessionId },
         });
-        if (!session || session.status === CourseCopilotSessionStatus.ARCHIVED) {
+        if (
+          !session ||
+          session.status === CourseCopilotSessionStatus.ARCHIVED
+        ) {
           break;
         }
         const jobs = await this.jobRepository.listBySession(sessionId);
@@ -318,7 +340,8 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
 
         const byId = new Map(jobs.map((job) => [job.id, job]));
         const queued = jobs.filter(
-          (job) => job.status === CourseCopilotJobStatus.QUEUED && !active.has(job.id),
+          (job) =>
+            job.status === CourseCopilotJobStatus.QUEUED && !active.has(job.id),
         );
         const nonReview = jobs.filter(
           (job) => job.kind !== CourseCopilotJobKind.COURSE_REVIEW,
@@ -332,7 +355,8 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
             job.kind === CourseCopilotJobKind.COURSE_REVIEW
               ? othersSettled && active.size === 0
               : (job.dependsOn ?? []).every(
-                  (dep) => byId.get(dep)?.status === CourseCopilotJobStatus.DONE,
+                  (dep) =>
+                    byId.get(dep)?.status === CourseCopilotJobStatus.DONE,
                 ),
           )
           .sort(
@@ -365,7 +389,9 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
           continue;
         }
 
-        const held = jobs.some((job) => job.status === CourseCopilotJobStatus.HELD);
+        const held = jobs.some(
+          (job) => job.status === CourseCopilotJobStatus.HELD,
+        );
         const pending = jobs.some(
           (job) =>
             job.status === CourseCopilotJobStatus.QUEUED ||
@@ -390,12 +416,16 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     job: CourseCopilotJob,
   ): Promise<void> {
     const title = job.input?.title ?? job.kind;
-    await this.eventService.record(session.id, CourseCopilotEventType.JOB_STARTED, {
-      jobId: job.id,
-      kind: job.kind,
-      title,
-      attempt: job.attempts,
-    });
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.JOB_STARTED,
+      {
+        jobId: job.id,
+        kind: job.kind,
+        title,
+        attempt: job.attempts,
+      },
+    );
     const heartbeat = setInterval(
       () => void this.jobRepository.heartbeat(job.id).catch(() => undefined),
       COURSE_COPILOT_JOB_HEARTBEAT_MS,
@@ -410,24 +440,56 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       const result = await this.structureService.asOwner(fresh, () =>
         this.executor.execute(fresh, job),
       );
+      // An item that goes straight into the live course is placed BEFORE the
+      // job is marked done: if placement fails (the section was deleted,
+      // learners enrolled) the job must fail with it, not report done while
+      // its item never arrived.
+      const placesLive = this.placesLive(fresh, job);
+      if (placesLive) {
+        try {
+          await this.afterDone(fresh, { ...job, result });
+        } catch (error) {
+          throw new CourseCopilotPlacementError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
       const settled = await this.jobRepository.settle(
         job.id,
         CourseCopilotJobStatus.DONE,
         { result },
       );
       if (!settled) return; // reconciled away while running; the retry owns it
-      await this.afterDone(fresh, { ...job, result });
-      await this.eventService.record(session.id, CourseCopilotEventType.JOB_DONE, {
-        jobId: job.id,
-        kind: job.kind,
-        title,
-        summary: result.summary ?? null,
-      });
+      if (!placesLive) await this.afterDone(fresh, { ...job, result });
+      await this.eventService.record(
+        session.id,
+        CourseCopilotEventType.JOB_DONE,
+        {
+          jobId: job.id,
+          kind: job.kind,
+          title,
+          summary: result.summary ?? null,
+        },
+      );
     } catch (error) {
       await this.handleFailure(session, job, error);
     } finally {
       clearInterval(heartbeat);
     }
+  }
+
+  /** True when this job's item is written into the live course, not the first-build rewrite. */
+  private placesLive(
+    session: CourseCopilotSession,
+    job: CourseCopilotJob,
+  ): boolean {
+    if (job.kind === CourseCopilotJobKind.ARTICLE_IMAGE) return false;
+    if (!ITEM_JOB_KINDS.has(job.kind)) return false;
+    return Boolean(
+      job.input?.placement ||
+      job.input?.replaceTrackItemId ||
+      session.metadata?.buildCompletedAt,
+    );
   }
 
   /** Place a finished item in the course. */
@@ -439,7 +501,10 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       // The image was written onto the article job's result (first build) or
       // the live item (after); either way the course needs re-saving only in
       // the first case.
-      if (!job.input?.articleTrackItemId && !session.metadata?.buildCompletedAt) {
+      if (
+        !job.input?.articleTrackItemId &&
+        !session.metadata?.buildCompletedAt
+      ) {
         this.structureService.scheduleBuildWrite(session.id);
       }
       return;
@@ -466,54 +531,72 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     job: CourseCopilotJob & { result: CourseCopilotJobResult },
   ): Promise<void> {
     const item = job.input?.item as CourseBlueprintItem;
-    const { result } = await this.structureService.mutate(session, (sections) => {
-      if (job.input?.replaceTrackItemId) {
-        for (const section of sections) {
-          const index = section.items.findIndex(
-            (candidate) => candidate.id === job.input.replaceTrackItemId,
+    const { result } = await this.structureService.mutate(
+      session,
+      (sections) => {
+        if (job.input?.replaceTrackItemId) {
+          for (const section of sections) {
+            const index = section.items.findIndex(
+              (candidate) => candidate.id === job.input.replaceTrackItemId,
+            );
+            if (index < 0) continue;
+            const existing = section.items[index];
+            const replacement = this.structureService.itemFromJob(
+              item,
+              job as CourseCopilotJob,
+              existing.id,
+            );
+            // Regenerating keeps the item's identity: id, title and rule stay
+            // unless the tool asked to change them.
+            const hasRule =
+              replacement.completionCriteria &&
+              Object.keys(replacement.completionCriteria).length > 0;
+            section.items[index] = {
+              ...existing,
+              ...replacement,
+              id: existing.id,
+              title: existing.title,
+              completionCriteria: hasRule
+                ? replacement.completionCriteria
+                : existing.completionCriteria,
+            };
+            return existing.id;
+          }
+          throw new Error(
+            'The item being replaced is no longer in the course.',
           );
-          if (index < 0) continue;
-          const existing = section.items[index];
-          const replacement = this.structureService.itemFromJob(
-            item,
-            job as CourseCopilotJob,
-            existing.id,
-          );
-          // Regenerating keeps the item's identity: id, title and rule stay
-          // unless the tool asked to change them.
-          section.items[index] = {
-            ...existing,
-            ...replacement,
-            id: existing.id,
-            completionCriteria:
-              replacement.completionCriteria ?? existing.completionCriteria,
-          };
-          return existing.id;
         }
-        throw new Error('The item being replaced is no longer in the course.');
-      }
-      const placement = job.input.placement as {
-        trackSectionId: string;
-        afterTrackItemId?: string | null;
-      };
-      const section = sections.find((s) => s.id === placement.trackSectionId);
-      if (!section) {
-        throw new Error('The section this item was for is no longer in the course.');
-      }
-      const at = placement.afterTrackItemId
-        ? section.items.findIndex((i) => i.id === placement.afterTrackItemId) + 1
-        : section.items.length;
-      section.items.splice(
-        at <= 0 && placement.afterTrackItemId ? section.items.length : at,
-        0,
-        this.structureService.itemFromJob(item, job as CourseCopilotJob),
-      );
-      return null;
-    });
-    await this.eventService.record(session.id, CourseCopilotEventType.COURSE_CHANGED, {
-      summary: `${job.input?.replaceTrackItemId ? 'Regenerated' : 'Added'} "${item.title}"`,
-      itemId: result,
-    });
+        const placement = job.input.placement as {
+          trackSectionId: string;
+          afterTrackItemId?: string | null;
+        };
+        const section = sections.find((s) => s.id === placement.trackSectionId);
+        if (!section) {
+          throw new Error(
+            'The section this item was for is no longer in the course.',
+          );
+        }
+        const at = placement.afterTrackItemId
+          ? section.items.findIndex(
+              (i) => i.id === placement.afterTrackItemId,
+            ) + 1
+          : section.items.length;
+        section.items.splice(
+          at <= 0 && placement.afterTrackItemId ? section.items.length : at,
+          0,
+          this.structureService.itemFromJob(item, job as CourseCopilotJob),
+        );
+        return null;
+      },
+    );
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.COURSE_CHANGED,
+      {
+        summary: `${job.input?.replaceTrackItemId ? 'Regenerated' : 'Added'} "${item.title}"`,
+        itemId: result,
+      },
+    );
   }
 
   private async insertBlueprintItemLive(
@@ -521,7 +604,9 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     job: CourseCopilotJob & { result: CourseCopilotJobResult },
   ): Promise<void> {
     const blueprint = session.approvedBlueprint;
-    const bpSection = blueprint?.sections.find((s) => s.id === job.input?.sectionId);
+    const bpSection = blueprint?.sections.find(
+      (s) => s.id === job.input?.sectionId,
+    );
     const bpItem = job.input?.item as CourseBlueprintItem;
     if (!blueprint || !bpSection || !bpItem) return;
     const map = session.trackIdMap ?? { sections: {}, items: {} };
@@ -548,7 +633,11 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
           break;
         }
       }
-      section.items.splice(at, 0, this.structureService.itemFromJob(bpItem, job));
+      section.items.splice(
+        at,
+        0,
+        this.structureService.itemFromJob(bpItem, job),
+      );
     });
     // Record the new row's id so a later image job can find it.
     const track = await this.structureService.getTrack(session.trackId!);
@@ -576,19 +665,27 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         result: { skippedReason: error.reason, summary: null as any },
         error: null,
       });
-      await this.eventService.record(session.id, CourseCopilotEventType.JOB_SKIPPED, {
-        jobId: job.id,
-        kind: job.kind,
-        title,
-        reason: error.reason,
-      });
+      await this.eventService.record(
+        session.id,
+        CourseCopilotEventType.JOB_SKIPPED,
+        {
+          jobId: job.id,
+          kind: job.kind,
+          title,
+          reason: error.reason,
+        },
+      );
       return;
     }
 
     const message = this.describe(error);
     const repairErrors =
       error instanceof SpecialistValidationError ? error.errors : undefined;
-    const willRetry = job.attempts < COURSE_COPILOT_JOB_MAX_ATTEMPTS;
+    // A placement failure is about the course, not the content: generating
+    // the content again would fail in the same place and pay twice.
+    const willRetry =
+      !(error instanceof CourseCopilotPlacementError) &&
+      job.attempts < COURSE_COPILOT_JOB_MAX_ATTEMPTS;
     this.logger.warn(
       `Course Copilot ${session.id}: job ${job.id} (${job.kind}) attempt ${job.attempts} failed: ${message}`,
     );
@@ -605,13 +702,17 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         error: message,
       });
     }
-    await this.eventService.record(session.id, CourseCopilotEventType.JOB_FAILED, {
-      jobId: job.id,
-      kind: job.kind,
-      title,
-      error: message,
-      willRetry,
-    });
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.JOB_FAILED,
+      {
+        jobId: job.id,
+        kind: job.kind,
+        title,
+        error: message,
+        willRetry,
+      },
+    );
   }
 
   /** Queued jobs whose dependency did not finish can never run: skip them. */
@@ -642,12 +743,16 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
           { id: job.id },
           { result: { skippedReason: reason } as any },
         );
-        await this.eventService.record(session.id, CourseCopilotEventType.JOB_SKIPPED, {
-          jobId: job.id,
-          kind: job.kind,
-          title: job.input?.title ?? job.kind,
-          reason,
-        });
+        await this.eventService.record(
+          session.id,
+          CourseCopilotEventType.JOB_SKIPPED,
+          {
+            jobId: job.id,
+            kind: job.kind,
+            title: job.input?.title ?? job.kind,
+            reason,
+          },
+        );
       }
     }
   }
@@ -669,12 +774,16 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     );
     if (!held.length) return;
     const spentUsd = await this.costService.spent(session);
-    await this.eventService.record(session.id, CourseCopilotEventType.BUDGET_HOLD, {
-      state: 'held',
-      spentUsd,
-      ceilingUsd: Number(session.budgetUsd) || 0,
-      jobs: held.length,
-    });
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.BUDGET_HOLD,
+      {
+        state: 'held',
+        spentUsd,
+        ceilingUsd: Number(session.budgetUsd) || 0,
+        jobs: held.length,
+      },
+    );
   }
 
   /** Everything settled: save the course one last time and hand it over. */
@@ -685,12 +794,18 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     if (!session.metadata?.buildCompletedAt && session.approvedBlueprint) {
       await this.structureService.flushBuildWrite(session.id);
     }
-    const fresh = await this.sessionRepository.findOne({ where: { id: session.id } });
+    const fresh = await this.sessionRepository.findOne({
+      where: { id: session.id },
+    });
     if (!fresh) return;
     const counts = {
-      done: jobs.filter((job) => job.status === CourseCopilotJobStatus.DONE).length,
-      failed: jobs.filter((job) => job.status === CourseCopilotJobStatus.FAILED).length,
-      skipped: jobs.filter((job) => job.status === CourseCopilotJobStatus.SKIPPED).length,
+      done: jobs.filter((job) => job.status === CourseCopilotJobStatus.DONE)
+        .length,
+      failed: jobs.filter((job) => job.status === CourseCopilotJobStatus.FAILED)
+        .length,
+      skipped: jobs.filter(
+        (job) => job.status === CourseCopilotJobStatus.SKIPPED,
+      ).length,
     };
     const wasBuilding =
       fresh.status === CourseCopilotSessionStatus.BUILDING ||
@@ -732,7 +847,8 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     while (grew) {
       grew = false;
       for (const job of jobs) {
-        if (ids.has(job.id) || job.status !== CourseCopilotJobStatus.SKIPPED) continue;
+        if (ids.has(job.id) || job.status !== CourseCopilotJobStatus.SKIPPED)
+          continue;
         if ((job.dependsOn ?? []).some((dep) => ids.has(dep))) {
           ids.add(job.id);
           grew = true;
@@ -748,7 +864,9 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     for (const id of ids) {
       const job = jobs.find((candidate) => candidate.id === id);
       if (job?.input?.repairErrors) {
-        const { repairErrors, ...input } = job.input;
+        // A trainer's retry starts clean: last run's validator errors are stale.
+        const input = { ...job.input };
+        delete input.repairErrors;
         await this.jobRepository.update({ id }, { input: input as any });
       }
     }
@@ -801,11 +919,15 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         WHERE id = $1`,
       [session.id],
     );
-    await this.eventService.record(session.id, CourseCopilotEventType.BUILD_FINISHED, {
-      cancelled: true,
-      skipped: skipped.length,
-      spentUsd: await this.costService.spent(session),
-    });
+    await this.eventService.record(
+      session.id,
+      CourseCopilotEventType.BUILD_FINISHED,
+      {
+        cancelled: true,
+        skipped: skipped.length,
+        spentUsd: await this.costService.spent(session),
+      },
+    );
   }
 
   /**
@@ -813,10 +935,15 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
    * is already spent — it would not release anything — the same contract as
    * Builder's mid-run raise.
    */
-  async raiseBudget(session: CourseCopilotSession, budgetUsd: number): Promise<void> {
+  async raiseBudget(
+    session: CourseCopilotSession,
+    budgetUsd: number,
+  ): Promise<void> {
     const value = Number(budgetUsd);
     if (!Number.isFinite(value) || value < 0) {
-      throw new BadRequestException('Enter a budget in US dollars, or 0 for no cap.');
+      throw new BadRequestException(
+        'Enter a budget in US dollars, or 0 for no cap.',
+      );
     }
     const spent = await this.costService.spent(session);
     if (value !== 0 && value <= spent) {
@@ -830,17 +957,23 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
     );
     const jobs = await this.jobRepository.listBySession(session.id);
     const released = await this.jobRepository.setStatus(
-      jobs.filter((job) => job.status === CourseCopilotJobStatus.HELD).map((job) => job.id),
+      jobs
+        .filter((job) => job.status === CourseCopilotJobStatus.HELD)
+        .map((job) => job.id),
       [CourseCopilotJobStatus.HELD],
       CourseCopilotJobStatus.QUEUED,
     );
     if (released.length) {
-      await this.eventService.record(session.id, CourseCopilotEventType.BUDGET_HOLD, {
-        state: 'raised',
-        spentUsd: spent,
-        ceilingUsd: value,
-        jobs: released.length,
-      });
+      await this.eventService.record(
+        session.id,
+        CourseCopilotEventType.BUDGET_HOLD,
+        {
+          state: 'raised',
+          spentUsd: spent,
+          ceilingUsd: value,
+          jobs: released.length,
+        },
+      );
       this.start(session.id);
     }
   }
@@ -848,13 +981,16 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
   // ── Watchdog ─────────────────────────────────────────────────────────────
 
   /**
-   * Every five minutes: fail running jobs whose heartbeat went quiet, and
-   * restart any session with queued work and no live runner. A session whose
-   * jobs died with nothing queued behind them is marked BUILD_FAILED so the
-   * trainer sees a Retry instead of a spinner.
+   * Every five minutes (and 30 s after boot): give a running job whose
+   * heartbeat went quiet its remaining attempt back (or fail it when it has
+   * none), and restart any session with queued work and no live runner. A
+   * session whose jobs died with nothing queued behind them is marked
+   * BUILD_FAILED so the trainer sees a Retry instead of a spinner.
    */
   async reconcile(): Promise<void> {
-    const stale = await this.jobRepository.findStale(COURSE_COPILOT_JOB_STALE_MS);
+    const stale = await this.jobRepository.findStale(
+      COURSE_COPILOT_JOB_STALE_MS,
+    );
     const touched = new Set<string>();
     for (const job of stale) {
       // A job orphaned by a restart says nothing about its content, so it
@@ -873,13 +1009,17 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       );
       if (changed.length) {
         touched.add(job.sessionId);
-        await this.eventService.record(job.sessionId, CourseCopilotEventType.JOB_FAILED, {
-          jobId: job.id,
-          kind: job.kind,
-          title: job.input?.title ?? job.kind,
-          error: 'Interrupted by a server restart',
-          willRetry: retry,
-        });
+        await this.eventService.record(
+          job.sessionId,
+          CourseCopilotEventType.JOB_FAILED,
+          {
+            jobId: job.id,
+            kind: job.kind,
+            title: job.input?.title ?? job.kind,
+            error: 'Interrupted by a server restart',
+            willRetry: retry,
+          },
+        );
       }
     }
 
@@ -887,7 +1027,10 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
       .createQueryBuilder('job')
       .select('DISTINCT job."sessionId"', 'sessionId')
       .where('job.status IN (:...statuses)', {
-        statuses: [CourseCopilotJobStatus.QUEUED, CourseCopilotJobStatus.RUNNING],
+        statuses: [
+          CourseCopilotJobStatus.QUEUED,
+          CourseCopilotJobStatus.RUNNING,
+        ],
       })
       .getRawMany();
     for (const { sessionId } of sessionIds) {
@@ -900,15 +1043,22 @@ export class CourseCopilotBuildService implements OnModuleDestroy {
         CourseCopilotJobStatus.RUNNING,
       ]);
       if (pending > 0) continue;
-      const session = await this.sessionRepository.findOne({ where: { id: sessionId } });
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+      });
       if (session?.status === CourseCopilotSessionStatus.BUILDING) {
         await this.sessionRepository.update(
           { id: sessionId },
           { status: CourseCopilotSessionStatus.BUILD_FAILED },
         );
-        await this.eventService.record(sessionId, CourseCopilotEventType.BUILD_FAILED, {
-          reason: 'A job stopped responding and nothing else was left to run.',
-        });
+        await this.eventService.record(
+          sessionId,
+          CourseCopilotEventType.BUILD_FAILED,
+          {
+            reason:
+              'A job stopped responding and nothing else was left to run.',
+          },
+        );
       }
     }
   }

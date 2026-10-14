@@ -52,14 +52,19 @@ INTERVIEWING ──propose_blueprint──▶ AWAITING_BLUEPRINT ──Approve &
   conditional `queued → running` UPDATE, beats `heartbeatAt` every 30 s, and settles with a conditional
   `running → done|failed|skipped` UPDATE that carries its result. A Redis lock keeps one runner per
   session across ECS tasks, and the claim makes any overlap harmless.
-- **Resumable.** `course-copilot.reconcile` (5-minute scheduler bucket) fails running jobs whose heartbeat
-  is older than 10 minutes, restarts sessions with queued work and no runner, and marks a session
-  `BUILD_FAILED` when its jobs died with nothing left to run. A deploy mid-build loses at most the jobs
-  that were in flight, and Retry picks them up.
+- **Resumable.** `course-copilot.reconcile` runs on the 5-minute scheduler bucket and once 30 s after boot.
+  A running job whose heartbeat is older than 3 minutes (six missed beats) gets its remaining attempt
+  back and is re-queued — a restart says nothing about its content — or is failed if it has none; any
+  session with queued work and no runner is restarted; a session whose jobs died with nothing left to
+  run is marked `BUILD_FAILED`. Verified locally: a build killed mid-flight by a restart resumed on boot
+  and finished with every job done.
 - **Concurrency 4**, roleplays first (they are the long pole). A new case waits for its member roleplays;
   an article image waits for its article; the reviewer runs once everything else has settled.
 - **Two attempts per job.** A validator rejection is retried with the validator's own errors fed back
   to the specialist (the repair pass). A job whose dependency did not finish is **skipped**, not failed.
+  An item that goes into the live course is placed *before* its job is marked done, and a placement
+  failure (a deleted section, a structure lock) fails the job without a retry — regenerating the content
+  would fail in the same place and pay twice.
   `CourseCopilotJobSkip` marks environment limits (no image provider, a video with no link, a library
   roleplay since unpublished) as skipped-with-a-reason rather than failures.
 - **Budget.** At every job boundary, spend (summed from `llm_usage` by `courseCopilotSessionId`, images at
@@ -93,6 +98,17 @@ progress row and the course's `track_tenants` row (`TrackProgressService.validat
 `scenario_tenants` check applies only to standalone roleplays. So generated roleplays are ACTIVE (a course
 may only reference active roleplays), non-global and unassigned, and assigning the course is enough.
 They carry `category = 'COURSE_COPILOT'` so the library can filter them.
+
+## Local verification
+
+`node scripts/course-copilot/e2e.mjs` drives a whole session against the local stack with the real
+models: answers each question with its recommended option, fast-forwards after `MAX_QUESTIONS`, approves
+the blueprint, polls the build to completion and prints the course, readiness and review. `SESSION=<id>`
+resumes an existing session; `EDIT="…"` adds one edit-loop turn. Note the local dev server is
+`nest start --watch` over this checkout and compiles specs too: editing backend files while a build runs
+restarts the process (which is a fair test of resumption, but not what you want mid-demo), and a type
+error in any spec takes the server down. Generated images upload to localstack but their URLs are built
+in AWS form, so they do not render locally — the same as the course editor's own uploads.
 
 ## Configuration
 

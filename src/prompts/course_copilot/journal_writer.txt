@@ -17,7 +17,9 @@ The learning outcomes that practice served:
 
 WRITE
 - Exactly {{prompt_count}} prompts.
-- Tie every prompt to the practice above. Name the situation — "In the roleplay with the caller who kept changing the subject, …" — never a generic "How did it go?".
+- Tie every prompt to the practice above. Name it by what it is about — "In the roleplay on <its subject>, …" — never a generic "How did it go?".
+- Use ONLY what you are told about that practice (its title, purpose and spec). You do not know what happens in it: never invent the person's behaviour, words or twists. Ask the learner to recall a moment instead of describing one.
+- Use the setting's own words from the brief: a "texter" on a text helpline, a "caller" on a phone line, a "client" in counselling. Never borrow another setting's word.
 - Follow the after-action sequence. With three prompts: (1) what happened — one specific moment that mattered; (2) why — what the learner noticed, thought or felt that led them to respond as they did, and how the person reacted; (3) next time — one thing they will keep doing and one they will change, in a sentence they could act on. With fewer prompts, keep this order and fold the steps together.
 - Open questions, second person, one question per prompt (never two stacked questions). Each answerable in three to six sentences.
 - Ask about their practice, not their personal history or health. If the practice dealt with distressing material, one prompt may ask how they will look after themselves afterwards — never require personal disclosure.

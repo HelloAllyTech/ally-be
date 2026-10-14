@@ -74,7 +74,7 @@ const INVALID_TOOL_CALL_ERROR =
   'Send your message again — this usually clears on its own.';
 
 const TRUNCATION_ERROR =
-  "That turn ran past the response limit before anything was saved. Ask for one change at a time and it will fit.";
+  'That turn ran past the response limit before anything was saved. Ask for one change at a time and it will fit.';
 
 /**
  * One line per cause, because the actions differ: a quota needs an
@@ -101,11 +101,15 @@ const PROVIDER_ERRORS: Record<AgentProviderFailure, string> = {
 };
 
 const PROVIDER_ERROR_CODES: Record<AgentProviderFailure, string> = {
-  [AgentProviderFailure.QUOTA]: COURSE_COPILOT_ERROR_CODES.PROVIDER_QUOTA_EXHAUSTED,
+  [AgentProviderFailure.QUOTA]:
+    COURSE_COPILOT_ERROR_CODES.PROVIDER_QUOTA_EXHAUSTED,
   [AgentProviderFailure.AUTH]: COURSE_COPILOT_ERROR_CODES.PROVIDER_AUTH_FAILED,
-  [AgentProviderFailure.RATE_LIMIT]: COURSE_COPILOT_ERROR_CODES.PROVIDER_RATE_LIMITED,
-  [AgentProviderFailure.UNAVAILABLE]: COURSE_COPILOT_ERROR_CODES.PROVIDER_UNAVAILABLE,
-  [AgentProviderFailure.REQUEST_TOO_LARGE]: COURSE_COPILOT_ERROR_CODES.REQUEST_TOO_LARGE,
+  [AgentProviderFailure.RATE_LIMIT]:
+    COURSE_COPILOT_ERROR_CODES.PROVIDER_RATE_LIMITED,
+  [AgentProviderFailure.UNAVAILABLE]:
+    COURSE_COPILOT_ERROR_CODES.PROVIDER_UNAVAILABLE,
+  [AgentProviderFailure.REQUEST_TOO_LARGE]:
+    COURSE_COPILOT_ERROR_CODES.REQUEST_TOO_LARGE,
   [AgentProviderFailure.UNKNOWN]: COURSE_COPILOT_ERROR_CODES.COPILOT_ERROR,
 };
 
@@ -200,7 +204,8 @@ export class CourseCopilotOrchestratorService {
       if (resolved) return { provider: resolved, model: promptModel };
     }
     const { model, provider } = this.configService.courseCopilot;
-    const resolved = normaliseAgentProvider(provider) ?? providerForModel(model);
+    const resolved =
+      normaliseAgentProvider(provider) ?? providerForModel(model);
     if (!resolved) {
       throw new Error(
         `No provider is known for Course Copilot model "${model}". Set the model on the ` +
@@ -223,7 +228,9 @@ export class CourseCopilotOrchestratorService {
       }
     }
     if (!result) {
-      throw new Error(`The ${provider.name} model returned no response for this turn.`);
+      throw new Error(
+        `The ${provider.name} model returned no response for this turn.`,
+      );
     }
     return result;
   }
@@ -242,7 +249,13 @@ export class CourseCopilotOrchestratorService {
           message: 'This session is archived. Start a new one to keep working.',
         },
       };
-      yield { event: 'done', data: { messageSeq: session.lastMessageSeq, sessionStatus: session.status } };
+      yield {
+        event: 'done',
+        data: {
+          messageSeq: session.lastMessageSeq,
+          sessionStatus: session.status,
+        },
+      };
       return;
     }
 
@@ -259,7 +272,13 @@ export class CourseCopilotOrchestratorService {
             message: `This session has used its $${ceiling.toFixed(2)} budget. Raise the ceiling to keep going.`,
           },
         };
-        yield { event: 'done', data: { messageSeq: session.lastMessageSeq, sessionStatus: session.status } };
+        yield {
+          event: 'done',
+          data: {
+            messageSeq: session.lastMessageSeq,
+            sessionStatus: session.status,
+          },
+        };
         return;
       }
     }
@@ -281,15 +300,28 @@ export class CourseCopilotOrchestratorService {
       providerName = resolved.provider;
       model = resolved.model;
       provider = this.agentLlmFactory.create(resolved.provider, resolved.model);
-      this.logger.info(`[COURSE_COPILOT] session=${sessionId} ${providerName}/${model}`);
+      this.logger.info(
+        `[COURSE_COPILOT] session=${sessionId} ${providerName}/${model}`,
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Course Copilot ${sessionId} cannot start a turn: ${detail}`);
+      this.logger.error(
+        `Course Copilot ${sessionId} cannot start a turn: ${detail}`,
+      );
       yield {
         event: 'error',
-        data: { code: COURSE_COPILOT_ERROR_CODES.MISCONFIGURED, message: detail },
+        data: {
+          code: COURSE_COPILOT_ERROR_CODES.MISCONFIGURED,
+          message: detail,
+        },
       };
-      yield { event: 'done', data: { messageSeq: session.lastMessageSeq, sessionStatus: session.status } };
+      yield {
+        event: 'done',
+        data: {
+          messageSeq: session.lastMessageSeq,
+          sessionStatus: session.status,
+        },
+      };
       return;
     }
 
@@ -321,7 +353,10 @@ export class CourseCopilotOrchestratorService {
     const system = await this.buildSystemBlocks(session);
     const messages: any[] = [
       ...(await this.replayHistory(session, history)),
-      { role: 'user', content: await this.buildLiveUserTurn(session, userContent) },
+      {
+        role: 'user',
+        content: await this.buildLiveUserTurn(session, userContent),
+      },
     ];
 
     const context: CourseCopilotToolContext = {
@@ -359,10 +394,14 @@ export class CourseCopilotOrchestratorService {
             iterations,
             stopReason,
             errored: turnErrored,
-            ...(turnError ? { errorMessage: turnError, errorCode: turnErrorCode } : {}),
+            ...(turnError
+              ? { errorMessage: turnError, errorCode: turnErrorCode }
+              : {}),
             streaming: !final,
             ...(questions.length ? { questions: [...questions] } : {}),
-            ...(coursePatches.length ? { coursePatches: [...coursePatches] } : {}),
+            ...(coursePatches.length
+              ? { coursePatches: [...coursePatches] }
+              : {}),
             ...(blueprintVersion !== undefined ? { blueprintVersion } : {}),
           },
         });
@@ -395,11 +434,20 @@ export class CourseCopilotOrchestratorService {
           tools,
         });
         stopReason = final.stopReason;
-        this.recordUsage(final.usage, model, providerName, sessionId, iterations);
+        this.recordUsage(
+          final.usage,
+          model,
+          providerName,
+          sessionId,
+          iterations,
+        );
 
         if (stopReason === 'invalid_tool_call') {
           if (invalidToolCalls >= COURSE_COPILOT_MAX_TRUNCATION_RETRIES) {
-            yield fail(COURSE_COPILOT_ERROR_CODES.INVALID_TOOL_CALL, INVALID_TOOL_CALL_ERROR);
+            yield fail(
+              COURSE_COPILOT_ERROR_CODES.INVALID_TOOL_CALL,
+              INVALID_TOOL_CALL_ERROR,
+            );
             break;
           }
           invalidToolCalls += 1;
@@ -408,19 +456,26 @@ export class CourseCopilotOrchestratorService {
 
         const blocks: any[] = final.content ?? [];
         for (const block of blocks) {
-          if (block?.type === 'text' && block.text?.trim()) textParts.push(block.text);
+          if (block?.type === 'text' && block.text?.trim())
+            textParts.push(block.text);
         }
         const toolUses = blocks.filter((block) => block?.type === 'tool_use');
 
         if (stopReason === 'max_tokens') {
           truncations += 1;
           if (truncations > COURSE_COPILOT_MAX_TRUNCATION_RETRIES) {
-            yield fail(COURSE_COPILOT_ERROR_CODES.RESPONSE_TRUNCATED, TRUNCATION_ERROR);
+            yield fail(
+              COURSE_COPILOT_ERROR_CODES.RESPONSE_TRUNCATED,
+              TRUNCATION_ERROR,
+            );
             break;
           }
           await checkpoint(false);
-          const textBlocks = blocks.filter((block) => block?.type === 'text' && block.text);
-          if (textBlocks.length) messages.push({ role: 'assistant', content: textBlocks });
+          const textBlocks = blocks.filter(
+            (block) => block?.type === 'text' && block.text,
+          );
+          if (textBlocks.length)
+            messages.push({ role: 'assistant', content: textBlocks });
           messages.push({ role: 'user', content: TRUNCATION_NUDGE });
           continue;
         }
@@ -445,15 +500,21 @@ export class CourseCopilotOrchestratorService {
         for (const toolUse of toolUses) {
           const name = String(toolUse.name);
           const input = (toolUse.input ?? {}) as Record<string, any>;
-          yield { event: 'tool_call', data: { name, input: this.truncateInput(name, input) } };
+          yield {
+            event: 'tool_call',
+            data: { name, input: this.truncateInput(name, input) },
+          };
           allToolCalls.push({ id: toolUse.id, name, input });
 
           let outcome;
           try {
             outcome = await this.toolsService.execute(name, input, context);
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.logger.error(`Course Copilot tool "${name}" failed for ${sessionId}: ${message}`);
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `Course Copilot tool "${name}" failed for ${sessionId}: ${message}`,
+            );
             outcome = {
               modelResult: { ok: false, error: 'tool_failed', message },
               summary: `${name} failed: ${message}`,
@@ -462,8 +523,10 @@ export class CourseCopilotOrchestratorService {
 
           for (const frame of outcome.events ?? []) {
             if (frame.event === 'question') questions.push(frame.data);
-            if (frame.event === 'course_patch') coursePatches.push(String(frame.data.summary ?? ''));
-            if (frame.event === 'blueprint') blueprintVersion = Number(frame.data.version);
+            if (frame.event === 'course_patch')
+              coursePatches.push(String(frame.data.summary ?? ''));
+            if (frame.event === 'blueprint')
+              blueprintVersion = Number(frame.data.version);
             yield frame;
           }
           yield {
@@ -474,7 +537,11 @@ export class CourseCopilotOrchestratorService {
               ok: outcome.modelResult?.ok !== false,
             },
           };
-          allToolResults.push({ toolUseId: toolUse.id, name, result: outcome.modelResult });
+          allToolResults.push({
+            toolUseId: toolUse.id,
+            name,
+            result: outcome.modelResult,
+          });
           toolResultBlocks.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -491,7 +558,10 @@ export class CourseCopilotOrchestratorService {
       }
 
       if (stopReason === 'max_tokens' && !turnErrored) {
-        yield fail(COURSE_COPILOT_ERROR_CODES.RESPONSE_TRUNCATED, TRUNCATION_ERROR);
+        yield fail(
+          COURSE_COPILOT_ERROR_CODES.RESPONSE_TRUNCATED,
+          TRUNCATION_ERROR,
+        );
       }
 
       // Out of iterations while the model still wanted tools: one tool-less
@@ -512,9 +582,16 @@ export class CourseCopilotOrchestratorService {
             },
           ],
         });
-        this.recordUsage(wrapUp.usage, model, providerName, sessionId, iterations);
+        this.recordUsage(
+          wrapUp.usage,
+          model,
+          providerName,
+          sessionId,
+          iterations,
+        );
         for (const block of wrapUp.content ?? []) {
-          if (block?.type === 'text' && (block as any).text) textParts.push((block as any).text);
+          if (block?.type === 'text' && (block as any).text)
+            textParts.push((block as any).text);
         }
         stopReason = wrapUp.stopReason ?? 'end_turn';
       }
@@ -533,20 +610,26 @@ export class CourseCopilotOrchestratorService {
 
     await checkpoint(true);
 
-    const fresh = await this.sessionRepository.findOne({ where: { id: sessionId } });
+    const fresh = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+    });
     yield {
       event: 'done',
       data: {
         messageSeq: assistantMessage.seq,
         sessionStatus: fresh?.status ?? session.status,
-        ...(fresh?.blueprint ? { blueprintVersion: fresh.blueprintVersion } : {}),
+        ...(fresh?.blueprint
+          ? { blueprintVersion: fresh.blueprintVersion }
+          : {}),
       },
     };
   }
 
   /** The trainer's message plus a deterministic rendering of a structured answer. */
   private renderUserContent(dto: CreateCourseCopilotMessageDto): string {
-    const prefix = dto.questionId ? `[answers question ${dto.questionId}] ` : '';
+    const prefix = dto.questionId
+      ? `[answers question ${dto.questionId}] `
+      : '';
     const base = (dto.message ?? '').trim();
     const answer = dto.answer;
     if (!answer) return `${prefix}${base}`.trim();
@@ -556,7 +639,9 @@ export class CourseCopilotOrchestratorService {
       parts.push(`selected ids: ${answer.selectedOptionIds.join(', ')}`);
     }
     if (answer.customValues?.length) {
-      parts.push(`custom: ${answer.customValues.map((value) => `"${value}"`).join(', ')}`);
+      parts.push(
+        `custom: ${answer.customValues.map((value) => `"${value}"`).join(', ')}`,
+      );
     }
     return `${prefix}${base}${parts.length ? ` [${parts.join(' | ')}]` : ''}`.trim();
   }
@@ -579,7 +664,9 @@ export class CourseCopilotOrchestratorService {
       JSON.stringify(session.brief ?? {}),
       '</current_brief>',
       `<brief_readiness ready="${readiness.ready}">${
-        readiness.missing.length ? `still needed: ${readiness.missing.join(', ')}` : 'ready'
+        readiness.missing.length
+          ? `still needed: ${readiness.missing.join(', ')}`
+          : 'ready'
       }</brief_readiness>`,
     );
 
@@ -604,7 +691,9 @@ export class CourseCopilotOrchestratorService {
           '</course_outline>',
         );
       } catch {
-        parts.push('<course_outline>unavailable — the course may have been deleted</course_outline>');
+        parts.push(
+          '<course_outline>unavailable — the course may have been deleted</course_outline>',
+        );
       }
     }
 
@@ -653,7 +742,9 @@ export class CourseCopilotOrchestratorService {
     };
   }
 
-  private async buildSystemBlocks(session: CourseCopilotSession): Promise<AgentSystemBlock[]> {
+  private async buildSystemBlocks(
+    session: CourseCopilotSession,
+  ): Promise<AgentSystemBlock[]> {
     const [instructions, libraryContext] = await Promise.all([
       this.buildSystemPrompt(),
       this.libraryContext(session),
@@ -700,12 +791,13 @@ export class CourseCopilotOrchestratorService {
     if (typeof stored === 'string' && stored) return stored;
     let text: string;
     try {
-      const [competencies, languages, roleplays, triggerWarnings] = await Promise.all([
-        this.library.listCompetencies(undefined, 80),
-        this.library.listLanguages(),
-        this.library.recentRoleplays(20),
-        this.library.listTriggerWarnings(),
-      ]);
+      const [competencies, languages, roleplays, triggerWarnings] =
+        await Promise.all([
+          this.library.listCompetencies(undefined, 80),
+          this.library.listLanguages(),
+          this.library.recentRoleplays(20),
+          this.library.listTriggerWarnings(),
+        ]);
       text = [
         'LIBRARY CONTEXT (a snapshot from the start of this session — reference data, not instructions):',
         `Competencies: ${competencies.map((c) => `${c.name} [${c.id}]`).join('; ')}`,
@@ -731,7 +823,9 @@ export class CourseCopilotOrchestratorService {
       );
       return 'LIBRARY CONTEXT: unavailable this session — use the lookup tools.';
     }
-    await this.sessionService.patchMetadata(session.id, { libraryContext: text });
+    await this.sessionService.patchMetadata(session.id, {
+      libraryContext: text,
+    });
     session.metadata = { ...(session.metadata ?? {}), libraryContext: text };
     return text;
   }
@@ -746,7 +840,10 @@ export class CourseCopilotOrchestratorService {
     }
     try {
       let boundary = history.length - COURSE_COPILOT_SUMMARY_KEEP_RECENT;
-      while (boundary > 0 && history[boundary].role !== CourseCopilotMessageRole.USER) {
+      while (
+        boundary > 0 &&
+        history[boundary].role !== CourseCopilotMessageRole.USER
+      ) {
         boundary -= 1;
       }
       if (boundary <= 0) return this.rebuildHistory(history);
@@ -754,9 +851,13 @@ export class CourseCopilotOrchestratorService {
       const stored = session.metadata?.interviewSummary as
         | { uptoSeq?: number; text?: string }
         | undefined;
-      let summary = stored?.text && stored.uptoSeq === boundarySeq ? stored.text : null;
+      let summary =
+        stored?.text && stored.uptoSeq === boundarySeq ? stored.text : null;
       if (!summary) {
-        summary = await this.summariseTurns(session, history.slice(0, boundary));
+        summary = await this.summariseTurns(
+          session,
+          history.slice(0, boundary),
+        );
         if (summary) {
           void this.sessionService.patchMetadata(session.id, {
             interviewSummary: { uptoSeq: boundarySeq, text: summary },
@@ -787,7 +888,8 @@ export class CourseCopilotOrchestratorService {
   ): Promise<string | null> {
     const rendered = turns
       .map((message) => {
-        const who = message.role === CourseCopilotMessageRole.USER ? 'Trainer' : 'You';
+        const who =
+          message.role === CourseCopilotMessageRole.USER ? 'Trainer' : 'You';
         return `${who}: ${(message.content ?? '').slice(0, 2_000)}`;
       })
       .filter((line) => line.length > 10)
@@ -808,7 +910,10 @@ export class CourseCopilotOrchestratorService {
       system,
       prompt: rendered,
       maxTokens: 1_500,
-      usageMetadata: { courseCopilotSessionId: session.id, turns: turns.length },
+      usageMetadata: {
+        courseCopilotSessionId: session.id,
+        turns: turns.length,
+      },
     });
     return result.text.trim() || null;
   }
@@ -818,13 +923,17 @@ export class CourseCopilotOrchestratorService {
     const messages: any[] = [];
     for (const message of history) {
       if (message.role === CourseCopilotMessageRole.USER) {
-        if (message.content) messages.push({ role: 'user', content: message.content });
+        if (message.content)
+          messages.push({ role: 'user', content: message.content });
         continue;
       }
       const blocks: any[] = [];
       if (message.content) blocks.push({ type: 'text', text: message.content });
       const results = new Map(
-        (message.toolResults ?? []).map((result: any) => [result.toolUseId, result]),
+        (message.toolResults ?? []).map((result: any) => [
+          result.toolUseId,
+          result,
+        ]),
       );
       for (const call of message.toolCalls ?? []) {
         if (results.has((call as any).id)) {
@@ -839,7 +948,10 @@ export class CourseCopilotOrchestratorService {
       if (!blocks.length) continue;
       // Two assistant rows in a row (a reviewer note after a turn) must not
       // be sent back to back without a user turn between them.
-      if (messages.length && messages[messages.length - 1].role === 'assistant') {
+      if (
+        messages.length &&
+        messages[messages.length - 1].role === 'assistant'
+      ) {
         messages.push({ role: 'user', content: '(continue)' });
       }
       messages.push({ role: 'assistant', content: blocks });
@@ -850,7 +962,8 @@ export class CourseCopilotOrchestratorService {
           tool_use_id: call.id,
           content: JSON.stringify((results.get(call.id) as any)?.result ?? {}),
         }));
-      if (toolResultBlocks.length) messages.push({ role: 'user', content: toolResultBlocks });
+      if (toolResultBlocks.length)
+        messages.push({ role: 'user', content: toolResultBlocks });
     }
     // A conversation must open with a user turn.
     if (messages.length && messages[0].role !== 'user') {
@@ -859,8 +972,15 @@ export class CourseCopilotOrchestratorService {
     return messages;
   }
 
-  private truncateInput(name: string, input: Record<string, any>): Record<string, any> {
-    if (name !== 'update_brief' && name !== 'update_blueprint' && name !== 'update_item_content') {
+  private truncateInput(
+    name: string,
+    input: Record<string, any>,
+  ): Record<string, any> {
+    if (
+      name !== 'update_brief' &&
+      name !== 'update_blueprint' &&
+      name !== 'update_item_content'
+    ) {
       return input;
     }
     const serialised = JSON.stringify(input);

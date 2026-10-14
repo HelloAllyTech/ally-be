@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  applyJsonPatch,
-  JsonPatchOp,
-} from 'src/common/util/json-patch.util';
+import { applyJsonPatch, JsonPatchOp } from 'src/common/util/json-patch.util';
 import {
   CourseBrief,
   CourseBriefAssessmentKind,
@@ -69,6 +66,9 @@ const strList = (value: unknown, max = 50): string[] | undefined => {
 };
 
 const num = (value: unknown): number | undefined => {
+  // A blank string is "not given", not 0 — a blank minScore must not become
+  // "no gate".
+  if (typeof value === 'string' && !value.trim()) return undefined;
   const parsed = typeof value === 'string' ? Number(value) : value;
   return typeof parsed === 'number' && Number.isFinite(parsed)
     ? parsed
@@ -328,10 +328,11 @@ export class CourseCopilotBriefService {
     return {
       ...brief,
       audience: brief.audience ?? {},
-      outcomes: brief.outcomes ?? {},
-      behaviours: brief.behaviours ?? {},
+      // Nested arrays too, so "/shape/languageIds/-" appends on an empty brief.
+      outcomes: { enabling: [], ...(brief.outcomes ?? {}) },
+      behaviours: { helpful: [], unhelpful: [], ...(brief.behaviours ?? {}) },
       assessment: brief.assessment ?? {},
-      shape: brief.shape ?? {},
+      shape: { components: [], languageIds: [], ...(brief.shape ?? {}) },
       look: brief.look ?? {},
       practice: brief.practice ?? [],
       videoUrls: brief.videoUrls ?? [],

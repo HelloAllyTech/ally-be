@@ -47,7 +47,7 @@ export class CourseCopilotMediaService {
     try {
       this.imageFactory.getProvider();
       return null;
-    } catch (error) {
+    } catch {
       return 'Image generation is not configured on this environment — pick a cover from the library or upload one in the editor.';
     }
   }
@@ -72,7 +72,9 @@ export class CourseCopilotMediaService {
     const bucket = this.configService.s3.learnMediaPublicBucket!;
     const region = this.configService.aws.region ?? '';
     const slug = this.s3Service.sanitizeFileName(
-      `copilot-${options.purpose}-${options.name}`.toLowerCase().replace(/\s+/g, '-'),
+      `copilot-${options.purpose}-${options.name}`
+        .toLowerCase()
+        .replace(/\s+/g, '-'),
       80,
     );
     const key = `${COURSE_COPILOT_MEDIA_PREFIX}/${Date.now()}-${slug}.png`;
