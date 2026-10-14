@@ -1519,6 +1519,23 @@ export class BuilderBuildService {
       body,
       labels: ['builder'],
     });
+    // The label is what starts the repo's workflow. GitHub drops it without
+    // an error when the token can open issues but not label them — which is
+    // how the first production issue build (ally-be#629, 2026-10-14) sat
+    // unstarted. Try once more, then fail loudly rather than leave a build
+    // that never begins.
+    if (!issue.labels.includes('builder')) {
+      const labels = await this.github.addIssueLabels(repo, issue.number, [
+        'builder',
+      ]);
+      if (!labels.includes('builder')) {
+        throw new Error(
+          `raised ${issue.htmlUrl} but could not label it \`builder\`, so its workflow ` +
+            `will not start. The ally-be GITHUB_TOKEN needs permission to label issues ` +
+            `in ${repo} (triage or write access).`,
+        );
+      }
+    }
     await this.runRepository.update(
       { id: run.id },
       {

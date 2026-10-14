@@ -99,8 +99,11 @@ jobs:
           fi
           curl -fsS "${API}/api/v1/builder/pipeline/runs/${run_id}/spec" \
             -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-spec.md"
+          # The prompt goes to a file the next step reads, not to GITHUB_ENV: a
+          # spec without a trailing newline broke the env-file delimiter on the
+          # first production run (ally-be#629), and env values have size limits
+          # a large design can reach.
           {
-            echo 'PROMPT<<BUILDER_SPEC_EOF'
             echo 'Build the change specified below in this repository. It is the part of an approved'
             echo 'design that belongs to this repository; other repositories it mentions are separate'
             echo 'builds. Follow AGENTS.md / CLAUDE.md. Plan with your todo list first. Keep every'
@@ -111,12 +114,18 @@ jobs:
             echo 'and how you tested it.'
             echo
             cat "${RUNNER_TEMP}/builder-spec.md"
-            echo 'BUILDER_SPEC_EOF'
-          } >> "$GITHUB_ENV"
+          } > "${RUNNER_TEMP}/builder-prompt.md"
           echo "Fetched the spec for run ${run_id} ($(wc -c < "${RUNNER_TEMP}/builder-spec.md") bytes)."
 
       - name: Run opencode
-        run: opencode github run
+        run: |
+          # A builder issue carries its prompt in the file fetched above; a /oc
+          # comment carries its own instructions and has none.
+          if [ -f "${RUNNER_TEMP}/builder-prompt.md" ]; then
+            PROMPT="$(cat "${RUNNER_TEMP}/builder-prompt.md")"
+            export PROMPT
+          fi
+          opencode github run
         env:
           MODEL: ${{ vars.BUILDER_MODEL || 'google/gemini-3-flash-preview' }}
           USE_GITHUB_TOKEN: 'true'

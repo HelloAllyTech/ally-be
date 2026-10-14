@@ -1174,7 +1174,7 @@ export class GithubActionsService {
   async createIssue(
     repo: string,
     params: { title: string; body: string; labels?: string[] },
-  ): Promise<{ number: number; htmlUrl: string }> {
+  ): Promise<{ number: number; htmlUrl: string; labels: string[] }> {
     this.requireConfigured();
     try {
       const { data } = await axios.post(
@@ -1182,10 +1182,45 @@ export class GithubActionsService {
         { title: params.title, body: params.body, labels: params.labels ?? [] },
         { headers: this.headers, timeout: 15_000 },
       );
-      return { number: Number(data.number), htmlUrl: String(data.html_url) };
+      return {
+        number: Number(data.number),
+        htmlUrl: String(data.html_url),
+        // GitHub silently drops labels on a new issue when the token may
+        // create issues but not triage them, so the caller checks these.
+        labels: ((data.labels ?? []) as { name?: string }[])
+          .map((label) => String(label?.name ?? ''))
+          .filter(Boolean),
+      };
     } catch (error) {
       this.noteAuthOutcome(error);
       throw error;
+    }
+  }
+
+  /** Adds labels to an issue; returns the issue's labels afterwards. */
+  async addIssueLabels(
+    repo: string,
+    number: number,
+    labels: string[],
+  ): Promise<string[]> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, `issues/${number}/labels`),
+        { labels },
+        { headers: this.headers, timeout: 15_000 },
+      );
+      return ((data ?? []) as { name?: string }[])
+        .map((label) => String(label?.name ?? ''))
+        .filter(Boolean);
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      this.logger.warn(
+        `Could not label ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
     }
   }
 

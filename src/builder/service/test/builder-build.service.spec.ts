@@ -254,6 +254,7 @@ describe('BuilderBuildService', () => {
       (github as any).createIssue = jest.fn().mockResolvedValue({
         number: 41,
         htmlUrl: 'https://github.com/o/ally-be/issues/41',
+        labels: ['builder'],
       });
       prdService.getOrCreateDoc.mockResolvedValue({
         draft: {
@@ -282,6 +283,47 @@ describe('BuilderBuildService', () => {
       expect(runRepository.update).toHaveBeenCalledWith(
         { id: run.id },
         expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
+      );
+    });
+  });
+
+  describe('issue dispatch — the label', () => {
+    beforeEach(() => {
+      (github as any).createIssue = jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-be/issues/41',
+        // What GitHub returns when the token may open issues but not label them.
+        labels: [],
+      });
+    });
+
+    it('adds the label GitHub dropped', async () => {
+      (github as any).addIssueLabels = jest.fn().mockResolvedValue(['builder']);
+
+      await service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
+        dispatch: 'issue',
+      });
+
+      expect((github as any).addIssueLabels).toHaveBeenCalledWith(
+        'ally-be',
+        41,
+        ['builder'],
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
+      );
+    });
+
+    it('fails the build, naming the permission, when the label cannot be added', async () => {
+      (github as any).addIssueLabels = jest.fn().mockResolvedValue([]);
+
+      await expect(
+        service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
+          dispatch: 'issue',
+        }),
+      ).rejects.toThrow(
+        /could not label it `builder`.*permission to label issues/,
       );
     });
   });
