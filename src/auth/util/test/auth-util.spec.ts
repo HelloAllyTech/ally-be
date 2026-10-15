@@ -12,26 +12,26 @@ describe('AuthUtil', () => {
       jest.restoreAllMocks();
     });
 
-    it('should generate a 4-digit OTP', () => {
+    it('should generate a 6-digit OTP', () => {
       const otp = AuthUtil.generateOtp();
 
       expect(otp).toBeDefined();
       expect(typeof otp).toBe('string');
-      expect(otp.length).toBe(4);
+      expect(otp.length).toBe(6);
     });
 
-    it('should generate OTP within valid range (1000-9999)', () => {
+    it('should generate OTP within valid range (100000-999999)', () => {
       const otp = AuthUtil.generateOtp();
       const otpNumber = parseInt(otp, 10);
 
-      expect(otpNumber).toBeGreaterThanOrEqual(1000);
-      expect(otpNumber).toBeLessThanOrEqual(9999);
+      expect(otpNumber).toBeGreaterThanOrEqual(100000);
+      expect(otpNumber).toBeLessThanOrEqual(999999);
     });
 
     it('should generate numeric string only', () => {
       const otp = AuthUtil.generateOtp();
 
-      expect(/^\d{4}$/.test(otp)).toBe(true);
+      expect(/^\d{6}$/.test(otp)).toBe(true);
     });
 
     it('should generate different OTPs on multiple calls', () => {
@@ -46,13 +46,13 @@ describe('AuthUtil', () => {
       expect(otps.size).toBeGreaterThan(1);
     });
 
-    it('draws from the CSPRNG over every 4-digit code, never Math.random', () => {
+    it('draws from the CSPRNG over every 6-digit code, never Math.random', () => {
       const mathRandom = jest.spyOn(Math, 'random');
 
       AuthUtil.generateOtp();
 
-      // randomInt's upper bound is exclusive: 1000..9999 inclusive.
-      expect(crypto.randomInt).toHaveBeenCalledWith(1000, 10000);
+      // randomInt's upper bound is exclusive: 100000..999999 inclusive.
+      expect(crypto.randomInt).toHaveBeenCalledWith(100000, 1000000);
       expect(mathRandom).not.toHaveBeenCalled();
     });
   });
