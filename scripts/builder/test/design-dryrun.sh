@@ -230,7 +230,7 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = design ]; then
     "$(jq -c '.mcp.builder.command' "${WORK}/run/opencode.json")"
   check "reviewer denied edit, write and bash" '{"edit":"deny","write":"deny","bash":"deny"}' \
     "$(jq -c '.agent.reviewer.permission' "${WORK}/run/opencode.json")"
-  check "helper env is private" 600 "$(stat -f %Lp /tmp/builder-helper-env 2>/dev/null || stat -c %a /tmp/builder-helper-env)"
+  check "helper env is private" 600 "$(stat -c %a /tmp/builder-helper-env 2>/dev/null || stat -f %Lp /tmp/builder-helper-env)"
 fi
 
 if [ "$SCENARIO" = all ] || [ "$SCENARIO" = unsubmitted ]; then
