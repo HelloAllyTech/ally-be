@@ -220,6 +220,44 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
+      # Formatting is a tool's job, not the model's: ally-be#630 failed lint on
+      # Prettier spacing in a spec opencode had edited. Format only the files
+      # this branch changed against the default branch (never the rest of the
+      # repo) and push that as its own commit, which re-runs CI on the PR.
+      # Best-effort: a repo without Prettier or ESLint installed is skipped,
+      # and a failure here never fails the run.
+      - name: Format what this branch changed
+        if: success() && inputs.runtime == 'node'
+        continue-on-error: true
+        env:
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          case "$branch" in opencode/*) ;; *) echo "On ${branch}; nothing of opencode's to format."; exit 0 ;; esac
+          git fetch --quiet origin "$BASE" "$branch" || true
+          git merge --ff-only --quiet "origin/${branch}" 2>/dev/null || true
+          files=()
+          while IFS= read -r file; do [ -f "$file" ] && files+=("$file"); done \
+            < <(git diff --name-only --diff-filter=d "origin/${BASE}...HEAD")
+          if [ "${#files[@]}" -eq 0 ]; then echo "No changed files."; exit 0; fi
+          if [ -x node_modules/.bin/prettier ]; then
+            node_modules/.bin/prettier --write --ignore-unknown "${files[@]}" > /dev/null || true
+          fi
+          scripts=()
+          for file in "${files[@]}"; do
+            case "$file" in *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs) scripts+=("$file") ;; esac
+          done
+          if [ -x node_modules/.bin/eslint ] && [ "${#scripts[@]}" -gt 0 ]; then
+            node_modules/.bin/eslint --fix --no-warn-ignored "${scripts[@]}" > /dev/null 2>&1 \
+              || node_modules/.bin/eslint --fix "${scripts[@]}" > /dev/null 2>&1 || true
+          fi
+          if git diff --quiet -- "${files[@]}"; then echo "Already formatted."; exit 0; fi
+          git add -- "${files[@]}"
+          git commit --quiet -m "style: format the files this pull request changed"
+          git push --quiet origin "HEAD:${branch}"
+          echo "Pushed formatting for $(git diff --name-only HEAD~1 HEAD | wc -l | tr -d ' ') file(s)."
+
       # What this run spent, so Builder can show it and stop a pull request
       # whose automation has cost too much (maxPrAutomationUsd). Best-effort:
       # a failure here never fails the build.

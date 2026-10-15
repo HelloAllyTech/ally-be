@@ -34,7 +34,10 @@ import {
   BuilderSessionStatus,
   BuilderStage,
 } from '../enum/builder.enum';
-import { isBuilderRepo } from '../constants/builder-repos.constants';
+import {
+  findBuilderRepo,
+  isBuilderRepo,
+} from '../constants/builder-repos.constants';
 import {
   BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
@@ -1848,6 +1851,13 @@ export class BuilderPullRequestService {
         // account — a definite answer, and definitely not our bot, so it falls
         // through to the git author name rather than to "unknown".
         const ours = this.isOwnActor(headAuthor.login ?? headAuthor.name ?? '');
+        // The failing step's own output, so a fix request carries the error
+        // rather than only the check's name.
+        const excerpts = ours
+          ? await this.github
+              .failedCheckExcerpts(pullRequest.repo, headSha)
+              .catch(() => ({}) as Record<string, string>)
+          : {};
 
         for (const check of rollup.failed) {
           // Two independent reasons a failure is not ours to act on, and the
@@ -1874,6 +1884,23 @@ export class BuilderPullRequestService {
               `${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`;
           } else {
             body = `The check "${check}" failed on ${shortSha}.`;
+            if (excerpts[check]) {
+              body += `\n\nThe failing step's output:\n\n\`\`\`\n${excerpts[check]}\n\`\`\``;
+            }
+          }
+
+          // A docs rule a fix run cannot satisfy is a person's call: say what
+          // the guard asked for, on an opencode PR, instead of recording it for
+          // nobody.
+          if (unfixable && ours && isOpencodeBranch(pullRequest.branch)) {
+            const asked = (excerpts[check] ?? '')
+              .split('\n')
+              .map((line) => line.replace(/^##\[error\]/, '').trim())
+              .find((line) => /wiki|docs/i.test(line));
+            await this.escalate(
+              pullRequest,
+              `Needs a docs decision: ${asked ?? `the "${check}" check failed`}. Add a Wiki-PR: line to the pull request description (a wiki PR link, or "Wiki-PR: none — <reason>"), or the docs:skip label with a reason.`,
+            );
           }
 
           await this.feedbackRepository.upsertIfNew({
@@ -2164,9 +2191,26 @@ export class BuilderPullRequestService {
       'unless the test itself is wrong, and say so if it is. Change nothing outside',
       'what the feedback asks for. End with a short list of what you fixed, what you',
       'disagreed with, and how you tested it.',
+      ...this.repoCheckLines(pullRequest.repo),
       '',
       ...(lines.length ? lines : ['(No feedback is outstanding.)']),
     ].join('\n');
+  }
+
+  /** The commands this repository's CI holds a pull request to. */
+  private repoCheckLines(repo: string): string[] {
+    const definition = findBuilderRepo(repo);
+    if (!definition) return [];
+    const commands = [
+      definition.typecheck,
+      definition.lint,
+      ...(definition.ciChecks ?? []),
+      definition.affectedTest ?? definition.test,
+    ].filter(Boolean);
+    return [
+      '',
+      `CI runs: ${commands.map((c) => `\`${c}\``).join(', ')}. Formatting of changed files is applied for you afterwards.`,
+    ];
   }
 
   /**
@@ -2213,7 +2257,7 @@ export class BuilderPullRequestService {
     if (ceiling && pullRequest.fixRunCount >= ceiling) {
       await this.escalate(
         pullRequest,
-        `${pullRequest.fixRunCount} fix rounds and ${count} problem${count === 1 ? '' : 's'} remain.`,
+        `After ${pullRequest.fixRunCount} fix round${pullRequest.fixRunCount === 1 ? '' : 's'}, the latest review still found ${count} problem${count === 1 ? '' : 's'}.`,
       );
       return;
     }
@@ -2299,13 +2343,36 @@ export class BuilderPullRequestService {
     const limit = Number(settings.maxPrAutomationUsd ?? 0);
     const spent = Number(pullRequest.automationCostUsd ?? 0);
     if (!limit || spent < limit) return false;
-    const open = await this.feedbackRepository.countActionable(pullRequest.id);
     await this.escalate(
       pullRequest,
       `Spent $${spent.toFixed(2)} of the $${limit.toFixed(2)} automation budget on review and fixes` +
-        (open ? `, and ${open} problem${open === 1 ? '' : 's'} remain.` : '.'),
+        (await this.openProblemsClause(pullRequest)),
     );
     return true;
+  }
+
+  /**
+   * How an escalation ends: the problems still open (not the last review's
+   * count, which went on reading 4 after fixes for two of them were pushed),
+   * and whether fixes were pushed that no review has read yet.
+   */
+  private async openProblemsClause(
+    pullRequest: BuilderPullRequest,
+  ): Promise<string> {
+    const open = await this.feedbackRepository.countActionable(pullRequest.id);
+    const unreviewed =
+      !!pullRequest.headSha &&
+      !!pullRequest.reviewedSha &&
+      pullRequest.headSha !== pullRequest.reviewedSha;
+    const problems = open
+      ? `, and ${open} problem${open === 1 ? ' is' : 's are'} still open`
+      : ', and no problem is still open';
+    return (
+      problems +
+      (unreviewed
+        ? '. Fixes were pushed after the last review and have not been reviewed yet.'
+        : '.')
+    );
   }
 
   /**
@@ -2326,7 +2393,8 @@ export class BuilderPullRequestService {
     if (spent < BUILDER_PR_AUTOMATION_TIMEBOX_MS) return false;
     await this.escalate(
       pullRequest,
-      `${spent >= 2 * 3_600_000 ? `${Math.round(spent / 3_600_000)} hours` : `${Math.round(spent / 60_000)} minutes`} of automated review and fixes, and ${last.count} problem${last.count === 1 ? '' : 's'} remain.`,
+      `${spent >= 2 * 3_600_000 ? `${Math.round(spent / 3_600_000)} hours` : `${Math.round(spent / 60_000)} minutes`} of automated review and fixes` +
+        (await this.openProblemsClause(pullRequest)),
     );
     return true;
   }

@@ -40,6 +40,12 @@ export interface BuilderRepoDefinition {
   singleTest?: string;
   /** Null where the repo's test/build step already covers types. */
   typecheck: string | null;
+  /**
+   * Further commands the repo's CI runs that block a merge, beyond test, lint
+   * and typecheck. ally-web#817 failed "Lint & format" on the colour-literal
+   * ratchet, a script no build prompt had ever named.
+   */
+  ciChecks?: string[];
   /** Whether the repo can be stood up in a runner for live E2E. */
   e2eCapable: boolean;
   serveCommand?: string;
@@ -109,6 +115,7 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
       'else npx vitest related --run --passWithNoTests $files; fi',
     lint: 'npx nx run-many -t lint --skip-nx-cache',
     typecheck: 'npx tsc -b --pretty false',
+    ciChecks: ['npm run lint:colors'],
     e2eCapable: true,
     serveCommand: 'npx nx serve ally-admin-dashboard',
     port: 8081,

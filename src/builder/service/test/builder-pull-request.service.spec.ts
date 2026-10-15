@@ -100,6 +100,7 @@ describe('BuilderPullRequestService', () => {
         .mockResolvedValue({ files: ['src/a.ts'], truncated: false }),
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn().mockResolvedValue(null),
+      failedCheckExcerpts: jest.fn().mockResolvedValue({}),
       listPullRequestFeedback: jest.fn().mockResolvedValue([]),
       // Builder's own push by default: the ordinary case, and the one the
       // pre-existing CI tests below were written against.
@@ -566,6 +567,23 @@ describe('BuilderPullRequestService', () => {
      * recorded, not acted on — and, more importantly, that the suppression is
      * per check rather than per commit.
      */
+    it("puts the failing step's output in its own failing check", async () => {
+      github.failedCheckExcerpts.mockResolvedValue({
+        'unit tests': 'FAIL src/a.spec.ts\n  expected 1, received 2',
+      });
+
+      await reconcileWith({}, openPr(), {
+        state: 'failure',
+        failed: ['unit tests'],
+        total: 2,
+      });
+
+      const [row] = feedbackRepository.upsertIfNew.mock.calls.find(
+        ([call]: [any]) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
+      );
+      expect(row.body).toContain('expected 1, received 2');
+    });
+
     describe('a failing check no fix run could satisfy', () => {
       const docsRed = { state: 'failure', failed: ['docs-guard'], total: 2 };
 
@@ -588,6 +606,34 @@ describe('BuilderPullRequestService', () => {
           ([call]: [any]) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
         );
         expect(row.body).toContain('Wiki-PR');
+      });
+
+      it('hands an opencode PR to a person with what the guard asked for', async () => {
+        github.failedCheckExcerpts.mockResolvedValue({
+          'docs-guard':
+            '##[error]Changed libs/x.ts, described by repos/ally-web.md, but no Wiki-PR: trailer.',
+        });
+
+        await reconcileWith(
+          {},
+          openPr({ branch: 'opencode/issue9-1' }),
+          docsRed,
+        );
+
+        const reason = repository.update.mock.calls
+          .map(([, patch]: [any, any]) => patch.needsHumanReason)
+          .find(Boolean);
+        expect(reason).toContain('Needs a docs decision');
+        expect(reason).toContain('repos/ally-web.md');
+      });
+
+      it('does not escalate a docs failure on a builder/* PR', async () => {
+        await reconcileWith({}, openPr(), docsRed);
+
+        expect(repository.update).not.toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ needsHumanReason: expect.any(String) }),
+        );
       });
 
       it('matches the name GitHub actually reports, whichever spelling', async () => {
@@ -741,13 +787,14 @@ describe('BuilderPullRequestService', () => {
         { id: 'pr-1' },
         expect.objectContaining({
           needsHumanAt: expect.any(Date),
-          needsHumanReason: '3 fix rounds and 1 problem remain.',
+          needsHumanReason:
+            'After 3 fix rounds, the latest review still found 1 problem.',
         }),
       );
       expect(notificationService.prNeedsHuman).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'session-1' }),
         expect.objectContaining({ id: 'pr-1' }),
-        '3 fix rounds and 1 problem remain.',
+        'After 3 fix rounds, the latest review still found 1 problem.',
       );
     });
 
@@ -882,6 +929,7 @@ describe('BuilderPullRequestService', () => {
     it('escalates on the time box while waiting on opencode or CI', async () => {
       const fourHoursAgo = new Date(Date.now() - 4 * 3_600_000).toISOString();
       feedbackRepository.countPending.mockResolvedValue(0);
+      feedbackRepository.countActionable.mockResolvedValue(2);
 
       await reconcileWith(
         { headSha: 'head-4' },
@@ -897,7 +945,7 @@ describe('BuilderPullRequestService', () => {
         { id: 'pr-1' },
         expect.objectContaining({
           needsHumanReason:
-            '4 hours of automated review and fixes, and 2 problems remain.',
+            '4 hours of automated review and fixes, and 2 problems are still open. Fixes were pushed after the last review and have not been reviewed yet.',
         }),
       );
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
@@ -1146,7 +1194,7 @@ describe('BuilderPullRequestService', () => {
         { id: 'pr-1' },
         expect.objectContaining({
           needsHumanReason:
-            'Spent $10.40 of the $10.00 automation budget on review and fixes, and 2 problems remain.',
+            'Spent $10.40 of the $10.00 automation budget on review and fixes, and 2 problems are still open. Fixes were pushed after the last review and have not been reviewed yet.',
         }),
       );
     });
@@ -2674,6 +2722,7 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
     github = {
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn(),
+      failedCheckExcerpts: jest.fn().mockResolvedValue({}),
       // An ordinary commit by default: no merge lineage to carry a review
       // across, so these cases exercise the plain reviewed-this-sha path.
       getCommitAuthor: jest.fn().mockResolvedValue({
@@ -2848,6 +2897,7 @@ describe('BuilderPullRequestService — carrying a review across our own update'
       getCommitAuthor: jest.fn(),
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn(),
+      failedCheckExcerpts: jest.fn().mockResolvedValue({}),
       approvePullRequest: jest
         .fn()
         .mockResolvedValue({ approved: true, message: null }),
@@ -3114,6 +3164,7 @@ describe('BuilderPullRequestService — a failed review must not approve', () =>
     github = {
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn(),
+      failedCheckExcerpts: jest.fn().mockResolvedValue({}),
       getCommitAuthor: jest.fn().mockResolvedValue({
         login: 'ally-builder[bot]',
         name: null,

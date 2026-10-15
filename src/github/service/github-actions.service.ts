@@ -1029,6 +1029,74 @@ export class GithubActionsService {
   }
 
   /**
+   * The tail of each failed check's log on a commit, by check name — what a
+   * fix request needs so the agent fixes the actual error instead of spending
+   * a turn finding it ("Lint & format failed" said nothing about which file).
+   *
+   * Actions check runs share their id with the job, so the job log is one
+   * request. Timestamps and colour codes are stripped; error-looking lines are
+   * kept first, then the last lines of the log, capped at `maxChars`. Best
+   * effort throughout: a check whose log cannot be read is left out.
+   */
+  async failedCheckExcerpts(
+    repo: string,
+    ref: string,
+    maxChars = 2_500,
+  ): Promise<Record<string, string>> {
+    this.requireConfigured();
+    const excerpts: Record<string, string> = {};
+    let runs: any[] = [];
+    try {
+      const { data } = await axios.get(
+        this.url(repo, `commits/${ref}/check-runs`),
+        { headers: this.headers, timeout: 15_000 },
+      );
+      runs = data?.check_runs ?? [];
+    } catch {
+      return excerpts;
+    }
+    for (const run of runs) {
+      if (!['failure', 'timed_out'].includes(String(run?.conclusion))) continue;
+      try {
+        const { data } = await axios.get(
+          this.url(repo, `actions/jobs/${run.id}/logs`),
+          {
+            headers: this.headers,
+            timeout: 20_000,
+            responseType: 'text',
+            maxRedirects: 5,
+          },
+        );
+        const lines = String(data)
+          .split('\n')
+          .map((line) =>
+            line
+              .replace(/\x1b\[[0-9;]*m/g, '')
+              .replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z\s?/, '')
+              .trimEnd(),
+          )
+          .filter(
+            (line) =>
+              line &&
+              !/^##\[(group|endgroup)\]|^\[command\]|npm warn|DeprecationWarning|git config|safe\.directory/.test(
+                line,
+              ),
+          );
+        const errors = lines.filter((line) =>
+          /error|fail|✖|×|\[warn\]|increased|expected|received/i.test(line),
+        );
+        const tail = lines.slice(-30);
+        const picked = [...new Set([...errors.slice(-25), ...tail])].join('\n');
+        excerpts[String(run.name)] =
+          picked.length > maxChars ? picked.slice(-maxChars) : picked;
+      } catch {
+        // left out: an unreadable log must not block the feedback itself
+      }
+    }
+    return excerpts;
+  }
+
+  /**
    * The Actions jobs that ran on a commit, shaped like check runs (name,
    * status, conclusion) — what the checks API reports for them, read through
    * the API a fine-grained token can reach. Only the latest attempt of each

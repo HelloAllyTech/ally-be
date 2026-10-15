@@ -62,6 +62,7 @@ import {
 } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
+  BuilderRepoDefinition,
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
 import {
@@ -903,9 +904,13 @@ export class BuilderPipelineController {
       'The spec a Ralph-loop build works from: rules, PRD, approved design',
   })
   async getSpec(@Param('runId', ParseUUIDPipe) runId: string): Promise<string> {
-    const { doc } = await this.loadRunContext(runId);
+    const { doc, repos } = await this.loadRunContext(runId);
     const platformRules = await this.knowledgeService.platformRules();
-    return [renderPlatformRules(platformRules), renderPrd(doc.draft)]
+    return [
+      renderPlatformRules(platformRules),
+      renderRepoChecks(repos),
+      renderPrd(doc.draft),
+    ]
       .filter(Boolean)
       .join('\n\n---\n\n');
   }
@@ -1209,4 +1214,31 @@ export class BuilderPipelineController {
     });
     return { ok: true, repo: map.repo, generatedAt: map.generatedAt };
   }
+}
+
+/**
+ * What this repository's CI will hold the pull request to, so a build runs the
+ * same commands before it finishes instead of learning them from a red check,
+ * and the docs rule its docs-guard enforces — a rule no fix run can satisfy
+ * after the fact, because it needs a line in the PR description.
+ */
+export function renderRepoChecks(repos: BuilderRepoDefinition[]): string {
+  if (!repos.length) return '';
+  const lines = ['## What CI checks in this repository', ''];
+  for (const repo of repos) {
+    const commands = [
+      repo.typecheck,
+      repo.lint,
+      ...(repo.ciChecks ?? []),
+      repo.affectedTest ?? repo.test,
+    ].filter(Boolean);
+    lines.push(`${repo.repo}: ${commands.map((c) => `\`${c}\``).join(', ')}`);
+  }
+  lines.push(
+    '',
+    'Run these before you finish and fix what they report. Formatting of the files you changed is applied for you afterwards.',
+    '',
+    'Docs: if `.docs-map.yml` exists, a file you change may map to a doc. Update a mapped doc inside this repository when your change makes it wrong. For a mapped wiki page, end your summary with one line: `Wiki-PR: none — <why the page stays accurate>` or `Wiki-PR: needed — <what the page must now say>`.',
+  );
+  return lines.join('\n');
 }
