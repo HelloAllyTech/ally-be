@@ -200,9 +200,10 @@ export enum BuilderEventType {
   PLAN = 'plan',
   VERIFICATION = 'verification',
   /**
-   * A machine-run test-gate result, posted by run-test-gate.sh rather than
-   * asserted by the agent — the UI renders it as verified, not self-reported,
-   * and /complete refuses a `done` for a run that never passed one.
+   * A machine-run test-gate result, posted by the runner's run-test-gate.sh
+   * (removed; the runner is design-only now) rather than asserted by the
+   * agent — the UI renders it as verified, not self-reported, and /complete
+   * refuses a `done` for a run that never passed one.
    */
   GATE_RESULT = 'gate_result',
   /**

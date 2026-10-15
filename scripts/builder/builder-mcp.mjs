@@ -1,42 +1,18 @@
 #!/usr/bin/env node
 //
-// The reporting protocol, as MCP tools rather than shell commands.
+// The design run's reporting protocol, as MCP tools.
 //
-// ## Why this exists
+// run-engine.sh drafts a technical design in two read-only passes, and this
+// server is how each pass reports back to ally-be: the designer submits through
+// `design`, the cold critic through `design_review`, and both may leave a
+// `note` in the run feed. Neither pass has a shell, so these typed tool calls
+// are the only channel they have.
 //
-// Everything a build tells ally-be — which stage it is in, what it did, what
-// it wants to ask, how it ended — went through executables on the agent's
-// PATH, invoked by the agent's shell tool. That channel has broken in five
-// distinct ways, none of which were about the protocol itself:
-//
-//   1. Shell functions in the prompt: a coding agent spawns a fresh shell per
-//      call, so the definitions existed only for an agent that re-pasted them.
-//   2. `complete` is a bash BUILTIN, and builtins outrank PATH, so a helper
-//      by that name could never be invoked.
-//   3. PATH reached the agent's shell but the job's environment did not, so
-//      every helper resolved, ran, and died on a missing ALLY_BE_API_URL.
-//   4. gemini-cli 0.22.5 refused `gh pr create`, `git add .` and every helper
-//      call with "Command rejected because it could not be parsed safely" —
-//      a bug in its own parser, which no prompt could work around.
-//   5. `report` was handed hand-assembled JSON wrapping multi-line markdown,
-//      which is not valid JSON, so every run's write-up was lost to a 400.
-//
-// Each was fixed where it appeared. The class was never fixed, because the
-// channel was wrong: shell is a text protocol between two programs that do not
-// agree on quoting, and one of them is a language model.
-//
-// An MCP tool call is none of those things. It is a typed JSON-RPC request the
-// agent's harness makes directly. There is no PATH to resolve, no shell to
-// spawn, no builtin to shadow, no environment to forward, no parser to please,
-// and no quoting decision anywhere — a markdown report is simply a string
-// field. Every failure above is structurally impossible here.
-//
-// ## What this is not
-//
-// It is not a replacement for `agent-helpers/`. Those stay: an engine without
-// MCP support still needs them, and they are the fallback if this server fails
-// to start. Both speak to the same ally-be endpoints, so the contract is the
-// HTTP API rather than either implementation.
+// An MCP tool call is a typed JSON-RPC request the agent's harness makes
+// directly. There is no PATH to resolve, no shell to spawn, no environment to
+// forward and no quoting decision anywhere — a markdown design is simply a
+// string field. The shell helpers this replaced broke in five distinct ways,
+// none of them about the protocol and all of them about the channel.
 //
 // ## No dependencies, on purpose
 //
@@ -44,19 +20,16 @@
 // The subset of MCP needed here — initialize, tools/list, tools/call over
 // newline-delimited JSON-RPC on stdio — is small enough to write out, and the
 // platform already speaks MCP by hand in BuilderStacksService for the same
-// reason. A dependency here would mean an install step in the protocol
-// checkout to serve 300 lines.
+// reason.
 
 import { readFileSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
-import { appendFileSync } from 'node:fs';
 
-/* ── Configuration, read the way the helpers read it ─────────────────────── */
+/* ── Configuration ───────────────────────────────────────────────────────── */
 
-// From a file rather than the environment. PATH reaches an agent's subprocess;
-// the job's own variables do not necessarily, and an MCP server is spawned by
-// the harness with whatever environment the harness decides to pass. A file is
-// the only channel that does not depend on another process choosing to forward
+// From a file rather than the environment. An MCP server is spawned by the
+// harness with whatever environment the harness decides to pass; a file is the
+// only channel that does not depend on another process choosing to forward
 // something. `environment` in the MCP config covers it too — this is belt and
 // braces, and it costs one read at startup.
 const loadConfig = () => {
@@ -85,35 +58,13 @@ const loadConfig = () => {
 const config = loadConfig();
 const API = `${config.apiUrl}/api/v1/builder/pipeline/runs/${config.runId}`;
 
-/** Every stage the rail knows. MUST MATCH `BuilderStage` in builder.enum.ts. */
-const STAGES = [
-  'SETUP',
-  'PLANNING',
-  'CODING',
-  'TESTING',
-  'GATE',
-  'VERIFYING',
-  'REVIEWING',
-  'REMEDIATING',
-  'FINALISING',
-  'E2E_VERIFY',
-  'OPENING_PRS',
-  'REPORTING',
-  'DONE',
-];
-
 /* ── Talking to ally-be ──────────────────────────────────────────────────── */
 
 /**
- * Never throws.
- *
- * A transport failure has to arrive at the caller as a RESULT, not as an
- * exception, because each tool decides for itself what an unreachable ally-be
- * means. For `stage` it means the rail did not move and the build carries on;
- * for `ask` it means the agent is still running and must be told so. Letting
- * fetch throw collapsed that distinction into one generic handler error, and
- * a `stage` call that reported "failed" would read to an agent as something it
- * had done wrong.
+ * Never throws. A transport failure arrives at the caller as a RESULT, so each
+ * tool decides for itself what an unreachable ally-be means: for `note` the
+ * feed misses a line and the run carries on; for `design` the agent is told
+ * its design was not stored.
  */
 const request = async (method, path, body) => {
   try {
@@ -128,8 +79,7 @@ const request = async (method, path, body) => {
     const text = await response.text();
     return { status: response.status, ok: response.ok, text };
   } catch (error) {
-    // Status 0 is "never reached ally-be", which is deliberately not a 4xx:
-    // `complete_run` retries this and refuses to retry a refusal.
+    // Status 0 is "never reached ally-be", deliberately not a 4xx.
     return { status: 0, ok: false, text: error?.message ?? String(error) };
   }
 };
@@ -137,33 +87,6 @@ const request = async (method, path, body) => {
 const postEvents = (events) => request('POST', 'events', { events });
 
 /* ── What this phase may do ──────────────────────────────────────────────── */
-
-/**
- * Only one phase may end the run.
- *
- * The runner invokes phases in sequence: a coder that has finished is finished
- * with its own phase, and the build carries on to the gate without it. That
- * has always been in the prompt, and on 2026-09-24 it stopped being enough. A
- * coding agent committed its work, called `complete_run`, was refused because
- * no gate had run, narrated its understanding — "I understand complete-run is
- * not my task" — and called it again. Twenty-three times.
- *
- * Every refusal was correct and every retry was rational. The agent had
- * finished; the tool was named exactly what it wanted to say; nothing else in
- * its hand meant "I am done". Refusing harder could not fix that, because the
- * loop was not a misunderstanding.
- *
- * So the tool is withheld from the phases that must not use it. A tool absent
- * from `tools/list` cannot be called at all — the same guarantee opencode's
- * denied agents get, where the model is told "Model tried to call unavailable
- * tool" rather than being refused one call at a time.
- *
- * `fix` and `review` keep it: those modes run a narrower pipeline and do
- * report their own outcome. An unrecognised or missing phase keeps everything,
- * because a runner too old to write the file must not lose the ability to
- * finish.
- */
-const MAY_FINISH_THE_RUN = new Set(['finalise', 'fix', 'review']);
 
 const currentPhase = () => {
   try {
@@ -177,92 +100,30 @@ const currentPhase = () => {
 };
 
 /**
- * Tools that belong to exactly one phase. The designer submits a design and
- * the design critic files a verdict; a coder offered `design` could rewrite
- * the scope it is about to be held to.
+ * Each pass gets its own tool and `note`, nothing else. The designer must not
+ * file a verdict on its own design, and the critic must not rewrite the design
+ * it is reviewing. A tool absent from `tools/list` cannot be called at all —
+ * the same guarantee opencode's denied agents get — which held where refusing
+ * the call did not: on 2026-09-24 a coding agent called a refused tool
+ * twenty-three times in a row.
+ *
+ * Any other phase (setup, or a runner too old to write the file) gets `note`
+ * only: no pass outside these two has anything to submit.
  */
-const ONLY_IN_PHASE = {
-  design: 'design',
-  design_review: 'design-review',
-  review: 'review',
-};
-
-/**
- * What the design phases may use at all: their own tool and `note`. The first
- * live design run (session 880e73e6, 2026-10-12) called `stage` and moved a
- * session that was not building to CODING; a designer has no stage, todo
- * list, pull request, question or outcome to report.
- */
-const DESIGN_PHASE_TOOLS = {
+const PHASE_TOOLS = {
   design: ['design', 'note'],
   'design-review': ['design_review', 'note'],
 };
 
-const toolsForPhase = () => {
-  const phase = currentPhase();
-  if (DESIGN_PHASE_TOOLS[phase]) return DESIGN_PHASE_TOOLS[phase];
-  const own = (name) => !ONLY_IN_PHASE[name] || ONLY_IN_PHASE[name] === phase;
-  // Unknown phase: withhold nothing but the phase-owned tools. See above.
-  if (!phase || MAY_FINISH_THE_RUN.has(phase)) {
-    return Object.keys(TOOLS).filter(own);
-  }
-  return Object.keys(TOOLS).filter(
-    (name) => name !== 'complete_run' && own(name),
-  );
-};
+const toolsForPhase = () => PHASE_TOOLS[currentPhase()] ?? ['note'];
 
 /* ── The tools ───────────────────────────────────────────────────────────── */
 
 /**
- * Each tool returns the text the agent sees. Telemetry must never fail a
- * build, so a transport failure is REPORTED and not thrown — the one
- * exception being the tools whose whole purpose is to change what happens
- * next (`ask` and `complete_run`), where a silent failure would leave the run
- * believing it had paused or finished when it had not.
+ * Each tool returns the text the agent sees. A transport failure is REPORTED,
+ * not thrown.
  */
 const TOOLS = {
-  stage: {
-    description:
-      'Move the build to a new stage. Call it when you START one. The ' +
-      'progress rail a person watches is driven entirely by this.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        stage: {
-          type: 'string',
-          enum: STAGES,
-          description: 'The stage being entered.',
-        },
-      },
-      required: ['stage'],
-    },
-    handler: async ({ stage }) => {
-      // Refused here rather than at the server, so the agent is told which
-      // word to use instead of watching its report vanish into a CHECK
-      // constraint. A near-miss is corrected in place, because arguing with a
-      // model about a spelling is a worse use of a turn than accepting what it
-      // plainly meant.
-      let want = String(stage ?? '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9_]/g, '_');
-      if (want === 'FINALIZING') want = 'FINALISING';
-
-      if (!STAGES.includes(want)) {
-        return {
-          isError: true,
-          text: `"${stage}" is not a stage. Use one of: ${STAGES.join(', ')}`,
-        };
-      }
-
-      const result = await postEvents([
-        { type: 'stage_change', payload: { stage: want } },
-      ]);
-      return {
-        text: result.ok ? `stage → ${want}` : `stage → ${want} (not recorded)`,
-      };
-    },
-  },
-
   note: {
     description:
       'Record a milestone in the run feed: your plan, test output, a ' +
@@ -289,59 +150,6 @@ const TOOLS = {
         { type: String(type), payload: { text: String(text ?? '') } },
       ]);
       return { text: result.ok ? 'note recorded' : 'note NOT recorded' };
-    },
-  },
-
-  scope_change: {
-    description:
-      'Declare a file you must change that the plan did not list, and why. ' +
-      "The test gate fails any changed file outside the plan's file list " +
-      'unless it is declared here; the reviewer reads every declaration. ' +
-      'Prefer restoring an unplanned change over declaring it: declare only ' +
-      'what the planned change genuinely needs, never a test or snapshot you ' +
-      'edited to make an unrelated check pass.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repo: { type: 'string', description: 'The repo, e.g. ally-web.' },
-        path: {
-          type: 'string',
-          description: 'The file, relative to that repo, e.g. src/a/b.ts.',
-        },
-        reason: {
-          type: 'string',
-          description: 'Why the planned change needs this file.',
-        },
-      },
-      required: ['repo', 'path', 'reason'],
-    },
-    handler: async ({ repo, path: file, reason }) => {
-      const entry = {
-        repo: String(repo ?? '').trim(),
-        path: String(file ?? '')
-          .trim()
-          .replace(/^\.\//, '')
-          .replace(new RegExp(`^repos/${String(repo ?? '').trim()}/`), ''),
-        reason: String(reason ?? '').trim(),
-      };
-      if (!entry.repo || !entry.path || !entry.reason) {
-        return { isError: true, text: 'repo, path and reason are all required.' };
-      }
-      appendFileSync(
-        process.env.BUILDER_SCOPE_CHANGES || '/tmp/builder-scope-changes.jsonl',
-        `${JSON.stringify(entry)}\n`,
-      );
-      const result = await postEvents([
-        {
-          type: 'text',
-          payload: {
-            text: `Scope change: ${entry.repo}/${entry.path} — ${entry.reason}`,
-          },
-        },
-      ]);
-      return {
-        text: `declared ${entry.repo}/${entry.path}${result.ok ? '' : ' (feed note not recorded)'}`,
-      };
     },
   },
 
@@ -513,336 +321,6 @@ const TOOLS = {
       };
     },
   },
-
-  review: {
-    description:
-      'File your review of the pull request: every defect you found, most ' +
-      'serious first, or none. Call it exactly once, even with no findings — ' +
-      'an empty list is the clean result, and a review that files nothing is ' +
-      'indistinguishable from one that crashed.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        pullRequestId: {
-          type: 'string',
-          description: "The pull request's id, as the prompt gives it.",
-        },
-        findings: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              key: { type: 'string', description: 'A short stable slug.' },
-              path: { type: 'string', description: 'File the defect is in.' },
-              line: { type: 'number', description: 'Line in that file.' },
-              body: {
-                type: 'string',
-                description:
-                  'One sentence stating the defect, then the concrete scenario in which it misbehaves.',
-              },
-            },
-            required: ['body'],
-          },
-        },
-      },
-      required: ['pullRequestId', 'findings'],
-    },
-    // The reviewer runs read-only, with no shell, so this is the only way its
-    // findings reach Builder. The prompt used to say `curl`; every review run
-    // read the PR, found what it found, and could not file it.
-    handler: async ({ pullRequestId, findings }) => {
-      const list = (Array.isArray(findings) ? findings : [])
-        .map((finding) => ({
-          key: finding?.key ? String(finding.key) : undefined,
-          path: finding?.path ? String(finding.path) : undefined,
-          line: Number.isFinite(Number(finding?.line)) ? Number(finding.line) : undefined,
-          body: String(finding?.body ?? '').trim(),
-        }))
-        .filter((finding) => finding.body);
-      const result = await request('POST', 'review', {
-        pullRequestId: String(pullRequestId ?? ''),
-        findings: list,
-      });
-      if (!result.ok) {
-        return {
-          isError: true,
-          text: `review NOT stored (${result.status}): ${result.text}`,
-        };
-      }
-      return { text: `review stored (${list.length} finding(s))` };
-    },
-  },
-
-  todo: {
-    description:
-      'Replace the WHOLE checklist, not a delta. Send every item each time ' +
-      'with its current status, including the ones already done.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              text: { type: 'string' },
-              status: {
-                type: 'string',
-                enum: ['pending', 'in_progress', 'done'],
-              },
-            },
-            required: ['id', 'text', 'status'],
-          },
-        },
-      },
-      required: ['items'],
-    },
-    handler: async ({ items }) => {
-      if (!Array.isArray(items)) {
-        return { isError: true, text: 'items must be an array.' };
-      }
-      const result = await postEvents([{ type: 'todo', payload: { items } }]);
-      return {
-        text: result.ok
-          ? `checklist updated (${items.length} item(s))`
-          : 'checklist NOT updated',
-      };
-    },
-  },
-
-  budget: {
-    description: "What is left of this session's spend ceiling.",
-    inputSchema: { type: 'object', properties: {} },
-    handler: async () => {
-      const result = await request('GET', 'budget');
-      return { text: result.ok ? result.text : `budget unavailable (${result.status})` };
-    },
-  },
-
-  prs: {
-    description: 'Record the pull requests this run opened.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        pullRequests: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              repo: { type: 'string' },
-              branch: { type: 'string' },
-              prNumber: { type: 'number' },
-              prUrl: { type: 'string' },
-              title: { type: 'string' },
-            },
-            required: ['repo', 'prNumber', 'prUrl'],
-          },
-        },
-      },
-      required: ['pullRequests'],
-    },
-    handler: async ({ pullRequests }) => {
-      const result = await request('POST', 'prs', { pullRequests });
-      return { text: result.ok ? 'pull requests recorded' : 'NOT recorded' };
-    },
-  },
-
-  report: {
-    description:
-      'Your written account of the run. Plain markdown — do not wrap it in ' +
-      'JSON yourself.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        contentMd: { type: 'string', description: 'The write-up, as markdown.' },
-        metrics: { type: 'object', description: 'Optional structured figures.' },
-      },
-      required: ['contentMd'],
-    },
-    handler: async ({ contentMd, metrics }) => {
-      // The failure this tool exists to make impossible: on 2026-09-23 a run
-      // that had planned, coded, remediated, passed its gate and opened a pull
-      // request lost its entire write-up because a JSON string cannot hold a
-      // literal newline and a run report is nothing but newlines.
-      const result = await request('POST', 'report', {
-        type: 'run_report',
-        contentMd: String(contentMd ?? ''),
-        ...(metrics ? { metrics } : {}),
-      });
-      if (!result.ok) {
-        // Said in the feed, because a dropped report is otherwise invisible:
-        // this must not fail the build, and the runner's stdout has no readers.
-        await postEvents([
-          {
-            type: 'text',
-            payload: {
-              text:
-                `[report] This run's written account could not be stored — ` +
-                `ally-be answered ${result.status}. The work is unaffected; ` +
-                `the write-up is missing.`,
-            },
-          },
-        ]).catch(() => {});
-        return { text: `report NOT stored (${result.status})` };
-      }
-      return { text: 'report stored' };
-    },
-  },
-
-  ask: {
-    description:
-      'Pause and ask a person. The run ENDS here; a resume continues from ' +
-      'your branches. Use it only when you cannot proceed without an answer.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        questions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              question: { type: 'string' },
-              context: { type: 'string' },
-            },
-            required: ['question'],
-          },
-        },
-        branches: {
-          type: 'object',
-          description:
-            'Repo to branch. Omit it — the runner fills in the branches you ' +
-            'are actually on.',
-        },
-      },
-      required: ['questions'],
-    },
-    handler: async ({ questions, branches }) => {
-      if (!Array.isArray(questions) || questions.length === 0) {
-        return {
-          isError: true,
-          text: 'ask needs at least one question.',
-        };
-      }
-
-      const result = await request('POST', 'questions', {
-        questions,
-        ...(branches ? { branches } : {}),
-      });
-
-      if (!result.ok) {
-        // Not swallowed. An agent that believes it paused when it did not will
-        // sit waiting for an answer nobody was asked for.
-        return {
-          isError: true,
-          text:
-            `The pause was NOT recorded (HTTP ${result.status}) — you are ` +
-            `still running. ${result.text.slice(0, 400)}`,
-        };
-      }
-
-      markerFile('/tmp/builder-paused');
-      return {
-        text: 'Paused for input. The run ends here; a resume continues from your branches.',
-      };
-    },
-  },
-
-  complete_run: {
-    // Named with an underscore because `complete` is a bash builtin and the
-    // shell helper had to be renamed for exactly that reason. Nothing here
-    // resolves through a shell, so the name is free — but keeping it aligned
-    // with `complete-run` means one name in the prompt for both channels.
-    description:
-      'Finish the run. Exactly once, and last. A `done` needs a passing test ' +
-      'gate behind it or it will be refused.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        outcome: { type: 'string', enum: ['done', 'failed'] },
-        error: {
-          type: 'string',
-          description: 'Why it failed. Required when outcome is failed.',
-        },
-      },
-      required: ['outcome'],
-    },
-    handler: async ({ outcome, error }) => {
-      if (outcome !== 'done' && outcome !== 'failed') {
-        return { isError: true, text: "outcome must be 'done' or 'failed'." };
-      }
-
-      const body =
-        outcome === 'done'
-          ? { outcome: 'done' }
-          : {
-              outcome: 'failed',
-              error: error || 'The run reported a failure without a reason.',
-            };
-
-      // Retried, because this is the one report whose loss changes what the
-      // pipeline believes happened.
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const result = await request('POST', 'complete', body);
-
-        if (result.ok) {
-          let refused = false;
-          let note = '';
-          try {
-            const parsed = JSON.parse(result.text);
-            refused = parsed?.ok === false;
-            note = parsed?.note ?? parsed?.message ?? '';
-          } catch {
-            // A 2xx that is not JSON is still a 2xx.
-          }
-          if (refused) {
-            return {
-              isError: true,
-              text: `REFUSED — your outcome was not recorded. ${note}`,
-            };
-          }
-          markerFile(
-            process.env.BUILDER_REPORTED_MARKER ||
-              '/tmp/builder-already-reported',
-          );
-          return { text: 'Outcome recorded.' };
-        }
-
-        if (result.status >= 400 && result.status < 500) {
-          let note = '';
-          try {
-            const parsed = JSON.parse(result.text);
-            note = parsed?.message ?? parsed?.note ?? '';
-          } catch {
-            note = result.text.slice(0, 200);
-          }
-          return {
-            isError: true,
-            text: `REFUSED — your outcome was not recorded. ${note}`,
-          };
-        }
-
-        if (attempt < 3) await sleep(3000);
-      }
-
-      return {
-        isError: true,
-        text: 'The outcome could not be recorded after three attempts.',
-      };
-    },
-  },
-};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** The two markers run-engine.sh reads after the engine exits. */
-const markerFile = (path) => {
-  try {
-    writeFileSync(path, '');
-  } catch {
-    // The runner treats a missing marker as "did not happen", which is the
-    // safe reading — it re-checks against evidence either way.
-  }
 };
 
 /* ── JSON-RPC over stdio ─────────────────────────────────────────────────── */

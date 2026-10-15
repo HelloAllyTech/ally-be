@@ -24,18 +24,26 @@ const opencodeCase = (): string => {
 
 describe('opencode engine invocation', () => {
   /**
-   * Each call site names the opencode agent it runs as: `builder` for the
-   * phases that write, `reviewer` for the read-only ones, and `lead` for the
-   * coding lead that directs the builder but may not edit — denied tools are
-   * never offered at all. Anything else is refused rather than run with the
-   * defaults.
+   * The runner only drafts designs now, and both passes are read-only: they
+   * run as `reviewer`, whose edit, write and bash tools are never offered.
    */
-  it('runs as the agent the call site names, and only a known one', () => {
+  it('runs every phase as the read-only reviewer agent', () => {
     const body = opencodeCase();
 
-    expect(body).toMatch(/agent="\$4"/);
-    expect(body).toMatch(/builder \| reviewer \| lead\) ;;/);
-    expect(body).toMatch(/--agent "\$agent"/);
+    expect(body).toMatch(/--agent reviewer/);
+    expect(runEngine()).toMatch(
+      /reviewer: \{\s*steps: \$reviewer_steps,\s*permission: \{ edit: "deny", write: "deny", bash: "deny" \}/,
+    );
+  });
+
+  /**
+   * Builds run through GitHub issues; a dispatch in any other mode is refused
+   * and said, rather than run with a loop that no longer exists.
+   */
+  it('refuses anything but a design run', () => {
+    expect(runEngine()).toMatch(
+      /if \[ "\$\{BUILDER_MODE:-\}" != "design" \]; then/,
+    );
   });
 
   /** The stream the forwarder knows how to read. */
@@ -86,27 +94,11 @@ describe('opencode engine invocation', () => {
   });
 
   /**
-   * The coding attempts share one conversation; the planner and reviewer do
-   * not.
-   *
-   * Every `opencode run` is its own session, and one build made three — each
-   * beginning with no memory of the last. The remediation prompt opens
-   * "address the feedback from the previous attempt" to an agent that has
-   * never seen the attempt, so it re-reads the repository to rediscover what
-   * it wrote minutes earlier.
-   *
-   * The reviewer stays cold deliberately: one that remembers writing the diff
-   * is not an independent reviewer, which is the only reason that phase
-   * exists.
+   * The critic stays cold deliberately: one that remembers writing the design
+   * is not an independent reviewer, which is the only reason that pass exists.
    */
-  it('continues the coding session, and only the coding session', () => {
-    const body = opencodeCase();
-
-    expect(body).toMatch(/\$AGENT_PHASE" = code/);
-    expect(body).toMatch(/--session/);
-    // Guarded, so an engine that reports no session leaves every attempt cold
-    // exactly as before rather than passing an empty flag.
-    expect(body).toMatch(/-n "\$\{OPENCODE_CODER_SESSION:-\}"/);
+  it('never continues an earlier session', () => {
+    expect(opencodeCase()).not.toMatch(/--session/);
   });
 
   /**

@@ -1,6 +1,10 @@
 name: Builder session
 
-# One coding run for a Builder session.
+# One technical-design run for a Builder session: two read-only agent passes
+# (designer, then a cold critic) over every repo the session touches. Builds do
+# not run here any more — they go through GitHub issues (builder.yml →
+# builder-opencode.yml) — so the coding loop, the test gate and the pull
+# request machinery this file used to host are gone.
 #
 # Hosted here, in ally-be, as the ONLY copy. A multi-repo build belongs to no
 # single target repo, and one copy cannot drift from five others. Target repos
@@ -13,15 +17,13 @@ name: Builder session
 # a PR merges here.
 #
 # Required secrets on this repo:
-#   GEMINI_API_KEY     — Google models for the coding engine (opencode).
+#   GEMINI_API_KEY     — Google models for the engine (opencode).
 #                        Exported under TWO names below; opencode's google
 #                        provider reads only GOOGLE_GENERATIVE_AI_API_KEY.
 #   ALLY_BE_API_KEY    — equals ally-be's API_KEY, for the pipeline callbacks
 #   BUILDER_APP_PRIVATE_KEY (+ variable BUILDER_APP_ID) — the Ally Builder
-#                        GitHub App, which pushes and opens pull requests as
-#                        ally-builder[bot]. NOT the default GITHUB_TOKEN: pull
-#                        requests opened with that token do not trigger other
-#                        workflows, so CI would never run on what Builder writes.
+#                        GitHub App, whose token clones the target repos (the
+#                        default GITHUB_TOKEN cannot read the sibling repos).
 # Required variable:
 #   ALLY_BE_API_URL    — base URL a runner can reach ally-be on.
 
@@ -35,9 +37,9 @@ on:
         description: Builder run id (created before dispatch)
         required: true
       mode:
-        description: build | resume | fix | review | design
+        description: design — the only mode this runner runs; anything else is refused
         required: true
-        default: build
+        default: design
       repos:
         description: JSON array of repo names to clone
         required: true
@@ -45,25 +47,26 @@ on:
         description: Ignored — opencode is the only engine. Remove once ally-be no longer sends it.
         required: false
         default: opencode
-      # One input for all three tiers rather than three: workflow_dispatch
-      # accepts at most 10 inputs and this file is already at 9. ally-be
-      # resolves the models and always sends all three.
+      # One input for every role: workflow_dispatch accepts at most 10 inputs.
+      # The designer runs on `planner`, the critic on `verifier`.
       models:
         description: 'JSON {planner, coder, verifier} model ids'
         required: false
         default: '{}'
+      # Still declared because ally-be still sends them, and GitHub refuses a
+      # dispatch carrying an undeclared input. A design run pushes nothing.
       branch_slug:
-        description: Branch base — pushes go to builder/<slug>
-        required: true
+        description: Ignored — a design run creates no branch. Remove once ally-be no longer sends it.
+        required: false
       branches:
-        description: 'JSON map of {repo: branch} to resume from'
+        description: Ignored — a design run creates no branch. Remove once ally-be no longer sends it.
         required: false
         default: '{}'
       api_base_url:
         description: Base URL for ally-be callbacks
         required: false
 
-# Serialised per session, so a resume can never overlap the run it continues.
+# Serialised per session, so two drafts of one design never overlap.
 # Different sessions run concurrently — that is the point of the grouping key.
 concurrency:
   group: builder-session-${{ inputs.session_id }}
@@ -71,16 +74,6 @@ concurrency:
 
 jobs:
   build:
-    # NOTE: a larger runner would help here — the gate is CPU-bound (jest and
-    # nx, per repo, per remediation round) and runner minutes cost cents against
-    # the tens of dollars of model spend a run already commits. Left on the
-    # standard label deliberately: no other workflow in this repo uses a larger
-    # one, GitHub does NOT fall back when a label is unavailable (the job queues
-    # indefinitely), and whether the org has them cannot be read without
-    # admin:org. Confirm availability first, then change this one line.
-    #
-    # In the meantime the gate's own commands carry --maxWorkers, which is the
-    # part that works on any runner.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -102,37 +95,19 @@ jobs:
       # BUILDER_GH_TOKEN and GH_TOKEN are exported by the first steps.
       # Tier 1 of `.claude/stacks-bridge.mjs`. Without it the bridge falls
       # through to `gh auth token`, and BUILDER_GH_TOKEN (the app's token) has no
-      # `read:org`, so the exchange 403s and every build phase runs with no
+      # `read:org`, so the exchange 403s and every phase runs with no
       # product guidance at all — which is what the first real build reported.
       STACKS_API_KEY: ${{ secrets.STACKS_API_KEY }}
-      # The gate is the hook. ally-be's pre-commit runs eslint plus
-      # `jest --findRelatedTests` on every commit the coder makes, and the
-      # coder commits once per repo per remediation round; the gate then runs
-      # the same checks once, on a clean tree, and is the thing `/complete`
-      # actually trusts. Paying for both is paying twice for the weaker one.
-      HUSKY: '0'
       BUILDER_SESSION_ID: ${{ inputs.session_id }}
       BUILDER_RUN_ID: ${{ inputs.run_id }}
       BUILDER_MODE: ${{ inputs.mode }}
       BUILDER_MODELS: ${{ inputs.models }}
-      BUILDER_BRANCH_SLUG: ${{ inputs.branch_slug }}
-      BUILDER_BRANCHES: ${{ inputs.branches }}
       BUILDER_REPOS: ${{ inputs.repos }}
-      # The lead + per-repo coders build (run-engine.sh). Set the repository
-      # variable BUILDER_MULTI_AGENT to 0 to put the single coder back without
-      # a deploy.
-      BUILDER_MULTI_AGENT: ${{ vars.BUILDER_MULTI_AGENT || '1' }}
-      # Live redirects into a running coding phase (run-engine.sh). Off until
-      # a real run has shown it end to end; set the repository variable
-      # BUILDER_LIVE_STEER to 1 to turn it on without a deploy.
-      BUILDER_LIVE_STEER: ${{ vars.BUILDER_LIVE_STEER || '0' }}
 
     steps:
-      # The Ally Builder GitHub App, over every repo it is installed on, so
-      # pushes, pull requests and comments are ally-builder[bot] rather than a
-      # person. The token lasts an hour; a run past that
-      # cannot push, which only a long build on this runner reaches — builds
-      # now go through issues (builder-opencode.yml).
+      # The Ally Builder GitHub App, over every repo it is installed on, for
+      # cloning the target repos. The token lasts an hour, which only the
+      # clone needs.
       - name: Builder app token
         id: app
         uses: actions/create-github-app-token@v2
@@ -159,14 +134,9 @@ jobs:
       # it. This is a COMPLETE second copy of ally-be, with paths identical to
       # `repos/ally-be` — `src/builder/service/builder-metrics.service.ts`
       # exists in both. An agent looking for a file by path finds two, and one
-      # of them is a decoy that nothing downstream reads: the gate, the commit
-      # and the push all work on `repos/` alone, so edits made here are
-      # silently discarded and the run reports work it did not deliver.
-      #
-      # That is exactly what happened. A resumed run installed dependencies,
-      # edited the service, ran its tests and the linter, and reported success
-      # — all inside `protocol/`, against a checkout that exists only to
-      # provide these scripts.
+      # of them is a decoy: a design that cites `protocol/` paths describes a
+      # checkout nothing builds from. (A build run once edited, tested and
+      # reported success entirely inside `protocol/`.)
       #
       # Warning the agent about it in the prompt would be one more instruction
       # to follow correctly. `$RUNNER_TEMP` is outside `$GITHUB_WORKSPACE`, so
@@ -179,10 +149,6 @@ jobs:
           rm -rf "${RUNNER_TEMP}/protocol"
           mv protocol "${RUNNER_TEMP}/protocol"
           echo "PROTOCOL=${RUNNER_TEMP}/protocol" >> "$GITHUB_ENV"
-          # `hashFiles` only reads the workspace, and this file has just left
-          # it, so the dependency cache key is computed here instead.
-          echo "PROTOCOL_LOCK=$(sha256sum "${RUNNER_TEMP}/protocol/package-lock.json" | cut -c1-16)" \
-            >> "$GITHUB_ENV"
 
       - name: Clone target repos
         run: |
@@ -190,79 +156,24 @@ jobs:
           mkdir -p repos
           for repo in $(echo "$BUILDER_REPOS" | jq -r '.[]'); do
             echo "::group::clone $repo"
-            # Blobless: full history so branching and `git diff master...HEAD`
-            # work, but file contents fetched on demand. A full clone of
-            # ally-web is minutes of runner time for blobs nothing reads.
+            # Blobless: history for `git log`/`blame` while reading, but file
+            # contents fetched on demand. A full clone of ally-web is minutes
+            # of runner time for blobs nothing reads.
             git clone --filter=blob:none \
               "https://x-access-token:${BUILDER_GH_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/${repo}.git" \
               "repos/${repo}"
             echo "::endgroup::"
           done
 
-      # The wiki, deliberately NOT under repos/ and deliberately not in
-      # BUILDER_REPOS.
-      #
-      # It is a docs side-channel, not a build target. Listing it as a repo
-      # would put it in the gate (it has no test, lint or typecheck), let a PRD
-      # name it as a place to implement a feature, and route its pull request
-      # through `gh pr create` — when wiki PRs are opened by wiki-pr.sh, which
-      # links them to the source PR so they merge together.
-      #
-      # `.wiki-tmp` is the path the platform's own docs flow uses (see ally-be
-      # CLAUDE.md), so the command the finalise phase runs is the same one a
-      # human runs. Shallow: nothing here needs history.
-      #
-      # Failure is not fatal. A build that cannot reach the wiki should open
-      # its pull requests and declare the gap in the trailer, not lose two
-      # hours of work to a clone.
-      - name: Clone the wiki (docs side-channel)
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          git clone --depth=1 \
-            "https://x-access-token:${BUILDER_GH_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/helloallytech.github.io.git" \
-            .wiki-tmp \
-            || echo "Wiki clone failed — finalise will declare the docs gap instead."
-
-      - name: Configure git identity
-        env:
-          APP_SLUG: ${{ steps.app.outputs.app-slug }}
-        run: |
-          bot_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
-          git config --global user.name "${APP_SLUG}[bot]"
-          git config --global user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git config --global init.defaultBranch master
-
-      # Node 22 first, then 24 as the default on PATH. ally-be ships on 24;
-      # ally-web pins 22 (.nvmrc) and its jsdom tests fail under 24, so the gate
-      # switches to each repo's pinned Node (scripts/builder/repo-node.sh). It
-      # can only switch to a version installed here.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      # forward-events.mjs, builder-mcp.mjs and the engine itself.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # Keyed on the repo list rather than a lockfile: the runner installs
-      # dependencies for several repos, and there is no single lockfile that
-      # represents the set. The list is joined with underscores rather than
-      # interpolated raw — `repos` is a JSON array, and actions/cache rejects
-      # any key containing a comma.
-      - name: Cache package managers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/pip
-            ~/.cache/pypoetry
-          key: builder-deps-${{ env.PROTOCOL_LOCK }}-${{ join(fromJSON(inputs.repos), '_') }}
-          restore-keys: builder-deps-
-
-      - name: Install the coding engine
+      - name: Install the engine
         run: $PROTOCOL/scripts/builder/install-engine.sh
 
-      - name: Fetch the build protocol
+      - name: Fetch the design prompt
         run: |
           set -euo pipefail
           curl -fsS \
@@ -271,36 +182,24 @@ jobs:
             -o /tmp/build-prompt.txt
           wc -c /tmp/build-prompt.txt
 
-      # PLAN → (CODE → GATE → VERIFY)* → FINALISE. The pull requests are
-      # opened by the last phase, which is only reached once the machine test
-      # gate and the independent reviewer are both satisfied.
-      - name: Run the build
+      # DESIGN → DESIGN REVIEW, both read-only. See run-engine.sh.
+      - name: Draft the design
         run: $PROTOCOL/scripts/builder/run-engine.sh /tmp/build-prompt.txt
 
-      # `if: always()` so a run that failed still reports what it spent — an
-      # agent that burned twenty dollars and crashed still spent it, and the
-      # session budget has to know.
+      # `if: always()` so a run that failed still reports what it spent, and
+      # the session budget knows.
       - name: Report cost
         if: always()
         run: $PROTOCOL/scripts/builder/report-cost.sh
 
-      # The engine exits 0 whenever the agent produces a final response —
-      # including when it ends its turn mid-protocol. That makes "stopped after
-      # CODE without committing" and "finished and opened PRs" the same green
-      # job, which is exactly how a $16 run reported success having shipped
-      # nothing. Both sibling agent workflows already gate on the outcome; this
-      # is Builder's.
-      #
-      # A deliberate pause is also exit 0, and is healthy — the marker file is
-      # how the engine itself tells the two apart, so we read it here too.
+      # A green job is not a finished run: this fails the job when the run is
+      # still unsettled after the engine exited, and says why.
       - name: Fail if the run ended without reporting an outcome
         if: always()
         run: $PROTOCOL/scripts/builder/outcome-gate.sh
 
-      # The runner-level net. Covers what the agent itself cannot report:
-      # the runner dying, a bad clone, a wrong API key. ally-be ignores this
-      # for a run already parked on a question, so a deliberate pause (which
-      # exits 0 anyway) is never recorded as a failure.
+      # The runner-level net. Covers what the engine itself cannot report:
+      # the runner dying, a bad clone, a wrong API key.
       - name: Report failure
         if: failure()
         run: |
@@ -320,13 +219,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: builder-evidence-${{ inputs.run_id }}
-          path: |
-            /tmp/builder-evidence/**
-            /tmp/builder-results/*.json
-            /tmp/builder-plan.md
-            /tmp/builder-gate/*.json
-            /tmp/builder-gate-*.log
-            /tmp/builder-baseline/*.json
-            /tmp/builder-baseline-*.log
+          path: /tmp/builder-results/*.json
           if-no-files-found: ignore
           retention-days: 14
