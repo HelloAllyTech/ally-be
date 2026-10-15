@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
-import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
+import {
+  BUILDER_MODEL_DEFAULTS,
+  BUILDER_WORKFLOW_REF,
+} from '../builder/constants/builder.constants';
 import {
   LLM_TIER_ENV_VAR,
   LLM_TIER_FLOOR,
@@ -862,6 +865,14 @@ export class AppConfigService {
       verifierModel: this.configService.get<string>(
         'BUILDER_VERIFIER_MODEL',
         BUILDER_MODEL_DEFAULTS.verifier,
+      ),
+      // The ally-be ref a design run's builder-session.yml runs from. master
+      // everywhere except while a change to the runner is proven on dev
+      // against its own branch before it merges. Design runs only: releases
+      // always dispatch from master.
+      designWorkflowRef: this.configService.get<string>(
+        'BUILDER_WORKFLOW_REF',
+        BUILDER_WORKFLOW_REF,
       ),
       // Cheap tier for mechanical passes: repo maps, summaries, consolidation.
       mechanicalModel: this.configService.get<string>(

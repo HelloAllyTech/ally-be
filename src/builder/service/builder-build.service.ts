@@ -1511,7 +1511,8 @@ export class BuilderBuildService {
       await this.github.dispatchWorkflow({
         repo: BUILDER_WORKFLOW_REPO,
         workflow: BUILDER_WORKFLOW_FILE,
-        ref: BUILDER_WORKFLOW_REF,
+        ref:
+          this.configService.builder.designWorkflowRef || BUILDER_WORKFLOW_REF,
         inputs: {
           session_id: session.id,
           run_id: run.id,

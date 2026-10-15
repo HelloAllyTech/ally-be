@@ -599,6 +599,25 @@ describe('BuilderBuildService', () => {
       expect(github.dispatchWorkflow).toHaveBeenCalled();
     });
 
+    it('dispatches the design run from master by default', async () => {
+      await service.startDesign(readySession() as any, 1);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: 'master' }),
+      );
+    });
+
+    it('dispatches from the configured ref, to prove a runner change on dev', async () => {
+      (service as any).configService.builder.designWorkflowRef =
+        'builder/design-only-engine';
+
+      await service.startDesign(readySession() as any, 1);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: 'builder/design-only-engine' }),
+      );
+    });
+
     it('allows the run when the catalog itself cannot be read', async () => {
       llmModelsRepository.find.mockRejectedValue(new Error('db down'));
 
