@@ -242,39 +242,6 @@ export enum BuilderEventType {
   DONE = 'done',
 }
 
-export enum BuilderQuestionStatus {
-  PENDING = 'pending',
-  ANSWERED = 'answered',
-  /** The run was cancelled or restarted before this was answered. */
-  SUPERSEDED = 'superseded',
-}
-
-/**
- * A steering note's life.
- *
- * DELIVERED means a run read it and appended it to a phase prompt — not that
- * the agent acted on it. Nothing here can promise the second, and a status
- * that implied it would be lying to the admin who sent the note.
- *
- * SUPERSEDED is the withdrawal path, and the end state for anything still
- * pending when a session finishes: a note nobody will ever read must not sit
- * at PENDING forever, and it must not read as delivered either.
- */
-export enum BuilderSteerStatus {
-  PENDING = 'pending',
-  DELIVERED = 'delivered',
-  SUPERSEDED = 'superseded',
-}
-
-export enum BuilderReportType {
-  /** Written by the agent at the end of a run. */
-  RUN_REPORT = 'run_report',
-  /** Composed by ally-be across a session's runs. */
-  SESSION_REPORT = 'session_report',
-  /** The agent's own "what would I do differently" — feeds builder_lessons. */
-  RETROSPECTIVE = 'retrospective',
-}
-
 export enum BuilderNotificationKind {
   QUESTION_PENDING = 'question_pending',
   BUILD_COMPLETED = 'build_completed',

@@ -11,13 +11,10 @@ import {
   BuilderPrdVersionAuthor,
   BuilderPrFeedbackKind,
   BuilderPrFeedbackStatus,
-  BuilderQuestionStatus,
-  BuilderReportType,
   BuilderRunMode,
   BuilderRunStatus,
   BuilderSessionStatus,
   BuilderStage,
-  BuilderSteerStatus,
 } from '../../builder/enum/builder.enum';
 import {
   CourseCopilotEventType,
@@ -178,9 +175,6 @@ describe('CHECK constraints cover their enums', () => {
     ['CHK_builder_build_runs_mode', Object.values(BuilderRunMode)],
     ['CHK_builder_build_events_type', Object.values(BuilderEventType)],
     ['CHK_builder_build_events_stage', Object.values(BuilderStage)],
-    ['CHK_builder_questions_status', Object.values(BuilderQuestionStatus)],
-    ['CHK_builder_steers_status', Object.values(BuilderSteerStatus)],
-    ['CHK_builder_reports_type', Object.values(BuilderReportType)],
     ['CHK_builder_notifications_kind', Object.values(BuilderNotificationKind)],
     ['CHK_builder_milestones_status', Object.values(BuilderMilestoneStatus)],
     ['CHK_builder_prd_versions_author', Object.values(BuilderPrdVersionAuthor)],

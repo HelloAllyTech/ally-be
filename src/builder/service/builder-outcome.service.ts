@@ -11,7 +11,6 @@ import { BuilderLessonRepository } from '../repository/builder-knowledge.reposit
 import {
   BuilderPrFeedbackRepository,
   BuilderPullRequestRepository,
-  BuilderReportRepository,
 } from '../repository/builder-build.repository';
 import {
   BuilderExemplarOutcome,
@@ -53,7 +52,6 @@ export class BuilderOutcomeService {
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly feedbackRepository: BuilderPrFeedbackRepository,
-    private readonly reportRepository: BuilderReportRepository,
     private readonly lessonRepository: BuilderLessonRepository,
     private readonly exemplarService: BuilderExemplarService,
     private readonly knowledgeService: BuilderKnowledgeService,
@@ -130,7 +128,7 @@ export class BuilderOutcomeService {
       });
     }
 
-    await this.applyLessonOutcomes(sessionId, exemplar.outcome, analysis);
+    await this.applyLessonOutcomes(analysis);
 
     if (analysis.lessons.length || freshTags.length) {
       this.logger.info(
@@ -140,36 +138,12 @@ export class BuilderOutcomeService {
   }
 
   /**
-   * Promote or demote the lessons this run was given.
-   *
-   * A lesson a merged build cited earns credit; a lesson that was in front of
-   * the agent and did not prevent the thing it warns about earns a mark
-   * against it. This is what makes the curator's retirement decisions evidence
-   * rather than taste — and it is why runs are asked to report
-   * `appliedLessonIds` at all.
+   * Mark a lesson against when it was in front of the agent and did not
+   * prevent the thing it warns about — evidence for the curator's retirement
+   * decisions. Credit for cited lessons came from the old runner's reports,
+   * which issue builds do not write.
    */
-  private async applyLessonOutcomes(
-    sessionId: string,
-    outcome: BuilderExemplarOutcome,
-    analysis: OutcomeAnalysis,
-  ): Promise<void> {
-    const reports = await this.reportRepository.listBySession(sessionId);
-    const applied = new Set<string>();
-    for (const report of reports) {
-      const ids = report.metrics?.appliedLessonIds;
-      if (!Array.isArray(ids)) continue;
-      for (const id of ids) applied.add(String(id));
-    }
-
-    const merged =
-      outcome === BuilderExemplarOutcome.MERGED ||
-      outcome === BuilderExemplarOutcome.PARTIALLY_MERGED;
-    if (merged && applied.size) {
-      // Credit only on a merge: a lesson cited by work nobody accepted has not
-      // been shown to have helped.
-      await this.lessonRepository.recordApplied([...applied]);
-    }
-
+  private async applyLessonOutcomes(analysis: OutcomeAnalysis): Promise<void> {
     if (analysis.contradictedLessonIds.length) {
       await this.lessonRepository.recordContradicted(
         analysis.contradictedLessonIds,

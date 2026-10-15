@@ -73,22 +73,9 @@ export class BuilderLessonRepository extends Repository<BuilderLesson> {
   }
 
   /**
-   * Count a lesson as having been used, or as having failed to prevent the
-   * thing it warns about. This is what makes the curator's retirement
-   * decisions evidence rather than taste.
+   * Count a lesson as having failed to prevent the thing it warns about —
+   * evidence for the curator's retirement decisions.
    */
-  async recordApplied(ids: string[]): Promise<void> {
-    if (!ids.length) return;
-    await this.createQueryBuilder()
-      .update()
-      .set({
-        timesApplied: () => '"timesApplied" + 1',
-        lastAppliedAt: new Date(),
-      })
-      .whereInIds(ids)
-      .execute();
-  }
-
   async recordContradicted(ids: string[]): Promise<void> {
     if (!ids.length) return;
     await this.createQueryBuilder()

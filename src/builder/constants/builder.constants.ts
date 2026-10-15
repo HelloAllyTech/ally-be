@@ -403,8 +403,8 @@ export const BUILDER_EVIDENCE_ERROR_WINDOW_HOURS = 24;
 export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
 
 /**
- * The only coding engine. Still written to build_runs.engine and
- * builder_attempts.engine as a historical record of which CLI ran.
+ * The only coding engine. Still written to build_runs.engine as a historical
+ * record of which CLI ran.
  */
 export const BUILDER_ENGINE = 'opencode';
 

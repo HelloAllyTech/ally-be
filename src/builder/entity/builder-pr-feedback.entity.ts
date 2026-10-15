@@ -9,7 +9,7 @@ import {
  * Something that happened to one of Builder's pull requests after it opened:
  * a failing CI run, an inline review comment, a review verdict.
  *
- * A table of its own rather than reusing `builder_questions`, which is the
+ * A table of its own rather than reusing `builder_questions` (dropped 2026-10), which was the
  * nearest-looking thing. A question is an admin-facing pause artifact: the run
  * is stopped, the person is expected to answer, and the answer resumes it.
  * Feedback is the opposite shape — it arrives while nothing is running, from

@@ -4,7 +4,6 @@ import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderBuildEvent } from '../entity/builder-build-event.entity';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
-import { BuilderReport } from '../entity/builder-report.entity';
 import { BuilderNotification } from '../entity/builder-notification.entity';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
@@ -329,17 +328,6 @@ export class BuilderPrFeedbackRepository extends Repository<BuilderPrFeedback> {
       .orIgnore()
       .execute();
     return (result.identifiers?.filter(Boolean).length ?? 0) > 0;
-  }
-}
-
-@Injectable()
-export class BuilderReportRepository extends Repository<BuilderReport> {
-  constructor(dataSource: DataSource) {
-    super(BuilderReport, dataSource.createEntityManager());
-  }
-
-  listBySession(sessionId: string): Promise<BuilderReport[]> {
-    return this.find({ where: { sessionId }, order: { createdAt: 'DESC' } });
   }
 }
 

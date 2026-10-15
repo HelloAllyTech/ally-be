@@ -24,14 +24,10 @@ import { BuilderExemplar } from './entity/builder-exemplar.entity';
 import { BuilderMilestone } from './entity/builder-milestone.entity';
 import { BuilderBuildRun } from './entity/builder-build-run.entity';
 import { BuilderBuildEvent } from './entity/builder-build-event.entity';
-import { BuilderQuestion } from './entity/builder-question.entity';
 import { BuilderPullRequest } from './entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from './entity/builder-pr-feedback.entity';
-import { BuilderReport } from './entity/builder-report.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
-import { BuilderSteer } from './entity/builder-steer.entity';
-import { BuilderAttempt } from './entity/builder-attempt.entity';
 import { BuilderController } from './controller/builder.controller';
 import { BuilderPipelineController } from './controller/builder-pipeline.controller';
 import { BuilderGateway } from './gateway/builder.gateway';
@@ -72,7 +68,6 @@ import {
   BuilderNotificationRepository,
   BuilderPullRequestRepository,
   BuilderPrFeedbackRepository,
-  BuilderReportRepository,
 } from './repository/builder-build.repository';
 
 /**
@@ -106,14 +101,10 @@ import {
       BuilderMilestone,
       BuilderBuildRun,
       BuilderBuildEvent,
-      BuilderQuestion,
       BuilderPullRequest,
       BuilderPrFeedback,
-      BuilderReport,
       BuilderSettings,
       BuilderNotification,
-      BuilderSteer,
-      BuilderAttempt,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -181,7 +172,6 @@ import {
     BuilderBuildEventRepository,
     BuilderPullRequestRepository,
     BuilderPrFeedbackRepository,
-    BuilderReportRepository,
     BuilderNotificationRepository,
   ],
   exports: [

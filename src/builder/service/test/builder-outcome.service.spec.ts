@@ -31,7 +31,6 @@ describe('BuilderOutcomeService', () => {
   let service: BuilderOutcomeService;
   let exemplarService: any;
   let feedbackRepository: any;
-  let reportRepository: any;
   let lessonRepository: any;
   let knowledgeService: any;
   let curatorService: any;
@@ -61,10 +60,8 @@ describe('BuilderOutcomeService', () => {
       listUnsettled: jest.fn().mockResolvedValue([]),
     };
     feedbackRepository = { listBySession: jest.fn().mockResolvedValue([]) };
-    reportRepository = { listBySession: jest.fn().mockResolvedValue([]) };
     lessonRepository = {
       listActiveForRepos: jest.fn().mockResolvedValue([]),
-      recordApplied: jest.fn(),
       recordContradicted: jest.fn(),
     };
     knowledgeService = { recordLesson: jest.fn() };
@@ -78,7 +75,6 @@ describe('BuilderOutcomeService', () => {
       { findOne: jest.fn() } as any,
       { listBySession: jest.fn().mockResolvedValue([]) } as any,
       feedbackRepository,
-      reportRepository,
       lessonRepository,
       exemplarService,
       knowledgeService,
@@ -158,41 +154,6 @@ describe('BuilderOutcomeService', () => {
   });
 
   describe('lesson credit', () => {
-    const citedLessons = () =>
-      reportRepository.listBySession.mockResolvedValue([
-        { metrics: { appliedLessonIds: ['l-1', 'l-2'] } },
-      ]);
-
-    it('credits cited lessons when the work was accepted', async () => {
-      exemplarService.findBySession.mockResolvedValue(
-        exemplar({ outcome: BuilderExemplarOutcome.MERGED, fixRunCount: 2 }),
-      );
-      citedLessons();
-
-      await service.processSession('session-1');
-
-      expect(lessonRepository.recordApplied).toHaveBeenCalledWith([
-        'l-1',
-        'l-2',
-      ]);
-    });
-
-    it('withholds credit when the work was rejected', async () => {
-      // A lesson cited by a pull request nobody accepted has not been shown to
-      // have helped — crediting it would reward the wrong thing.
-      exemplarService.findBySession.mockResolvedValue(
-        exemplar({ outcome: BuilderExemplarOutcome.CLOSED_UNMERGED }),
-      );
-      citedLessons();
-      withFeedback([
-        { kind: BuilderPrFeedbackKind.REVIEW_COMMENT, body: 'no' },
-      ]);
-
-      await service.processSession('session-1');
-
-      expect(lessonRepository.recordApplied).not.toHaveBeenCalled();
-    });
-
     it('marks a lesson against when it failed to prevent the problem', async () => {
       exemplarService.findBySession.mockResolvedValue(
         exemplar({ outcome: BuilderExemplarOutcome.CLOSED_UNMERGED }),
