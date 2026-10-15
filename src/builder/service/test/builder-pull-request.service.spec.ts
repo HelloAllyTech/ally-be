@@ -40,7 +40,6 @@ describe('BuilderPullRequestService', () => {
   let settingsService: any;
   let github: any;
   let buildService: any;
-  let eventRepository: any;
   let releaseService: any;
 
   beforeEach(() => {
@@ -76,7 +75,6 @@ describe('BuilderPullRequestService', () => {
     };
     notificationService = {
       prsOpened: jest.fn(),
-      fixRunStarted: jest.fn(),
       releaseFailed: jest.fn(),
       releaseSkipped: jest.fn(),
       prReadyToMerge: jest.fn(),
@@ -122,7 +120,6 @@ describe('BuilderPullRequestService', () => {
         .mockResolvedValue({ approved: true, message: null }),
     };
     buildService = {
-      dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
       dispatchReviewRun: jest.fn().mockResolvedValue({ id: 'run-3' }),
       listActiveIssueRuns: jest.fn().mockResolvedValue([]),
       recentReviewOutcomes: jest.fn().mockResolvedValue([]),
@@ -145,11 +142,6 @@ describe('BuilderPullRequestService', () => {
       }),
     };
 
-    eventRepository = {
-      latestOfType: jest.fn().mockResolvedValue(null),
-      listByRun: jest.fn().mockResolvedValue([]),
-    };
-
     service = new BuilderPullRequestService(
       repository,
       feedbackRepository,
@@ -157,7 +149,6 @@ describe('BuilderPullRequestService', () => {
       notificationService,
       settingsService,
       github,
-      eventRepository,
       releaseService,
       { adminBaseUrl: 'https://admin.example.com' } as never,
       buildService,
@@ -181,83 +172,6 @@ describe('BuilderPullRequestService', () => {
     github.getCheckRollup.mockResolvedValue(rollup);
     await service.reconcileOpenPullRequests();
   };
-
-  /**
-   * The run's own review, put on the pull request it cleared.
-   *
-   * The comment is posted on FIRST SIGHT only. A retry or a resumed run
-   * re-reports the same branch, and stacking a second identical review on a
-   * thread someone is reading is how a useful comment becomes noise.
-   */
-  describe('the review summary on a new pull request', () => {
-    const incoming = [
-      {
-        repo: 'ally-be',
-        branch: 'builder/x',
-        prNumber: 42,
-        prUrl: 'https://github.com/o/ally-be/pull/42',
-        title: 'x',
-      },
-    ];
-
-    beforeEach(() => {
-      // The real repository returns the saved row; the shared mock does not.
-      repository.save.mockImplementation((row: unknown) => row);
-      github.createIssueComment = jest.fn().mockResolvedValue('https://c');
-      eventRepository.latestOfType.mockResolvedValue({
-        type: 'verification',
-        payload: {
-          verdict: 'pass',
-          objections: [],
-          checkedRequirements: ['R1'],
-        },
-      });
-      eventRepository.listByRun.mockResolvedValue([
-        { type: 'gate_result', payload: { passed: true, trusted: true } },
-      ]);
-    });
-
-    it('comments once when the pull request is first recorded', async () => {
-      repository.findOne.mockResolvedValue(null);
-
-      await service.recordFromRunner('s1', 'run-1', incoming);
-
-      expect(github.createIssueComment).toHaveBeenCalledTimes(1);
-      const [repo, number, body] = github.createIssueComment.mock.calls[0];
-      expect(repo).toBe('ally-be');
-      expect(number).toBe(42);
-      expect(body).toContain('Independent review');
-      expect(body).toContain('R1');
-    });
-
-    it('does not comment again when the same branch is re-reported', async () => {
-      repository.findOne.mockResolvedValue({ id: 'pr-1' });
-
-      await service.recordFromRunner('s1', 'run-1', incoming);
-
-      expect(github.createIssueComment).not.toHaveBeenCalled();
-    });
-
-    /** Telemetry must never fail the pull request it was describing. */
-    it('swallows a GitHub failure', async () => {
-      repository.findOne.mockResolvedValue(null);
-      github.createIssueComment.mockRejectedValue(new Error('502'));
-
-      await expect(
-        service.recordFromRunner('s1', 'run-1', incoming),
-      ).resolves.toHaveLength(1);
-    });
-
-    it('posts nothing when the run recorded no review and no gate', async () => {
-      repository.findOne.mockResolvedValue(null);
-      eventRepository.latestOfType.mockResolvedValue(null);
-      eventRepository.listByRun.mockResolvedValue([]);
-
-      await service.recordFromRunner('s1', 'run-1', incoming);
-
-      expect(github.createIssueComment).not.toHaveBeenCalled();
-    });
-  });
 
   describe('issue-dispatched builds', () => {
     const issueRun = (overrides: Record<string, unknown> = {}) => ({
@@ -431,7 +345,6 @@ describe('BuilderPullRequestService', () => {
         expect.objectContaining({ pullRequestId: 'pr-1' }),
         { status: BuilderPrFeedbackStatus.STALE },
       );
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
     });
 
     it('records a failing check keyed by sha, so a new push is a new problem', async () => {
@@ -504,8 +417,11 @@ describe('BuilderPullRequestService', () => {
           },
         ]);
         feedbackRepository.countPending.mockResolvedValue(1);
+        const fix = jest
+          .spyOn(service as any, 'considerOpencodeFix')
+          .mockResolvedValue(undefined);
 
-        await reconcileWith({}, openPr(), redCi);
+        await reconcileWith({}, openPr({ branch: 'opencode/issue1-1' }), redCi);
 
         const [comment] = feedbackRepository.upsertIfNew.mock.calls.find(
           ([call]: [any]) => call.kind === BuilderPrFeedbackKind.REVIEW_COMMENT,
@@ -513,7 +429,7 @@ describe('BuilderPullRequestService', () => {
         // No status passed at all, so `upsertIfNew` defaults it to PENDING —
         // the comment is ordinary work whoever else pushed.
         expect(comment).not.toHaveProperty('status');
-        expect(buildService.dispatchFixRun).toHaveBeenCalled();
+        expect(fix).toHaveBeenCalled();
       });
 
       it('treats a commit with no linked GitHub account as somebody else', async () => {
@@ -551,10 +467,12 @@ describe('BuilderPullRequestService', () => {
         // is the whole mechanism.
         github.getCommitAuthor.mockResolvedValue(humanPush);
         feedbackRepository.countPending.mockResolvedValue(0);
+        github.createIssueComment = jest.fn().mockResolvedValue('url');
 
-        await reconcileWith({}, openPr(), redCi);
+        await reconcileWith({}, openPr({ branch: 'opencode/issue1-1' }), redCi);
 
-        expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+        // No `/oc` request: there is nothing pending to ask opencode about.
+        expect(github.createIssueComment).not.toHaveBeenCalled();
       });
     });
 
@@ -922,7 +840,6 @@ describe('BuilderPullRequestService', () => {
       );
 
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
       expect(github.approvePullRequest).not.toHaveBeenCalled();
     });
 
@@ -1288,10 +1205,11 @@ describe('BuilderPullRequestService', () => {
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
     });
 
-    it('keeps the runner review at two per PR', async () => {
+    /** A builder/* PR from Builder's old runner build has no review left. */
+    it('never reviews a builder/ pull request', async () => {
       await reconcileWith(
-        { headSha: 'head-3' },
-        openPr({ reviewRunCount: 2, reviewedSha: 'head-2' }),
+        { headSha: 'head-1' },
+        openPr({ reviewRunCount: 0 }),
         { state: 'success', failed: [], total: 3 },
       );
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
@@ -1324,8 +1242,6 @@ describe('BuilderPullRequestService', () => {
       feedbackRepository.listActionable.mockResolvedValue([finding]);
 
       await reconcileWith({ headSha: 'head-1' }, ocPr());
-
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
       const [repo, number, body] = github.createIssueComment.mock.calls[0];
       expect([repo, number]).toEqual(['ally-be', 42]);
       expect(body).toMatch(/^\/oc /);
@@ -1357,7 +1273,6 @@ describe('BuilderPullRequestService', () => {
       await reconcileWith({ headSha: 'head-1' }, ocPr());
 
       expect(github.createIssueComment).not.toHaveBeenCalled();
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
     });
 
     it('respects the per-PR ceiling and the autoFix switch', async () => {
@@ -1439,12 +1354,15 @@ describe('BuilderPullRequestService', () => {
       );
     });
 
-    it('still sends a builder/ branch to a fix run', async () => {
+    /**
+     * Builder's old runner only drafts designs now, so feedback on a
+     * builder/* PR it left waits for a person.
+     */
+    it('leaves a builder/ branch alone', async () => {
       feedbackRepository.countPending.mockResolvedValue(1);
 
       await reconcileWith({ headSha: 'head-1' }, openPr());
 
-      expect(buildService.dispatchFixRun).toHaveBeenCalled();
       expect(github.createIssueComment).not.toHaveBeenCalled();
     });
 
@@ -1486,161 +1404,6 @@ describe('BuilderPullRequestService', () => {
     });
   });
 
-  describe('the auto-fix decision', () => {
-    const withPendingFeedback = (count = 1) =>
-      feedbackRepository.countPending.mockResolvedValue(count);
-
-    it('sends a fix run when CI is red and the switch is on', async () => {
-      withPendingFeedback();
-      await reconcileWith({}, openPr(), {
-        state: 'failure',
-        failed: ['unit tests'],
-        total: 1,
-      });
-
-      expect(buildService.dispatchFixRun).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'pr-1' }),
-      );
-    });
-
-    it('does nothing when autoFix is off', async () => {
-      // Agreeing Builder may write code is not agreeing it may keep pushing to
-      // a branch a human is reviewing.
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        autoFixEnabled: false,
-        maxFixRunsPerPr: 3,
-      });
-      withPendingFeedback();
-
-      await reconcileWith({});
-
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
-    });
-
-    it('does nothing when the kill switch is off, whatever autoFix says', async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: false,
-        autoFixEnabled: true,
-        maxFixRunsPerPr: 3,
-      });
-      withPendingFeedback();
-
-      await reconcileWith({});
-
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
-    });
-
-    it('stops at the per-PR attempt ceiling', async () => {
-      // A fix that cannot fix it will not fix it on the fourth attempt either.
-      withPendingFeedback();
-
-      await reconcileWith({}, openPr({ fixRunCount: 3 }));
-
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
-    });
-
-    it('does nothing when there is no pending feedback', async () => {
-      feedbackRepository.countPending.mockResolvedValue(0);
-
-      await reconcileWith({}, openPr(), {
-        state: 'success',
-        failed: [],
-        total: 4,
-      });
-
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('claimForFix', () => {
-    it('marks the items as claimed, so a reconcile tick cannot double-dispatch', async () => {
-      feedbackRepository.listActionable.mockResolvedValue([
-        { id: 'f-1' },
-        { id: 'f-2' },
-      ]);
-
-      const items = await service.claimForFix('pr-1', 'run-9');
-
-      expect(items).toHaveLength(2);
-      expect(feedbackRepository.update).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          status: BuilderPrFeedbackStatus.IN_FIX,
-          fixRunId: 'run-9',
-        }),
-      );
-    });
-  });
-
-  describe('recordFeedbackOutcomes', () => {
-    it('records what the fix run did with each item', async () => {
-      feedbackRepository.findOne.mockResolvedValue({
-        id: 'f-1',
-        sessionId: 'session-1',
-      });
-
-      const updated = await service.recordFeedbackOutcomes(
-        'run-9',
-        'session-1',
-        [{ feedbackId: 'f-1', status: 'addressed', replyUrl: 'https://x' }],
-      );
-
-      expect(updated).toBe(1);
-      expect(feedbackRepository.update).toHaveBeenCalledWith(
-        { id: 'f-1' },
-        expect.objectContaining({
-          status: BuilderPrFeedbackStatus.ADDRESSED,
-          replyUrl: 'https://x',
-        }),
-      );
-    });
-
-    it('keeps a disagreement as dismissed rather than addressed', async () => {
-      // Pushing back in writing is a legitimate outcome; recording it as
-      // "addressed" would claim a code change that never happened.
-      feedbackRepository.findOne.mockResolvedValue({
-        id: 'f-1',
-        sessionId: 'session-1',
-      });
-
-      await service.recordFeedbackOutcomes('run-9', 'session-1', [
-        { feedbackId: 'f-1', status: 'dismissed' },
-      ]);
-
-      expect(feedbackRepository.update).toHaveBeenCalledWith(
-        { id: 'f-1' },
-        expect.objectContaining({
-          status: BuilderPrFeedbackStatus.DISMISSED,
-        }),
-      );
-    });
-
-    it("refuses an item that is not this session's", async () => {
-      // The runner's key is shared, so the run may only settle its own work.
-      feedbackRepository.findOne.mockResolvedValue(null);
-
-      const updated = await service.recordFeedbackOutcomes(
-        'run-9',
-        'session-1',
-        [{ feedbackId: 'someone-elses', status: 'addressed' }],
-      );
-
-      expect(updated).toBe(0);
-      expect(feedbackRepository.update).not.toHaveBeenCalled();
-    });
-  });
-
-  /**
-   * The merge button.
-   *
-   * Builder opens pull requests and stops, and on the repos that matter it
-   * could not merge even if it should — `master` wants an approving review and
-   * the bot holds only `write`. What it can remove is the errand: Bug Hunter
-   * measured 89 of 122 bot pull requests merged by hand, nearly all within the
-   * hour. So these pin the refusals, not the happy path — every one of them is
-   * a case where merging anyway would be worse than not having the button.
-   */
   describe('mergePullRequest', () => {
     const green = { state: 'success', failed: [], total: 3 };
 
@@ -1756,6 +1519,9 @@ describe('BuilderPullRequestService', () => {
    */
   describe('deciding to review a pull request', () => {
     const green = { state: 'success', failed: [] };
+    // Only opencode pull requests are reviewed.
+    const ocPr = (overrides: Record<string, any> = {}) =>
+      openPr({ branch: 'opencode/issue1-1', ...overrides });
 
     beforeEach(() => {
       settingsService.get.mockResolvedValue({
@@ -1767,7 +1533,7 @@ describe('BuilderPullRequestService', () => {
     });
 
     it('reviews a green pull request it has not read yet', async () => {
-      const pr = openPr();
+      const pr = ocPr();
       await reconcileWith({ headSha: 'abc1234def' }, pr, green);
 
       expect(buildService.dispatchReviewRun).toHaveBeenCalledWith(
@@ -1789,20 +1555,20 @@ describe('BuilderPullRequestService', () => {
         maxFixRunsPerPr: 3,
       });
 
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), green);
 
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
     });
 
     it('does not re-read a head sha it has already reviewed', async () => {
-      const pr = openPr({ reviewedSha: 'abc1234def', reviewRunCount: 1 });
+      const pr = ocPr({ reviewedSha: 'abc1234def', reviewRunCount: 1 });
       await reconcileWith({ headSha: 'abc1234def' }, pr, green);
 
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
     });
 
     it('reviews again once a fix run has moved the branch on', async () => {
-      const pr = openPr({ reviewedSha: 'oldsha11', reviewRunCount: 1 });
+      const pr = ocPr({ reviewedSha: 'oldsha11', reviewRunCount: 1 });
       await reconcileWith({ headSha: 'newsha22' }, pr, green);
 
       expect(buildService.dispatchReviewRun).toHaveBeenCalledWith(
@@ -1816,7 +1582,7 @@ describe('BuilderPullRequestService', () => {
      * restating the compiler's, and the fix loop already owns red CI.
      */
     it('leaves a red pull request to the fix loop', async () => {
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), {
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), {
         state: 'failure',
         failed: ['Jest'],
       });
@@ -1825,7 +1591,7 @@ describe('BuilderPullRequestService', () => {
     });
 
     it('waits rather than racing checks that are still running', async () => {
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), {
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), {
         state: 'pending',
         failed: [],
       });
@@ -1838,7 +1604,7 @@ describe('BuilderPullRequestService', () => {
      * is a human closing the pull request.
      */
     it('stops at the ceiling', async () => {
-      const pr = openPr({ reviewRunCount: 2, reviewedSha: 'oldsha11' });
+      const pr = ocPr({ reviewRunCount: 4, reviewedSha: 'oldsha11' });
       await reconcileWith({ headSha: 'newsha22' }, pr, green);
 
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
@@ -1847,23 +1613,26 @@ describe('BuilderPullRequestService', () => {
     it('waits while there is feedback a fix run has not dealt with', async () => {
       feedbackRepository.countPending.mockResolvedValue(1);
 
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), green);
 
       expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
     });
 
     /**
-     * A review run leaves an active run behind, and `dispatchFixRun` refuses to
-     * race one — so asking for both in a tick gets the second silently refused
-     * and reads as a bug from the outside.
+     * A review leaves an active run behind, and a fix must not race it — so
+     * asking for both in a tick gets the second refused and reads as a bug
+     * from the outside.
      */
-    it('does not also ask for a fix run in the same tick', async () => {
+    it('does not also ask for a fix in the same tick', async () => {
+      const fix = jest
+        .spyOn(service as any, 'considerOpencodeFix')
+        .mockResolvedValue(undefined);
       feedbackRepository.countPending.mockResolvedValue(0);
 
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), green);
 
       expect(buildService.dispatchReviewRun).toHaveBeenCalled();
-      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+      expect(fix).not.toHaveBeenCalled();
     });
 
     /**
@@ -1871,15 +1640,18 @@ describe('BuilderPullRequestService', () => {
      * tick must fall through rather than skip the fix loop on the strength of
      * a review that never happened.
      */
-    it('still considers a fix run when the review was refused', async () => {
+    it('still considers a fix when the review was refused', async () => {
+      const fix = jest
+        .spyOn(service as any, 'considerOpencodeFix')
+        .mockResolvedValue(undefined);
       buildService.dispatchReviewRun.mockResolvedValue(null);
       feedbackRepository.countPending
         .mockResolvedValueOnce(0)
         .mockResolvedValue(1);
 
-      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+      await reconcileWith({ headSha: 'abc1234def' }, ocPr(), green);
 
-      expect(buildService.dispatchFixRun).toHaveBeenCalled();
+      expect(fix).toHaveBeenCalled();
     });
   });
 

@@ -2,22 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderBuildEvent } from '../entity/builder-build-event.entity';
-import { BuilderQuestion } from '../entity/builder-question.entity';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import { BuilderReport } from '../entity/builder-report.entity';
 import { BuilderNotification } from '../entity/builder-notification.entity';
-import { BuilderSteer } from '../entity/builder-steer.entity';
-import { BuilderAttempt } from '../entity/builder-attempt.entity';
-import { BUILDER_STEER_MAX_PENDING } from '../constants/builder.constants';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderPrFeedbackKind,
   BuilderNotificationKind,
   BuilderPrFeedbackStatus,
-  BuilderQuestionStatus,
   BuilderRunStatus,
-  BuilderSteerStatus,
 } from '../enum/builder.enum';
 
 @Injectable()
@@ -39,8 +33,8 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
    * carries `resumeOfRunId` pointing at the parked one, the pause is over and
    * the parked row is history.
    *
-   * Counting it forever is how a session wedges. `resumeFromQuestions`
-   * dispatches the resume and deliberately leaves the paused row as it is
+   * Counting it forever is how a session wedges. Builder's old runner paused
+   * on questions and its resume deliberately left the paused row as it was
    * (WAITING_FOR_INPUT is terminal FOR THE RUN — see BuilderRunStatus), so a
    * plain status check keeps seeing a blocker that nothing will ever clear,
    * and every later fix and review dispatch is refused in silence.
@@ -93,14 +87,6 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
 
   findLatest(sessionId: string): Promise<BuilderBuildRun | null> {
     return this.findOne({ where: { sessionId }, order: { sequence: 'DESC' } });
-  }
-
-  /** The session's run that is still going, if one is. */
-  findActiveForSession(sessionId: string): Promise<BuilderBuildRun | null> {
-    return this.findOne({
-      where: { sessionId, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
-      order: { sequence: 'DESC' },
-    });
   }
 
   /** Runs the reconcile pass still has to settle. */
@@ -161,30 +147,10 @@ export class BuilderBuildEventRepository extends Repository<BuilderBuildEvent> {
   }
 
   /**
-   * Every event of the given types on a run, oldest first.
-   *
-   * For readers that need a few kinds of event from the whole run. `listByRun`
-   * pages from the start, so a long run's newest gate verdicts sat past its
-   * limit and were silently never read.
-   */
-  listByRunOfTypes(
-    runId: string,
-    types: string[],
-  ): Promise<BuilderBuildEvent[]> {
-    return this.createQueryBuilder('event')
-      .where('event.runId = :runId', { runId })
-      .andWhere('event.type IN (:...types)', { types })
-      .orderBy('event.seq', 'ASC')
-      .getMany();
-  }
-
-  /**
    * The newest event of one type on a run.
    *
-   * Used to read a run's mid-run budget hold back out of the log rather than
-   * duplicating it as a column: the hold lives for minutes, the log is already
-   * the durable record of it, and a status column would be one more piece of
-   * state a dead runner could strand.
+   * Read straight from the log rather than duplicated as a column: the log is
+   * already the durable record.
    */
   latestOfType(runId: string, type: string): Promise<BuilderBuildEvent | null> {
     return this.createQueryBuilder('event')
@@ -246,32 +212,6 @@ export class BuilderBuildEventRepository extends Repository<BuilderBuildEvent> {
         ),
       );
     });
-  }
-}
-
-@Injectable()
-export class BuilderQuestionRepository extends Repository<BuilderQuestion> {
-  constructor(dataSource: DataSource) {
-    super(BuilderQuestion, dataSource.createEntityManager());
-  }
-
-  listPending(sessionId: string): Promise<BuilderQuestion[]> {
-    return this.find({
-      where: { sessionId, status: BuilderQuestionStatus.PENDING },
-      order: { position: 'ASC' },
-    });
-  }
-
-  listByGroup(groupId: string): Promise<BuilderQuestion[]> {
-    return this.find({ where: { groupId }, order: { position: 'ASC' } });
-  }
-
-  /** True once every question in the group has an answer. */
-  async isGroupComplete(groupId: string): Promise<boolean> {
-    const pending = await this.count({
-      where: { groupId, status: BuilderQuestionStatus.PENDING },
-    });
-    return pending === 0;
   }
 }
 
@@ -439,49 +379,6 @@ export class BuilderNotificationRepository extends Repository<BuilderNotificatio
       where: { sessionId, kind, createdAt: MoreThanOrEqual(since) },
     });
     return count > 0;
-  }
-}
-
-@Injectable()
-export class BuilderSteerRepository extends Repository<BuilderSteer> {
-  constructor(dataSource: DataSource) {
-    super(BuilderSteer, dataSource.createEntityManager());
-  }
-
-  /** Oldest first: a person's corrections are read in the order they wrote them. */
-  listPending(sessionId: string): Promise<BuilderSteer[]> {
-    return this.find({
-      where: { sessionId, status: BuilderSteerStatus.PENDING },
-      order: { createdAt: 'ASC' },
-      take: BUILDER_STEER_MAX_PENDING,
-    });
-  }
-
-  listBySession(sessionId: string): Promise<BuilderSteer[]> {
-    return this.find({
-      where: { sessionId },
-      order: { createdAt: 'DESC' },
-      take: 100,
-    });
-  }
-}
-
-@Injectable()
-export class BuilderAttemptRepository extends Repository<BuilderAttempt> {
-  constructor(dataSource: DataSource) {
-    super(BuilderAttempt, dataSource.createEntityManager());
-  }
-
-  /** The attempt a gate verdict belongs to: the latest coding pass on the run. */
-  findNewest(runId: string): Promise<BuilderAttempt | null> {
-    return this.findOne({
-      where: { runId, phase: 'code' },
-      order: { attempt: 'DESC' },
-    });
-  }
-
-  listForRun(runId: string): Promise<BuilderAttempt[]> {
-    return this.find({ where: { runId }, order: { attempt: 'ASC' } });
   }
 }
 

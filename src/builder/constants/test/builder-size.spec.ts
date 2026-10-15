@@ -114,42 +114,11 @@ describe('classifyBuildSize', () => {
 });
 
 describe('BUILDER_SIZE_PROFILES', () => {
-  it('spends strictly more on a bigger build', () => {
-    const small = BUILDER_SIZE_PROFILES[BuilderBuildSize.SMALL];
-    const medium = BUILDER_SIZE_PROFILES[BuilderBuildSize.MEDIUM];
-    const large = BUILDER_SIZE_PROFILES[BuilderBuildSize.LARGE];
-
-    expect(small.maxTurns).toBeLessThan(medium.maxTurns);
-    expect(medium.maxTurns).toBeLessThan(large.maxTurns);
-    expect(small.maxBudgetUsd.plan).toBeLessThan(medium.maxBudgetUsd.plan);
-    expect(medium.maxBudgetUsd.plan).toBeLessThan(large.maxBudgetUsd.plan);
-    expect(small.planWords).toBeLessThan(large.planWords);
-  });
-
-  /**
-   * Planning was a quarter of Builder's whole production spend — $4.89 median
-   * against a $7.56 median coding attempt — on builds this classifier had
-   * already called small. The tier ladder for planning now has three rungs,
-   * and a small build sits on the cheapest of them.
-   */
-  it('plans a small build on the mechanical tier', () => {
-    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.SMALL].plannerTier).toBe(
-      'mechanical',
+  it('records more effort for a bigger build', () => {
+    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.SMALL].effort).toBe('low');
+    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.MEDIUM].effort).toBe(
+      'medium',
     );
-    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.MEDIUM].plannerTier).toBe(
-      'planner',
-    );
-    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.LARGE].plannerTier).toBe(
-      'planner',
-    );
-  });
-
-  it('gives every phase a ceiling', () => {
-    for (const size of Object.values(BuilderBuildSize)) {
-      const budgets = BUILDER_SIZE_PROFILES[size].maxBudgetUsd;
-      for (const phase of ['plan', 'code', 'verify', 'finalise'] as const) {
-        expect(budgets[phase]).toBeGreaterThan(0);
-      }
-    }
+    expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.LARGE].effort).toBe('high');
   });
 });

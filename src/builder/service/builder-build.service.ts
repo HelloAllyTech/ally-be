@@ -7,7 +7,6 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { In, IsNull, Like } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RedisService } from 'src/redis/service/redis.service';
@@ -22,18 +21,14 @@ import {
   BuilderBuildEventRepository,
   BuilderBuildRunRepository,
   BuilderPullRequestRepository,
-  BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
 import { BuilderEventService } from './builder-event.service';
-import { BuilderSteerService } from './builder-steer.service';
-import { BuilderAttemptService } from './builder-attempt.service';
 import { LlmModelsRepository } from 'src/llm/repository/llm-models.repository';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
-import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
 import {
   computeDesignReadiness,
@@ -45,23 +40,18 @@ import {
   BuilderEventType,
   BuilderMilestoneStatus,
   BuilderPrdVersionAuthor,
-  BuilderQuestionStatus,
   BuilderRunMode,
   BuilderRunStatus,
   BuilderSessionStatus,
   BuilderStage,
 } from '../enum/builder.enum';
 import {
-  BUILDER_BUDGET_HOLD_POLL_SECONDS,
-  BUILDER_BUDGET_HOLD_SECONDS,
   BUILDER_CONSECUTIVE_FAILURE_LIMIT,
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
   BUILDER_ENGINE,
   BUILDER_MODEL_DEFAULTS,
-  BUILDER_RESUME_FILES_MAX,
-  BUILDER_RESUME_TEST_OUTPUT_MAX,
   BUILDER_RUN_TIMEOUT_MS,
   BUILDER_WORKFLOW_FILE,
   BUILDER_WORKFLOW_REF,
@@ -74,28 +64,6 @@ import {
   BUILDER_REPO_REVIEW_TIMEOUT_MS,
 } from '../constants/builder.constants';
 
-/**
- * Live spend against the session's ceiling.
- *
- * `holdSeconds` and `pollSeconds` are served rather than compiled into the
- * workflow on purpose: run-engine.sh reads them at the boundary it stops on,
- * so the wait can be re-tuned here without a workflow merge.
- */
-/**
- * What the runner is told about models and spending, in one object.
- *
- * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
- * 10 inputs and builder-session.yml is already at 9.
- */
-/** How the runner builds: the phase pipeline, or the Ralph loop. */
-export type BuilderLoop = 'pipeline' | 'ralph';
-
-/**
- * Where a build runs: Builder's own runner (`workflow`), or an issue in the
- * repo that its builder.yml workflow works into a PR with opencode (`issue`).
- */
-export type BuilderDispatch = 'workflow' | 'issue';
-
 /** A size decision plus the features it was derived from. */
 export interface BuilderSizing {
   size: BuilderBuildSize;
@@ -104,35 +72,31 @@ export interface BuilderSizing {
   technicalPlanLength: number;
 }
 
+/**
+ * The models a run is recorded with, and what a design run's runner is told.
+ *
+ * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
+ * 10 inputs. Only design runs go to Builder's runner now; a build is an issue
+ * in its repo, and opencode there runs the repo's own model.
+ */
 export interface BuilderResolvedModels {
   planner: string;
   coder: string;
   verifier: string;
-  /**
-   * The coder model for each attempt, resolved from the size profile's tier
-   * ladder. Index 0 is the first CODE pass; the runner clamps past the end.
-   */
-  coderLadder: string[];
   size: BuilderBuildSize;
   /** The features the size was derived from, recorded with the run. */
   requirementCount: number;
   repoCount: number;
   technicalPlanLength: number;
   effort: 'low' | 'medium' | 'high';
-  /** How the runner builds — see BuilderLoop. */
-  loop?: BuilderLoop;
-  plannerMaxTurns: number;
-  planWords: number;
-  budgets: { plan: number; code: number; verify: number; finalise: number };
 }
 
+/** Live spend against the session's ceiling. */
 export interface BuilderBudgetState {
   budgetUsd: number | null;
   spentUsd: number;
   remainingUsd: number | null;
   exceeded: boolean;
-  holdSeconds: number;
-  pollSeconds: number;
 }
 
 /**
@@ -176,41 +140,6 @@ export const usageProviderFor = (model: string): string => {
   return providerForModel(bare) ?? providerForModel(model) ?? 'unknown';
 };
 
-/**
- * The gate verdicts that describe the tree as it stands: one per (repo, kind)
- * from the newest gate round only.
- *
- * Each run of the gate tags its results with a `round`. Reading the latest
- * result per (repo, kind) across the whole run instead kept a check's verdict
- * alive after the check stopped running: a `gate-config` failure is only ever
- * posted while config is touched, so reverting the edit never produced the
- * pass that would replace it, and a repo the coder later left unchanged kept
- * its old failures. Both stayed in the remediation prompt and kept
- * `hasPassingGate` false for the rest of the run.
- *
- * Results posted before rounds existed carry none, and fall back to the latest
- * per (repo, kind).
- */
-export const latestGateResults = (
-  events: { type: string; payload?: Record<string, any> | null }[],
-): Record<string, any>[] => {
-  const gates = events.filter(
-    (event) => event.type === BuilderEventType.GATE_RESULT,
-  );
-  const newestRound = [...gates].reverse().find((event) => event.payload?.round)
-    ?.payload?.round;
-  const inScope = newestRound
-    ? gates.filter((event) => event.payload?.round === newestRound)
-    : gates;
-  const byKey = new Map<string, Record<string, any>>();
-  for (const event of inScope) {
-    const repo = String(event.payload?.repo ?? '');
-    const kind = String(event.payload?.kind ?? '');
-    if (repo && kind) byKey.set(`${repo}:${kind}`, event.payload ?? {});
-  }
-  return [...byKey.values()];
-};
-
 @Injectable()
 export class BuilderBuildService {
   private readonly logger = LoggerService.getInstance(BuilderBuildService.name);
@@ -221,9 +150,6 @@ export class BuilderBuildService {
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly eventRepository: BuilderBuildEventRepository,
-    private readonly questionRepository: BuilderQuestionRepository,
-    private readonly steerService: BuilderSteerService,
-    private readonly attemptService: BuilderAttemptService,
     private readonly llmModelsRepository: LlmModelsRepository,
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly settingsService: BuilderSettingsService,
@@ -251,11 +177,7 @@ export class BuilderBuildService {
     userId: number,
     overrides: {
       model?: string;
-      plannerModel?: string;
-      verifierModel?: string;
       budgetUsd?: number;
-      loop?: BuilderLoop;
-      dispatch?: BuilderDispatch;
     } = {},
   ): Promise<BuilderBuildRun> {
     const settings = await this.settingsService.get();
@@ -326,14 +248,10 @@ export class BuilderBuildService {
 
     await this.assertDesignApproved(session);
 
-    // An issue build runs opencode on the target repo's own Actions with the
-    // repo's model (BUILDER_MODEL), so Builder's runner-minute ceiling and its
-    // model choices do not apply to it.
-    const asIssue =
-      (overrides.dispatch ?? this.configService.builder.dispatch) === 'issue';
-
+    // A build is an issue in its repo: opencode runs on that repo's own
+    // Actions with the repo's model (BUILDER_MODEL), so Builder's
+    // runner-minute ceiling and its model catalog check do not apply to it.
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
-    if (!asIssue) this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
     // Unreadable means "as before": resume the previous branch. Sizing already
     // tolerates an unreadable PRD the same way (classifySession).
@@ -364,24 +282,14 @@ export class BuilderBuildService {
     const milestone = await this.epicService.nextPending(session.id);
 
     const sizing = await this.classifySession(session, milestone);
-    const models = {
-      ...this.resolveModels(session, settings, overrides, sizing),
-      // Travels to the runner inside the `models` input, which already
-      // carries per-run settings; workflow_dispatch allows no more inputs.
-      ...(overrides.loop ? { loop: overrides.loop } : {}),
-    };
-    if (!asIssue) await this.assertModelsAreReal(models);
+    const models = this.resolveModels(session, settings, overrides, sizing);
 
-    // Carry the chosen model onto the session so a resume run and the UI both
-    // read the same thing without re-deriving it.
+    // Carry the chosen model onto the session so the milestones after the
+    // first and the UI read the same thing without re-deriving it.
     const buildMetadata: Record<string, any> = {
       ...(session.metadata ?? {}),
       buildOverrides: {
-        loop: overrides.loop ?? null,
-        dispatch: overrides.dispatch ?? null,
         model: overrides.model ?? null,
-        plannerModel: overrides.plannerModel ?? null,
-        verifierModel: overrides.verifierModel ?? null,
       },
     };
     await this.sessionRepository.update(
@@ -394,10 +302,9 @@ export class BuilderBuildService {
         ...(overrides.budgetUsd !== undefined
           ? { budgetUsd: String(overrides.budgetUsd) }
           : {}),
-        // The loop and tiers this build was started with, for the milestones
-        // after the first: advanceEpic dispatches them with no request to
-        // read overrides from, and silently dropping `loop: ralph` halfway
-        // through a chain would change what is being measured.
+        // The model this build was started with, for the milestones after
+        // the first: advanceEpic dispatches them with no request to read
+        // overrides from.
         metadata: buildMetadata,
         updatedBy: userId,
       },
@@ -419,14 +326,13 @@ export class BuilderBuildService {
         // session lists: an issue build covers exactly one repo.
         repos: milestone?.repos?.length
           ? milestone.repos
-          : asIssue && designRepos.length === 1
+          : designRepos.length === 1
             ? designRepos
             : repos,
         models,
         milestoneId: milestone?.id ?? undefined,
         branchSlugOverride: milestone?.branchSlug ?? branchSlug,
         prdVersion,
-        dispatch: overrides.dispatch,
       });
     } catch (error) {
       // Nothing started, so the milestone is still to build — as advanceEpic
@@ -446,10 +352,10 @@ export class BuilderBuildService {
   /**
    * A build is held to an approved technical design written from this PRD.
    *
-   * Only first builds and milestones. Resume, fix and review runs continue
-   * work that already passed this gate, and refusing them because the PRD
-   * was edited since would strand a paused run's questions and an open pull
-   * request's review comments behind a redraft nobody asked for.
+   * Only first builds and milestones. Reviews and fixes continue work that
+   * already passed this gate, and refusing them because the PRD was edited
+   * since would strand an open pull request's review comments behind a
+   * redraft nobody asked for.
    */
   private async assertDesignApproved(session: BuilderSession): Promise<void> {
     const doc = await this.prdService.getOrCreateDoc(
@@ -759,28 +665,14 @@ export class BuilderBuildService {
       // between milestones is stale for the rest of the series, and the
       // refusal lands on the milestone as its reason for waiting.
       await this.assertDesignApproved(session);
-      const carriedDispatch =
-        session.metadata?.buildOverrides?.dispatch ??
-        this.configService.builder.dispatch;
-      if (carriedDispatch !== 'issue')
-        this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
       const carried = (session.metadata?.buildOverrides ?? {}) as {
-        loop?: BuilderLoop | null;
-        dispatch?: BuilderDispatch | null;
         model?: string | null;
-        plannerModel?: string | null;
-        verifierModel?: string | null;
       };
-      const models = {
-        ...this.resolveModels(session, settings, {
-          model: carried.model ?? undefined,
-          plannerModel: carried.plannerModel ?? undefined,
-          verifierModel: carried.verifierModel ?? undefined,
-        }),
-        ...(carried.loop ? { loop: carried.loop } : {}),
-      };
+      const models = this.resolveModels(session, settings, {
+        model: carried.model ?? undefined,
+      });
       await this.sessionRepository.update(
         { id: session.id },
         {
@@ -800,7 +692,6 @@ export class BuilderBuildService {
         models,
         milestoneId: next.id,
         branchSlugOverride: next.branchSlug,
-        dispatch: carried.dispatch ?? undefined,
       });
       this.logger.info(
         `Builder session ${session.id} advanced to milestone ${next.position}.`,
@@ -836,9 +727,10 @@ export class BuilderBuildService {
   }
 
   /**
-   * Model per tier, resolved run override → session (coder only) → settings →
-   * config default. One resolution path so the run row, the workflow input
-   * and the UI can never disagree about which model a phase used.
+   * Model per tier, resolved run override (coder only) → session (coder only)
+   * → settings → config default. One resolution path so the run row, the
+   * design workflow input and the UI can never disagree about which model a
+   * phase used.
    */
   private resolveModels(
     session: BuilderSession,
@@ -848,11 +740,7 @@ export class BuilderBuildService {
       verifierModel?: string | null;
       defaultModel?: string | null;
     },
-    overrides: {
-      model?: string;
-      plannerModel?: string;
-      verifierModel?: string;
-    } = {},
+    overrides: { model?: string } = {},
     sizing: BuilderSizing = {
       size: BuilderBuildSize.MEDIUM,
       requirementCount: 0,
@@ -872,125 +760,27 @@ export class BuilderBuildService {
       settings.coderModel ??
       settings.defaultModel ??
       config.coderModel ??
-      // Last rung: the compiled default, so a build always has a model even
+      // Last rung: the compiled default, so a run always has a model even
       // when every configurable rung above it is empty.
       BUILDER_MODEL_DEFAULTS.coder;
-    const plannerTier =
-      settings.plannerModel ??
-      settings.defaultModel ??
-      config.plannerModel ??
-      coder;
-
-    // Three tiers now, not two. A small build plans on the mechanical tier
-    // because planning was a quarter of Builder's whole spend on work this
-    // same classifier had already called small — see BUILDER_SIZE_PROFILES.
-    const planner =
-      overrides.plannerModel ??
-      (profile.plannerTier === 'mechanical'
-        ? // Falling back to the coder tier rather than leaving it unset: an
-          // unconfigured mechanical model would otherwise hand the runner an
-          // empty `--model`, and a cost optimisation that can fail the build
-          // is not one.
-          (config.mechanicalModel ?? coder)
-        : profile.plannerTier === 'coder'
-          ? coder
-          : plannerTier);
 
     return {
-      // An explicit override always wins — an admin who picked a planner meant
-      // it. Otherwise a small build plans on the coder tier: Opus earns its
-      // price on cross-repo contracts, not on two routes and a checkbox.
-      planner,
+      planner:
+        settings.plannerModel ??
+        settings.defaultModel ??
+        config.plannerModel ??
+        coder,
       coder,
-      // Tier names resolved to the models this session actually runs. The
-      // ladder is escalation only: entry 0 is always the tier the build would
-      // have used anyway, so no first attempt gets weaker than it was before
-      // this existed. `mechanical` is reachable from the profile type but no
-      // profile uses it yet — lowering a starting tier waits on the
-      // first-attempt pass rates we only began recording with runs.size.
-      //
-      // The `planner` rung deliberately reads `plannerTier` — the configured
-      // strong model — and NOT the resolved `planner` above. On a small build
-      // those differ: `planner` has been downgraded to the coder tier, because
-      // Opus does not earn its price *planning* two routes and a checkbox.
-      // That says nothing about coding. A small build that has failed the gate
-      // twice is exactly where the stronger coder is worth paying for, and
-      // reading the downgraded value here would have collapsed the whole
-      // ladder to one tier on every small build — an escalation ladder that
-      // escalates nowhere.
-      coderLadder: profile.coderLadder.map((tier) => {
-        if (tier === 'planner') return overrides.plannerModel ?? plannerTier;
-        if (tier === 'mechanical') return config.mechanicalModel ?? coder;
-        return coder;
-      }),
       verifier:
-        overrides.verifierModel ??
         settings.verifierModel ??
         settings.defaultModel ??
         config.verifierModel ??
         coder,
-      // Read by run-engine.sh out of the same `models` input, because
-      // workflow_dispatch caps at 10 and the workflow already sits at 9.
       size,
       requirementCount: sizing.requirementCount,
       repoCount: sizing.repoCount,
       technicalPlanLength: sizing.technicalPlanLength,
       effort: profile.effort,
-      plannerMaxTurns: profile.maxTurns,
-      planWords: profile.planWords,
-      budgets: this.phaseBudgetsWithin(session, profile.maxBudgetUsd),
-    };
-  }
-
-  /**
-   * Per-phase ceilings, capped at what the session can actually afford.
-   *
-   * The profile's figures are absolute and they add up: LARGE is
-   * 10 + 20 + 6 + 5 — and that is one pass each, with up to four coding
-   * attempts allowed. A session with a $10 ceiling was dispatched with
-   * permission to spend $41 before anything asked it to stop, and one run did
-   * exactly that ($41.92 of $10.00). Nothing was wrong with the boundary check
-   * that is supposed to catch this; it simply runs BETWEEN phases, and the
-   * overshoot happens inside one.
-   *
-   * A phase may therefore never be handed more than the session has left. That
-   * is not the same as dividing the headroom four ways: the phases are
-   * sequential and most runs never reach the last one, so splitting it would
-   * starve CODE — the phase that does the work — on a budget that could have
-   * covered it. The engine's own ceiling stops a phase at the session's limit;
-   * the boundary check then holds the run rather than starting the next one.
-   *
-   * No ceiling on the session means no clamp: zero has meant "uncapped"
-   * everywhere else in this file since the column was added.
-   */
-  private phaseBudgetsWithin(
-    session: BuilderSession,
-    profileBudgets: {
-      plan: number;
-      code: number;
-      verify: number;
-      finalise: number;
-    },
-  ): { plan: number; code: number; verify: number; finalise: number } {
-    const ceiling = Number(session.budgetUsd ?? 0);
-    if (!ceiling || !Number.isFinite(ceiling)) return profileBudgets;
-
-    const spent = Number(session.totalCostUsd ?? 0);
-    const headroom = Math.max(
-      0,
-      ceiling - (Number.isFinite(spent) ? spent : 0),
-    );
-    // Never zero. A phase handed `--max-budget-usd 0` is a phase that cannot
-    // run at all, and a session with no headroom is refused at dispatch by
-    // assertWithinBudget long before this — so the floor here only covers the
-    // rounding case, where the last cent would otherwise read as "uncapped".
-    const cap = (value: number) => Math.max(0.5, Math.min(value, headroom));
-
-    return {
-      plan: cap(profileBudgets.plan),
-      code: cap(profileBudgets.code),
-      verify: cap(profileBudgets.verify),
-      finalise: cap(profileBudgets.finalise),
     };
   }
 
@@ -1048,7 +838,7 @@ export class BuilderBuildService {
   ): Promise<void> {
     const wanted = [
       ...new Set(
-        [models.planner, models.coder, models.verifier, ...models.coderLadder]
+        [models.planner, models.coder, models.verifier]
           .map((model) => String(model ?? '').trim())
           .filter(Boolean),
       ),
@@ -1140,72 +930,6 @@ export class BuilderBuildService {
     }
   }
 
-  /**
-   * Continue a paused run once its whole question group is answered.
-   *
-   * Guarded on the group rather than the single question: the agent batches
-   * everything ambiguous into one pause precisely so it only pays for one
-   * teardown, and dispatching on the first answer would throw that away.
-   */
-  async resumeFromQuestions(
-    session: BuilderSession,
-    pausedRun: BuilderBuildRun,
-    groupId: string,
-    userId: number,
-  ): Promise<BuilderBuildRun | null> {
-    if (!(await this.questionRepository.isGroupComplete(groupId))) {
-      return null;
-    }
-    const settings = await this.settingsService.get();
-    this.assertWithinBudget(session, settings.maxRunnerMinutes);
-
-    await this.sessionRepository.update(
-      { id: session.id },
-      { status: BuilderSessionStatus.BUILDING, updatedBy: userId },
-    );
-
-    // A resume keeps the paused run's models: switching tiers mid-session
-    // would make "which model wrote this" unanswerable for the run pair.
-    const models = this.resolveModels(session, settings);
-    return this.dispatchRun({
-      session,
-      mode: BuilderRunMode.RESUME,
-      userId,
-      repos: session.repos ?? [],
-      resumeOfRunId: pausedRun.id,
-      branches: pausedRun.branches ?? undefined,
-      // The paused run's branch family, not the session's: a build from a
-      // later PRD version, or a milestone, pushes somewhere other than
-      // `builder/<slug>`, and resuming onto the default would start over.
-      branchSlugOverride: pausedRun.branchSlug,
-      prdVersion: pausedRun.prdVersion ?? null,
-      models: {
-        ...models,
-        planner: pausedRun.plannerModel ?? models.planner,
-        coder: pausedRun.model ?? models.coder,
-        verifier: pausedRun.verifierModel ?? models.verifier,
-        // The paused run's own sizing, so the pair reads as one build. A
-        // resume re-derived from a PRD edited mid-pause would record two
-        // different sizes for one piece of work.
-        size: (pausedRun.size as BuilderBuildSize) ?? models.size,
-      },
-    });
-  }
-
-  /**
-   * Send a run at an already-open pull request, to fix red CI or answer review
-   * comments.
-   *
-   * Different from a build or a resume in what it skips: no planner (there is
-   * no plan to make — the work is a list of specific complaints) and no
-   * verifier (CI and a human reviewer are already the second pair of eyes).
-   * The gate still runs, because "it fixes the comment and breaks a test" is
-   * exactly the failure a fix run is prone to.
-   *
-   * Returns null rather than throwing on a refusal: this is called from a
-   * timer, and every refusal here is an ordinary state (the session is busy,
-   * the budget is gone) rather than an error anyone asked to see.
-   */
   /**
    * Whether this session has stopped converging.
    *
@@ -1321,111 +1045,15 @@ export class BuilderBuildService {
     return true;
   }
 
-  async dispatchFixRun(
-    pullRequest: {
-      id: string;
-      sessionId: string;
-      repo: string;
-      branch: string;
-      prNumber: number;
-      fixRunCount: number;
-    },
-    reason = 'acting on review feedback',
-  ): Promise<BuilderBuildRun | null> {
-    const session = await this.sessionRepository.findOne({
-      where: { id: pullRequest.sessionId },
-    });
-    if (!session) return null;
-    if (await this.breakerTripped(session)) return null;
-
-    // Two runners on one branch is a merge conflict Builder created for
-    // itself, so an in-flight run of any kind blocks a fix. A run parked on a
-    // question counts only until its resume exists — see countBlockingRuns.
-    //
-    // Logged rather than returned in silence. This refusal used to be the one
-    // guard here that said nothing at all, which made a wedged session
-    // indistinguishable from a healthy idle one: the tick ran, reported
-    // "Completed", and nothing dispatched, for hours.
-    if (await this.runRepository.countBlockingRuns(session.id)) {
-      this.logger.info(
-        `Skipping a fix run for ${pullRequest.repo}#${pullRequest.prNumber}: this session already has a run in flight or parked on a question.`,
-      );
-      return null;
-    }
-
-    const settings = await this.settingsService.get();
-    try {
-      await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
-      this.assertWithinBudget(session, settings.maxRunnerMinutes);
-    } catch (error) {
-      this.logger.info(
-        `Skipping a fix run for ${pullRequest.repo}#${pullRequest.prNumber}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return null;
-    }
-
-    // Counted at dispatch, not on success: a fix run that crashes still used
-    // an attempt, and counting only successes would let a crash loop run
-    // forever.
-    await this.pullRequestRepository.increment(
-      { id: pullRequest.id },
-      'fixRunCount',
-      1,
-    );
-
-    const models = this.resolveModels(session, settings);
-    const run = await this.dispatchRun({
-      session,
-      mode: BuilderRunMode.FIX,
-      userId: session.createdBy ?? 0,
-      repos: [pullRequest.repo],
-      models,
-      branches: { [pullRequest.repo]: pullRequest.branch },
-      pullRequestId: pullRequest.id,
-    });
-
-    // The session goes back to BUILDING so the UI stops reading as finished
-    // while Builder is pushing commits; settleRun moves it back.
-    //
-    // `error: null` matters as much as the status. Only a build dispatch used
-    // to clear it, so a failure from three runs ago stayed on screen while
-    // newer runs came and went — a fact about history rendered as the current
-    // state, right above a banner telling you the run had failed.
-    await this.sessionRepository.update(
-      { id: session.id },
-      {
-        status: BuilderSessionStatus.BUILDING,
-        currentStage: BuilderStage.SETUP,
-        error: null,
-      },
-    );
-    await this.notificationService.fixRunStarted(
-      session,
-      pullRequest.repo,
-      pullRequest.prNumber,
-      reason,
-    );
-    return run;
-  }
-
   /**
-   * Send a review run at an open pull request.
-   *
-   * Deliberately close to `dispatchFixRun` — same concurrency, budget and
-   * in-flight guards, since a reviewer is a runner like any other and costs
-   * the same money. Two things differ.
+   * Send a review at an open opencode pull request: the in-repo review
+   * (builder-review.yml), where the code is checked out and the reviewer can
+   * run it. Same concurrency and in-flight guards as any dispatch.
    *
    * `reviewedSha` is stamped at dispatch, not on completion. Reconcile is
    * polled: a tick landing while the review is still running would see an
-   * unreviewed head sha and dispatch a second reviewer at the same diff. The
-   * cost of stamping early is that a crashed review marks the sha as read — and
-   * that is the right trade, matching `fixRunCount`'s reasoning: an attempt
-   * that crashed still used an attempt.
-   *
-   * It carries `pullRequestId` like a fix run does, because the runner reports
-   * findings back against it.
+   * unreviewed head sha and dispatch a second reviewer at the same diff. A
+   * review that fails gives the claim back (releaseReviewClaim).
    */
   async dispatchReviewRun(
     pullRequest: {
@@ -1438,9 +1066,6 @@ export class BuilderBuildService {
     },
     headSha: string,
   ): Promise<BuilderBuildRun | null> {
-    // An opencode pull request is reviewed in its own repo's Actions, where the
-    // code is checked out and the reviewer can run it (builder-review.yml).
-    const inRepo = Boolean(pullRequest.branch?.startsWith('opencode/'));
     const session = await this.sessionRepository.findOne({
       where: { id: pullRequest.sessionId },
     });
@@ -1449,17 +1074,16 @@ export class BuilderBuildService {
 
     if (await this.runRepository.countBlockingRuns(session.id)) {
       this.logger.info(
-        `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: this session already has a run in flight or parked on a question.`,
+        `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: this session already has a run in flight.`,
       );
       return null;
     }
 
     const settings = await this.settingsService.get();
     try {
-      await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
       // A repo review holds no Builder runner: its minutes are the target
-      // repo's own Actions minutes, like an issue build's.
-      if (!inRepo) this.assertWithinBudget(session, settings.maxRunnerMinutes);
+      // repo's own Actions minutes, so only the concurrency limit applies.
+      await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
     } catch (error) {
       this.logger.info(
         `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: ${
@@ -1469,9 +1093,9 @@ export class BuilderBuildService {
       return null;
     }
 
-    // Same reasoning as the fix path: a review starting means the last
-    // failure is no longer what is happening, and leaving it on the session
-    // shows a stale error above a running build.
+    // A review starting means the last failure is no longer what is
+    // happening, and leaving it on the session shows a stale error above a
+    // running review.
     await this.sessionRepository.update({ id: session.id }, { error: null });
     await this.pullRequestRepository.update(
       { id: pullRequest.id },
@@ -1483,17 +1107,7 @@ export class BuilderBuildService {
       1,
     );
 
-    if (inRepo) return this.dispatchRepoReview(session, pullRequest, headSha);
-
-    return this.dispatchRun({
-      session,
-      mode: BuilderRunMode.REVIEW,
-      userId: session.createdBy ?? 0,
-      repos: [pullRequest.repo],
-      models: this.resolveModels(session, settings),
-      branches: { [pullRequest.repo]: pullRequest.branch },
-      pullRequestId: pullRequest.id,
-    });
+    return this.dispatchRepoReview(session, pullRequest, headSha);
   }
 
   /**
@@ -1712,9 +1326,10 @@ export class BuilderBuildService {
   }
 
   /**
-   * Create the run row, then dispatch. Order matters: the runner is handed
-   * its own run id as a workflow input and calls back with it from its first
-   * step, so the row has to exist before the workflow can start.
+   * Create the run row, then dispatch: a BUILD as an issue in its repo
+   * (dispatchAsIssue), a DESIGN to Builder's own runner. Order matters: the
+   * runner and the issue workflow are both handed the run id and call back
+   * with it, so the row has to exist before either can start.
    */
   private async dispatchRun(params: {
     session: BuilderSession;
@@ -1722,14 +1337,9 @@ export class BuilderBuildService {
     userId: number;
     repos: string[];
     models: BuilderResolvedModels;
-    resumeOfRunId?: string;
-    branches?: Record<string, string>;
-    pullRequestId?: string;
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
-    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
-    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1739,9 +1349,8 @@ export class BuilderBuildService {
 
     // Per-session dispatch mutex. The atomic sequence counter stops two
     // dispatches colliding on a run number, but nothing stopped them both
-    // *happening* — a double-clicked answer, or two admins answering the last
-    // question of a group at once, would send two runners at the same branches.
-    // The lock constants have existed unused since the module was written.
+    // *happening* — a double-clicked start would send two runs at the same
+    // branches.
     const lockKey = `${BUILDER_DISPATCH_LOCK_PREFIX}:${session.id}`;
     const locked = await this.redisService.acquireLock(
       lockKey,
@@ -1764,7 +1373,7 @@ export class BuilderBuildService {
   }
 
   /**
-   * Start a build as a GitHub issue in its repo (BUILDER_DISPATCH=issue).
+   * Start a build as a GitHub issue in its repo — the only way a build runs.
    *
    * The issue carries the repo's slice of the PRD and the approved design,
    * labelled `builder`; the repo's `builder.yml` workflow runs opencode on it
@@ -1851,14 +1460,9 @@ export class BuilderBuildService {
     userId: number;
     repos: string[];
     models: BuilderResolvedModels;
-    resumeOfRunId?: string;
-    branches?: Record<string, string>;
-    pullRequestId?: string;
     milestoneId?: string;
     branchSlugOverride?: string;
     prdVersion?: number | null;
-    /** Where the run executes; the BUILDER_DISPATCH setting when absent. */
-    dispatch?: BuilderDispatch;
     /** Runs after the row exists and before the workflow is dispatched. */
     onCreated?: (run: BuilderBuildRun) => Promise<void>;
   }): Promise<BuilderBuildRun> {
@@ -1875,7 +1479,6 @@ export class BuilderBuildService {
         sequence,
         mode,
         status: BuilderRunStatus.QUEUED,
-        resumeOfRunId: params.resumeOfRunId ?? null,
         engine: BUILDER_ENGINE,
         model: models.coder,
         plannerModel: models.planner,
@@ -1893,8 +1496,6 @@ export class BuilderBuildService {
         branchSlug: params.branchSlugOverride ?? session.slug,
         prdVersion: params.prdVersion ?? null,
         repos,
-        branches: params.branches ?? null,
-        pullRequestId: params.pullRequestId ?? null,
         milestoneId: params.milestoneId ?? null,
         dispatchedAt,
         createdBy: userId,
@@ -1903,10 +1504,7 @@ export class BuilderBuildService {
 
     try {
       if (params.onCreated) await params.onCreated(run);
-      if (
-        (params.dispatch ?? this.configService.builder.dispatch) === 'issue' &&
-        mode === BuilderRunMode.BUILD
-      ) {
+      if (mode === BuilderRunMode.BUILD) {
         await this.dispatchAsIssue(session, run, repos);
         return run;
       }
@@ -1920,10 +1518,10 @@ export class BuilderBuildService {
           mode,
           repos: JSON.stringify(repos),
           // One JSON input for all three tiers: workflow_dispatch caps at 10
-          // inputs and this file already sits at 9.
+          // inputs.
           models: JSON.stringify(models),
           branch_slug: run.branchSlug,
-          branches: JSON.stringify(params.branches ?? {}),
+          branches: JSON.stringify({}),
           api_base_url: this.configService.publicApiBaseUrl,
         },
       });
@@ -2035,216 +1633,6 @@ export class BuilderBuildService {
   }
 
   /**
-   * Condense a paused run's history into the state a resume needs.
-   *
-   * Server-side rather than replayed from the transcript: the events are the
-   * only durable record once the runner is gone, and feeding a fresh agent two
-   * hundred tool calls would cost more tokens than the work they represent.
-   * What survives is what a person would write on a handover note.
-   */
-  async buildResumeContext(runId: string): Promise<string> {
-    const events = await this.eventRepository.listByRun(runId, 0, 2000);
-    if (!events.length) return '';
-
-    const stagesSeen: string[] = [];
-    let plan = '';
-    let latestTodo: any[] = [];
-    const filesTouched = new Set<string>();
-    let lastTestOutput = '';
-    let lastVerification = '';
-
-    for (const event of events) {
-      switch (event.type) {
-        case BuilderEventType.STAGE_CHANGE: {
-          const stage = String(event.payload?.stage ?? '');
-          if (stage && !stagesSeen.includes(stage)) stagesSeen.push(stage);
-          break;
-        }
-        case BuilderEventType.PLAN:
-          plan = String(event.payload?.text ?? plan);
-          break;
-        case BuilderEventType.TODO:
-          latestTodo = Array.isArray(event.payload?.items)
-            ? event.payload.items
-            : latestTodo;
-          break;
-        case BuilderEventType.FILE_EDIT: {
-          const path = event.payload?.path;
-          if (path) filesTouched.add(String(path));
-          break;
-        }
-        case BuilderEventType.TEST_OUTPUT:
-          lastTestOutput = String(event.payload?.text ?? lastTestOutput);
-          break;
-        case BuilderEventType.VERIFICATION:
-          lastVerification = String(event.payload?.text ?? lastVerification);
-          break;
-        default:
-          break;
-      }
-    }
-
-    const parts: string[] = [];
-    if (stagesSeen.length) {
-      parts.push(`Stages reached: ${stagesSeen.join(' → ')}`);
-    }
-    if (plan) {
-      parts.push(`\n**Your plan was:**\n\n${plan}`);
-    }
-    if (latestTodo.length) {
-      const rendered = latestTodo
-        .map(
-          (item: any) =>
-            `- [${item?.status === 'done' ? 'x' : ' '}] ${item?.text ?? ''}${
-              item?.status === 'in_progress' ? ' *(in progress)*' : ''
-            }`,
-        )
-        .join('\n');
-      parts.push(`\n**Todo list as you left it:**\n\n${rendered}`);
-    }
-    if (filesTouched.size) {
-      const files = [...filesTouched].slice(0, BUILDER_RESUME_FILES_MAX);
-      parts.push(
-        `\n**Files you had already edited** (${filesTouched.size}):\n\n${files
-          .map((file) => `- ${file}`)
-          .join('\n')}${
-          filesTouched.size > files.length
-            ? `\n- …and ${filesTouched.size - files.length} more`
-            : ''
-        }`,
-      );
-    }
-    if (lastTestOutput) {
-      parts.push(
-        `\n**Last test results:**\n\n\`\`\`\n${lastTestOutput.slice(
-          0,
-          BUILDER_RESUME_TEST_OUTPUT_MAX,
-        )}\n\`\`\``,
-      );
-    }
-    if (lastVerification) {
-      parts.push(`\n**Last verification verdict:**\n\n${lastVerification}`);
-    }
-    return parts.join('\n');
-  }
-
-  /**
-   * What the later phases of a run need to know about its earlier ones.
-   *
-   * The event log is the only durable record of a run in flight — the runner's
-   * filesystem is gone the moment the job ends, and a resume happens in a
-   * different container. So the plan the planner wrote, the gate's verdicts and
-   * the reviewer's objections are read back from events rather than passed
-   * along in memory. That is also what makes the remediation prompt possible:
-   * the coder is a *new process* by then and knows none of it.
-   */
-  async getRunPhaseContext(runId: string): Promise<{
-    planMd: string | null;
-    gateFailures: {
-      repo: string;
-      kind: string;
-      command: string;
-      newFailures: string[];
-      preExistingFailures: string[];
-      outputTail?: string | null;
-    }[];
-    gateSummary: string | null;
-    objections: {
-      severity?: string;
-      repo?: string;
-      file?: string;
-      summary?: string;
-      detail?: string;
-    }[];
-    verifierNotes: string | null;
-    lastVerifyRound: number;
-  }> {
-    const events = await this.eventRepository.listByRunOfTypes(runId, [
-      BuilderEventType.PLAN,
-      BuilderEventType.GATE_RESULT,
-      BuilderEventType.VERIFICATION,
-    ]);
-
-    let planMd: string | null = null;
-    let verifierNotes: string | null = null;
-    let lastVerifyRound = 0;
-    let objections: any[] = [];
-
-    for (const event of events) {
-      switch (event.type) {
-        case BuilderEventType.PLAN:
-          planMd = String(event.payload?.text ?? planMd ?? '') || planMd;
-          break;
-        case BuilderEventType.VERIFICATION: {
-          const round = Number(event.payload?.round ?? 0);
-          // Keep the newest round's verdict; an older one describes code that
-          // has since been remediated.
-          if (round >= lastVerifyRound) {
-            lastVerifyRound = round;
-            objections = Array.isArray(event.payload?.objections)
-              ? event.payload.objections
-              : [];
-            const notes = event.payload?.notes;
-            verifierNotes = notes ? String(notes) : null;
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    }
-
-    const gateResults = latestGateResults(events);
-    const gateFailures = gateResults
-      .filter((result) => result?.passed === false)
-      .map((result) => ({
-        repo: String(result.repo ?? ''),
-        kind: String(result.kind ?? ''),
-        command: String(result.command ?? ''),
-        newFailures: Array.isArray(result.newFailures)
-          ? result.newFailures.map((name: unknown) => String(name))
-          : [],
-        preExistingFailures: Array.isArray(result.preExistingFailures)
-          ? result.preExistingFailures.map((name: unknown) => String(name))
-          : [],
-        outputTail: result.outputTail ? String(result.outputTail) : null,
-      }));
-
-    const gateSummary = gateResults.length
-      ? gateResults
-          .map(
-            (result) =>
-              `- ${result.repo} ${result.kind} (\`${result.command}\`): ${
-                result.passed ? 'passed' : 'FAILED'
-              }${
-                Array.isArray(result.preExistingFailures) &&
-                result.preExistingFailures.length
-                  ? ` — ${result.preExistingFailures.length} pre-existing failure(s) carried over`
-                  : ''
-              }`,
-          )
-          .join('\n')
-      : null;
-
-    return {
-      planMd,
-      gateFailures,
-      gateSummary,
-      objections,
-      verifierNotes,
-      lastVerifyRound,
-    };
-  }
-
-  /**
-   * Whether a run has a passing machine gate for every check it ran.
-   *
-   * `/complete {done}` is refused without one. Before the gate existed, a run
-   * that skipped testing entirely and self-reported success settled as
-   * SUCCEEDED — testing was prompt-instructed and the only evidence was a
-   * string the agent chose to send.
-   */
-  /**
    * Whether a run touched any code at all.
    *
    * The gate rule exists because "I fixed it" is not checkable without machine
@@ -2266,15 +1654,6 @@ export class BuilderBuildService {
     return !edit;
   }
 
-  async hasPassingGate(runId: string): Promise<boolean> {
-    const events = await this.eventRepository.listByRunOfTypes(runId, [
-      BuilderEventType.GATE_RESULT,
-    ]);
-    const results = latestGateResults(events);
-    if (!results.length) return false;
-    return results.every((result) => result?.passed === true);
-  }
-
   /**
    * Stop a run. The DB write always lands; the GitHub cancel is best-effort,
    * because the point of the action is to stop this session progressing here,
@@ -2290,25 +1669,6 @@ export class BuilderBuildService {
         completedAt: new Date(),
       },
     );
-
-    // Supersede anything it was waiting on, so an answered-too-late question
-    // cannot dispatch a resume against a cancelled session.
-    await this.questionRepository.update(
-      { runId: run.id, status: BuilderQuestionStatus.PENDING },
-      { status: BuilderQuestionStatus.SUPERSEDED },
-    );
-
-    // Steering notes go the same way. A correction nobody will ever read must
-    // not sit at PENDING forever — and must not read as delivered either,
-    // because it never was. Best-effort: cancelling is the point of this call
-    // and a tidy-up failure must not stop it.
-    await this.steerService.supersedePending(run.sessionId).catch((error) => {
-      this.logger.warn(
-        `Could not supersede steering notes for session ${run.sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
 
     if (run.mode === BuilderRunMode.DESIGN) {
       const session = await this.sessionRepository.findOne({
@@ -2515,14 +1875,9 @@ export class BuilderBuildService {
     );
   }
 
-  /** How a build starts when the request does not say (BUILDER_DISPATCH). */
-  defaultDispatch(): BuilderDispatch {
-    return this.configService.builder.dispatch;
-  }
-
   /**
-   * Whether the session has a run in flight or parked on a question — the
-   * guard dispatchFixRun applies, for fixes that are not a run (`/oc`).
+   * Whether the session has a run in flight — the guard every automatic
+   * dispatch applies, for fixes that are not a run (`/oc`).
    */
   async hasRunInFlight(sessionId: string): Promise<boolean> {
     return (await this.runRepository.countBlockingRuns(sessionId)) > 0;
@@ -2950,10 +2305,6 @@ export class BuilderBuildService {
       }
     > = { ...((current.cost?.phases as Record<string, any>) ?? {}) };
 
-    // The arm, for the model-selection dataset. Byproduct of a report that
-    // already happens, and never able to fail the run that produced it.
-    await this.attemptService.recordArm(run, cost.phase ?? '', cost);
-
     const usd = Number(cost.totalCostUsd ?? 0);
     // A count of zero is real; a missing one is not. `?? null` rather than a
     // `|| 0` fallback, so an older workflow that reports no timings leaves them
@@ -3022,53 +2373,12 @@ export class BuilderBuildService {
     }
   }
 
-  async recordRunModel(
-    run: BuilderBuildRun,
-    dto: RecordBuilderRunModelDto,
-  ): Promise<void> {
-    await this.runRepository.update(
-      { id: run.id },
-      { model: dto.model ?? run.model },
-    );
-  }
-
   /**
-   * Live spend against the session ceiling, for the between-phase check the
-   * runner makes.
-   *
-   * The dispatch guard alone was not a budget: it refused the *next* run while
-   * the current one could overshoot by any amount. Now every phase boundary is
-   * a checkpoint, and the phase-level cost reporting that feeds it means the
-   * number is current rather than end-of-run.
+   * Live spend against the session ceiling, for the admin UI. Read live rather
+   * than taken from the session detail the page loaded, which is fetched once.
    */
-  async getBudgetState(run: BuilderBuildRun): Promise<BuilderBudgetState> {
-    return this.budgetStateFor(run.sessionId);
-  }
-
-  /**
-   * The same state, for the admin UI rather than the runner.
-   *
-   * Read live rather than taken from the session detail the page loaded: that
-   * response is fetched once per session and a held run's whole point is that
-   * the numbers moved after it was fetched. `holdSeconds` rides along so the
-   * banner can say how long the run will wait without hard-coding it.
-   */
-  async getSessionBudget(sessionId: string): Promise<
-    BuilderBudgetState & {
-      /** Set while a run is parked at a phase boundary waiting for a raise. */
-      hold: { runId: string; heldAt: string; holdUntil: string } | null;
-    }
-  > {
-    const state = await this.budgetStateFor(sessionId);
-    // Gated on `exceeded` as well as the event, so the hold clears however the
-    // ceiling moved. A retry dispatched with a `budgetUsd` override raises it
-    // without going through raiseBudget, and nothing would then write the
-    // `raised` event that ends the hold — leaving the page saying "paused" over
-    // a run that is working.
-    return {
-      ...state,
-      hold: state.exceeded ? await this.findActiveHold(sessionId) : null,
-    };
+  async getSessionBudget(sessionId: string): Promise<BuilderBudgetState> {
+    return this.budgetStateFor(sessionId);
   }
 
   private async budgetStateFor(sessionId: string): Promise<BuilderBudgetState> {
@@ -3083,8 +2393,6 @@ export class BuilderBuildService {
         spentUsd,
         remainingUsd: null,
         exceeded: false,
-        holdSeconds: BUILDER_BUDGET_HOLD_SECONDS,
-        pollSeconds: BUILDER_BUDGET_HOLD_POLL_SECONDS,
       };
     }
     return {
@@ -3092,37 +2400,23 @@ export class BuilderBuildService {
       spentUsd,
       remainingUsd: Math.max(0, budget - spentUsd),
       exceeded: spentUsd >= budget,
-      holdSeconds: BUILDER_BUDGET_HOLD_SECONDS,
-      pollSeconds: BUILDER_BUDGET_HOLD_POLL_SECONDS,
     };
   }
 
   /**
    * Raise (or lower) the session's spend ceiling, at any point in its life.
    *
-   * Deliberately allowed **while a build is running**, which is the case it
-   * exists for. A run that hits the ceiling mid-flight holds at the next phase
-   * boundary rather than aborting, and this is what releases it — the runner
-   * re-reads the ceiling every few seconds, so nothing needs to be dispatched
-   * and the hour of work already in its tree survives.
-   *
-   * The one refusal is a figure that would not actually release a held run:
-   * setting the ceiling at or below what has already been spent leaves the run
-   * exactly where it was, and "raised the budget, nothing happened" is a worse
-   * outcome than being told the number is too low.
+   * The one refusal is a figure at or below what has already been spent: the
+   * next dispatch would be refused straight away, and "raised the budget,
+   * nothing happened" is a worse outcome than being told the number is too
+   * low.
    */
   async raiseBudget(
     session: BuilderSession,
     userId: number,
     budgetUsd: number,
-  ): Promise<
-    BuilderBudgetState & { hold: { runId: string } | null; released: boolean }
-  > {
+  ): Promise<BuilderBudgetState> {
     const spent = Number(session.totalCostUsd ?? 0);
-    const activeRun = await this.runRepository.findOne({
-      where: { sessionId: session.id, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
-      order: { sequence: 'DESC' },
-    });
 
     // A ceiling of zero means "no ceiling" everywhere else (see
     // assertWithinBudget), so it is a legitimate value here and not a floor
@@ -3139,97 +2433,7 @@ export class BuilderBuildService {
       { budgetUsd: String(budgetUsd), updatedBy: userId },
     );
 
-    const hold = activeRun
-      ? await this.findActiveHold(session.id, activeRun)
-      : null;
-
-    // Written onto the run's own log so the feed shows the raise where the
-    // hold is, in order, rather than the banner quietly changing.
-    if (activeRun) {
-      await this.eventService.record(activeRun, BuilderEventType.BUDGET_HOLD, {
-        state: hold ? 'raised' : 'headroom',
-        budgetUsd,
-        spentUsd: spent,
-        previousBudgetUsd: Number(session.budgetUsd ?? 0) || null,
-      });
-    }
-
-    const state = await this.budgetStateFor(session.id);
-    return {
-      ...state,
-      hold: hold ? { runId: hold.runId } : null,
-      released: Boolean(hold) && !state.exceeded,
-    };
-  }
-
-  /**
-   * Record that a run has parked on its ceiling, and tell somebody.
-   *
-   * Posted by the runner at the phase boundary where it stopped, not inferred
-   * from the spend: only the runner knows it is actually sitting there waiting,
-   * and a session whose ceiling is gone between runs is a different (already
-   * notified) situation.
-   */
-  async recordBudgetHold(
-    run: BuilderBuildRun,
-  ): Promise<{ holdSeconds: number }> {
-    const state = await this.budgetStateFor(run.sessionId);
-    const holdUntil = new Date(Date.now() + state.holdSeconds * 1000);
-
-    await this.eventService.record(run, BuilderEventType.BUDGET_HOLD, {
-      state: 'held',
-      spentUsd: state.spentUsd,
-      budgetUsd: state.budgetUsd,
-      holdUntil: holdUntil.toISOString(),
-      holdSeconds: state.holdSeconds,
-    });
-
-    const session = await this.sessionRepository.findOne({
-      where: { id: run.sessionId },
-    });
-    if (session) {
-      await this.notificationService.budgetHold(
-        session,
-        state.spentUsd,
-        Math.round(state.holdSeconds / 60),
-      );
-    }
-    return { holdSeconds: state.holdSeconds };
-  }
-
-  /**
-   * The hold a run is currently sitting in, if any — the last BUDGET_HOLD
-   * event on the newest active run, and only while it still says `held`.
-   */
-  private async findActiveHold(
-    sessionId: string,
-    knownRun?: BuilderBuildRun,
-  ): Promise<{ runId: string; heldAt: string; holdUntil: string } | null> {
-    const run =
-      knownRun ??
-      (await this.runRepository.findOne({
-        where: { sessionId, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
-        order: { sequence: 'DESC' },
-      }));
-    if (!run) return null;
-
-    const event = await this.eventRepository.latestOfType(
-      run.id,
-      BuilderEventType.BUDGET_HOLD,
-    );
-    if (!event || event.payload?.state !== 'held') return null;
-
-    const heldAt = event.createdAt ?? new Date();
-    return {
-      runId: run.id,
-      heldAt: new Date(heldAt).toISOString(),
-      holdUntil: String(
-        event.payload?.holdUntil ??
-          new Date(
-            new Date(heldAt).getTime() + BUILDER_BUDGET_HOLD_SECONDS * 1000,
-          ).toISOString(),
-      ),
-    };
+    return this.budgetStateFor(session.id);
   }
 
   async getRunOrFail(runId: string): Promise<BuilderBuildRun> {
@@ -3238,10 +2442,5 @@ export class BuilderBuildService {
       throw new NotFoundException(`Builder run not found: ${runId}`);
     }
     return run;
-  }
-
-  /** A fresh group id for a batch of questions asked in one pause. */
-  newQuestionGroupId(): string {
-    return uuidv4();
   }
 }

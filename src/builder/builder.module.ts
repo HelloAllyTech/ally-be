@@ -45,9 +45,7 @@ import { BuilderInterviewToolsService } from './service/builder-interview-tools.
 import { BuilderInterviewOrchestratorService } from './service/builder-interview-orchestrator.service';
 import { BuilderBuildService } from './service/builder-build.service';
 import { BuilderEventService } from './service/builder-event.service';
-import { BuilderQuestionService } from './service/builder-question.service';
 import { BuilderPullRequestService } from './service/builder-pull-request.service';
-import { BuilderReportService } from './service/builder-report.service';
 import { BuilderSettingsService } from './service/builder-settings.service';
 import { BuilderLessonCuratorService } from './service/builder-lesson-curator.service';
 import { BuilderExemplarService } from './service/builder-exemplar.service';
@@ -56,8 +54,6 @@ import { BuilderMetricsService } from './service/builder-metrics.service';
 import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
-import { BuilderSteerService } from './service/builder-steer.service';
-import { BuilderAttemptService } from './service/builder-attempt.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
 import { BuilderMessageRepository } from './repository/builder-message.repository';
@@ -76,10 +72,7 @@ import {
   BuilderNotificationRepository,
   BuilderPullRequestRepository,
   BuilderPrFeedbackRepository,
-  BuilderQuestionRepository,
   BuilderReportRepository,
-  BuilderSteerRepository,
-  BuilderAttemptRepository,
 } from './repository/builder-build.repository';
 
 /**
@@ -89,10 +82,11 @@ import {
  * Two halves that share one set of tables. The **interview** runs in-process
  * (Anthropic SDK, SSE to the browser). The **build** runs somewhere else
  * entirely — ally-be cannot check out a repo, run a test suite or open a pull
- * request from inside its container, so it dispatches a GitHub Actions run and
- * owns the protocol that run follows. Everything asymmetric about this module
- * (a machine-auth controller, a reconcile tick, prompt-over-HTTP) follows from
- * that split.
+ * request from inside its container. A build is a GitHub issue in its repo,
+ * worked into a pull request by that repo's opencode workflow; the technical
+ * design is drafted on Builder's own runner (builder-session.yml). Everything
+ * asymmetric about this module (a machine-auth controller, a reconcile tick,
+ * prompt-over-HTTP) follows from that split.
  *
  * `GithubModule` supplies the dispatch/cancel client. It used to reach that
  * through `BugHunterModule`, which said "Builder depends on Bug Hunter" when
@@ -133,9 +127,9 @@ import {
     ReleaseModule,
     AuthModule,
     GithubModule,
-    // For BugFindingService only: the gate's excused failures are filed as
-    // Bug Hunter findings. A domain dependency, unlike the GitHub client that
-    // used to be smuggled through this same import.
+    // For BugFindingService only: the evidence service reads open findings.
+    // A domain dependency, unlike the GitHub client that used to be smuggled
+    // through this same import.
     BugHunterModule,
     // Lane A evidence sources: production numbers, production errors. Read
     // through each owner's own service rather than its HTTP surface, which is
@@ -166,9 +160,7 @@ import {
     BuilderInterviewOrchestratorService,
     BuilderBuildService,
     BuilderEventService,
-    BuilderQuestionService,
     BuilderPullRequestService,
-    BuilderReportService,
     BuilderSettingsService,
     BuilderLessonCuratorService,
     BuilderExemplarService,
@@ -177,8 +169,6 @@ import {
     BuilderEpicService,
     BuilderResearchService,
     BuilderNotificationService,
-    BuilderSteerService,
-    BuilderAttemptService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
     BuilderMessageRepository,
@@ -189,13 +179,10 @@ import {
     BuilderExemplarRepository,
     BuilderBuildRunRepository,
     BuilderBuildEventRepository,
-    BuilderQuestionRepository,
     BuilderPullRequestRepository,
     BuilderPrFeedbackRepository,
     BuilderReportRepository,
     BuilderNotificationRepository,
-    BuilderSteerRepository,
-    BuilderAttemptRepository,
   ],
   exports: [
     BuilderSessionService,

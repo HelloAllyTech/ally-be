@@ -23,7 +23,6 @@ import {
 } from '../enum/builder.enum';
 import {
   BUILDER_SLUG_MAX_LENGTH,
-  BUILDER_STEER_MAX_LENGTH,
   BUILDER_TITLE_MAX_LENGTH,
 } from '../constants/builder.constants';
 
@@ -142,28 +141,14 @@ export class PatchBuilderPrdDto {
 
 export class StartBuilderBuildDto {
   @ApiPropertyOptional({
-    description: 'Override the coder-tier model for this run',
+    description:
+      'The coder model to record for this build. The build itself runs as an ' +
+      "issue in its repo, on that repo's own opencode model.",
   })
   @IsOptional()
   @IsString()
   @MaxLength(80)
   model?: string;
-
-  @ApiPropertyOptional({
-    description: 'Override the planner-tier model for this run',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  plannerModel?: string;
-
-  @ApiPropertyOptional({
-    description: 'Override the verifier-tier model for this run',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  verifierModel?: string;
 
   @ApiPropertyOptional({
     description:
@@ -173,28 +158,6 @@ export class StartBuilderBuildDto {
   @IsNumber()
   @Min(0)
   budgetUsd?: number;
-
-  @ApiPropertyOptional({
-    enum: ['pipeline', 'ralph'],
-    description:
-      'How the build runs. `pipeline` (default): plan → code → gate → review. ' +
-      '`ralph`: one agent in a loop, a fresh session per iteration, one plan item ' +
-      'each, with the gate and a cold review as backpressure. Experimental.',
-  })
-  @IsOptional()
-  @IsIn(['pipeline', 'ralph'])
-  loop?: 'pipeline' | 'ralph';
-
-  @ApiPropertyOptional({
-    enum: ['workflow', 'issue'],
-    description:
-      'Where this build runs, overriding BUILDER_DISPATCH for this build and the ' +
-      "repos chained after it. `workflow`: Builder's own runner. `issue`: an issue " +
-      'in each repo that its builder.yml workflow works into a pull request with opencode.',
-  })
-  @IsOptional()
-  @IsIn(['workflow', 'issue'])
-  dispatch?: 'workflow' | 'issue';
 }
 
 export class RaiseBuilderBudgetDto {
@@ -205,36 +168,6 @@ export class RaiseBuilderBudgetDto {
   @IsNumber()
   @Min(0)
   budgetUsd!: number;
-}
-
-export class SteerBuilderRunDto {
-  @ApiProperty({
-    description:
-      "A correction for a build already in flight, in the admin's own words. It reaches the run at its next phase boundary and rides on the prompt for the phase after — a coding pass in progress cannot be interrupted. This is a redirection, not a PRD change: anything longer than a paragraph belongs in the PRD.",
-    maxLength: BUILDER_STEER_MAX_LENGTH,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(BUILDER_STEER_MAX_LENGTH)
-  note!: string;
-}
-
-export class AnswerBuilderQuestionDto {
-  @ApiProperty({
-    description: 'Human-readable answer, as the agent will read it',
-  })
-  @IsString()
-  @IsNotEmpty()
-  message!: string;
-
-  @ApiPropertyOptional({
-    type: BuilderAnswerDto,
-    description: 'Structured payload for an option-card answer',
-  })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => BuilderAnswerDto)
-  answer?: BuilderAnswerDto;
 }
 
 export class UpdateBuilderSettingsDto {

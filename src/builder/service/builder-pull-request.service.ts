@@ -15,12 +15,10 @@ import {
   PullRequestInfo,
 } from 'src/github/service/github-actions.service';
 import { AppConfigService } from 'src/config/config.service';
-import { BuilderEventType, BuilderRunStatus } from '../enum/builder.enum';
-import { buildVerificationComment } from '../util/verification-pr-comment.util';
+import { BuilderRunStatus } from '../enum/builder.enum';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import {
-  BuilderBuildEventRepository,
   BuilderPrFeedbackRepository,
   BuilderPullRequestRepository,
 } from '../repository/builder-build.repository';
@@ -40,7 +38,6 @@ import {
 } from '../constants/builder-repos.constants';
 import {
   BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
-  BUILDER_MAX_REVIEW_RUNS_PER_PR,
   BUILDER_MAX_REPO_REVIEWS_PER_PR,
   BUILDER_PR_AUTOMATION_TIMEBOX_MS,
   BUILDER_OWN_ACTORS,
@@ -88,7 +85,6 @@ export class BuilderPullRequestService {
     private readonly notificationService: BuilderNotificationService,
     private readonly settingsService: BuilderSettingsService,
     private readonly github: GithubActionsService,
-    private readonly eventRepository: BuilderBuildEventRepository,
     private readonly releaseService: ProductionReleaseService,
     private readonly configService: AppConfigService,
     // Forward-ref'd: the build service reaches PRs through repositories only,
@@ -294,13 +290,6 @@ export class BuilderPullRequestService {
       }
     }
 
-    // Only on first sight. A run that re-reports its pull requests — a retry,
-    // a resumed run posting the same branch — must not stack a second identical
-    // comment on a thread a person is reading.
-    for (const pullRequest of opened) {
-      await this.postVerificationComment(sessionId, runId, pullRequest);
-    }
-
     if (results.length) {
       const session = await this.sessionRepository.findOne({
         where: { id: sessionId },
@@ -310,64 +299,6 @@ export class BuilderPullRequestService {
       }
     }
     return results;
-  }
-
-  /**
-   * Put the run's own review on the pull request it cleared.
-   *
-   * Builder already reviews its work before opening anything — the VERIFY
-   * phase is a separate invocation with a fresh context and a read-only tool
-   * allowlist, and no pull request opens until it passes. All of that happened
-   * inside the run, so the person who arrives at the PR sees a green tick and
-   * none of the reasoning behind it: not which requirements were checked, not
-   * what the reviewer objected to before the coder fixed it, and not whether
-   * the passing checks were judging an unmodified test configuration.
-   *
-   * This adds no judgement of its own. It renders events the run already
-   * wrote, so it costs a GitHub call and nothing else — no second model, no
-   * second opinion to reconcile with the first.
-   *
-   * Best-effort in every direction: a failed comment must not fail the pull
-   * request it was describing, and a run with nothing recorded posts nothing
-   * rather than an empty review that teaches people to skip these.
-   */
-  private async postVerificationComment(
-    sessionId: string,
-    runId: string,
-    pullRequest: BuilderPullRequest,
-  ): Promise<void> {
-    // Read once, outside the try: a catch that dereferences the same object
-    // the try failed on throws from the handler and escapes the guard entirely,
-    // turning best-effort telemetry into a failed pull-request record.
-    const where = `${pullRequest?.repo}#${pullRequest?.prNumber}`;
-    try {
-      const [verification, events] = await Promise.all([
-        this.eventRepository.latestOfType(runId, BuilderEventType.VERIFICATION),
-        this.eventRepository.listByRun(runId),
-      ]);
-      const gateResults = events.filter(
-        (event) => event.type === BuilderEventType.GATE_RESULT,
-      );
-
-      const body = buildVerificationComment({
-        verification,
-        gateResults,
-        sessionUrl: `${this.configService.adminBaseUrl}/builder/${sessionId}`,
-      });
-      if (!body) return;
-
-      await this.github.createIssueComment(
-        pullRequest.repo,
-        pullRequest.prNumber,
-        body,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Could not post the review summary to ${where}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 
   /**
@@ -411,7 +342,7 @@ export class BuilderPullRequestService {
   }
 
   /**
-   * Follow each issue-dispatched build (BUILDER_DISPATCH=issue) to its pull
+   * Follow each issue-dispatched build to its pull
    * request.
    *
    * The repo's `builder.yml` workflow runs opencode on the issue Builder
@@ -651,10 +582,10 @@ export class BuilderPullRequestService {
     if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
 
-    // Review before fix, and only one of them per tick. A review run that
-    // dispatches leaves an active run behind, which `dispatchFixRun` refuses
-    // to race — so asking for both here would reliably get the second refused
-    // and look like a bug from the outside.
+    // Review before fix, and only one of them per tick. A review that
+    // dispatches leaves an active run behind, which a fix refuses to race
+    // (hasRunInFlight) — so asking for both here would reliably get the second
+    // refused and look like a bug from the outside.
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
@@ -1515,29 +1446,30 @@ export class BuilderPullRequestService {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoReviewEnabled) return false;
 
-    const reviewCap = isOpencodeBranch(pullRequest.branch)
-      ? BUILDER_MAX_REPO_REVIEWS_PER_PR
-      : BUILDER_MAX_REVIEW_RUNS_PER_PR;
-    if (pullRequest.reviewRunCount >= reviewCap) return false;
-    if (isOpencodeBranch(pullRequest.branch)) {
-      const recent = await this.buildService.recentReviewOutcomes(
-        pullRequest.id,
-        2,
+    // Only opencode pull requests are reviewed, in their own repo's Actions.
+    // A `builder/*` pull request from Builder's old runner build has no
+    // review left to send it to.
+    if (!isOpencodeBranch(pullRequest.branch)) return false;
+    if (pullRequest.reviewRunCount >= BUILDER_MAX_REPO_REVIEWS_PER_PR) {
+      return false;
+    }
+    const recent = await this.buildService.recentReviewOutcomes(
+      pullRequest.id,
+      2,
+    );
+    if (
+      recent.length === 2 &&
+      recent.every(
+        (status) =>
+          status === BuilderRunStatus.FAILED ||
+          status === BuilderRunStatus.TIMED_OUT,
+      )
+    ) {
+      await this.escalate(
+        pullRequest,
+        'The last two reviews ended without a verdict, so I cannot tell whether this is safe.',
       );
-      if (
-        recent.length === 2 &&
-        recent.every(
-          (status) =>
-            status === BuilderRunStatus.FAILED ||
-            status === BuilderRunStatus.TIMED_OUT,
-        )
-      ) {
-        await this.escalate(
-          pullRequest,
-          'The last two reviews ended without a verdict, so I cannot tell whether this is safe.',
-        );
-        return false;
-      }
+      return false;
     }
     if (!headSha || pullRequest.reviewedSha === headSha) return false;
     if (rollup?.state !== 'success') return false;
@@ -1982,39 +1914,17 @@ export class BuilderPullRequestService {
   }
 
   /**
-   * Whether to send a fix run at this PR, and why not when not.
+   * Whether to ask for a fix on this PR, and why not when not.
    *
-   * Every guard here exists because the alternative is a loop that burns money
-   * without converging:
-   *  - the kill switch, because autonomy on someone's open PR should be opt-in;
-   *  - `fixRunCount`, because a fix that cannot fix it will not fix it on the
-   *    fourth attempt either;
-   *  - "no active run", because two runners on one branch is a merge conflict
-   *    Builder created for itself.
-   *
-   * Two of those are enforced elsewhere, and looking for them here is why this
-   * list used to describe a guard that did not exist. "No active run" lives in
-   * `BuilderBuildService.dispatchFixRun`, which every path to a fix run goes
-   * through. The head-sha check lives in `ingestFeedback`: a CI failure on a
-   * commit Builder did not author is written OBSERVED rather than PENDING, and
-   * `countPending` never sees it — so the guard is upstream of the count below
-   * rather than a fourth `if` in this method.
+   * Only opencode pull requests are fixed: their feedback goes back to
+   * opencode as a `/oc` comment (considerOpencodeFix). A `builder/*` pull
+   * request left by a build on Builder's old runner is no longer worked on
+   * automatically — that runner only drafts designs now — so its feedback
+   * waits for a person.
    */
   private async considerFixRun(pullRequest: BuilderPullRequest): Promise<void> {
-    if (isOpencodeBranch(pullRequest.branch)) {
-      await this.considerOpencodeFix(pullRequest);
-      return;
-    }
-    const settings = await this.settingsService.get();
-    if (!settings.enabled || !settings.autoFixEnabled) return;
-
-    const ceiling = settings.maxFixRunsPerPr ?? 0;
-    if (ceiling && pullRequest.fixRunCount >= ceiling) return;
-
-    const pending = await this.feedbackRepository.countPending(pullRequest.id);
-    if (!pending) return;
-
-    await this.buildService.dispatchFixRun(pullRequest);
+    if (!isOpencodeBranch(pullRequest.branch)) return;
+    await this.considerOpencodeFix(pullRequest);
   }
 
   /**
@@ -2484,77 +2394,5 @@ export class BuilderPullRequestService {
 
   listFeedback(sessionId: string): Promise<BuilderPrFeedback[]> {
     return this.feedbackRepository.listBySession(sessionId);
-  }
-
-  getById(pullRequestId: string): Promise<BuilderPullRequest> {
-    return this.repository.findOneOrFail({ where: { id: pullRequestId } });
-  }
-
-  /**
-   * Hand a fix run the items it should deal with, and mark them as claimed.
-   *
-   * Claiming matters because reconcile runs on a timer: a tick landing while a
-   * fix run is mid-flight would count these as still pending and dispatch a
-   * second run at the same comments.
-   */
-  async claimForFix(
-    pullRequestId: string,
-    runId: string,
-  ): Promise<BuilderPrFeedback[]> {
-    const items = await this.feedbackRepository.listActionable(pullRequestId);
-    if (items.length) {
-      await this.feedbackRepository.update(
-        { id: In(items.map((item) => item.id)) },
-        { status: BuilderPrFeedbackStatus.IN_FIX, fixRunId: runId },
-      );
-    }
-    return items;
-  }
-
-  /**
-   * What a fix run reports back: which items it handled and how.
-   *
-   * Trusted from the runner because only the runner knows — it read the
-   * comment, wrote the code and posted the reply. What ally-be checks is that
-   * the item belongs to this run's PR, so a stray key cannot mark another
-   * session's feedback done.
-   */
-  async recordFeedbackOutcomes(
-    runId: string,
-    sessionId: string,
-    outcomes: {
-      feedbackId?: string;
-      status?: string;
-      replyUrl?: string;
-    }[],
-  ): Promise<number> {
-    let updated = 0;
-    for (const outcome of outcomes) {
-      if (!outcome.feedbackId) continue;
-      const row = await this.feedbackRepository.findOne({
-        where: { id: outcome.feedbackId, sessionId },
-      });
-      if (!row) {
-        this.logger.warn(
-          `Builder run ${runId} reported feedback ${outcome.feedbackId}, which is not this session's — ignoring.`,
-        );
-        continue;
-      }
-      const status =
-        outcome.status === 'dismissed'
-          ? BuilderPrFeedbackStatus.DISMISSED
-          : BuilderPrFeedbackStatus.ADDRESSED;
-      await this.feedbackRepository.update(
-        { id: row.id },
-        {
-          status,
-          fixRunId: runId,
-          replyUrl: outcome.replyUrl ?? row.replyUrl ?? null,
-          addressedAt: new Date(),
-        },
-      );
-      updated += 1;
-    }
-    return updated;
   }
 }

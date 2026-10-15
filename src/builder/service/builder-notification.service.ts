@@ -101,16 +101,6 @@ export class BuilderNotificationService {
     }
   }
 
-  questionPending(session: BuilderSession, count: number): Promise<void> {
-    return this.notify(
-      session,
-      BuilderNotificationKind.QUESTION_PENDING,
-      count === 1
-        ? `I've paused “${session.title}” — I need one answer before I can carry on.`
-        : `I've paused “${session.title}” — I need ${count} answers before I can carry on.`,
-    );
-  }
-
   buildCompleted(session: BuilderSession): Promise<void> {
     return this.notify(
       session,
@@ -134,24 +124,6 @@ export class BuilderNotificationService {
       count === 1
         ? `“${session.title}” has a pull request open for review.`
         : `“${session.title}” has ${count} pull requests open for review.`,
-    );
-  }
-
-  /**
-   * A fix run went out at a pull request. Worth telling someone: Builder is
-   * pushing to a branch a human may be reading right now, and finding that out
-   * from the commit list rather than from us is a bad surprise.
-   */
-  fixRunStarted(
-    session: BuilderSession,
-    repo: string,
-    prNumber: number,
-    reason: string,
-  ): Promise<void> {
-    return this.notify(
-      session,
-      BuilderNotificationKind.FIX_RUN_STARTED,
-      `Builder is working on ${repo}#${prNumber} — ${reason}.`,
     );
   }
 
@@ -455,27 +427,6 @@ export class BuilderNotificationService {
       session,
       BuilderNotificationKind.BUDGET_REACHED,
       `“${session.title}” has reached its $${spent.toFixed(2)} budget and won't start more work until you raise it.`,
-    );
-  }
-
-  /**
-   * The urgent version of the above: a run is holding its work open, waiting.
-   *
-   * Separate from `budgetReached` because the deadline is the whole message.
-   * "Reached its budget" is something to deal with later; this one expires, and
-   * what expires with it is an hour of coding that was never pushed anywhere.
-   */
-  budgetHold(
-    session: BuilderSession,
-    spent: number,
-    holdMinutes: number,
-  ): Promise<void> {
-    return this.notify(
-      session,
-      BuilderNotificationKind.BUDGET_REACHED,
-      `“${session.title}” has paused mid-build at $${spent.toFixed(2)} — its ceiling is gone. ` +
-        `Raise the budget within ${holdMinutes} minutes and it carries on from where it stopped; ` +
-        'after that it gives up and the work in progress is lost.',
     );
   }
 

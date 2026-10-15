@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { BuilderBuildEvent } from '../entity/builder-build-event.entity';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
-import { BuilderAttemptService } from './builder-attempt.service';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
 import {
   BuilderBuildEventRepository,
@@ -14,7 +13,6 @@ import {
   BuilderStage,
 } from '../enum/builder.enum';
 import { BUILDER_EVENT_PAYLOAD_MAX_BYTES } from '../constants/builder.constants';
-import { BugFindingService } from 'src/bug-hunter/service/bug-finding.service';
 
 /** A listener the gateway registers to push events to connected clients. */
 export type BuilderEventListener = (
@@ -42,8 +40,6 @@ export class BuilderEventService {
     private readonly eventRepository: BuilderBuildEventRepository,
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly sessionRepository: BuilderSessionRepository,
-    private readonly bugFindingService: BugFindingService,
-    private readonly attemptService: BuilderAttemptService,
   ) {}
 
   addListener(listener: BuilderEventListener): void {
@@ -118,67 +114,8 @@ export class BuilderEventService {
       );
     }
 
-    await this.fileExcusedFailures(run, saved);
-
     this.push(run.sessionId, saved);
     return saved;
-  }
-
-  /**
-   * Hand the gate's excused failures to Bug Hunter.
-   *
-   * The gate compares this run's failures against a baseline taken on a
-   * pristine `origin/master` worktree, so it can tell "you broke this" from
-   * "this was red before you started" and excuse the second kind — a
-   * pre-existing failure must not block every build in the repo. That set is
-   * already computed, already paid for, and was being dropped on the floor.
-   * Nobody was told, and the next build rediscovered it.
-   *
-   * Best-effort by design, and the ordering says so: this runs after the
-   * events are saved and never throws. Bug Hunter being off, or its intake
-   * failing, must not fail a build that is otherwise fine — the excused
-   * failure was not this build's problem in the first place.
-   */
-  private async fileExcusedFailures(
-    run: BuilderBuildRun,
-    saved: BuilderBuildEvent[],
-  ): Promise<void> {
-    try {
-      for (const event of saved) {
-        if (event.type !== BuilderEventType.GATE_RESULT) continue;
-
-        // The immediate reward for the attempt that just ran. One gate run
-        // emits a verdict per repo, so this lands once per repo and the
-        // service accumulates rather than overwrites.
-        await this.attemptService.recordGate(run, {
-          passed: event.payload?.passed === true,
-          newFailures: event.payload?.newFailures,
-          // Absent on an older runner, which predates the check and whose
-          // verdicts were never examined for capture — treated as trusted
-          // rather than retro-flagged, so the column means what it says.
-          trusted: event.payload?.trusted !== false,
-        });
-
-        const repo = String(event.payload?.repo ?? '');
-        const failures: unknown = event.payload?.preExistingFailures;
-        if (!repo || !Array.isArray(failures) || !failures.length) continue;
-
-        for (const failure of failures) {
-          if (typeof failure !== 'string') continue;
-          await this.bugFindingService.recordPreExistingFailure({
-            repo,
-            failure,
-            discoveredBy: `Builder run ${run.id}`,
-          });
-        }
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Could not file excused gate failures for run ${run.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 
   /** Record one event without a runner — used for server-side annotations. */

@@ -208,12 +208,10 @@ describe('Builder bookkeeping — reconciling verdicts against evidence', () => 
 /**
  * The guard that refused in silence.
  *
- * A run parked on a question must block a new dispatch — racing the resume
- * would put two runners on one branch. But it must stop blocking once that
- * resume exists, and the refusal must say so. Neither was true: the paused row
- * stays WAITING_FOR_INPUT for ever by design (it is terminal FOR THE RUN), and
- * this was the one guard in `dispatchFixRun` that returned null without a word.
- * A wedged session was indistinguishable from an idle one for four hours.
+ * A run in flight must block a new automatic dispatch — racing it would put
+ * two agents on one branch — and the refusal must say so. It used to return
+ * null without a word, and a wedged session was indistinguishable from an
+ * idle one for four hours.
  */
 describe('Builder bookkeeping — the blocking-run guard', () => {
   const service = (blocking: number) => {
@@ -238,21 +236,12 @@ describe('Builder bookkeeping — the blocking-run guard', () => {
 
   const pr = { id: 'pr-1', sessionId: 's-1', repo: 'ally-be', prNumber: 494 };
 
-  it('says why it refused a fix run', async () => {
-    const { svc, logger } = service(1);
-
-    await expect(svc.dispatchFixRun(pr, 'because')).resolves.toBeNull();
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining('in flight or parked'),
-    );
-  });
-
   it('says why it refused a review run', async () => {
     const { svc, logger } = service(1);
 
     await expect(svc.dispatchReviewRun(pr, 'abc123')).resolves.toBeNull();
     expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining('in flight or parked'),
+      expect.stringContaining('already has a run in flight'),
     );
   });
 });

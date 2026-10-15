@@ -126,7 +126,7 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   repos?: string[] | null;
 
   /**
-   * Issue-dispatched builds (BUILDER_DISPATCH=issue): the issue Builder raised
+   * Issue-dispatched builds (every build): the issue Builder raised
    * in the run's repo for its `builder.yml` workflow to work into a pull
    * request. Null for runs on Builder's own runner.
    */
