@@ -1666,10 +1666,11 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     id: 'builder-build',
     task: LlmTask.BUILDER_BUILD,
     runtime: LlmRuntime.ALLY_BE,
-    trigger: 'An admin approves the PRD and the build runs',
+    trigger: 'An admin drafts the technical design from a ready PRD',
     detail:
-      'Dispatched to builder-session.yml, which is handed all three tier model ids. ' +
-      'Planner and verifier run on gemini-2.5-pro. Usage is reported back by the runner.',
+      'The design run on builder-session.yml: the designer on the planner model, the ' +
+      'critic on the verifier model. Usage is reported back by the runner. Builds ' +
+      "themselves are issues worked by each repo's own opencode workflow.",
     kind: AiTaskKind.COMPLETION,
     provider: 'gemini',
     defaultModel: 'gemini-2.5-pro',

@@ -177,17 +177,19 @@ silent in the studio rather than in the runtime: an admin edits a prompt, sees a
 version saved, and the next run uses the file. No error, no warning, and the edit is
 inert.
 
-As of 2026-09-25 these three are **override: true**, so the studio is what ships and
-editing their `.txt` here does not:
+As of 2026-09-25 this one is **override: true**, so the studio is what ships and
+editing its `.txt` here does not:
 
 | Prompt | File |
 |---|---|
 | `builder_interviewer_system` | `builder/interviewer_system.txt` |
-| `builder_coder_guidance` | `builder/coder_guidance.txt` |
-| `builder_finalise_guidance` | `builder/finalise_guidance.txt` |
+
+(`builder_coder_guidance` and `builder_finalise_guidance` were switched at the same time.
+Their files are gone with Builder's runner build, which was their only reader; any stored
+rows for them are unused.)
 
 Turning the flag on is not a one-line change, because the two copies drift apart while it
-is off and nothing reconciles them. When these three were switched, the stored version of
+is off and nothing reconciles them. When these were switched, the stored version of
 `builder_interviewer_system` was a 5,960-character snapshot against a 11,320-character
 file, and `builder_coder_guidance` held *different* advice from its file rather than older
 advice — the file carrying Ally's traps (guarded paths, merged migrations), the stored

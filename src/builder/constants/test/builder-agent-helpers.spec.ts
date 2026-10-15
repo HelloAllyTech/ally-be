@@ -3,7 +3,6 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { BuilderStage } from '../../enum/builder.enum';
-import { buildPromptHeader } from '../builder-build-prompt';
 
 const HELPER_DIR = join(
   __dirname,
@@ -98,24 +97,5 @@ describe('builder agent helpers', () => {
     const declared = [...block.matchAll(/'([A-Z0-9_]+)'/g)].map((m) => m[1]);
 
     expect(declared.sort()).toEqual(Object.values(BuilderStage).sort());
-  });
-
-  /**
-   * A helper the prompt never mentions is one no agent will call, and a name
-   * in the prompt with no helper behind it is `command not found` mid-run.
-   */
-  it('documents exactly the helpers that exist', () => {
-    const header = buildPromptHeader({
-      sessionId: 's',
-      runId: 'r',
-      branchSlug: 'b',
-      apiBaseUrl: 'http://be',
-      repos: [],
-      role: 'coding agent',
-    });
-
-    for (const name of helperNames()) {
-      expect(header).toContain(name);
-    }
   });
 });

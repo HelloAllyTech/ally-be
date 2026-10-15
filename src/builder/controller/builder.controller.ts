@@ -30,10 +30,7 @@ import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderInterviewOrchestratorService } from '../service/builder-interview-orchestrator.service';
 import { BuilderBuildService } from '../service/builder-build.service';
 import { BuilderEventService } from '../service/builder-event.service';
-import { BuilderSteerService } from '../service/builder-steer.service';
-import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
-import { BuilderReportService } from '../service/builder-report.service';
 import {
   autonomyLevelOf,
   nextAutonomyLevel,
@@ -49,13 +46,11 @@ import { BuilderResearchService } from '../service/builder-research.service';
 import { BuilderPrdVersionRepository } from '../repository/builder-prd.repository';
 import { BuilderBuildRunRepository } from '../repository/builder-build.repository';
 import {
-  AnswerBuilderQuestionDto,
   CreateBuilderMessageDto,
   CreateBuilderSessionDto,
   ListBuilderSessionsQueryDto,
   PatchBuilderPrdDto,
   RaiseBuilderBudgetDto,
-  SteerBuilderRunDto,
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
   UpdateBuilderSettingsDto,
@@ -94,9 +89,7 @@ export class BuilderController {
     private readonly orchestratorService: BuilderInterviewOrchestratorService,
     private readonly buildService: BuilderBuildService,
     private readonly eventService: BuilderEventService,
-    private readonly questionService: BuilderQuestionService,
     private readonly pullRequestService: BuilderPullRequestService,
-    private readonly reportService: BuilderReportService,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
     private readonly curatorService: BuilderLessonCuratorService,
@@ -106,7 +99,6 @@ export class BuilderController {
     private readonly researchService: BuilderResearchService,
     private readonly prdVersionRepository: BuilderPrdVersionRepository,
     private readonly runRepository: BuilderBuildRunRepository,
-    private readonly steerService: BuilderSteerService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -382,8 +374,7 @@ export class BuilderController {
   }
 
   /**
-   * Raise the session's ceiling — including while a build is running, which is
-   * the case this exists for.
+   * Raise the session's ceiling, at any point in its life.
    *
    * VIEW_BUILDER is not enough: this authorises spend.
    */
@@ -392,7 +383,7 @@ export class BuilderController {
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
-    summary: 'Raise the session spend ceiling; releases a build held on it',
+    summary: 'Raise the session spend ceiling',
   })
   async raiseBudget(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
@@ -404,70 +395,17 @@ export class BuilderController {
   }
 
   /**
-   * Live spend, the ceiling, and whether a run is parked on it. Polled by the
-   * session page while a build is live — the session detail it loaded once
-   * cannot show a number that moves every phase.
+   * Live spend and the ceiling. Polled by the session page while a build is
+   * live — the session detail it loaded once cannot show a number that moves.
    */
   @Get('sessions/:sessionId/budget')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
-  @ApiOperation({ summary: 'Live spend against the ceiling, and any hold' })
+  @ApiOperation({ summary: 'Live spend against the ceiling' })
   async getSessionBudget(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
     await this.sessionService.getSession(sessionId);
     return this.buildService.getSessionBudget(sessionId);
-  }
-
-  /**
-   * Redirect a build instead of cancelling it.
-   *
-   * Cancel was the only lever over a running build, and it discards the whole
-   * working tree — nothing is pushed before FINALISE — plus the spend that
-   * produced it. A note reaches the run at its next phase boundary.
-   *
-   * Deliberately not gated on a live run. A correction written a second after
-   * a phase ended is exactly the one worth keeping, and a retry of a failed
-   * run is a new run that still needs it.
-   */
-  @Post('sessions/:sessionId/steer')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.EDIT_BUILDER],
-  })
-  @ApiOperation({
-    summary:
-      'Send a correction to a build; delivered at the next phase boundary',
-  })
-  async steer(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @Body() dto: SteerBuilderRunDto,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId);
-    const active = await this.runRepository.findActiveForSession(sessionId);
-    const steer = await this.steerService.add(sessionId, dto.note, {
-      runId: active?.id ?? null,
-      userId: user.id,
-    });
-    return {
-      id: steer.id,
-      status: steer.status,
-      // Said plainly rather than implied: the build has not changed course,
-      // it has been told. A control that promises more than it does is worse
-      // than one that promises nothing.
-      delivery: active
-        ? 'The build will read this when its current phase finishes.'
-        : 'Nothing is running; the next build on this session will read it first.',
-    };
-  }
-
-  @Get('sessions/:sessionId/steer')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.VIEW_BUILDER],
-  })
-  @ApiOperation({ summary: 'Steering notes on a session, newest first' })
-  async listSteers(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
-    await this.sessionService.getSession(sessionId);
-    return this.steerService.listForSession(sessionId);
   }
 
   @Get('sessions/:sessionId/runs')
@@ -506,45 +444,6 @@ export class BuilderController {
     };
   }
 
-  @Get('sessions/:sessionId/questions')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.VIEW_BUILDER],
-  })
-  @ApiOperation({ summary: 'Questions the build is waiting on' })
-  async listPendingQuestions(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-  ) {
-    await this.sessionService.getSession(sessionId);
-    return this.questionService.listPending(sessionId);
-  }
-
-  @Post('sessions/:sessionId/questions/:questionId/answer')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.EDIT_BUILDER],
-  })
-  @ApiOperation({
-    summary: 'Answer a mid-build question; resumes once the group is complete',
-  })
-  async answerQuestion(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @Param('questionId', ParseUUIDPipe) questionId: string,
-    @Body() dto: AnswerBuilderQuestionDto,
-    @CurrentUser() user: TokenUser,
-  ) {
-    await this.sessionService.getSession(sessionId);
-    const result = await this.questionService.answer(
-      sessionId,
-      questionId,
-      user.id,
-      { message: dto.message, answer: dto.answer as Record<string, any> },
-    );
-    return {
-      question: result.question,
-      resumed: Boolean(result.resumedRun),
-      runId: result.resumedRun?.id ?? null,
-    };
-  }
-
   @Get('sessions/:sessionId/pull-requests')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
@@ -565,16 +464,6 @@ export class BuilderController {
   async listPrFeedback(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
     await this.sessionService.getSession(sessionId);
     return this.pullRequestService.listFeedback(sessionId);
-  }
-
-  @Get('sessions/:sessionId/reports')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.VIEW_BUILDER],
-  })
-  @ApiOperation({ summary: "The agent's reports on its own work" })
-  async listReports(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
-    await this.sessionService.getSession(sessionId);
-    return this.reportService.listBySession(sessionId);
   }
 
   /* ── Settings & notifications ─────────────────────────────────────────── */
@@ -703,28 +592,6 @@ export class BuilderController {
     return this.metricsService.scoreboard(Number(windowDays) || 30);
   }
 
-  /**
-   * The read path for `builder_attempts`.
-   *
-   * The table has recorded an arm and a reward on every coding attempt since
-   * 2026-09-15 with nothing querying it, so the dataset built to settle
-   * "can a build start on a cheaper tier" could not answer it — and prod RDS
-   * is not publicly reachable, so the rows could not be inspected by hand
-   * either. This is the whole of the read path.
-   */
-  @Get('model-routing')
-  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    permissions: [PERMISSIONS.VIEW_BUILDER],
-  })
-  @ApiOperation({
-    summary:
-      'Per model and build size — first-attempt pass rate, escalation, ' +
-      'what shipped and what it cost',
-  })
-  modelRouting(@Query('windowDays') windowDays?: string) {
-    return this.metricsService.modelRouting(Number(windowDays) || 30);
-  }
-
   @Get('pipeline-health')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
@@ -754,8 +621,6 @@ export class BuilderController {
     summary: 'The kill switch, concurrency ceiling and defaults',
   })
   async getSettings() {
-    // `dispatch` is the server's default for a new build (BUILDER_DISPATCH),
-    // read-only here: the start dialog defaults to it and can override it.
     const settings = await this.settingsService.get();
     const autonomyLevel = autonomyLevelOf(settings);
     const trackRecord = await this.pullRequestService.trackRecord();
@@ -767,7 +632,6 @@ export class BuilderController {
       trackRecord.unhealthyReleases === 0;
     return {
       ...settings,
-      dispatch: this.buildService.defaultDispatch(),
       autonomyLevel,
       trackRecord,
       suggestedLevel: earned ? nextAutonomyLevel(autonomyLevel) : null,
