@@ -57,8 +57,12 @@ export const studyContradictsFault = (
       ` A code change cannot fix a missing or wrong ${fault.layer === 'data' ? 'row' : 'setting'}. Post the study again with valueLivesIn matching the Verifier, and if the fix is not code at all, stop and escalate with the repair instead of writing one.`
     );
   }
-  if (fault.layer === 'code' && study.valueLivesIn === 'database') {
-    return `The independent Verifier located this fault in code${fault.repo ? ` in ${fault.repo}` : ''}, and your study says the value lives in the database.${evidence} Post the study again against the code path the Verifier named.`;
+  if (fault.layer === 'code' && study.valueLivesIn !== 'code') {
+    return `The independent Verifier located this fault in code${
+      fault.repo ? ` in ${fault.repo}` : ''
+    }, and your study says the value lives in ${
+      study.valueLivesIn
+    }.${evidence} Post the study again against the code path the Verifier named.`;
   }
   return null;
 };
