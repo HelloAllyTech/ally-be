@@ -30,7 +30,14 @@ const MAX_LABEL_LEN = 200;
 const MAX_HINT_LEN = 500;
 const MAX_OPTIONS = 100;
 const MAX_TRANSCRIPT_CHARS = 40_000;
-const EXTRACTION_MAX_TOKENS = 4096;
+/**
+ * Output budget for the field-extraction call. On gpt-5-family models this is
+ * `max_completion_tokens`, and the model's REASONING tokens count against it
+ * alongside the visible JSON — 4096 capped gpt-5-mini on a 25-minute dictation
+ * and the note came back empty. 16384 leaves ~7x headroom over the largest
+ * observed spend (2,324 tokens at 25 min on the current prompt).
+ */
+const EXTRACTION_MAX_TOKENS = 16384;
 /** AI-task-registry row id; the key for per-task model config. */
 const AI_TASK_ID = 'voice-note-extract';
 
@@ -258,15 +265,19 @@ export class VoiceNoteService {
     const startedAt = Date.now();
     let raw: string;
     let model: string;
+    let stopReason: string | undefined;
     try {
       // No assistant-turn prefill: the Claude 4.6+ family rejects a trailing
       // assistant message with a 400 and it does not translate across
       // providers. The system prompt instructs a bare JSON object instead;
       // parseJsonObject strips any markdown fences the model may add.
       //
-      // FAST tier: a counsellor is watching a spinner on a scribe note, and
-      // the model is filling fields from a transcript it has been handed
-      // rather than reasoning about them.
+      // REASONING tier (gpt-5-mini by default). The FAST model compressed the
+      // Session Summary to ~150 words regardless of dictation length and kept
+      // only 48% of the facts of a 25-minute dictation; the reasoning tier
+      // keeps 93% on the same prompt for ~+8 s and ~+$0.004 a note. The
+      // counsellor is still watching a spinner, but a note that drops half of
+      // what they said costs them far more than the wait.
       const response = await this.llmCompletion.complete({
         taskId: AI_TASK_ID,
         task: LlmTask.VOICE_NOTE_EXTRACT,
@@ -277,6 +288,7 @@ export class VoiceNoteService {
       });
       raw = response.text;
       model = response.model;
+      stopReason = response.stopReason;
     } catch (error) {
       this.logger.error(
         `[VOICE_NOTE] extraction failed ` +
@@ -288,10 +300,20 @@ export class VoiceNoteService {
 
     const parsed = this.parseJsonObject(raw);
     const values = this.coerceValues(parsed, fields);
-    this.logger.info(
-      `[VOICE_NOTE] extracted model=${model} ` +
-        `requested=${fields.length} filled=${values.length} elapsedMs=${Date.now() - startedAt}`,
-    );
+    const summary =
+      `[VOICE_NOTE] extracted model=${model} stopReason=${stopReason ?? 'unknown'} ` +
+      `requested=${fields.length} filled=${values.length} elapsedMs=${Date.now() - startedAt}`;
+    if (stopReason === 'max_tokens') {
+      // The output was cut by EXTRACTION_MAX_TOKENS. The JSON is then usually
+      // unparseable, so this surfaces as an empty or half-filled note that is
+      // indistinguishable from "nothing to extract" without this line.
+      this.logger.warn(
+        `${summary} — output truncated at maxTokens=${EXTRACTION_MAX_TOKENS}; ` +
+          `the note is incomplete`,
+      );
+    } else {
+      this.logger.info(summary);
+    }
     return values;
   }
 

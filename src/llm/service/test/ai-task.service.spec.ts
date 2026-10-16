@@ -198,8 +198,11 @@ describe('AiTaskService', () => {
       // say `anthropic` while running an OpenAI model.
       expect(quiz?.provider).toBe('openai');
 
+      // Reasoning tier since 2026-10: the page must show the model that now
+      // fills scribe notes, not the fast one it ran on before.
       const scribe = rows.find((task) => task.id === 'voice-note-extract');
-      expect(scribe?.effectiveModel).toBe('gpt-4o-mini');
+      expect(scribe?.effectiveModel).toBe('gpt-5-mini');
+      expect(scribe?.modelSource).toBe(AiTaskModelSource.DEPLOYMENT);
     });
 
     it('leaves no tiered row pointing at config nothing reads', () => {

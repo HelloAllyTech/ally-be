@@ -7,7 +7,11 @@ import {
   LlmTargetSource,
   ResolvedLlmTarget,
 } from 'src/llm/service/llm-target-resolver.service';
-import { AgentMessage, AgentUsage } from '../type/agent-llm.type';
+import {
+  AgentMessage,
+  AgentStopReason,
+  AgentUsage,
+} from '../type/agent-llm.type';
 import { AgentLlmProviderFactory } from './agent-llm.factory';
 
 export interface LlmCompletionRequest {
@@ -46,6 +50,14 @@ export interface LlmCompletionResult {
   model: string;
   source: LlmTargetSource;
   usage: AgentUsage;
+  /**
+   * Why the model stopped. `max_tokens` means the output was cut by the
+   * caller's `maxTokens` and `text` is incomplete — on gpt-5-family models the
+   * cap also counts reasoning tokens, so a budget that looks generous for the
+   * visible output can still truncate it. Before this was surfaced a capped
+   * JSON reply parsed as `{}` and looked like "nothing to extract".
+   */
+  stopReason: AgentStopReason;
   /**
    * Set when the selected target failed and the tier default served the call
    * instead. Present on the result rather than only in the logs because a
@@ -201,15 +213,17 @@ export class LlmCompletionService {
 
     let text = '';
     let usage: AgentUsage = { inputTokens: 0, outputTokens: 0 };
+    let stopReason: AgentStopReason = 'other';
     for await (const event of stream) {
       if (event.type === 'final') {
         // Read the assembled turn rather than the deltas: identical text, and
-        // it is the only place usage arrives.
+        // it is the only place usage and the stop reason arrive.
         text = event.message.content
           .filter((block) => block.type === 'text')
           .map((block) => (block as { text: string }).text)
           .join('');
         usage = event.message.usage;
+        stopReason = event.message.stopReason;
       }
     }
 
@@ -234,6 +248,7 @@ export class LlmCompletionService {
       model: target.model,
       source: target.source,
       usage,
+      stopReason,
     };
   }
 

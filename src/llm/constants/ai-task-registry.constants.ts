@@ -1193,12 +1193,19 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'voice-note-extract',
     task: LlmTask.VOICE_NOTE_EXTRACT,
     runtime: LlmRuntime.ALLY_BE,
-    tier: LlmModelTier.FAST,
+    tier: LlmModelTier.REASONING,
     trigger: '...and the dictation is turned into note fields',
+    detail:
+      'One call fills every note field (an org can send 50+) from the whole ' +
+      'transcript. Reasoning tier on purpose: the fast model compressed the ' +
+      'Session Summary to ~150 words whatever the dictation length and kept ' +
+      'only half the facts of a 25-minute dictation; gpt-5-mini keeps 93% on ' +
+      'the same prompt for ~+8 s and under a cent more per note. Output cap ' +
+      '16384 — on gpt-5 models reasoning tokens count against it.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
-    defaultModel: 'gpt-4o-mini',
-    configuredBy: 'LLM_FAST_MODEL',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: 'the scribe field-extraction system prompt',
   },
   {
