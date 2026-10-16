@@ -235,9 +235,10 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     detail:
       "Derives the character's inner state — stance, affect, ledgers. Same cadence as " +
       'agent_turn but detached, so its spend has to be arguable on its own. The same ' +
-      'call also proposes the delivery plan for the next turn (which catalog opener, ' +
-      'pause or short bridge line the reply starts with), so working-memory ' +
-      'scenarios need no separate filler/planner call.',
+      'call also proposes the delivery plan for the next turn (the filler from a ' +
+      'fixed catalog, a pause, and the interim: 1-3 short holding pieces the ' +
+      'reply carries on from), so working-memory scenarios need no separate ' +
+      'filler, planner or interim call.',
     kind: AiTaskKind.COMPLETION,
     provider: 'resolved',
     defaultModel: "the scenario's main LLM",
@@ -262,9 +263,12 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'Learner pauses and the agent must say something now',
     detail:
-      'Fast interim reply covering the gap while the real turn generates. ' +
-      'Superseded, and not called, in sessions where the delivery plan is active ' +
-      '(DELIVERY_PLAN_ENABLED with fillers on): its bridge line plays instead.',
+      'The interim for simulations WITHOUT client working memory: one short ' +
+      'holding line written from the partial transcript while the learner is ' +
+      'still speaking, played after the filler if it fits the wait. Runs only ' +
+      "when INTERIM_REPLY_GLOBALLY_ENABLED and the simulation's " +
+      'interimReplyEnabled are both on, and never in working-memory ' +
+      'simulations (the updater writes their interim).',
     hotPath: true,
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
@@ -275,21 +279,18 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     id: 'predictive-filler',
     task: LlmTask.THINKING_FILLER,
     runtime: LlmRuntime.AI_LEARN,
-    trigger:
-      'The character finishes speaking (plans how the next reply starts)',
+    trigger: 'Legacy filler path only (DELIVERY_PLAN_ENABLED off)',
     detail:
-      'The delivery planner, for scenarios WITHOUT client working memory: one ' +
-      'structured call after each character turn, off the reply path, choosing ' +
-      "the next turn's opener from a fixed per-language catalog (or a pause, or " +
-      'a short bridge line). Working-memory scenarios get the same plan from ' +
-      'client-working-memory and make no call here. With DELIVERY_PLAN_ENABLED ' +
-      'off, the legacy filler generator records here instead — and that path ' +
-      "runs on the scenario's main LLM, not gpt-4o-mini (PREDICTIVE_FILLER_MODEL " +
-      'is defined but never read).',
+      'The legacy LLM-generated thinking filler. Not called while the delivery ' +
+      'plan is on (the default): fillers then come from a fixed per-language ' +
+      'catalog chosen by client-working-memory, or rotated by rule in ' +
+      'scenarios without it — the small delivery planner that used to record ' +
+      "here was removed. The legacy path runs on the scenario's main LLM " +
+      '(PREDICTIVE_FILLER_MODEL is defined but never read).',
     kind: AiTaskKind.COMPLETION,
-    provider: 'openai',
-    defaultModel: 'gpt-4o-mini',
-    configuredBy: 'DELIVERY_PLANNER_MODEL / DELIVERY_PLANNER_MODEL_PROVIDER',
+    provider: 'resolved',
+    defaultModel: "the scenario's main LLM",
+    configuredBy: 'Inherits the agent_turn client (legacy path only)',
   },
   {
     id: 'backchannel-phrases',
@@ -460,7 +461,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       'none, and their filler/back-channel/interim LLM calls are skipped too. A ' +
       'worker-wide cache serves repeated phrases with no call; turn openers come ' +
       'from a fixed catalog rendered once per voice, so most are cache hits, plus ' +
-      'one bridge-line render per new delivery plan. Recorded as ' +
+      'one render per interim piece. Recorded as ' +
       'clip_tts per real synthesis (a cache hit costs nothing and records nothing); ' +
       "the session instance's own TTS metrics cover agent-tts only.",
     hotPath: true,
