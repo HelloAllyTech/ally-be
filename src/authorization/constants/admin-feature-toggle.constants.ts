@@ -77,6 +77,14 @@ export enum FeatureToggleKey {
   // everyone; only the manage surface was SDA-exclusive)
   PRODUCT_ROADMAP_MANAGE = 'product_roadmap_manage',
 
+  // Product Roadmap quick add: file an opportunity straight onto the board,
+  // skipping the guided interview and its readiness gate. A trusted-curator
+  // shortcut, not a filing tier — the interview stays the only door for
+  // everyone else. No backfill migration grants it by group; it is handed to
+  // named admins (see *-GrantProductRoadmapQuickAddToggle) and otherwise
+  // per-admin from Admin User Management.
+  PRODUCT_ROADMAP_QUICK_ADD = 'product_roadmap_quick_add',
+
   // Admin-of-admins surfaces (formerly SUPER_DUPER_ADMIN-only)
   ADMIN_USER_MANAGEMENT = 'admin_user_management',
   MULTI_TENANT_ALLOWLIST_MANAGEMENT = 'multi_tenant_allowlist_management',
@@ -307,6 +315,15 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Product Roadmap — Manage',
     description:
       'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge, month-board lane moves, and pinning a saved view for everyone. Viewing and voting stay open to every admin. Opening a card in Builder is not part of this — it follows the Builder toggle.',
+    legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.PRODUCT_ROADMAP_QUICK_ADD,
+    label: 'Product Roadmap — Quick Add',
+    description:
+      'File an opportunity directly onto the roadmap with a plain form, skipping the guided interview and its readiness check. For curators who already know what belongs on the board; everyone else keeps filing through the interview.',
+    // Inert, like every key added after the role-collapse cutover: no
+    // migration reads it, and nobody is granted the key by group.
     legacyGrants: SDA_ONLY,
   },
   {
