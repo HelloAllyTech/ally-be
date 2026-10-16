@@ -722,6 +722,25 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: ALLY_AI_DEFAULT_SOURCE,
   },
   {
+    id: 'supervisor-note-repair',
+    task: LlmTask.SCENARIO_EVALUATION,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger:
+      'A debrief note comes back without its section markers (## [what_worked] and the rest)',
+    detail:
+      'ally-ai (OpenAITextGenerationService._ensure_note_sections) asks the same model to ' +
+      'rearrange the note under the markers, keeping its own words, so the learner app shows ' +
+      'What worked / What it cost / Try this next instead of one paragraph. Runs only when a ' +
+      'marker is missing, at most once per debrief; a failed or useless repair keeps the ' +
+      "original note. Recorded under the debrief's own label (scenario_evaluation, or " +
+      'scenario_evaluation_language on a re-run in another language), since it is part of ' +
+      'writing that debrief. Prompt: shared/supervisor_note_repair.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: ALLY_AI_DEFAULT,
+    configuredBy: ALLY_AI_DEFAULT_SOURCE,
+  },
+  {
     id: 'counselor-analysis',
     task: LlmTask.COUNSELOR_ANALYSIS,
     runtime: LlmRuntime.ALLY_AI,
