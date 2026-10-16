@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, In, QueryFailedError } from 'typeorm';
+import {
+  htmlToPlainText,
+  sanitizeDescriptionHtml,
+} from 'src/common/util/sanitize-html.util';
 import * as sanitizeHtml from 'sanitize-html';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
@@ -21,9 +25,12 @@ import { TrackTenant } from '../entity/track-tenant.entity';
 import { TrackRepository } from '../repository/track.repository';
 import { TrackEnrollmentRepository } from '../repository/track-enrollment.repository';
 import {
+  ArticleContent,
+  JournalContent,
   TrackFilterOptions,
   TrackItemType,
   TrackStatus,
+  VideoContent,
 } from '../type/track.type';
 import { QuizContent } from '../type/quiz.type';
 import {
@@ -246,8 +253,8 @@ export class TrackService {
 
     this.addMissingQuizOptionIds(dto.sections);
     this.sanitizeStructure(dto.sections);
-    validateTrackStructure(dto.sections);
     this.applyContentDefaults(dto.sections);
+    validateTrackStructure(dto.sections);
     await this.validateReferences(dto.sections);
 
     const existing = await this.trackSharedService.getTrackWithStructure(id);
@@ -652,12 +659,88 @@ export class TrackService {
       for (const item of section.items) {
         if (item.type === TrackItemType.QUIZ && item.content) {
           const quiz = item.content as QuizContent;
+          if (Array.isArray(quiz.questions)) {
+            for (const question of quiz.questions) {
+              if (typeof question.promptHtml === 'string') {
+                question.promptHtml = sanitizeDescriptionHtml(
+                  question.promptHtml,
+                );
+                question.prompt = htmlToPlainText(question.promptHtml);
+              } else if (
+                question.promptHtml !== undefined &&
+                question.promptHtml !== null
+              ) {
+                throw new BadRequestException('promptHtml must be a string');
+              }
+            }
+          }
           quiz.settings.passScore =
             quiz.settings.passScore ?? TRACK_DEFAULT_QUIZ_PASS_SCORE;
           item.completionCriteria = {
             ...item.completionCriteria,
             passScore: quiz.settings.passScore,
           };
+        }
+        if (item.type === TrackItemType.ARTICLE && item.content) {
+          const article = item.content as ArticleContent;
+          if (Array.isArray(article.questions)) {
+            for (const question of article.questions) {
+              if (typeof question.promptHtml === 'string') {
+                question.promptHtml = sanitizeDescriptionHtml(
+                  question.promptHtml,
+                );
+                question.prompt = htmlToPlainText(question.promptHtml);
+              } else if (
+                question.promptHtml !== undefined &&
+                question.promptHtml !== null
+              ) {
+                throw new BadRequestException('promptHtml must be a string');
+              }
+            }
+          }
+        }
+        if (item.type === TrackItemType.VIDEO && item.content) {
+          const video = item.content as VideoContent;
+          if (Array.isArray(video.interjections)) {
+            for (const interjection of video.interjections) {
+              if (!interjection.question) continue;
+              if (typeof interjection.question.promptHtml === 'string') {
+                interjection.question.promptHtml = sanitizeDescriptionHtml(
+                  interjection.question.promptHtml,
+                );
+                interjection.question.prompt = htmlToPlainText(
+                  interjection.question.promptHtml,
+                );
+              } else if (
+                interjection.question.promptHtml !== undefined &&
+                interjection.question.promptHtml !== null
+              ) {
+                throw new BadRequestException('promptHtml must be a string');
+              }
+            }
+          }
+          item.completionCriteria = {
+            ...item.completionCriteria,
+            watchPct:
+              item.completionCriteria?.watchPct ??
+              TRACK_DEFAULT_VIDEO_WATCH_PCT,
+          };
+        }
+        if (item.type === TrackItemType.JOURNAL && item.content) {
+          const journal = item.content as JournalContent;
+          if (Array.isArray(journal.prompts)) {
+            for (const prompt of journal.prompts) {
+              if (typeof prompt.promptHtml === 'string') {
+                prompt.promptHtml = sanitizeDescriptionHtml(prompt.promptHtml);
+                prompt.prompt = htmlToPlainText(prompt.promptHtml);
+              } else if (
+                prompt.promptHtml !== undefined &&
+                prompt.promptHtml !== null
+              ) {
+                throw new BadRequestException('promptHtml must be a string');
+              }
+            }
+          }
         }
         if (item.type === TrackItemType.ANNOTATED_ARTIFACT && item.content) {
           const annotation = item.content as AnnotationContent;

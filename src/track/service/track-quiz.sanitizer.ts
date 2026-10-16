@@ -10,6 +10,7 @@ export interface LearnerQuizQuestion {
   id: string;
   type: QuizQuestionType;
   prompt: string;
+  promptHtml?: string;
   /** 0 for an ungraded question. */
   points: number;
   /** false = answered but not scored; the player labels it so. */
@@ -84,6 +85,7 @@ export function sanitizeQuizQuestionForLearner(
     id: question.id,
     type: question.type,
     prompt: question.prompt,
+    ...(question.promptHtml ? { promptHtml: question.promptHtml } : {}),
     points: isQuestionGraded(question) ? questionPoints(question) : 0,
     graded: isQuestionGraded(question),
     // This function is an allowlist, not a redaction pass: anything not

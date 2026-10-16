@@ -332,7 +332,11 @@ function validateVideoContent(
  */
 function validateInterjections(video: VideoContent, title: string): void {
   const interjections = video.interjections;
-  if (!interjections || interjections.length === 0) return;
+  if (!interjections) return;
+  if (!Array.isArray(interjections)) {
+    fail(`Video component "${title}": interjections must be an array.`);
+  }
+  if (interjections.length === 0) return;
 
   if (video.source !== VideoSource.S3) {
     fail(
@@ -373,7 +377,7 @@ function validateJournalContent(
   content: JournalContent | undefined,
   title: string,
 ): void {
-  if (!content?.prompts || content.prompts.length === 0) {
+  if (!content?.prompts || !Array.isArray(content.prompts) || content.prompts.length === 0) {
     fail(`Journal component "${title}" must have at least one prompt.`);
   }
   const seen = new Set<string>();
@@ -539,7 +543,7 @@ export function validateQuizContent(
   ) {
     fail(`Quiz component "${title}": invalid showExplanations value.`);
   }
-  if (!questions || questions.length === 0) {
+  if (!Array.isArray(questions) || questions.length === 0) {
     fail(`Quiz component "${title}" must have at least one question.`);
   }
   if (questions.length > TRACK_MAX_QUIZ_QUESTIONS) {
