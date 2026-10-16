@@ -30,6 +30,14 @@ describe('buildSweepPrompt', () => {
     );
   });
 
+  it('never fixes a bug that already has a fix, and searches other repos before changing a contract (2026-10-15/16 OTP)', () => {
+    const p = build();
+    expect(p).toContain('Skip any finding that already has a fix');
+    expect(p).toContain(
+      'search /tmp/siblings for every other repo that reads it',
+    );
+  });
+
   it('embeds that repo’s own test and lint commands', () => {
     expect(build({ repo: 'ally-ai' })).toContain('poetry run pytest');
     expect(build({ repo: 'ally-be' })).toContain('npm test');

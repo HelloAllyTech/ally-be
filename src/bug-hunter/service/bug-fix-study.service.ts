@@ -22,6 +22,7 @@ import {
   BugFixStudy,
   BugFixStudyReview,
   renderBugFixStudyLines,
+  studyLeavesConsumersBehind,
   toBugFixStudy,
 } from '../type/bug-fix-study.type';
 import {
@@ -103,6 +104,14 @@ export class BugFixStudyService {
     const contradiction = studyContradictsFault(parsed.study, fault);
     if (contradiction) {
       throw new BadRequestException(contradiction);
+    }
+    // A step of a cross-repo plan has its other halves in sibling steps.
+    if (!finding.parentFindingId) {
+      const leftBehind = studyLeavesConsumersBehind(
+        parsed.study,
+        finding.repo ?? '',
+      );
+      if (leftBehind) throw new BadRequestException(leftBehind);
     }
     const review = await this.review(finding, parsed.study);
     const study: BugFixStudy = { ...parsed.study, review };

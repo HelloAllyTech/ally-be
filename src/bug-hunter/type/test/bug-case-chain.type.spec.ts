@@ -121,6 +121,33 @@ describe('buildCaseChain', () => {
     );
   });
 
+  it('breaks "changed" on a one-repo PR whose own study says other repos must change (2026-10-16 OTP)', () => {
+    const otp = (over: Partial<ChainInput> = {}) =>
+      buildCaseChain(
+        report({
+          prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/643',
+          metadata: {
+            study: {
+              ...study('code'),
+              otherRepos: ['ally-web', 'ally-mobile'],
+            },
+          },
+          ...over,
+        }),
+      );
+    const changed = otp().links.find((l) => l.link === 'changed');
+    expect(changed).toMatchObject({ status: 'broken' });
+    expect(changed?.evidence).toMatch(
+      /a half-fix: the study says ally-web, ally-mobile must change too/,
+    );
+    // A step of a cross-repo plan is one half by design.
+    expect(
+      otp({ parentFindingId: 'parent-1' }).links.find(
+        (l) => l.link === 'changed',
+      )?.status,
+    ).toBe('present');
+  });
+
   it('a complete chain merges, and the symptom check decides resolved', () => {
     const base = report({
       status: BugFindingStatus.PR_OPENED,

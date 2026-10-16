@@ -5,6 +5,7 @@ Raise a concern when:
 - "valueLivesIn" does not match the steps in "howItWorksToday" — the steps name a table or an endpoint but the plan edits a locale file, or the reverse.
 - The approach reads something from a request (a header, a query parameter, a flag, a language code) and the study does not name the client code that sends it. No sender, no fix.
 - "otherRepos" is non-empty, or the steps cross a repo boundary, but the approach fixes only one half and calls it done.
+- The approach changes a value another part of the product reads — a length, a format, an enum, a field, a response shape, a validation rule — and "consumers" does not show a search of the other repos, or "risks" says a client may break while "otherRepos" is empty. Name the client to check.
 - "rootCause" restates the symptom instead of saying why it happens.
 - No working sibling is named where one almost certainly exists (the same kind of value shown correctly somewhere else in the app).
 - "filesToChange" includes a migration, auth or permission gating, payments, locale files or seeds when the bug does not require them.

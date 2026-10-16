@@ -64,6 +64,19 @@ export interface BugFixStudy {
   leaveAlone: string[];
   /** Repos a complete fix also needs; non-empty means the cross-repo plan path. */
   otherRepos: string[];
+  /**
+   * Who else reads the value the fix changes, and how the session looked.
+   * Added 2026-10-16: an OTP-length fix changed the backend from 4 to 6
+   * digits, wrote "clients might have front-end validation that expects a
+   * 4-digit code" in its own risks, listed no other repo, and opened a
+   * backend-only PR — twice more in later sweeps. A value another repo reads
+   * (a length, a format, an enum, a field, a response shape) is a contract,
+   * and changing one side is a half-fix. `search` is the command run over
+   * this repo and /tmp/siblings; `found` is one line per reader,
+   * "<repo>: <file> — how it uses the value". Older studies carry an empty
+   * search.
+   */
+  consumers: { search: string; found: string[] };
   risks: string[];
   /** The regression test: what it asserts and where. */
   testPlan: string;
@@ -111,7 +124,12 @@ const strList = (v: unknown, max = 40): string[] =>
  */
 export function toBugFixStudy(
   raw: Record<string, unknown> | null | undefined,
-  ctx: { runId: string | null; now?: Date },
+  ctx: {
+    runId: string | null;
+    now?: Date;
+    /** Reading a stored study: fields added later are not required of it. */
+    lenient?: boolean;
+  },
 ): { study: BugFixStudy; missing: [] } | { study: null; missing: string[] } {
   const r = raw && typeof raw === 'object' ? raw : {};
   const missing: string[] = [];
@@ -140,6 +158,18 @@ export function toBugFixStudy(
   if (!filesToChange.length) missing.push('filesToChange');
   const testPlan = str(r.testPlan);
   if (!testPlan) missing.push('testPlan');
+  const rawConsumers =
+    r.consumers && typeof r.consumers === 'object'
+      ? (r.consumers as Record<string, unknown>)
+      : {};
+  const consumers = {
+    search: str(rawConsumers.search, 400) ?? '',
+    found: strList(rawConsumers.found, 15),
+  };
+  if (!ctx.lenient && !consumers.search)
+    missing.push(
+      'consumers.search (the search you ran over this repo AND /tmp/siblings for everything that reads the value you change; "found" lists each reader as "<repo>: <file> — how it uses it", or [] when there is none)',
+    );
 
   if (missing.length) return { study: null, missing };
 
@@ -155,6 +185,7 @@ export function toBugFixStudy(
       filesToChange,
       leaveAlone: strList(r.leaveAlone),
       otherRepos: strList(r.otherRepos, 8),
+      consumers,
       risks: strList(r.risks, 10),
       testPlan: testPlan!,
       previousStudyWasWrongBecause: str(r.previousStudyWasWrongBecause, 600),
@@ -174,6 +205,7 @@ export function readBugFixStudy(
   if (!raw || typeof raw !== 'object') return null;
   const parsed = toBugFixStudy(raw as Record<string, unknown>, {
     runId: typeof (raw as any).runId === 'string' ? (raw as any).runId : null,
+    lenient: true,
   });
   if (!parsed.study) return null;
   const review = (raw as any).review;
@@ -236,6 +268,14 @@ export function renderBugFixStudyLines(
     ...(study.otherRepos.length
       ? [`${b}Other repos a complete fix needs: ${study.otherRepos.join(', ')}`]
       : []),
+    ...(study.consumers?.search
+      ? [
+          study.consumers.found.length
+            ? `${b}Who else reads it: ${study.consumers.found.join('; ')}`
+            : `${b}Who else reads it: nobody found`,
+          `${b}Searched with: ${study.consumers.search}`,
+        ]
+      : []),
     ...(study.risks.length ? [`${b}Risks: ${study.risks.join('; ')}`] : []),
     `${b}Test plan: ${study.testPlan}`,
     ...(study.previousStudyWasWrongBecause
@@ -252,4 +292,66 @@ export function renderBugFixStudyLines(
     );
   }
   return lines;
+}
+
+const ALLY_REPOS = [
+  'ally-be',
+  'ally-web',
+  'ally-mobile',
+  'ally-ai',
+  'ally-ai-learn',
+] as const;
+
+/** The Ally repo a consumer line names first, e.g. "ally-web: apps/…" → ally-web. */
+const repoOfConsumer = (line: string): string | null => {
+  const m = /^\s*(ally-[a-z-]+?)(?=[\s:/(—-]|$)/i.exec(line);
+  const name = m?.[1]?.toLowerCase() ?? null;
+  return name && (ALLY_REPOS as readonly string[]).includes(name) ? name : null;
+};
+
+/** Risk wording that says another app may break, which the study must then follow up. */
+const CLIENT_BREAK =
+  /\b(break(s|ing)?\b.*\b(client|front-?end|mobile|web|app)s?\b|(client|front-?end|mobile|web|app)s?\b.*\b(break|expects?|validat\w*|assum\w*|hard-?coded)|breaking change)/i;
+
+/**
+ * Null when the study's plan covers everyone who reads the value it
+ * changes; otherwise the reason to refuse it. Two contradictions:
+ *  - a consumer it found sits in another Ally repo that "otherRepos" leaves
+ *    out — the fix would change one side of a contract;
+ *  - its own risks say a client may break, yet it names no other repo, no
+ *    consumer in another repo, and nothing in "leaveAlone" says why that
+ *    client is unaffected.
+ * Not applied to a step of an existing cross-repo plan: its siblings are
+ * the plan's other steps.
+ */
+export function studyLeavesConsumersBehind(
+  study: Pick<BugFixStudy, 'otherRepos' | 'consumers' | 'risks' | 'leaveAlone'>,
+  repo: string,
+): string | null {
+  const other = new Set(study.otherRepos.map((r) => r.trim().toLowerCase()));
+  const outside = [
+    ...new Set(
+      (study.consumers?.found ?? [])
+        .map(repoOfConsumer)
+        .filter((r): r is string => !!r && r !== repo),
+    ),
+  ];
+  const uncovered = outside.filter((r) => !other.has(r));
+  if (uncovered.length) {
+    return (
+      `Your study found readers of the value you change in ${uncovered.join(', ')}, and "otherRepos" leaves ${uncovered.length === 1 ? 'it' : 'them'} out. ` +
+      `Changing one side of a contract is a half-fix that looks finished. Add ${uncovered.join(', ')} to "otherRepos" and hand back a cross-repo plan (step 2a) instead of fixing ${repo} alone.`
+    );
+  }
+  const riskLine = study.risks.find((r) => CLIENT_BREAK.test(r));
+  const explained = study.leaveAlone.some((l) =>
+    /\bally-[a-z-]+|client|front-?end|mobile|web app/i.test(l),
+  );
+  if (riskLine && !other.size && !outside.length && !explained) {
+    return (
+      `Your own risks say another app may break ("${riskLine.slice(0, 200)}"), but the study names no other repo and no reader outside ${repo}. ` +
+      `Search /tmp/siblings for that client's use of the value. If it reads it, list it in "consumers.found" and "otherRepos" and plan across repos; if it does not, say why in "leaveAlone".`
+    );
+  }
+  return null;
 }

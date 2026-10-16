@@ -1,6 +1,7 @@
 import {
   readBugFixStudy,
   renderBugFixStudyLines,
+  studyLeavesConsumersBehind,
   toBugFixStudy,
 } from '../bug-fix-study.type';
 
@@ -24,6 +25,12 @@ const good = {
   filesToChange: ['AppTooltip.tsx', 'api/tooltips.ts'],
   leaveAlone: ['en.json — tooltips are not locale keys'],
   otherRepos: ['ally-be'],
+  consumers: {
+    search: 'grep -rn "tooltips/active" . /tmp/siblings',
+    found: [
+      'ally-be: src/tooltip/tooltip.controller.ts — serves the text by languageCode',
+    ],
+  },
   risks: ['cache key changes per language'],
   testPlan:
     'AppTooltip.test.tsx: the hook is called with { languageCode: "mr" } after changeLanguage("mr")',
@@ -62,6 +69,7 @@ describe('toBugFixStudy', () => {
       'approach',
       'filesToChange',
       'testPlan',
+      expect.stringContaining('consumers.search'),
     ]);
   });
 
@@ -116,5 +124,89 @@ describe('renderBugFixStudyLines', () => {
     expect(lines.join('\n')).toContain(
       'Other repos a complete fix needs: ally-be',
     );
+    expect(lines.join('\n')).toContain(
+      'Who else reads it: ally-be: src/tooltip/tooltip.controller.ts',
+    );
+  });
+});
+
+describe('readBugFixStudy, older studies', () => {
+  it('still reads a study stored before consumers existed', () => {
+    const old: Record<string, unknown> = { ...good };
+    delete old.consumers;
+    const study = readBugFixStudy({ study: old });
+    expect(study?.consumers).toEqual({ search: '', found: [] });
+  });
+});
+
+describe('studyLeavesConsumersBehind (2026-10-16, the OTP half-fix)', () => {
+  const otp = {
+    otherRepos: [] as string[],
+    consumers: { search: '', found: [] as string[] },
+    risks: [
+      'Clients might have front-end validation that expects a 4-digit code. This is a breaking change for them.',
+    ],
+    leaveAlone: [
+      'I will not change the logic of the OTP generation, only the length.',
+    ],
+  };
+
+  it('refuses the study that wrote the client risk down and planned a backend-only fix', () => {
+    expect(studyLeavesConsumersBehind(otp, 'ally-be')).toMatch(
+      /risks say another app may break/,
+    );
+  });
+
+  it('refuses a study whose own search found readers in repos it leaves out', () => {
+    const msg = studyLeavesConsumersBehind(
+      {
+        ...otp,
+        risks: [],
+        consumers: {
+          search: 'grep -rn "OTP_LENGTH\\|maxLength={4}" . /tmp/siblings',
+          found: [
+            'ally-web: libs/ui-shared/src/otp-input/OtpInput.tsx — renders 4 boxes',
+            'ally-mobile: src/screens/auth/VerifyOtp.tsx — maxLength 4',
+            'ally-be: src/auth/dto/verify-otp.dto.ts — Length(4)',
+          ],
+        },
+      },
+      'ally-be',
+    );
+    expect(msg).toMatch(/in ally-web, ally-mobile/);
+    expect(msg).toMatch(/hand back a cross-repo plan/);
+  });
+
+  it('accepts a study that plans the other repos, or explains why a client is unaffected', () => {
+    expect(
+      studyLeavesConsumersBehind(
+        {
+          ...otp,
+          otherRepos: ['ally-web', 'ally-mobile'],
+          consumers: {
+            search: 'grep',
+            found: ['ally-web: OtpInput.tsx', 'ally-mobile: VerifyOtp.tsx'],
+          },
+        },
+        'ally-be',
+      ),
+    ).toBeNull();
+    expect(
+      studyLeavesConsumersBehind(
+        {
+          ...otp,
+          leaveAlone: [
+            'ally-web and ally-mobile read the length from GET /auth/otp-config, so they follow',
+          ],
+        },
+        'ally-be',
+      ),
+    ).toBeNull();
+    expect(
+      studyLeavesConsumersBehind(
+        { ...otp, risks: ['cache key changes per language'] },
+        'ally-be',
+      ),
+    ).toBeNull();
   });
 });

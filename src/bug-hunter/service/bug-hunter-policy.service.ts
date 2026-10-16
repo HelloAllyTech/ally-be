@@ -73,6 +73,15 @@ export interface FindingTransitionPatch {
  * reviewer five minutes on a PR that is already open; a merge allowed on a
  * guess can cost a production incident.
  */
+/** Statuses at which a fix already exists, so a second one is never started. */
+const FIX_ALREADY_EXISTS: BugFindingStatus[] = [
+  BugFindingStatus.PR_OPENED,
+  BugFindingStatus.MERGED,
+  BugFindingStatus.RELEASING,
+  BugFindingStatus.RELEASED,
+  BugFindingStatus.COORDINATING,
+];
+
 @Injectable()
 export class BugHunterPolicyService {
   private readonly logger = LoggerService.getInstance(
@@ -113,6 +122,16 @@ export class BugHunterPolicyService {
    * Everything else waits for a person.
    */
   async assertMayFix(finding: BugFinding): Promise<void> {
+    // A bug with a fix already in review or shipped is not fixed again. On
+    // 2026-10-15 two sweeps re-found an OTP bug whose PR was open and each
+    // opened another PR for it. A retry of an open PR goes through D7, which
+    // re-queues the finding first, so it never arrives here from PR_OPENED.
+    if (FIX_ALREADY_EXISTS.includes(finding.status)) {
+      throw new ForbiddenException(
+        `This bug already has a fix ${finding.status === BugFindingStatus.PR_OPENED ? `in review${finding.prUrl ? ` (${finding.prUrl})` : ''}` : finding.status}. ` +
+          'Do not fix it again: leave it, and move on to the next finding.',
+      );
+    }
     if (finding.status === BugFindingStatus.APPROVED) return;
 
     const run = await this.runOf(finding);

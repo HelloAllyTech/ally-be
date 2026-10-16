@@ -205,7 +205,10 @@ describe('buildFixSessionPrompt', () => {
   it('stops a fix that spans repos instead of landing half of it', () => {
     const prompt = build();
 
-    expect(prompt).toMatch(/ONLY this repo checked out/);
+    expect(prompt).toMatch(/checked out read-only under \/tmp\/siblings/);
+    expect(prompt).not.toMatch(/ONLY this repo checked out/);
+    expect(prompt).toMatch(/Find everyone who READS the value you change/);
+    expect(prompt).toContain('"consumers":{"search":');
     expect(prompt).toMatch(/merged half-fix is worse than no fix/);
     expect(prompt).toMatch(/WITHOUT committing anything/);
   });
@@ -470,6 +473,7 @@ describe('buildFixSessionPrompt', () => {
             filesToChange: ['en.json', 'mr.json'],
             leaveAlone: [],
             otherRepos: [],
+            consumers: { search: '', found: [] },
             risks: [],
             testPlan: 'i18n-parity',
             previousStudyWasWrongBecause: null,
