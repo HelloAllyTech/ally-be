@@ -67,6 +67,8 @@ describe('BugHunterOrchestratorService', () => {
   let github: {
     getPullRequest: jest.Mock;
     updatePullRequestBranch: jest.Mock;
+    getCheckRollup: jest.Mock;
+    failedCheckExcerpts: jest.Mock;
   };
   let prReview: { commentForFinding: jest.Mock };
   let service: BugHunterOrchestratorService;
@@ -127,6 +129,10 @@ describe('BugHunterOrchestratorService', () => {
       updatePullRequestBranch: jest
         .fn()
         .mockResolvedValue({ updated: true, message: null }),
+      getCheckRollup: jest
+        .fn()
+        .mockResolvedValue({ state: 'success', failed: [], total: 3 }),
+      failedCheckExcerpts: jest.fn().mockResolvedValue({}),
     };
     service = new BugHunterOrchestratorService(
       findingRepository as never,
@@ -518,6 +524,91 @@ describe('BugHunterOrchestratorService', () => {
       fixSession.retry.mockClear();
       await service.reconcileOpenPullRequests();
       expect(fixSession.retry).not.toHaveBeenCalled();
+    });
+
+    it('sends a PR with red CI back to its own branch with the failing checks and log tails, once per head (2026-10-16)', async () => {
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        headSha: 'feed5678abc',
+        mergeableState: 'clean',
+      });
+      github.getCheckRollup.mockResolvedValue({
+        state: 'failure',
+        failed: ['Tests / Typecheck'],
+        total: 4,
+      });
+      github.failedCheckExcerpts.mockResolvedValue({
+        'Tests / Typecheck':
+          'src/components/ArticleQuestionCard.tsx(42,7): error TS2322: Type \'"500"\' is not assignable',
+      });
+      await service.reconcileOpenPullRequests();
+      expect(github.getCheckRollup).toHaveBeenCalledWith(
+        'ally-web',
+        'feed5678abc',
+      );
+      expect(fixSession.retry).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'f-1' }),
+        expect.objectContaining({
+          kind: 'ci_failed',
+          move: 'retry_fix',
+          prUrl: PR,
+          failures: [
+            expect.stringMatching(
+              /^Tests \/ Typecheck failed on head feed567\. Log tail: .*TS2322/,
+            ),
+          ],
+        }),
+      );
+      expect(lastDecision('D7').context).toMatchObject({
+        cause: 'ci_failed',
+        failedChecks: ['Tests / Typecheck'],
+      });
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+
+      fixSession.retry.mockClear();
+      github.getCheckRollup.mockClear();
+      await service.reconcileOpenPullRequests();
+      expect(github.getCheckRollup).not.toHaveBeenCalled();
+      expect(fixSession.retry).not.toHaveBeenCalled();
+    });
+
+    it('leaves a PR alone while CI is green or still running', async () => {
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        state: 'open',
+        headSha: 'feed5678abc',
+        mergeableState: 'clean',
+      });
+      for (const state of ['success', 'pending']) {
+        github.getCheckRollup.mockResolvedValue({
+          state,
+          failed: [],
+          total: 3,
+        });
+        await service.reconcileOpenPullRequests();
+      }
+      expect(fixSession.retry).not.toHaveBeenCalled();
+    });
+
+    it('asks a person about red CI once the retries are spent', async () => {
+      current = finding({
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: PR,
+        metadata: { orchestrator: { retries: 2 } },
+      });
+      expect(
+        await service.onPrChecksFailed('f-1', 'feed5678abc', [
+          'Tests / Lint & format',
+        ]),
+      ).toBe('ask_human');
+      expect(fixSession.retry).not.toHaveBeenCalled();
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: expect.stringContaining('CI failed on my fix PR'),
+          body: expect.stringContaining('Tests / Lint & format'),
+        }),
+      );
     });
 
     it('asks a person about a conflict once the retries are spent', async () => {

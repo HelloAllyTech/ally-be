@@ -93,13 +93,13 @@ export interface FixPlan {
 
 /** Why the orchestrator sent a session back in — rendered into the fix brief. Stored on `metadata.retry`. */
 export interface FixRetry {
-  kind: 'verifier_fail' | 'session_failed' | 'conflict';
+  kind: 'verifier_fail' | 'session_failed' | 'conflict' | 'ci_failed';
   /** The D7 pick that caused it. */
   move: 'retry_fix' | 'escalate_model';
   attempt: number;
   /** The Verifier's named failures, for a `verifier_fail`. */
   failures: string[];
-  /** The refused PR to continue on, for a `verifier_fail`. */
+  /** The open PR to continue on, for a `verifier_fail`, `conflict` or `ci_failed`. */
   prUrl: string | null;
   decisionId: string | null;
   at: string;
