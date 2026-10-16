@@ -134,6 +134,12 @@ export class GeminiLlmProvider implements LlmProvider {
         systemInstruction,
         ...geminiSampling(config),
         maxOutputTokens: config.maxTokens ?? 1500,
+        ...(config.responseFormat === 'json' && {
+          responseMimeType: 'application/json',
+        }),
+        ...(config.thinkingBudget !== undefined && {
+          thinkingConfig: { thinkingBudget: config.thinkingBudget },
+        }),
       },
     });
 

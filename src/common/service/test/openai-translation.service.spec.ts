@@ -2,10 +2,13 @@ import { OpenAITranslationsService } from '../openai-translation.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
-import OpenAI from 'openai';
 
-// Mock OpenAI SDK to avoid real network calls
-jest.mock('openai');
+// Every completion goes through the provider factory; tests swap the
+// provider's getCompletion via `completionMock`.
+let completionMock: jest.Mock = jest.fn();
+const getProvider = jest.fn(() => ({
+  getCompletion: (...args: unknown[]) => completionMock(...args),
+}));
 
 // Minimal AppConfigService stub
 const baseConfig: Partial<AppConfigService> = {
@@ -13,6 +16,13 @@ const baseConfig: Partial<AppConfigService> = {
     apiKey: 'test-key',
     translationModel: 'gpt-4o-mini',
   } as any,
+  gemini: { apiKey: 'gemini-key' } as any,
+  translation: {
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
+    maxTokens: 16384,
+    thinkingBudget: 0,
+  },
 } as any;
 
 function createService(
@@ -28,6 +38,7 @@ function createService(
     (cfg ?? baseConfig) as AppConfigService,
     promptSharedWithDefaults as PromptSharedService,
     { record: jest.fn() } as any,
+    { getProvider } as any,
   );
 }
 
@@ -44,11 +55,78 @@ describe('OpenAITranslationsService', () => {
       const service = createService({});
       expect(service.isConfigured()).toBe(true);
     });
-    it('false when apiKey missing', () => {
-      const cfg = { ...baseConfig } as any;
-      cfg.openai.apiKey = '';
+    it('false when the Gemini key is missing', () => {
+      const cfg = { ...baseConfig, gemini: { apiKey: '' } } as any;
       const service = createService({}, cfg);
       expect(service.isConfigured()).toBe(false);
+    });
+    it('checks the OpenAI key when the provider is openai', () => {
+      const cfg = {
+        ...baseConfig,
+        gemini: { apiKey: '' },
+        translation: { provider: 'openai', model: 'gpt-4o-mini' },
+      } as any;
+      expect(createService({}, cfg).isConfigured()).toBe(true);
+      cfg.openai = { apiKey: '' };
+      expect(createService({}, cfg).isConfigured()).toBe(false);
+    });
+  });
+
+  describe('translation engine', () => {
+    it('routes JSON translations to the configured provider and model', async () => {
+      completionMock = jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ title: 'नमस्ते' }));
+      getProvider.mockClear();
+      const service = createService({});
+
+      await (service as any).fetchTranslations(
+        [JSON.stringify({ title: 'Hello' })],
+        'hi',
+        'sys',
+        '',
+      );
+
+      expect(getProvider).toHaveBeenCalledWith('gemini');
+      expect(completionMock).toHaveBeenCalledWith(
+        [{ role: 'system', content: 'sys' }],
+        {
+          model: 'gemini-2.5-flash',
+          maxTokens: 16384,
+          thinkingBudget: 0,
+          temperature: 0.62,
+          responseFormat: 'json',
+        },
+        expect.any(Function),
+      );
+    });
+
+    it('records usage under the provider that ran', async () => {
+      const record = jest.fn();
+      completionMock = jest.fn(async (_m, _c, onUsage) => {
+        onUsage({ promptTokens: 10, completionTokens: 5 });
+        return 'नमस्ते';
+      });
+      const service = new OpenAITranslationsService(
+        baseConfig as AppConfigService,
+        {
+          getPromptByCode: jest.fn().mockResolvedValue('{{text}}'),
+        } as any,
+        { record } as any,
+        { getProvider } as any,
+      );
+
+      await service.translateText('Hello', 'hi');
+
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        }),
+      );
     });
   });
 
@@ -88,14 +166,10 @@ describe('OpenAITranslationsService', () => {
 
   describe('fetchTranslations', () => {
     it('returns parsed JSON on success', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [
-          { message: { content: JSON.stringify({ title: 'नमस्ते' }) } },
-        ],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ title: 'नमस्ते' }));
+      completionMock = createMock;
       const service = createService({});
       const result = await (service as any).fetchTranslations(
         [JSON.stringify(sourceObject)],
@@ -107,12 +181,8 @@ describe('OpenAITranslationsService', () => {
       expect(JSON.parse(result[0]).title).toBe('नमस्ते');
     });
     it('falls back to original on parse error', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: 'not-json' } }],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest.fn().mockResolvedValue('not-json');
+      completionMock = createMock;
       const service = createService({});
       const original = JSON.stringify(sourceObject);
       const result = await (service as any).fetchTranslations(
@@ -126,11 +196,9 @@ describe('OpenAITranslationsService', () => {
     it('falls back on empty content and on API error', async () => {
       const createMock = jest
         .fn()
-        .mockResolvedValueOnce({ choices: [{ message: { content: '' } }] })
+        .mockResolvedValueOnce('')
         .mockRejectedValueOnce(new Error('boom'));
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      completionMock = createMock;
       const service = createService({});
       const original = JSON.stringify(sourceObject);
       let result = await (service as any).fetchTranslations(
@@ -151,18 +219,12 @@ describe('OpenAITranslationsService', () => {
     });
 
     it('falls back to original when output leaks HTML entities', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({ message: 'Great job, &lt;user&gt;!' }),
-            },
-          },
-        ],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest
+        .fn()
+        .mockResolvedValue(
+          JSON.stringify({ message: 'Great job, &lt;user&gt;!' }),
+        );
+      completionMock = createMock;
       const service = createService({});
       const original = JSON.stringify({ message: 'Great job, <user_name>!' });
       const result = await (service as any).fetchTranslations(
@@ -175,14 +237,10 @@ describe('OpenAITranslationsService', () => {
     });
 
     it('falls back to original when a source placeholder is dropped', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [
-          { message: { content: JSON.stringify({ message: 'शाबाश!' }) } },
-        ],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ message: 'शाबाश!' }));
+      completionMock = createMock;
       const service = createService({});
       const original = JSON.stringify({ message: 'Great job, <user_name>!' });
       const result = await (service as any).fetchTranslations(
@@ -198,12 +256,8 @@ describe('OpenAITranslationsService', () => {
       const translated = JSON.stringify({
         message: 'शाबाश, <user_name>!',
       });
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: translated } }],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest.fn().mockResolvedValue(translated);
+      completionMock = createMock;
       const service = createService({});
       const original = JSON.stringify({ message: 'Great job, <user_name>!' });
       const result = await (service as any).fetchTranslations(
@@ -273,14 +327,10 @@ describe('OpenAITranslationsService', () => {
     });
 
     it('translates object to multiple languages', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [
-          { message: { content: JSON.stringify({ title: 'नमस्ते' }) } },
-        ],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ title: 'नमस्ते' }));
+      completionMock = createMock;
       // Mock prompt retrieval to return a template
       const getPromptByCode = jest
         .fn()
@@ -297,12 +347,8 @@ describe('OpenAITranslationsService', () => {
     });
 
     it('falls back to original object on parse error', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: 'not-json' } }],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest.fn().mockResolvedValue('not-json');
+      completionMock = createMock;
       // Mock prompt retrieval
       const getPromptByCode = jest
         .fn()
@@ -319,9 +365,7 @@ describe('OpenAITranslationsService', () => {
 
     it('returns original object when API fails', async () => {
       const createMock = jest.fn().mockRejectedValue(new Error('API error'));
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      completionMock = createMock;
       // Mock prompt retrieval
       const getPromptByCode = jest
         .fn()
@@ -337,12 +381,8 @@ describe('OpenAITranslationsService', () => {
     });
 
     it('returns original object when API returns empty content', async () => {
-      const createMock = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: '' } }],
-      });
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
-        () => ({ chat: { completions: { create: createMock } } }) as any,
-      );
+      const createMock = jest.fn().mockResolvedValue('');
+      completionMock = createMock;
       // Mock prompt retrieval
       const getPromptByCode = jest
         .fn()

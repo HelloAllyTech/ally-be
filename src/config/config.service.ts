@@ -1071,6 +1071,38 @@ export class AppConfigService {
    * low for faithful translation, and maxTokens is generous since a full agent
    * template can be long.
    */
+  /**
+   * Engine for every translation stored in the DB (OpenAITranslationsService:
+   * simulations, events, behaviors, badges, courses, paths, cases, tooltips,
+   * transcripts, dynamic i18n). Gemini by default; TRANSLATION_PROVIDER=openai
+   * switches back to OPENAI_TRANSLATION_MODEL without a code change.
+   */
+  get translation() {
+    const provider = this.configService.get<string>(
+      'TRANSLATION_PROVIDER',
+      'gemini',
+    );
+    return {
+      provider,
+      model:
+        this.configService.get<string>('TRANSLATION_MODEL') ??
+        (provider === 'openai'
+          ? this.openai.translationModel
+          : 'gemini-2.5-flash'),
+      // Generous: a whole scenario's metadata comes back in one JSON object,
+      // and Gemini 2.5 counts thinking tokens against this budget.
+      maxTokens: Number(
+        this.configService.get<number>('TRANSLATION_MAX_TOKENS', 16384),
+      ),
+      // Gemini 2.5 thinking is off for translation: in side-by-side runs it
+      // cost ~10-14x the output tokens and ~4x the latency without reliably
+      // better tone. TRANSLATION_THINKING_BUDGET overrides (-1 = model decides).
+      thinkingBudget: Number(
+        this.configService.get<number>('TRANSLATION_THINKING_BUDGET', 0),
+      ),
+    };
+  }
+
   get promptTranslation() {
     return {
       defaultProvider: this.configService.get<string>(

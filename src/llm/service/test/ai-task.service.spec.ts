@@ -41,6 +41,7 @@ const configStub = {
   courseCopilot: { model: 'gpt-5-mini' },
   llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
   promptTranslation: { defaultModel: 'gemini-2.5-pro' },
+  translation: { model: 'gemini-2.5-flash' },
   aiChat: { model: 'gpt-4o-mini' },
   roadmapCopilot: { model: 'claude-sonnet-5-5', fallbackModel: 'gpt-5' },
   builder: {
