@@ -42,6 +42,8 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   ElevenLabsBulkSyncSummary,
   ElevenLabsVoiceLookupResult,
@@ -473,6 +475,20 @@ export class LearnController {
       updateScenarioDto,
       tokenUser.id,
     );
+  }
+
+  @ApiOperation({
+    summary:
+      'Backfill: translate every active scenario into the languages it is missing',
+    description:
+      'Voice languages get the full scenario metadata; the app-picker languages ' +
+      '(hi/mr/ta/kn) get title and description. Runs in the background and ' +
+      'returns how many scenarios were queued. Platform-wide, so super admins only.',
+  })
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @Post('scenarios/translations/backfill')
+  async backfillScenarioTranslations(): Promise<{ queued: number }> {
+    return this.scenarioService.backfillMissingScenarioTranslations();
   }
 
   @ApiOperation({ summary: 'Duplicate scenario' })

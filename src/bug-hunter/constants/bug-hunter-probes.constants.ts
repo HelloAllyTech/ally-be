@@ -33,7 +33,7 @@ export const productionProbes = (apiBaseUrl: string): ProductionProbe[] => {
       name: 'simulations in a language',
       answers:
         'whether a simulation has a title and description STORED for a language — the same stored translations the logged-in Simulations tab reads (GET /api/v2/learn/scenarios?languageCode=<lang>, which needs a login)',
-      how: `curl -sS "${api}/api/v1/learn/scenarios/public" for ids, then curl -sS "${api}/api/v1/learn/scenarios/<id>/public?languageCode=<lang>" and compare title and description with languageCode=en. Identical English text for a language the scenario is configured for (metadata.languageVoices in ally-be) means scenarios.translations has no entry for that language. Only ally-be writes that entry (persistTranslationsForScenarios in src/learn/service/scenario.service.ts), so the fault is usually that generation never ran for the language — ally-be code plus a backfill — never the frontend. Do NOT judge from the public LIST: /api/v1/learn/scenarios/public ignores languageCode and always answers in English`,
+      how: `curl -sS "${api}/api/v1/learn/scenarios/public" for ids, then curl -sS "${api}/api/v1/learn/scenarios/<id>/public?languageCode=<lang>" and compare title and description with languageCode=en. Identical English text for hi/mr/ta/kn (every simulation is translated into the app-picker languages), or for another language the scenario has a voice for (metadata.languageVoices in ally-be), means scenarios.translations has no entry for that language. Only ally-be writes that entry (persistTranslationsForScenarios in src/learn/service/scenario.service.ts), so the fault is usually that generation never ran for the language — ally-be code plus a backfill — never the frontend. Do NOT judge from the public LIST: /api/v1/learn/scenarios/public ignores languageCode and always answers in English`,
     },
     {
       name: 'tooltips in a language',
@@ -83,7 +83,7 @@ export const PIPELINE_PROBES: PipelineProbe[] = [
   {
     name: 'scenario-translations',
     answers:
-      'for one language: how many ACTIVE simulations are configured for it (a voice in metadata.languageVoices), how many have a stored title translation (scenarios.translations[code] and scenario_translations rows), the ids missing one, and the title a learner is served',
+      'for one language: how many ACTIVE simulations should have a title in it (all of them for the app-picker languages hi/mr/ta/kn, otherwise those with a voice in metadata.languageVoices), how many have a stored title translation (scenarios.translations[code] and scenario_translations rows), the ids missing one, and the title a learner is served',
     params:
       'languageCode (required, e.g. mr), tenant (default ally), scenarioId (optional, one simulation), limit (default 25)',
   },

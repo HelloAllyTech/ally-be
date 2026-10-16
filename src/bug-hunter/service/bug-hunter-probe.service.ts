@@ -9,6 +9,7 @@ import {
   PIPELINE_PROBE_NAMES,
 } from '../constants/bug-hunter-probes.constants';
 import { redactPii } from '../util/redact-pii.util';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 const LOG_SERVICES: AwsLogServiceKey[] = [
   'ally-be',
@@ -162,13 +163,17 @@ export class BugHunterProbeService {
       Boolean(clip(r.column_entry?.title));
     const hasRow = (r: (typeof rows)[number]) =>
       Boolean(r.row_titles?.some((t) => clip(t)));
-    const missing = configured.filter((r) => !hasColumn(r));
+    // App-picker languages get a title for every simulation, voice or not.
+    const isAppLanguage = ELIGBLE_APP_LANGUAGES.includes(lang.code);
+    const expected = isAppLanguage ? rows : configured;
+    const missing = expected.filter((r) => !hasColumn(r));
     return {
       language: lang,
       tenant,
       activeScenarios: rows.length,
       configuredForLanguage: configured.length,
-      withServedTranslation: configured.length - missing.length,
+      expectedForLanguage: expected.length,
+      withServedTranslation: expected.length - missing.length,
       withTranslationRow: configured.filter(hasRow).length,
       missingCount: missing.length,
       missing: missing.slice(0, limit).map((r) => ({
@@ -177,7 +182,7 @@ export class BugHunterProbeService {
         hasTranslationRow: hasRow(r),
         servedTitle: clip(r.title, 120),
       })),
-      sample: configured
+      sample: expected
         .filter(hasColumn)
         .slice(0, 3)
         .map((r) => ({
@@ -185,7 +190,7 @@ export class BugHunterProbeService {
           servedTitle: clip(r.column_entry?.title, 120),
         })),
       howToRead:
-        'A learner is served scenarios.translations[code].title (applyScenarioTranslations). "missing" are simulations configured with a voice for this language that will show English. A translation row without a served entry means the mirror into scenarios.translations never ran. Only persistTranslationsForScenarios in ally-be src/learn/service/scenario.service.ts writes either.',
+        'A learner is served scenarios.translations[code].title (applyScenarioTranslations). "missing" are simulations that will show English: for an app-picker language (hi/mr/ta/kn) every ACTIVE simulation is expected to have a title, otherwise only those configured with a voice for it. A backfill is POST /api/v1/learn/scenarios/translations/backfill (super admin). A translation row without a served entry means the mirror into scenarios.translations never ran. Only persistTranslationsForScenarios in ally-be src/learn/service/scenario.service.ts writes either.',
     };
   }
 
