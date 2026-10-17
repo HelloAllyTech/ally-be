@@ -103,6 +103,19 @@ describe('GeminiLlmProvider', () => {
     );
   });
 
+  it('omits thinkingBudget for Gemini 3+, which deprecated it', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'ok' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, {
+      model: 'gemini-3.5-pro',
+      thinkingBudget: 100,
+    });
+
+    const arg = mockGenerateContent.mock.calls[0][0];
+    expect(arg.config).not.toHaveProperty('thinkingConfig');
+  });
+
   it('streams text chunks, skipping empty ones', async () => {
     mockGenerateContentStream.mockResolvedValue(
       (async function* () {
