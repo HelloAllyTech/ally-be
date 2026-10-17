@@ -796,6 +796,7 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     id: 'drift-judge',
     task: LlmTask.DRIFT_JUDGE,
     runtime: LlmRuntime.ALLY_AI,
+    // This model is used to judge conversation drift.
     trigger: 'Scheduled: conversation drift is judged',
     detail: 'Did the character wander off its brief?',
     kind: AiTaskKind.COMPLETION,
