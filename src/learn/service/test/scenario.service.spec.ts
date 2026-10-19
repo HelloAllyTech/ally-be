@@ -1521,6 +1521,17 @@ describe('ScenarioService', () => {
   });
 
   describe('getScenarios', () => {
+    it('should call the repository with isPublic: true for the public getScenarios method', async () => {
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [],
+        count: 0,
+      });
+      await service.getScenarios();
+      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
+        isPublic: true,
+      });
+    });
+
     it('should return list of active and coming soon scenarios', async () => {
       const mockScenarios = [
         { ...mockScenario, status: ScenarioStatus.ACTIVE },

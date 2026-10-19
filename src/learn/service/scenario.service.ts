@@ -248,7 +248,9 @@ export class ScenarioService {
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
-    const { data } = await this.scenariosRepository.getScenarios();
+    const { data } = await this.scenariosRepository.getScenarios({
+      isPublic: true,
+    });
     return data;
   }
 
