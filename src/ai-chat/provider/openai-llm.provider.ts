@@ -62,6 +62,9 @@ export class OpenAiLlmProvider implements LlmProvider {
       messages,
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? 1500,
+      ...(config.responseFormat === 'json' && {
+        response_format: { type: 'json_object' as const },
+      }),
     });
 
     if (response.usage) onUsage?.(toTokenUsage(response.usage));

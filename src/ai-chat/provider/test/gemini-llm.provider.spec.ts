@@ -67,6 +67,55 @@ describe('GeminiLlmProvider', () => {
     expect(arg.config).not.toHaveProperty('temperature');
   });
 
+  it('asks for application/json only when responseFormat is json', async () => {
+    mockGenerateContent.mockResolvedValue({ text: '{}' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, {
+      model: 'gemini-2.5-flash',
+      responseFormat: 'json',
+    });
+    await provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' });
+
+    expect(mockGenerateContent.mock.calls[0][0].config.responseMimeType).toBe(
+      'application/json',
+    );
+    expect(mockGenerateContent.mock.calls[1][0].config).not.toHaveProperty(
+      'responseMimeType',
+    );
+  });
+
+  it('sends a thinking budget only when one is set', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'ok' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, {
+      model: 'gemini-2.5-flash',
+      thinkingBudget: 0,
+    });
+    await provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' });
+
+    expect(mockGenerateContent.mock.calls[0][0].config.thinkingConfig).toEqual({
+      thinkingBudget: 0,
+    });
+    expect(mockGenerateContent.mock.calls[1][0].config).not.toHaveProperty(
+      'thinkingConfig',
+    );
+  });
+
+  it('omits thinkingBudget for Gemini 3+, which deprecated it', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'ok' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, {
+      model: 'gemini-3.5-pro',
+      thinkingBudget: 100,
+    });
+
+    const arg = mockGenerateContent.mock.calls[0][0];
+    expect(arg.config).not.toHaveProperty('thinkingConfig');
+  });
+
   it('streams text chunks, skipping empty ones', async () => {
     mockGenerateContentStream.mockResolvedValue(
       (async function* () {

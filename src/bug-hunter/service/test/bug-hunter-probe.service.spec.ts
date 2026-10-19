@@ -88,7 +88,7 @@ describe('BugHunterProbeService', () => {
           column_entry: null,
           row_titles: ['सवयी'],
         },
-        // not configured for Marathi (empty voice): not counted
+        // no Marathi voice, but Marathi is an app-picker language: still expected
         {
           id: 7,
           title: 'English only',
@@ -104,9 +104,10 @@ describe('BugHunterProbeService', () => {
     expect(r).toMatchObject({
       activeScenarios: 4,
       configuredForLanguage: 3,
+      expectedForLanguage: 4,
       withServedTranslation: 1,
       withTranslationRow: 2,
-      missingCount: 2,
+      missingCount: 3,
     });
     expect(
       (r.missing as { id: number; hasTranslationRow: boolean }[]).map((m) => [
@@ -116,6 +117,7 @@ describe('BugHunterProbeService', () => {
     ).toEqual([
       [111, false],
       [58, true],
+      [7, false],
     ]);
     // tenant defaults to ally and the language code is passed as a parameter, never spliced
     const call = runner.query.mock.calls.find(([q]) =>

@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import {
@@ -73,6 +71,11 @@ import {
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
+import {
+  LlmMessage,
+  LlmTokenUsage,
+} from 'src/ai-chat/interface/llm-provider.interface';
 
 @Injectable()
 export class OpenAITranslationsService {
@@ -80,16 +83,43 @@ export class OpenAITranslationsService {
     OpenAITranslationsService.name,
   );
 
-  private readonly client: OpenAI;
-  private readonly model: string;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
     private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
-    this.model = this.configService.openai.translationModel;
+    private readonly llmProviderFactory: LlmProviderFactory,
+  ) {}
+
+  /**
+   * One completion through the configured translation engine
+   * (`translation.provider`/`model` — Gemini unless TRANSLATION_PROVIDER says
+   * otherwise). Usage is recorded under the provider that actually ran.
+   */
+  private async complete(
+    messages: LlmMessage[],
+    options: {
+      task: LlmTask;
+      language: string;
+      json?: boolean;
+      temperature?: number;
+    },
+  ): Promise<string> {
+    const { provider, model, maxTokens, thinkingBudget } =
+      this.configService.translation;
+    return this.llmProviderFactory.getProvider(provider).getCompletion(
+      messages,
+      {
+        model,
+        maxTokens,
+        thinkingBudget,
+        temperature: options.temperature,
+        ...(options.json && { responseFormat: 'json' as const }),
+      },
+      (usage) =>
+        this.recordUsage(provider, model, usage, options.task, {
+          language: options.language,
+        }),
+    );
   }
 
   // Prompt codes for dynamic templates (from openai_translation/*.txt)
@@ -336,7 +366,7 @@ IMPORTANT:
   }
 
   /* ------------------------------------------------------------------
-   * Fetch translations from OpenAI API
+   * Fetch translations from the configured translation model
    * ------------------------------------------------------------------ */
   private async fetchTranslations(
     jsonStrings: string[],
@@ -348,7 +378,7 @@ IMPORTANT:
     const temperature = this.getTemperatureForLanguage(targetLanguageCode);
 
     try {
-      const messages = [
+      const messages: LlmMessage[] = [
         {
           role: 'system',
           content: systemPrompt,
@@ -361,20 +391,16 @@ IMPORTANT:
           content: userPrompt,
         });
       }
-      const response = await this.client.chat.completions.create({
-        model: this.model,
+      const content = await this.complete(messages, {
+        task,
+        language: targetLanguageCode,
+        json: true,
         temperature,
-        response_format: { type: 'json_object' },
-        messages: messages as unknown as ChatCompletionMessageParam[],
       });
-
-      this.recordUsage(response.usage, task, { language: targetLanguageCode });
-
-      const content = response.choices?.[0]?.message?.content ?? '';
 
       if (!content || content.trim() === '') {
         this.logger.warn(
-          `[OpenAITranslationsService] Empty response from OpenAI for ${targetLanguageCode}, returning original`,
+          `[OpenAITranslationsService] Empty response from the translation model for ${targetLanguageCode}, returning original`,
         );
         return jsonStrings; // Return original as fallback
       }
@@ -497,10 +523,15 @@ IMPORTANT:
   }
 
   /* ------------------------------------------------------------------
-   * Check if OpenAI API is properly configured
+   * Check if the configured translation provider has an API key and model
    * ------------------------------------------------------------------ */
   isConfigured(): boolean {
-    return !!this.configService.openai.apiKey && !!this.model;
+    const { provider, model } = this.configService.translation;
+    const apiKey =
+      provider === 'gemini'
+        ? this.configService.gemini.apiKey
+        : this.configService.openai.apiKey;
+    return !!apiKey && !!model;
   }
 
   /* ------------------------------------------------------------------
@@ -544,7 +575,7 @@ IMPORTANT:
     targetLanguageCode: string,
   ): Promise<string> {
     try {
-      const messages: ChatCompletionMessageParam[] = [
+      const messages: LlmMessage[] = [
         {
           role: 'system',
           content:
@@ -552,14 +583,11 @@ IMPORTANT:
         },
         { role: 'user', content: userPrompt },
       ];
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages,
-      });
-      this.recordUsage(response.usage, LlmTask.TRANSLATE_TEXT, {
+      const content = await this.complete(messages, {
+        task: LlmTask.TRANSLATE_TEXT,
         language: targetLanguageCode,
       });
-      return (response.choices?.[0]?.message?.content ?? '').trim();
+      return content.trim();
     } catch (error) {
       this.logger.error(
         `[OpenAITranslationsService] fetchTextCompletion failed for ${targetLanguageCode}`,
@@ -865,20 +893,14 @@ IMPORTANT:
     systemPrompt: string,
     targetLanguageCode: string,
   ): Promise<Record<string, unknown>> {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      temperature: this.getTemperatureForLanguage(targetLanguageCode),
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-      ] as unknown as ChatCompletionMessageParam[],
-    });
-
-    this.recordUsage(response.usage, LlmTask.TRANSLATE_OBJECT, {
-      language: targetLanguageCode,
-    });
-
-    const content = response.choices?.[0]?.message?.content?.trim();
+    const content = (
+      await this.complete([{ role: 'system', content: systemPrompt }], {
+        task: LlmTask.TRANSLATE_OBJECT,
+        language: targetLanguageCode,
+        json: true,
+        temperature: this.getTemperatureForLanguage(targetLanguageCode),
+      })
+    ).trim();
     if (!content) throw new Error('empty response from the model');
 
     const parsed = JSON.parse(content) as unknown;
@@ -932,25 +954,22 @@ IMPORTANT:
     return undefined;
   }
 
-  /** Best-effort token-usage capture from an OpenAI chat-completion response. */
+  /** Best-effort token-usage capture for one translation call. */
   private recordUsage(
-    usage:
-      | {
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          total_tokens?: number;
-        }
-      | undefined,
+    provider: string,
+    model: string,
+    usage: LlmTokenUsage,
     task: LlmTask,
     metadata?: Record<string, any>,
   ): void {
     void this.llmUsage.record({
-      provider: 'openai',
-      model: this.model,
+      provider,
+      model,
       task,
-      promptTokens: usage?.prompt_tokens,
-      completionTokens: usage?.completion_tokens,
-      totalTokens: usage?.total_tokens,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.promptTokens + usage.completionTokens,
+      cachedTokens: usage.cachedTokens,
       metadata,
     });
   }

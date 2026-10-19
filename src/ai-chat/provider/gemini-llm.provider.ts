@@ -4,7 +4,10 @@ import {
   GoogleGenAI,
 } from '@google/genai';
 import { AppConfigService } from 'src/config/config.service';
-import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
+import {
+  isGemini3OrLater,
+  modelSupportsTemperature,
+} from 'src/common/util/llm-model.util';
 import {
   LlmProvider,
   LlmMessage,
@@ -31,6 +34,12 @@ const toTokenUsage = (
 const geminiSampling = (config: LlmProviderConfig) =>
   modelSupportsTemperature(config.model)
     ? { temperature: config.temperature ?? 0.7 }
+    : {};
+
+/** Gemini 3+ deprecated thinking_budget. */
+const geminiThinking = (config: LlmProviderConfig) =>
+  config.thinkingBudget !== undefined && !isGemini3OrLater(config.model)
+    ? { thinkingConfig: { thinkingBudget: config.thinkingBudget } }
     : {};
 
 /**
@@ -133,7 +142,11 @@ export class GeminiLlmProvider implements LlmProvider {
       config: {
         systemInstruction,
         ...geminiSampling(config),
+        ...geminiThinking(config),
         maxOutputTokens: config.maxTokens ?? 1500,
+        ...(config.responseFormat === 'json' && {
+          responseMimeType: 'application/json',
+        }),
       },
     });
 
