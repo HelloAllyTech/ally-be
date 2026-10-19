@@ -65,6 +65,9 @@ export type AiTaskProvider =
   | 'openai'
   | 'anthropic'
   | 'gemini'
+  /** Google Cloud services billed to the GCP project (Speech-to-Text, TTS), as opposed to the Gemini API. */
+  | 'google'
+  /** Legacy: unfunded since 2026-10, kept so an old row still reads. */
   | 'deepgram'
   | 'multiple'
   | 'resolved';
@@ -430,8 +433,8 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     trigger: 'The live agent listens to the learner',
     hotPath: true,
     kind: AiTaskKind.TRANSCRIPTION,
-    provider: 'deepgram',
-    defaultModel: 'nova-3',
+    provider: 'google',
+    defaultModel: 'chirp_2',
     configuredBy: 'DEFAULT_STT_CONFIG, then stt_configs / languages',
   },
   {
@@ -986,7 +989,7 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
       'the default degrades safely.',
     kind: AiTaskKind.TRANSCRIPTION,
     provider: 'multiple',
-    defaultModel: 'deepgram → sarvam → openai',
+    defaultModel: 'gemini-2.5-flash → sarvam → openai',
     configuredBy: 'TRANSCRIPTION__PROVIDERS',
   },
 ];

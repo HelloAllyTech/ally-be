@@ -362,8 +362,8 @@ type RegistryRow = { provider?: string; config?: Record<string, any> };
  *
  * A row missing a model is treated as unusable rather than passed through: the
  * agent's `create_stt_client` would pair the chosen provider with the *platform
- * default* model (Deepgram's "nova-3"), so an ElevenLabs row with no model
- * yields an ElevenLabs client asking for a Deepgram model — a session that
+ * default* model (Google's "chirp_2"), so an ElevenLabs row with no model
+ * yields an ElevenLabs client asking for a Google model — a session that
  * starts and transcribes nothing. Falling back is the safe read.
  */
 export const toResolvedSttConfig = (
@@ -440,8 +440,8 @@ const resolveSessionProviderConfig = (
  *   4. the platform default.
  *
  * Keyed by language because STT quality is a language question before it is a
- * simulation one — Sarvam for one Indian language, Google chirp for the next,
- * Deepgram for English. A flat per-simulation override would force one engine
+ * simulation one — Sarvam for one Indian language, Google chirp for the next.
+ * A flat per-simulation override would force one engine
  * across every language the simulation runs in. These are the same keys as
  * `languageVoices`, and like it they store registry ids, not inline configs, so
  * changing a model is one edit rather than one per simulation.

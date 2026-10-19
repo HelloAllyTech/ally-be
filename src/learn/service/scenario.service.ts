@@ -2357,7 +2357,7 @@ export class ScenarioService {
    *
    * Without this the write succeeds and the breakage only shows up mid-call:
    * `create_tts_client()` catches the client's ValueError and falls back to a
-   * default Deepgram voice, so the scenario just plays in the wrong voice.
+   * default Google voice, so the scenario just plays in the wrong voice.
    */
   private assertValidVoiceConfig(
     provider: string | undefined,
