@@ -60,11 +60,16 @@ export const DEFAULT_FEEDBACK_LANGUAGE = 'en';
 export const SESSION_SUMMARY_LOCK_TTL_SECONDS = 15 * 60;
 
 export const STT_LLM_PROVIDER_CONFIG = {
-  // Speech-to-Text service configuration
+  // Speech-to-Text service configuration. Google chirp_2 in asia-southeast1 is
+  // what every Indic language already runs on, and what the V2V tester uses
+  // for English, so it is the proven platform default. Deepgram (nova-3) was
+  // the default until 2026-10-19, when its credits ran out and every session
+  // on it died at join with a 402.
   stt: {
-    provider: 'deepgram', // Chosen STT provider
+    provider: 'google', // Chosen STT provider
     config: {
-      model: 'nova-3', // Deepgram model used for speech transcription
+      model: 'chirp_2', // Google Cloud STT model used for speech transcription
+      location: 'asia-southeast1', // chirp_2 is regional; this is the proven one
     },
   },
 
@@ -229,9 +234,10 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
 > = {
   [LanguageCode.EN_IN]: {
     stt: {
-      provider: 'deepgram',
+      provider: 'google',
       config: {
-        model: 'nova-3',
+        model: 'chirp_2',
+        location: 'asia-southeast1',
       },
     },
   },
@@ -338,18 +344,20 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
 
   [LanguageCode.EN_GB]: {
     stt: {
-      provider: 'deepgram',
+      provider: 'google',
       config: {
-        model: 'nova-3',
+        model: 'chirp_2',
+        location: 'asia-southeast1',
       },
     },
   },
 
   [LanguageCode.EN_US]: {
     stt: {
-      provider: 'deepgram',
+      provider: 'google',
       config: {
-        model: 'nova-3',
+        model: 'chirp_2',
+        location: 'asia-southeast1',
       },
     },
   },

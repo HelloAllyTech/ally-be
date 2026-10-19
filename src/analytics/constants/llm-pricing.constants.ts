@@ -186,6 +186,9 @@ export function computeCostUsd(
 // ---------------------------------------------------------------------------
 export const STT_PRICING_PER_MINUTE_USD: Record<string, number> = {
   deepgram: 0.0077,
+  // gemini-2.5-flash audio input: $1/1M tokens at ~32 tokens per second of
+  // audio ≈ $0.0019/min, plus a little output; rounded up.
+  gemini: 0.0025,
   openai: 0.006, // whisper-1
   google: 0.016, // chirp_2 (v2)
   sarvam: 0.006,
