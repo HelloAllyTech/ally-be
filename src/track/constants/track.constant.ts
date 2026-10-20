@@ -118,6 +118,18 @@ export const TRACK_MEDIA_DURATION_LIMITS: Partial<
 };
 
 /**
+ * Trainer-written prompt for an AI course cover (Track settings → Generate).
+ * The editor's default prompt — house style, safety rules and a course excerpt
+ * — runs to roughly a thousand characters; the ceiling leaves room to rewrite
+ * it at length without letting a pasted document through to the provider.
+ */
+export const TRACK_COVER_PROMPT_MIN_LENGTH = 10;
+export const TRACK_COVER_PROMPT_MAX_LENGTH = 4_000;
+
+/** 3:2 landscape, the size Course Copilot and the roleplay covers render at. */
+export const TRACK_COVER_IMAGE_SIZE = '1536x1024';
+
+/**
  * Alt text is a short description of what the picture shows, not a caption
  * and not a second prompt. Long enough for "a swollen left ankle, bruised
  * along the outer malleolus"; short enough that a screen-reader user isn't

@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseEnumPipe,
   ParseIntPipe,
@@ -49,6 +51,12 @@ import {
   UpdateTrackTranslationFieldsDto,
 } from '../dto/track-translation.dto';
 import { TrackTranslationService } from '../service/track-translation.service';
+import { TrackCoverImageService } from '../service/track-cover-image.service';
+import { GenerateTrackCoverImageRequestDto } from '../dto/generate-track-cover-image.dto';
+import { ImageGenerationJobService } from 'src/image-generation/service/image-generation-job.service';
+import { ImageGenerationJobDto } from 'src/image-generation/dto/image-generation-job.dto';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { TokenUser } from 'src/auth/type/auth.types';
 import { TrackSortBy, TrackSortOrder } from '../type/track.type';
 
 @ApiTags('Learn Tracks (Admin)')
@@ -61,6 +69,8 @@ export class TrackAdminController {
     private readonly trackTenantService: TrackTenantService,
     private readonly trackMediaService: TrackMediaService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly trackCoverImageService: TrackCoverImageService,
+    private readonly imageGenerationJobService: ImageGenerationJobService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
@@ -107,6 +117,47 @@ export class TrackAdminController {
     @Body() dto: TrackMediaUploadRequestDto,
   ): Promise<TrackMediaUploadResponseDto> {
     return this.trackMediaService.getPresignedUploadUrl(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Start generating a course cover image with AI',
+    description:
+      'Returns 202 with a job id at once — generation can outlast the load ' +
+      "balancer's 60 s idle timeout. Poll GET tracks/cover-image/generate/:jobId. " +
+      'The trainer-edited prompt is sent to the image provider verbatim; the ' +
+      'PNG is stored under track-media/image/. Nothing is saved on the track — ' +
+      'the editor applies an accepted image to the form and the normal track ' +
+      'save persists it.',
+  })
+  @ApiResponse({ status: 202, type: ImageGenerationJobDto })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/cover-image/generate')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async startCoverImageGeneration(
+    @Body() dto: GenerateTrackCoverImageRequestDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<ImageGenerationJobDto> {
+    return this.imageGenerationJobService.start('course-cover', user.id, () =>
+      this.trackCoverImageService.generate(dto),
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Poll a course cover image generation',
+    description:
+      "status is 'running', 'succeeded' (with imageUrl) or 'failed' (with an " +
+      'error to show the trainer). Only the user who started it can read it; ' +
+      'records expire after an hour.',
+  })
+  @ApiResponse({ status: 200, type: ImageGenerationJobDto })
+  @ApiResponse({ status: 404, description: 'Unknown, expired or not yours' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Get('tracks/cover-image/generate/:jobId')
+  async getCoverImageGeneration(
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<ImageGenerationJobDto> {
+    return this.imageGenerationJobService.get('course-cover', user.id, jobId);
   }
 
   // Declared before the `tracks/:id` routes so "media" isn't captured as :id.

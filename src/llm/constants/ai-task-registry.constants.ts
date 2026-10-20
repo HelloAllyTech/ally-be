@@ -1267,7 +1267,30 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     task: LlmTask.GENERATE_COVER_IMAGE,
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An author generates a simulation cover image',
-    detail: 'Gemini renders from an aspect ratio rather than pixel dimensions.',
+    detail:
+      'Runs as a background job the editor polls (generate-jobs): at the default ' +
+      'quality gpt-image-1 took 79–95 s in prod, past the 60 s load-balancer idle ' +
+      'timeout. Sent at quality medium (~25 s). Gemini renders from an aspect ' +
+      'ratio rather than pixel dimensions and has no quality setting.',
+    kind: AiTaskKind.IMAGE,
+    provider: 'openai',
+    defaultModel: 'gpt-image-1',
+    configuredBy: 'OPENAI_IMAGE_MODEL / GEMINI_IMAGE_MODEL',
+    configPath: 'openai.imageModel',
+  },
+  {
+    id: 'course-cover-image',
+    task: LlmTask.GENERATE_COURSE_COVER_IMAGE,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'A trainer presses Generate in the cover-image pop-up on a course’s Track settings',
+    detail:
+      'One image per press, from the prompt exactly as the trainer edited it (the ' +
+      'default prompt carries the style and safety rules; nothing is appended ' +
+      'server-side). Each retry after a rejected image is another call. Background ' +
+      'job the pop-up polls, at quality medium (~25 s) — the default ran past the ' +
+      '60 s load-balancer timeout. Stored under track-media/image/ and not added to ' +
+      'the roleplay cover library.',
     kind: AiTaskKind.IMAGE,
     provider: 'openai',
     defaultModel: 'gpt-image-1',
@@ -1974,6 +1997,28 @@ const COURSE_COPILOT_TASKS: AiTaskEntry[] = [
     defaultModel: 'gpt-5-mini',
     configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: 'course_copilot_course_reviewer',
+  },
+  {
+    id: 'course-copilot-landing-page',
+    task: LlmTask.COURSE_COPILOT_LANDING_PAGE,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      "An admin asks Course Copilot to draft a course's landing page story",
+    detail:
+      "One call per click on the builder's Landing page tab, outside any " +
+      'Copilot session. It drafts the hook, question, persona, first move, ' +
+      'chapter beats and teasers, outcomes and cast from the saved course ' +
+      '(sections, items, roleplay summaries, trigger warnings and the current ' +
+      'page). JSON mode, with one repair call if the output cannot be parsed. ' +
+      'The builder fills only empty fields; nothing is saved server-side. ' +
+      'Tagged with metadata.trackId rather than a session id, so it is not ' +
+      "counted against a build's budget.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_landing_page_writer',
   },
   {
     id: 'course-copilot-summary',

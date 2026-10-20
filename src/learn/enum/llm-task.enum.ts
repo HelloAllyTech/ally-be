@@ -229,6 +229,10 @@ export enum LlmTask {
   TRANSLATE_SCENARIO = 'translate_scenario',
   // Admin-dashboard scenario cover-image generation (Simulation Studio).
   GENERATE_COVER_IMAGE = 'generate_cover_image',
+  // Course editor (Track settings): a trainer generates the course cover from
+  // a prompt they wrote. Not the scenario template above, and not filed into
+  // the roleplay cover library.
+  GENERATE_COURSE_COVER_IMAGE = 'generate_course_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
   // Scribe voice note: turning one dictation transcript into note fields.
@@ -289,6 +293,9 @@ export enum LlmTask {
   COURSE_COPILOT_ROLEPLAY_BRIEF = 'course_copilot_roleplay_brief',
   COURSE_COPILOT_IMAGE_PROMPT = 'course_copilot_image_prompt',
   COURSE_COPILOT_IMAGE = 'course_copilot_image',
+  // The one Course Copilot call made outside a session: an admin's click on the
+  // builder's Landing page tab. Tagged with metadata.trackId, not a session id.
+  COURSE_COPILOT_LANDING_PAGE = 'course_copilot_landing_page',
 
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',

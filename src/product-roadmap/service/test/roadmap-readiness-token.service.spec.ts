@@ -53,14 +53,14 @@ describe('RoadmapReadinessTokenService', () => {
     const token = service.issue({
       description: DRAFT,
       productGoal: GOAL,
-      failedCriteria: ['specific', 'who_it_affects'],
+      failedCriteria: ['clear_why', 'who_it_affects'],
       proposedEffort: null,
     });
 
     expect(
       service.verify(token, { description: DRAFT, productGoal: GOAL })
         .failedCriteria,
-    ).toEqual(['specific', 'who_it_affects']);
+    ).toEqual(['clear_why', 'who_it_affects']);
   });
 
   /** Trailing whitespace alone must not cost a re-run — the drawer compares trimmed too. */

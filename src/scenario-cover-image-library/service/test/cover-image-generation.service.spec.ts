@@ -92,6 +92,8 @@ describe('CoverImageGenerationService', () => {
     expect(mockProvider.generateImage).toHaveBeenCalledWith(
       'Cover for "Difficult Feedback". About: A hard conversation. Style: Photorealistic',
       expect.any(String),
+      // Medium, not the default: the default ran 79–95 s in prod.
+      { quality: 'medium' },
     );
     expect(mockS3.uploadStream).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -134,6 +136,7 @@ describe('CoverImageGenerationService', () => {
     expect(mockProvider.generateImage).toHaveBeenCalledWith(
       'Kavya, a 20-year-old Student from Jaipur, India. female',
       expect.any(String),
+      expect.anything(),
     );
   });
 
@@ -145,6 +148,7 @@ describe('CoverImageGenerationService', () => {
     expect(mockProvider.generateImage).toHaveBeenCalledWith(
       'Cover for "Solo Title". About:  Style: ',
       expect.any(String),
+      expect.anything(),
     );
   });
 

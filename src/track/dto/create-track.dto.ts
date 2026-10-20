@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
@@ -10,9 +11,11 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { TRACK_MAX_COMPETENCIES } from '../constants/track.constant';
 import { TrackStatus } from '../type/track.type';
+import { TrackLandingPageDto } from './track-landing-page.dto';
 
 const COMPETENCY_IDS_DESCRIPTION =
   'The competencies this course teaches: ids of shared (non-custom) ' +
@@ -84,6 +87,22 @@ export class CreateTrackDto {
   @ArrayUnique()
   @IsUUID('4', { each: true })
   competencyIds?: string[] | null;
+
+  @ApiPropertyOptional({
+    description:
+      "The course's story-led landing page (hero, persona, first move, " +
+      'story arc, outcomes, cast, per-block switches). Every key is optional ' +
+      'at every level; the server fills defaults and stores the full ' +
+      'normalised shape. A non-empty `hero.hook` turns story mode on for the ' +
+      'public share link. Omit the key to leave it unchanged; send `null` to ' +
+      'clear it.',
+    type: () => TrackLandingPageDto,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TrackLandingPageDto)
+  landingPage?: TrackLandingPageDto | null;
 }
 
 export class TrackSummaryResponseDto {

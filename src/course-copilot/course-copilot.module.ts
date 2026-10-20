@@ -31,6 +31,7 @@ import { CourseCopilotCostService } from './service/course-copilot-cost.service'
 import { CourseCopilotEditToolsService } from './service/course-copilot-edit-tools.service';
 import { CourseCopilotEventService } from './service/course-copilot-event.service';
 import { CourseCopilotJobExecutorService } from './service/course-copilot-job-executor.service';
+import { CourseCopilotLandingPageService } from './service/course-copilot-landing-page.service';
 import { CourseCopilotLibraryService } from './service/course-copilot-library.service';
 import { CourseCopilotMediaService } from './service/course-copilot-media.service';
 import { CourseCopilotOrchestratorService } from './service/course-copilot-orchestrator.service';
@@ -45,6 +46,7 @@ import { CourseMetaSpecialist } from './service/specialists/course-meta.speciali
 import { CourseReviewSpecialist } from './service/specialists/course-review.specialist';
 import { ImagePromptSpecialist } from './service/specialists/image-prompt.specialist';
 import { JournalSpecialist } from './service/specialists/journal.specialist';
+import { LandingPageSpecialist } from './service/specialists/landing-page.specialist';
 import { QuizSpecialist } from './service/specialists/quiz.specialist';
 import { RoleplayBriefSpecialist } from './service/specialists/roleplay-brief.specialist';
 import { SpecialistLlmService } from './service/specialists/specialist-llm.service';
@@ -99,6 +101,7 @@ import { SpecialistLlmService } from './service/specialists/specialist-llm.servi
     CourseCopilotToolsService,
     CourseCopilotOrchestratorService,
     CourseCopilotSchedulerRegistrationService,
+    CourseCopilotLandingPageService,
     SpecialistLlmService,
     BlueprintPlannerSpecialist,
     ArticleSpecialist,
@@ -109,6 +112,7 @@ import { SpecialistLlmService } from './service/specialists/specialist-llm.servi
     CourseReviewSpecialist,
     ImagePromptSpecialist,
     RoleplayBriefSpecialist,
+    LandingPageSpecialist,
   ],
 })
 export class CourseCopilotModule {}
