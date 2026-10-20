@@ -172,10 +172,10 @@ describe('RoadmapOpportunityService — readiness gate', () => {
    * else — filed the row, because the checklist only ever ran in the browser.
    */
   it('refuses a failing draft, naming what failed', async () => {
-    givenVerdict(['specific', 'who_it_affects']);
+    givenVerdict(['clear_why', 'who_it_affects']);
 
     await expect(file()).rejects.toThrow(BadRequestException);
-    await expect(file()).rejects.toThrow(/specific, who_it_affects/);
+    await expect(file()).rejects.toThrow(/clear_why, who_it_affects/);
     expect(opportunityRepository.save).not.toHaveBeenCalled();
   });
 
@@ -184,7 +184,7 @@ describe('RoadmapOpportunityService — readiness gate', () => {
    * `readinessOverride: true` from its toggle; it must buy nothing, for a manager or anyone else.
    */
   it('refuses a failing draft even when a stale client asks to override it', async () => {
-    givenVerdict(['specific']);
+    givenVerdict(['clear_why']);
 
     await expect(
       file({ readinessOverride: true } as never, { canManage: true }),
@@ -193,15 +193,19 @@ describe('RoadmapOpportunityService — readiness gate', () => {
   });
 
   /**
-   * Size is part of the gate, and it is graded against the effort being FILED rather than the
-   * one in the token, so it holds whatever the client sends.
+   * Size is not capped: an opportunity does not have to be narrow to be well defined, so a
+   * broad one files at its honest size instead of being refused until it is cut down.
    */
-  it('blocks a draft sized above what may be filed, even with every criterion green', async () => {
-    givenVerdict([], RoadmapOpportunityEffort.XL);
+  it.each([
+    RoadmapOpportunityEffort.L,
+    RoadmapOpportunityEffort.XL,
+    RoadmapOpportunityEffort.XXL,
+  ])('files a %s opportunity with every criterion green', async (effort) => {
+    givenVerdict([], effort);
 
-    await expect(file({ effort: RoadmapOpportunityEffort.XL })).rejects.toThrow(
-      /size/,
-    );
+    await file({ effort });
+
+    expect(savedRow()).toMatchObject({ effort });
   });
 
   it('accepts a human correction of a size the model got wrong', async () => {

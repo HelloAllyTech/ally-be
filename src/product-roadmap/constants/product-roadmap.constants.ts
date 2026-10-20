@@ -340,7 +340,7 @@ export const ROADMAP_PROMPT_CODES = {
  * persisted against a filed row.)
  *
  * These five apply the team's discovery guidance at the point of filing (Stacks: "Filter
- * opportunities by specificity and validation criteria"), with two deliberate departures from
+ * opportunities by specificity and validation criteria"), with three deliberate departures from
  * the strict reading of it:
  *
  * 1. A GAIN COUNTS, not only a pain. Stacks: "Frame customer needs as opportunities, not just
@@ -352,19 +352,28 @@ export const ROADMAP_PROMPT_CODES = {
  *    actually matters is the ORDER: strike the proposed build and there must still be a stated
  *    goal underneath. `goal_before_solution` grades that, and nothing grades solution-mention
  *    on its own.
+ * 3. BROAD IS ALLOWED; VAGUE IS NOT. Stacks' specificity rule ("Frame Opportunities with
+ *    Specificity, Not Themes") rules out themes, design guidelines and feelings — and counts a
+ *    broad need ("finding a show to watch should be easier") among its good examples. The
+ *    `specific` gate this replaced (2026-10-20) read it as NARROW — "one situation at one
+ *    moment" — and, with the old S/M size cap, forced every broad but well-defined opportunity
+ *    down to one slice before it could be filed. `clear_why` grades what the rule is for: the
+ *    entry is sharp about why it matters. Whether that why serves Ally's goals stays advice —
+ *    see STRATEGIC FIT below.
  *
  * What is deliberately NOT here:
- * - SIZE. Graded from the effort the same call already proposes — see ROADMAP_FILEABLE_EFFORTS
- *   — so that the model cannot pass "small enough" while sizing the same draft XL.
+ * - SIZE. Not capped — see ROADMAP_FILEABLE_EFFORTS — but a draft has to carry one, graded from
+ *   the effort the same call proposes, not as a criterion of its own.
  * - EVIDENCE ("more than one person said this"). It is a validation test, not a clarity test,
  *   and it failed real gaps spotted internally or derived from a bug report. The copilot
  *   still pushes for it — it researches analytics, interview notes and findings, and records
  *   what it found in the brief — but as advice the filer can act on, never as a gate. Same
- *   for STRATEGIC FIT: the copilot's assessment says how strong it thinks the case is and
- *   keeps recommending until it is, and the admin can file whenever the five below are met.
+ *   for STRATEGIC FIT: the copilot judges which goal or bet the why serves, records it in the
+ *   brief, and keeps recommending until the case is strong, and the admin can file whenever
+ *   the five below are met.
  * - USER-STORY FORMAT. Carried by the interview's drafting, never gated: a
- *   clear plain-English opportunity must not be blocked over its shape, and criteria 3-5
- *   already grade the content the format would carry.
+ *   clear plain-English opportunity must not be blocked over its shape, and `pain_or_gain`,
+ *   `who_it_affects` and `outcome` already grade the content the format would carry.
  */
 export const ROADMAP_READINESS_CRITERIA = [
   {
@@ -378,9 +387,9 @@ export const ROADMAP_READINESS_CRITERIA = [
     hint: 'Naming a possible solution is fine. Strike it, and the entry must still say what we are trying to achieve.',
   },
   {
-    id: 'specific',
-    label: 'Narrow enough to act on',
-    hint: 'One situation at one moment — not a theme like "onboarding is confusing" or "the interface is hard to use".',
+    id: 'clear_why',
+    label: 'Clear about why it matters',
+    hint: 'Says why this is worth doing — what it costs to leave it, or what it unlocks — sharply enough to weigh against the rest of the board. Broad is fine; a theme or a feeling ("make it easier to use", "improve onboarding") with no stated reason is not.',
   },
   {
     id: 'who_it_affects',
@@ -395,16 +404,21 @@ export const ROADMAP_READINESS_CRITERIA = [
 ] as const;
 
 /**
- * The sizes an opportunity may be filed at. Anything larger is not one opportunity — it is a
- * set of them, and Stacks ("Select leaf-node opportunities for iterative value delivery") is
- * explicit that value lands by solving a series of smaller ones in succession rather than
- * taking a whole set at once. So L and up BLOCK filing: the interview withholds the draft and
- * asks which single shippable slice to keep, and `POST /opportunities` refuses the rest.
+ * The sizes an opportunity may be filed at: all of them. An opportunity does not have to be
+ * narrow to be well defined, so size is information for voters and for the board's ranking
+ * (which already scores L and up lower), not a gate. Until 2026-10-20 only S and M could be
+ * filed (after Stacks' "Select leaf-node opportunities for iterative value delivery"), which
+ * meant the interview withheld every broad idea and asked which single slice to keep; slicing
+ * is now the team's call when they pick it up, not a precondition for putting it on the board.
  *
- * Served alongside the criteria so the threshold lives in one place. Applied to the effort
- * being FILED, not the one in the token, so it holds whatever a client sends.
+ * What still blocks is UNSIZED: a draft nobody can put any size on is not yet well defined
+ * enough to vote on. The interview withholds it and asks what is in and out of scope, and
+ * `POST /opportunities` refuses a filing with no effort.
+ *
+ * Served alongside the criteria so the rule lives in one place. Applied to the effort being
+ * FILED, not the one in the token, so it holds whatever a client sends.
  */
-export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
+export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm', 'l', 'xl', 'xxl'] as const;
 
 /**
  * Sentinel the effort FILTER accepts alongside the real RoadmapOpportunityEffort values, to mean
