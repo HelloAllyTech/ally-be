@@ -51,6 +51,53 @@ export class UpsertTrackItemCompletionCriteriaDto {
   minReadSeconds?: number;
 }
 
+export class BreathingExerciseContentDto {
+  @ApiProperty({ description: 'Duration of inhale phase (seconds)' })
+  @IsNumber()
+  @Min(0)
+  inhale!: number;
+
+  @ApiProperty({ description: 'Duration of hold phase after inhale (seconds)' })
+  @IsNumber()
+  @Min(0)
+  holdIn!: number;
+
+  @ApiProperty({ description: 'Duration of exhale phase (seconds)' })
+  @IsNumber()
+  @Min(0)
+  exhale!: number;
+
+  @ApiProperty({ description: 'Duration of hold phase after exhale (seconds)' })
+  @IsNumber()
+  @Min(0)
+  holdOut!: number;
+
+  @ApiProperty({ description: 'Total number of breathing cycles' })
+  @IsInt()
+  @Min(1)
+  cycles!: number;
+
+  @ApiProperty({ description: 'Instructional text for inhale phase' })
+  @IsString()
+  @IsNotEmpty()
+  inhaleText!: string;
+
+  @ApiProperty({ description: 'Instructional text for hold after inhale' })
+  @IsString()
+  @IsNotEmpty()
+  holdInText!: string;
+
+  @ApiProperty({ description: 'Instructional text for exhale phase' })
+  @IsString()
+  @IsNotEmpty()
+  exhaleText!: string;
+
+  @ApiProperty({ description: 'Instructional text for hold after exhale' })
+  @IsString()
+  @IsNotEmpty()
+  holdOutText!: string;
+}
+
 export class UpsertTrackItemDto {
   @ApiPropertyOptional({
     description: 'Existing item id (omit to create a new item)',

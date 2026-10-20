@@ -37,6 +37,32 @@ export enum TrackGameKey {
    * so the learner's choice changes how it plays rather than how it looks.
    */
   SPROUT = 'SPROUT',
+  /**
+   * A guided box-breathing exercise. The author configures the timing of the
+   * four phases, the number of cycles, and the instructional text.
+   */
+  BREATHING_EXERCISE = 'BREATHING_EXERCISE',
+}
+
+export interface BreathingExerciseContent {
+  /** Duration of the inhale phase in seconds. */
+  inhale: number;
+  /** Duration of the hold-after-inhale phase in seconds. */
+  holdIn: number;
+  /** Duration of the exhale phase in seconds. */
+  exhale: number;
+  /** Duration of the hold-after-exhale phase in seconds. */
+  holdOut: number;
+  /** Total number of cycles to perform. */
+  cycles: number;
+  /** Instructional text for the inhale phase. */
+  inhaleText: string;
+  /** Instructional text for the hold-after-inhale phase. */
+  holdInText: string;
+  /** Instructional text for the exhale phase. */
+  exhaleText: string;
+  /** Instructional text for the hold-after-exhale phase. */
+  holdOutText: string;
 }
 
 export interface GameContent {
@@ -46,6 +72,11 @@ export interface GameContent {
    * before the next roleplay." Translatable.
    */
   intro?: string;
+  /**
+   * Configuration for the breathing exercise. Only present when `gameKey` is
+   * `BREATHING_EXERCISE`.
+   */
+  breathingExercise?: BreathingExerciseContent;
 }
 
 /**
