@@ -286,7 +286,7 @@ but nothing survives the turn except what the client sends back, so there is no 
 rebuild across turns and no `tool_use` blocks left unpaired — the trap `rebuildAnthropicHistory`
 (Builder) and `rebuildHistory` (Character) exist for.
 
-Three rules matter when writing one:
+Five rules matter when writing one:
 
 - **Speaker-label the transcript** you render in (`ADMIN:` / `YOU:`). Without it the model
   cannot tell its own previous questions from the answers and starts re-asking them.
@@ -299,6 +299,17 @@ Three rules matter when writing one:
 - **Return the structured turn through a tool the prompt requires last** (`submit_turn`), not
   through JSON mode. JSON mode on Anthropic is a forced `tool_choice`, which current Claude
   models reject, and it cannot coexist with research tools in the same call.
+- **A research tool the model has no index for goes unused.** The copilot had GitHub tools for
+  a week and called none of them, because nothing told it what existed to look up. It started
+  using them once the service put a product map in the cached system prefix
+  (`RoadmapCopilotProductMapService`: repos, admin surfaces, knowledge-pack heads, the wiki and
+  repo-docs index). Ship the index with the tool, and say in the tool description how its
+  search actually matches — GitHub code search ANDs every word, so the model's natural
+  eight-word queries all came back empty until the description said "one to three words".
+- **Keep worked examples away from the cases you test with.** A prompt example that resembles
+  the conversation gets copied nearly verbatim, finding and recommendation included. Set
+  examples in a different feature area from the one being discussed, so the model borrows
+  the shape and not the content.
 
 Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are
