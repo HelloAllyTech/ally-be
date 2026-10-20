@@ -52,6 +52,16 @@ import {
   sanitizeAnnotationForLearner,
 } from './track-annotation.sanitizer';
 import { autogradeQuestion } from './track-quiz.autograder';
+import {
+  buildPublicTrackStory,
+  localiseTriggerWarningName,
+  normaliseTrackLandingPage,
+} from '../util/track-landing-page.util';
+import { PublicTrackStory } from '../type/track-landing-page.type';
+import {
+  TRACK_TRIGGER_WARNINGS_BY_SECTION_SQL,
+  TrackSectionTriggerWarningRow,
+} from '../constants/track-landing-page.constant';
 
 @Injectable()
 export class TrackEnrollmentService {
@@ -284,6 +294,7 @@ export class TrackEnrollmentService {
       structure as any,
       translation,
     );
+    const story = await this.buildPublicStory(structure, resolvedLanguage);
 
     return {
       id: structure.id,
@@ -326,7 +337,65 @@ export class TrackEnrollmentService {
           }),
         };
       }),
+      story,
     };
+  }
+
+  /**
+   * The story-led landing page for the public outline, or null when the course
+   * has none (no landing page, or no hook — the classic layout).
+   *
+   * The display rules live in `buildPublicTrackStory`; this only gathers what
+   * they need. The trigger-warning lookup runs for story courses alone, so a
+   * classic course pays nothing for the feature. Story text is English in v1
+   * (it is authored once, not translated); only the warning names localise.
+   */
+  private async buildPublicStory(
+    structure: TrackWithStructure,
+    languageCode: string,
+  ): Promise<PublicTrackStory | null> {
+    if (!structure.landingPage) return null;
+    // Normalise again on read: the stored value was normalised on the way in,
+    // but this is the one place a half-valid row would reach the public.
+    const page = normaliseTrackLandingPage(structure.landingPage);
+    if (!page.hero.hook) return null;
+
+    const warnings = await this.loadWarningsBySection(
+      structure.id,
+      languageCode,
+    );
+    return buildPublicTrackStory(page, structure.sections, warnings);
+  }
+
+  /**
+   * Trigger-warning names per section, from the scenarios behind the course's
+   * roleplays — and behind its cases, which are a sequence of scenarios linked
+   * through `case_items`. One query for the whole course, not one per item.
+   * Names are localised from `trigger_warnings.translations`, English when the
+   * language has no translation.
+   */
+  private async loadWarningsBySection(
+    trackId: string,
+    languageCode: string,
+  ): Promise<Map<string, string[]>> {
+    const rows: TrackSectionTriggerWarningRow[] = await this.dataSource.query(
+      TRACK_TRIGGER_WARNINGS_BY_SECTION_SQL,
+      [trackId],
+    );
+
+    const bySection = new Map<string, string[]>();
+    for (const row of rows) {
+      const name = localiseTriggerWarningName(
+        row.name,
+        row.translations,
+        languageCode,
+      );
+      bySection.set(row.sectionId, [
+        ...(bySection.get(row.sectionId) ?? []),
+        name,
+      ]);
+    }
+    return bySection;
   }
 
   /**

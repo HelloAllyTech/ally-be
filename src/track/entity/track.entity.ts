@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { TrackProgressionMode, TrackStatus } from '../type/track.type';
+import { TrackLandingPage } from '../type/track-landing-page.type';
 
 @Entity('tracks')
 export class Track extends BaseWithoutTenantEntity {
@@ -64,6 +65,17 @@ export class Track extends BaseWithoutTenantEntity {
   // "tagged" always means at least one id. See normaliseTrackCompetencyIds.
   @Column({ type: 'jsonb', nullable: true })
   competencyIds?: string[] | null;
+
+  // The course's story-led landing page: hook, persona, first move, story arc,
+  // outcomes, cast and the per-block switches, always stored as the full
+  // normalised shape (`normaliseTrackLandingPage`). NULL = never set up, which
+  // is every course until its author opts in. A non-empty `hero.hook` is what
+  // turns story mode on for the public share link; without one the outline
+  // renders exactly as before. Section ids inside it are not foreign keys — one
+  // that no longer exists is ignored at read time — and `duplicateTrack`
+  // re-points them at the copy's sections.
+  @Column({ type: 'jsonb', nullable: true })
+  landingPage?: TrackLandingPage | null;
 
   @DeleteDateColumn()
   deletedAt?: Date;
