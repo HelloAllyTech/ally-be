@@ -366,6 +366,7 @@ export class BuilderInterviewOrchestratorService {
     const system = await this.buildSystemBlocks(
       session.repos ?? undefined,
       exemplars,
+      await this.sessionService.getHandoffContext(sessionId),
     );
     const messages: any[] = [
       ...(await this.replayHistory(session, history)),
@@ -844,6 +845,7 @@ export class BuilderInterviewOrchestratorService {
   private async buildSystemBlocks(
     repos?: string[],
     exemplars: string[] = [],
+    handoffContext: string | null = null,
   ): Promise<AgentSystemBlock[]> {
     const [instructions, context, platformRules] = await Promise.all([
       this.buildSystemPrompt(),
@@ -861,10 +863,53 @@ export class BuilderInterviewOrchestratorService {
     // the technical plan is written knowing them. The plan that renamed a
     // persisted key in session 880e73e6 was written by this agent, which had
     // never been told released clients lag the backend.
-    return [
+    const blocks: AgentSystemBlock[] = [
       { text: `${instructions}\n\n${platformRules}`, cache: true },
       { text: context, cache: true },
     ];
+    // Last, so the two blocks above stay a prefix shared with every other session. Frozen
+    // per session, so it caches as well as they do.
+    if (handoffContext) {
+      blocks.push({ text: this.renderHandoff(handoffContext), cache: true });
+    }
+    return blocks;
+  }
+
+  /**
+   * What the work before this session settled, with how to use it.
+   *
+   * The instructions live here, beside the block, rather than in the interviewer prompt: the
+   * block only exists for sessions something else started, and a rule in the prompt about a
+   * block most sessions never see is one more thing every other interview reads past. Written
+   * after a live session opened from a roadmap opportunity spent its first questions on what
+   * the filing interview had already decided — debrief-specific feedback alongside the
+   * session rating, and the rating's shape, were both in the copilot's brief it was never
+   * shown.
+   *
+   * "Reference what was said rather than asking from scratch" is Stacks, "Sequencing
+   * clarification questions to avoid user overwhelm".
+   */
+  private renderHandoff(handoffContext: string): string {
+    return [
+      '# Hand-off — what was settled before this session started',
+      '',
+      'This session was opened from earlier work, and what follows is its record. The admin ' +
+        'has already answered these questions once. So:',
+      '',
+      '- Treat every decision in it as settled. Write what it settles into the PRD with ' +
+        '`update_prd` on your first turn, before you ask anything.',
+      '- Ask only about what it leaves open — usually how it gets built, not whether or for ' +
+        'whom. Never re-ask something it answers, including as a "just to confirm" question.',
+      '- Reuse its research. Where it cites a file, a query or a board item, start from that ' +
+        'reference rather than searching again from nothing.',
+      '- When the code contradicts it, or two parts of it disagree, quote what was said and ask ' +
+        'which should give — that is a contradiction to resolve, not a fresh question.',
+      '- Alternatives it records as dropped stay dropped unless the admin reopens them.',
+      '',
+      '<handoff>',
+      handoffContext,
+      '</handoff>',
+    ].join('\n');
   }
 
   /**

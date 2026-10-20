@@ -13,7 +13,10 @@ import {
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
-import { RoadmapOpportunityBrief } from '../type/roadmap-brief.type';
+import {
+  RoadmapFilingInterviewMessage,
+  RoadmapOpportunityBrief,
+} from '../type/roadmap-brief.type';
 
 /**
  * One attached image: the S3 object URL, plus an optional caption saying what a reader is
@@ -170,6 +173,28 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'jsonb', nullable: true })
   brief?: RoadmapOpportunityBrief | null;
+
+  /**
+   * The copilot conversation this opportunity was filed from, message by message.
+   *
+   * Kept for the work that follows filing, not for voters: "Open in Builder Agent" hands it to
+   * the Builder session (RoadmapBuilderService) so the PRD interview starts from what the filer
+   * already decided rather than asking it again. The brief is the copilot's distillation of
+   * that conversation; this is what was actually said, including decisions no brief field has
+   * a slot for. No API returns it.
+   *
+   * Written once, on create, and only on the copilot's own filing path (alongside its readiness
+   * token) — a quick-add or a bug report has no conversation behind it. Not signed into the
+   * token, unlike the brief: nothing presents it to a reader as anyone's judgement, it is the
+   * filer's own conversation, and it is read only by Builder sessions, which sit behind
+   * Builder's own gate. NULL for everything filed without one, including everything before it
+   * existed. Split and merge results start without one, as they do without a brief.
+   *
+   * `select: false`: the board reads every card, and a ten-minute interview is tens of KB —
+   * only the Builder hand-off asks for it.
+   */
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  interviewTranscript?: RoadmapFilingInterviewMessage[] | null;
 
   /**
    * The Builder session started from this opportunity, if any.

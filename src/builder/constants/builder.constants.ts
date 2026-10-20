@@ -138,6 +138,17 @@ export const BUILDER_MAX_SESSIONS_PER_TENANT_PER_MONTH = 50;
 export const BUILDER_TITLE_MAX_LENGTH = 200;
 export const BUILDER_SLUG_MAX_LENGTH = 80;
 
+/**
+ * Upper bound on `builder_sessions.handoffContext` — what another module hands a session
+ * when it starts one (today: a roadmap opportunity's brief and filing interview).
+ *
+ * It rides in the cached system prefix on every interview turn, so it is paid for once per
+ * cache window rather than per turn, but it is still prefix the model has to read. A
+ * ten-minute filing interview renders to roughly 10–15k characters; this is headroom for a
+ * long one, not a target. The column's CHECK holds the same number.
+ */
+export const BUILDER_HANDOFF_CONTEXT_MAX = 120_000;
+
 /* ── Build dispatch ─────────────────────────────────────────────────────── */
 
 /** The workflow file, hosted in ally-be — one copy, so it cannot drift. */

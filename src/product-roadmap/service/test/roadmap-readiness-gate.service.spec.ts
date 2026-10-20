@@ -314,4 +314,54 @@ describe('RoadmapOpportunityService — readiness gate', () => {
       expect(opportunityRepository.save).not.toHaveBeenCalled();
     });
   });
+
+  /**
+   * The filing conversation, kept so the Builder session started from this opportunity begins
+   * where it ended. Same door as the brief, but never a reason to refuse a filing.
+   */
+  describe('the filing interview', () => {
+    const TRANSCRIPT = [
+      { role: 'agent', content: 'What should change?' },
+      { role: 'admin', content: 'Let learners rate the debrief.' },
+    ];
+
+    it("stores the copilot's conversation with its draft", async () => {
+      givenVerdict([]);
+
+      await file({ interviewTranscript: TRANSCRIPT });
+
+      expect(savedRow().interviewTranscript).toEqual(TRANSCRIPT);
+    });
+
+    it('drops a malformed message instead of refusing the filing', async () => {
+      // A 400 here would lose the very conversation the column exists to keep.
+      givenVerdict([]);
+
+      await file({
+        interviewTranscript: [
+          ...TRANSCRIPT,
+          { role: 'system', content: 'x' },
+          'junk',
+        ] as never,
+      });
+
+      expect(savedRow().interviewTranscript).toEqual(TRANSCRIPT);
+    });
+
+    it('ignores a transcript off the copilot path, without refusing it', async () => {
+      // No token means no copilot draft — there is no conversation behind it to keep.
+      await file({
+        interviewTranscript: TRANSCRIPT,
+        readinessToken: undefined,
+      });
+      expect(savedRow().interviewTranscript).toBeNull();
+
+      opportunityRepository.create.mockClear();
+      await file(
+        { interviewTranscript: TRANSCRIPT },
+        { enforceReadiness: false },
+      );
+      expect(savedRow().interviewTranscript).toBeNull();
+    });
+  });
 });

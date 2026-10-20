@@ -30,6 +30,7 @@ export type BuilderSessionListItem = BuilderSession & {
   createdByName: string | null;
 };
 import {
+  BUILDER_HANDOFF_CONTEXT_MAX,
   BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT,
   BUILDER_MAX_SESSIONS_PER_TENANT_PER_MONTH,
   BUILDER_SLUG_MAX_LENGTH,
@@ -106,7 +107,12 @@ export class BuilderSessionService {
 
   async createSession(
     userId: number,
-    params: { title?: string; tenantId?: string | null } = {},
+    params: {
+      title?: string;
+      tenantId?: string | null;
+      /** See BuilderSession.handoffContext. Only callers outside Builder pass it. */
+      handoffContext?: string | null;
+    } = {},
   ): Promise<BuilderSession> {
     if (params.tenantId) {
       await this.assertTenantWithinCaps(params.tenantId);
@@ -132,6 +138,7 @@ export class BuilderSessionService {
         slug: await this.allocateSlug(title),
         tenantId: params.tenantId ?? null,
         budgetUsd,
+        handoffContext: this.boundHandoff(params.handoffContext),
         createdBy: userId,
         updatedBy: userId,
       }),
@@ -140,6 +147,44 @@ export class BuilderSessionService {
     // very first paint rather than after the agent's first patch.
     await this.prdService.getOrCreateDoc(session.id, userId, session.title);
     return session;
+  }
+
+  /**
+   * Hand a session that already exists the context it would have been created with.
+   *
+   * For sessions opened before their caller passed any — today, roadmap sessions started
+   * before the hand-off existed. Writes only where the column is still NULL, in the UPDATE's
+   * own WHERE: the context is frozen once set (see the entity), and two presses racing each
+   * other must not have the second replace the first. Resolves true when it wrote.
+   */
+  async attachHandoffContext(
+    sessionId: string,
+    handoffContext: string,
+  ): Promise<boolean> {
+    const text = this.boundHandoff(handoffContext);
+    if (!text) return false;
+    const result = await this.sessionRepository.update(
+      { id: sessionId, handoffContext: IsNull() },
+      { handoffContext: text },
+    );
+    return !!result.affected;
+  }
+
+  /**
+   * The session's hand-off, or null. A read of its own because the column is `select: false`
+   * — every other session read leaves it out, and only the interview turn needs it.
+   */
+  async getHandoffContext(sessionId: string): Promise<string | null> {
+    const row = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+      select: { id: true, handoffContext: true },
+    });
+    return row?.handoffContext ?? null;
+  }
+
+  private boundHandoff(text?: string | null): string | null {
+    const trimmed = (text ?? '').trim();
+    return trimmed ? trimmed.slice(0, BUILDER_HANDOFF_CONTEXT_MAX) : null;
   }
 
   /**
