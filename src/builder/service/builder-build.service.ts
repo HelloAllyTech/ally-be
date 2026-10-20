@@ -30,6 +30,7 @@ import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
+import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
   computeDesignReadiness,
   createDraftingDesign,
@@ -411,7 +412,22 @@ export class BuilderBuildService {
       );
     }
 
-    const repos = session.repos ?? [];
+    // The start dialog is the only place that saves repos onto the session,
+    // and it stays locked until the design is approved — so a session that
+    // has never been built has none here. The PRD's technical plan names the
+    // repos it changes (the same list the dialog pre-checks), so the design
+    // reads those, and they are saved so the dialog and the build agree.
+    let repos = session.repos ?? [];
+    if (!repos.length) {
+      repos = [
+        ...new Set(
+          (doc.draft.technicalPlan?.repos ?? [])
+            .map((plan) => plan.repo)
+            .filter((repo): repo is string => Boolean(repo))
+            .filter(isBuilderRepo),
+        ),
+      ];
+    }
     if (!repos.length) {
       throw new BadRequestException(
         'No repos chosen — the designer has nothing to read.',
@@ -422,6 +438,11 @@ export class BuilderBuildService {
       throw new BadRequestException(
         'This session already has a run in flight or waiting on an answer. Let it finish first.',
       );
+    }
+
+    if (!session.repos?.length) {
+      await this.sessionRepository.update({ id: session.id }, { repos });
+      session.repos = repos;
     }
 
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);

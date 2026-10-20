@@ -1952,6 +1952,32 @@ describe('BuilderBuildService', () => {
         expect(sessionRepository.update).not.toHaveBeenCalled();
       });
 
+      // The start dialog saves repos only on a build, and a build waits on an
+      // approved design — so a never-built session reaches here with none.
+      it("reads the PRD's planned repos when the session has none, and saves them", async () => {
+        const session = readySession({ repos: [] });
+
+        await service.startDesign(session as any, 7);
+
+        expect(sessionRepository.update).toHaveBeenCalledWith(
+          { id: session.id },
+          { repos: ['ally-be'] },
+        );
+        expect(github.dispatchWorkflow).toHaveBeenCalled();
+      });
+
+      it('still refuses when neither the session nor the PRD names a repo', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue({
+          id: 'doc-1',
+          draft: { requirements: [], technicalPlan: { repos: [] } },
+        });
+
+        await expect(
+          service.startDesign(readySession({ repos: [] }) as any, 7),
+        ).rejects.toThrow(/No repos chosen/);
+        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      });
+
       it('fails the design, not the session, when the dispatch throws', async () => {
         github.dispatchWorkflow.mockRejectedValue(new Error('GitHub down'));
         // The second read sees the drafting design the first call wrote.
