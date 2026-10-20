@@ -8,6 +8,7 @@ import { BuilderEvidenceService } from 'src/builder/service/builder-evidence.ser
 import {
   BUILDER_REPO_NAMES,
   BUILDER_WIKI_REPO,
+  isBuilderReadableRepo,
 } from 'src/builder/constants/builder-repos.constants';
 
 import { ROADMAP_COPILOT } from '../constants/product-roadmap.constants';
@@ -196,11 +197,33 @@ export class RoadmapCopilotToolsService {
         },
       },
       {
+        name: 'docs_search',
+        description:
+          "Search Ally's written documentation — every repo's README, CLAUDE.md and docs/ " +
+          'pages, and the wiki — and get back matching file paths. The quickest way to learn ' +
+          'how an area works today, what it is called and why it is built that way. Read the ' +
+          'one or two that look right with github_read_file (or wiki_read for the wiki). ' +
+          'Matches words, not meaning: use the names the product map uses.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            repo: {
+              type: 'string',
+              enum: [...BUILDER_REPO_NAMES, BUILDER_WIKI_REPO],
+              description: 'Optional; omit to search every repo and the wiki',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
         name: 'github_search_code',
         description:
-          'Search the Ally codebase and get back matching file paths. Use it to check whether ' +
-          'something already exists, half-exists, or lives behind a feature toggle before the ' +
-          'admin proposes building it — not to design the build.',
+          'Search the Ally codebase and get back matching file paths. Use it to learn how an ' +
+          'area works today when the docs do not say, and to check whether something already ' +
+          'exists, half-exists, or lives behind a feature toggle — not to design the build. ' +
+          'Matches exact words and identifiers; the product map tells you which to search for.',
         input_schema: {
           type: 'object',
           properties: {
@@ -421,6 +444,8 @@ export class RoadmapCopilotToolsService {
         return input?.repo
           ? `Checking known bugs in ${input.repo}`
           : 'Checking known bugs';
+      case 'docs_search':
+        return `Searching the docs for ${q(input?.query)}`;
       case 'github_search_code':
         return `Searching the code for ${q(input?.query)}`;
       case 'github_read_file':
@@ -525,6 +550,14 @@ export class RoadmapCopilotToolsService {
             input.repo ? String(input.repo) : undefined,
           ),
           summary: (r) => count(r.findings, 'open finding'),
+        };
+      case 'docs_search':
+        return {
+          result: await this.searchDocs(
+            String(input.query ?? ''),
+            input.repo ? String(input.repo) : undefined,
+          ),
+          summary: (r) => count(r.results, 'matching page'),
         };
       case 'github_search_code':
         return {
@@ -711,6 +744,38 @@ export class RoadmapCopilotToolsService {
         commentCount: full.commentCount,
         createdAt: full.createdAt,
       },
+    };
+  }
+
+  /**
+   * Code search narrowed to markdown. Org-wide by default, which reaches repos the copilot may
+   * not read (infra, the Calibrate repos) — those hits are dropped rather than offered as
+   * paths that `github_read_file` would then refuse.
+   */
+  private async searchDocs(
+    query: string,
+    repo?: string,
+  ): Promise<Record<string, any>> {
+    const trimmed = query.trim();
+    if (!trimmed)
+      return { ok: false, error: 'Give me something to search for.' };
+    const found = await this.githubRead.searchCode(
+      `${trimmed} extension:md`,
+      repo,
+    );
+    if (found?.ok === false) return found;
+    const results = (Array.isArray(found?.results) ? found.results : []).filter(
+      (hit: { repo?: string }) =>
+        !!hit?.repo && isBuilderReadableRepo(hit.repo),
+    );
+    return {
+      ok: true,
+      results,
+      ...(results.length
+        ? {}
+        : {
+            note: 'No page matched those words — try the name the product map uses, or one word, before concluding nothing is documented.',
+          }),
     };
   }
 
