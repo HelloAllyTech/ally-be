@@ -21,6 +21,16 @@ const ROUTING = [
   '',
   '- `repos/ally-be.md` (4046w) — ally-be is the multi-tenant NestJS backend…',
   '',
+  '## Contributing & setup',
+  '',
+  '- `contributing/guide.md` (767w) — Branch naming, commit conventions…',
+  '',
+  "## Don't load these for a task",
+  '',
+  '- `log.md` — append-only history',
+  '',
+  '_43 pages, 73,221 words total._',
+  '',
 ].join('\n');
 
 const pack = (repo: string, body: string) => ({
@@ -93,12 +103,28 @@ describe('RoadmapCopilotProductMapService', () => {
     expect(text).toMatch(/ahead of what users have/);
   });
 
-  it('drops the deprecated wiki section and the index preamble', async () => {
+  it('keeps the wiki pages about the product and drops the ones about working on it', async () => {
     const text = await build().service.render();
 
+    expect(text).toContain('#### Platform & architecture');
+    expect(text).toContain('#### Per-repo pages');
+    // Deprecated product practice (Stacks replaced it), process pages, meta pages, preamble.
     expect(text).not.toContain('product/ui.md');
+    expect(text).not.toContain('contributing/guide.md');
+    expect(text).not.toContain('log.md');
     expect(text).not.toContain('Fetch as');
-    expect(text).toContain('## Per-repo pages');
+    expect(text).not.toContain('73,221 words');
+  });
+
+  it('leaves process boilerplate out of the repo docs list', async () => {
+    const text = await build({
+      docs: () => ({
+        ok: true,
+        files: ['README.md', 'CONTRIBUTING.md', 'AGENTS.md', 'DATA_SCHEMA.md'],
+      }),
+    }).service.render();
+
+    expect(text).toContain('- ally-be: README.md, DATA_SCHEMA.md\n');
   });
 
   /**

@@ -13,6 +13,27 @@ import { ROADMAP_COPILOT_PRODUCT_MAP } from '../constants/product-roadmap.consta
 /** The wiki's own one-line-per-page index, generated from page frontmatter. */
 const WIKI_ROUTING_PATH = 'wiki/ROUTING.md';
 
+/**
+ * Wiki index sections about working ON the codebase rather than what the product is — the
+ * deprecated product-practice pages (Stacks replaced them), contributing, agent memory, the
+ * skill template, the knowledge base's own meta pages.
+ */
+const WIKI_SECTIONS_DROPPED =
+  /deprecated|contributing|agent memory|skills|start here|don.t load/i;
+
+/** Root files that are process boilerplate in every repo, or a copy of the wiki index. */
+const ROOT_DOCS_DROPPED = new Set([
+  'AGENTS.md',
+  'CODE_OF_CONDUCT.md',
+  'CONTRIBUTING.md',
+  'DEPLOYMENT.md',
+  'DOCKER_TESTING_SETUP.md',
+  'SECURITY.md',
+  'TESTING.md',
+  'WIKI-ROUTING.md',
+  'pr_body.md',
+]);
+
 interface MapSection {
   text: string;
   /** False when a source could not be read — the result is then cached only briefly. */
@@ -192,9 +213,10 @@ export class RoadmapCopilotProductMapService {
   }
 
   /**
-   * The wiki's routing index, minus its preamble (fetch instructions for humans) and minus
-   * any section marked DEPRECATED — the old product-practice pages, which Stacks replaced and
-   * which would otherwise be offered as current guidance.
+   * The wiki's routing index, minus its preamble (fetch instructions for humans), its footer,
+   * and the sections about working on the codebase rather than what it is — above all the
+   * DEPRECATED product-practice pages, which Stacks replaced and which would otherwise be
+   * offered as current guidance. Headings are demoted to sit under this section's own.
    */
   private async wikiIndex(): Promise<MapSection> {
     const header = `### The wiki — read with wiki_read, path "wiki/" + the path below (e.g. "wiki/platform/architecture.md")`;
@@ -209,11 +231,20 @@ export class RoadmapCopilotProductMapService {
         complete: false,
       };
     }
-    const sections = result.content.split(/^(?=## )/m);
+    const sections: string[] = result.content.split(/^(?=## )/m);
     const kept = sections
-      .filter((section: string) => section.startsWith('## '))
+      .filter((section) => section.startsWith('## '))
       .filter(
-        (section: string) => !/^## [^\n]*deprecated/i.test(section.trim()),
+        (section) =>
+          !WIKI_SECTIONS_DROPPED.test(section.slice(0, section.indexOf('\n'))),
+      )
+      .map((section) =>
+        section
+          .replace(/^## /, '#### ')
+          .split('\n')
+          // The footer is an italic page/word count for people choosing what to load.
+          .filter((line) => !/^_.*_$/.test(line.trim()))
+          .join('\n'),
       )
       .join('')
       .trim();
@@ -243,7 +274,9 @@ export class RoadmapCopilotProductMapService {
           result?.message ?? result?.error ?? 'unknown error',
         )})`;
       }
-      const files: string[] = Array.isArray(result.files) ? result.files : [];
+      const files: string[] = (
+        Array.isArray(result.files) ? result.files : []
+      ).filter((path: string) => !ROOT_DOCS_DROPPED.has(path));
       if (!files.length) return `- ${repo}: no markdown docs`;
       const shown = files.slice(0, ROADMAP_COPILOT_PRODUCT_MAP.DOCS_PER_REPO);
       const more = files.length - shown.length;

@@ -203,7 +203,8 @@ export class RoadmapCopilotToolsService {
           'pages, and the wiki — and get back matching file paths. The quickest way to learn ' +
           'how an area works today, what it is called and why it is built that way. Read the ' +
           'one or two that look right with github_read_file (or wiki_read for the wiki). ' +
-          'Matches words, not meaning: use the names the product map uses.',
+          'Every word must match, so search one to three words — a screen label or feature ' +
+          'name from the product map — never a sentence.',
         input_schema: {
           type: 'object',
           properties: {
@@ -223,7 +224,8 @@ export class RoadmapCopilotToolsService {
           'Search the Ally codebase and get back matching file paths. Use it to learn how an ' +
           'area works today when the docs do not say, and to check whether something already ' +
           'exists, half-exists, or lives behind a feature toggle — not to design the build. ' +
-          'Matches exact words and identifiers; the product map tells you which to search for.',
+          'Every word must match, so search one identifier or one to three words. A ' +
+          "screen's feature-toggle key from the product map finds its route and controller.",
         input_schema: {
           type: 'object',
           properties: {
