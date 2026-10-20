@@ -515,23 +515,47 @@ describe('RoadmapCopilotService', () => {
       expect(turn.draft?.description).toBe('A draft');
     });
 
+    /**
+     * An opportunity does not have to be narrow to be well defined: a broad one is handed over
+     * at its honest size rather than withheld until it is cut down to a slice.
+     */
+    it.each(['l', 'xl', 'xxl'])(
+      'hands over a %s draft rather than asking to narrow it',
+      (effort) => {
+        const turn = service.buildTurn(
+          allMet({
+            reply: 'Here is your draft.',
+            draft: { description: 'A draft', productGoal: null, effort },
+          }),
+          goals,
+          null,
+        );
+        expect(turn.draft).toMatchObject({ description: 'A draft', effort });
+        expect(turn.readinessToken).toBeTruthy();
+        expect(turn.reply).toBe('Here is your draft.');
+      },
+    );
+
     it.each([
-      ['too big to file', 'l'],
       ['not a live size', 'medium-ish'],
       ['unsized', null],
-    ])('withholds a draft that is %s and asks to narrow', (_label, effort) => {
-      const turn = service.buildTurn(
-        allMet({
-          reply: 'Here is your draft.',
-          draft: { description: 'A draft', productGoal: null, effort },
-        }),
-        goals,
-        null,
-      );
-      expect(turn.draft).toBeNull();
-      expect(turn.readinessToken).toBeNull();
-      expect(turn.reply).toMatch(/more than one opportunity/);
-    });
+    ])(
+      'withholds a draft that is %s and asks about scope',
+      (_label, effort) => {
+        const turn = service.buildTurn(
+          allMet({
+            reply: 'Here is your draft.',
+            draft: { description: 'A draft', productGoal: null, effort },
+          }),
+          goals,
+          null,
+        );
+        expect(turn.draft).toBeNull();
+        expect(turn.readinessToken).toBeNull();
+        expect(turn.reply).toMatch(/can't put a size on this/);
+        expect(turn.reply).not.toMatch(/single piece|narrow/);
+      },
+    );
 
     it('keeps the previous brief when a turn writes none', () => {
       const previous = normaliseOpportunityBrief(allMet().brief);

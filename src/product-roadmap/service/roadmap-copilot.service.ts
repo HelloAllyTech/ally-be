@@ -486,7 +486,7 @@ export class RoadmapCopilotService {
       ROADMAP_READINESS_CRITERIA.map(
         (c) => `- id: ${c.id}\n  criterion: ${c.label}\n  means: ${c.hint}`,
       ).join('\n'),
-      `Fileable sizes: ${ROADMAP_FILEABLE_EFFORTS.join(', ')}. Anything larger must be narrowed before it can be filed.`,
+      `Fileable sizes: ${ROADMAP_FILEABLE_EFFORTS.join(', ')}. Size what was described, not a slice of it; a draft with no size cannot be filed.`,
       `# The board right now — the ${ROADMAP_COPILOT.BOARD_SNAPSHOT_ROWS} highest-ranked open opportunities`,
       board,
     ].join('\n\n');
@@ -600,8 +600,8 @@ export class RoadmapCopilotService {
         ? submitted.draft.description.trim()
         : '';
     const effort = this.validEffort(submitted?.draft?.effort);
-    // Unsized counts as too big: "could not tell how big this is" is not a pass at the gate
-    // either, and there is no override to fall back on.
+    // Every size files, but not NO size: "could not tell how big this is" means it is not yet
+    // well defined enough to vote on, and there is no override to fall back on.
     const sizeFileable =
       effort !== null &&
       (ROADMAP_FILEABLE_EFFORTS as readonly string[]).includes(effort);
@@ -623,7 +623,7 @@ export class RoadmapCopilotService {
     if (withheldOnSize) {
       this.logger.warn(
         `[ROADMAP] Copilot drafted a ${effort ?? 'unsized'} opportunity. Withholding it and ` +
-          'asking to narrow rather than handing over a draft that cannot be filed.',
+          'asking about scope rather than handing over a draft that cannot be filed.',
       );
     }
 
@@ -632,8 +632,8 @@ export class RoadmapCopilotService {
 
     return {
       reply: withheldOnSize
-        ? 'That sounds like more than one opportunity. Which single piece of it would make ' +
-          'the biggest difference on its own, if it shipped first?'
+        ? "I can't put a size on this yet, so it isn't ready to file. What is in scope " +
+          'for it, and what is deliberately left out?'
         : reply || 'Sorry — I lost that. Could you say it again?',
       gates,
       draft,
