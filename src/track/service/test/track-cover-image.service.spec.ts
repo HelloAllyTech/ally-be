@@ -71,7 +71,7 @@ describe('TrackCoverImageService', () => {
     service = module.get(TrackCoverImageService);
   });
 
-  it('sends the prompt verbatim, stores under track-media/image/ and returns the URL', async () => {
+  it('sends the prompt verbatim at medium quality, stores under track-media/image/ and returns the URL', async () => {
     mockProvider.generateImage.mockResolvedValue(Buffer.from('png-bytes'));
 
     const result = await service.generate(dto);
@@ -79,6 +79,7 @@ describe('TrackCoverImageService', () => {
     expect(mockProvider.generateImage).toHaveBeenCalledWith(
       dto.prompt,
       '1536x1024',
+      { quality: 'medium' },
     );
     const upload = mockS3.uploadStream.mock.calls[0][0];
     expect(upload.Bucket).toBe('learn-media');

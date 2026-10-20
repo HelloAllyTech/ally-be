@@ -8,15 +8,15 @@ import {
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ImageGenerationProviderFactory } from 'src/image-generation/provider/image-generation-provider.factory';
-import { ImageGenerationProvider } from 'src/image-generation/interface/image-generation-provider.interface';
+import {
+  ImageGenerationProvider,
+  INTERACTIVE_IMAGE_QUALITY,
+} from 'src/image-generation/interface/image-generation-provider.interface';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { LoggerService } from 'src/logger/logger.service';
 import { TRACK_COVER_IMAGE_SIZE } from '../constants/track.constant';
-import {
-  GenerateTrackCoverImageRequestDto,
-  GenerateTrackCoverImageResponseDto,
-} from '../dto/generate-track-cover-image.dto';
+import { GenerateTrackCoverImageRequestDto } from '../dto/generate-track-cover-image.dto';
 
 /** Same prefix the editor's cover uploads land under, so both are one kind. */
 const TRACK_COVER_MEDIA_PREFIX = 'track-media/image';
@@ -26,7 +26,8 @@ const UNAVAILABLE_MESSAGE =
 
 /**
  * Track settings → "Generate cover image": one image from a trainer-written
- * prompt, stored where an uploaded cover would be.
+ * prompt, stored where an uploaded cover would be. Runs inside an
+ * ImageGenerationJobService job — the controller returns before it finishes.
  *
  * Deliberately not the scenario cover-image service: that one renders a
  * persona-portrait template and files every image into the roleplay cover
@@ -49,7 +50,7 @@ export class TrackCoverImageService {
 
   async generate(
     dto: GenerateTrackCoverImageRequestDto,
-  ): Promise<GenerateTrackCoverImageResponseDto> {
+  ): Promise<{ imageUrl: string }> {
     const bucket = this.configService.s3.learnMediaPublicBucket;
     const region = this.configService.aws.region;
     if (!bucket || !region) {
@@ -70,7 +71,9 @@ export class TrackCoverImageService {
     const startedAt = Date.now();
     let image: Buffer;
     try {
-      image = await provider.generateImage(dto.prompt, TRACK_COVER_IMAGE_SIZE);
+      image = await provider.generateImage(dto.prompt, TRACK_COVER_IMAGE_SIZE, {
+        quality: INTERACTIVE_IMAGE_QUALITY,
+      });
     } catch (error) {
       this.logger.error(
         `[TRACK_COVER] failed provider=${providerType} elapsedMs=${Date.now() - startedAt}: ${
@@ -89,6 +92,7 @@ export class TrackCoverImageService {
         trackTitle: dto.trackTitle ?? null,
         promptLength: dto.prompt.length,
         size: TRACK_COVER_IMAGE_SIZE,
+        quality: INTERACTIVE_IMAGE_QUALITY,
       },
     });
 

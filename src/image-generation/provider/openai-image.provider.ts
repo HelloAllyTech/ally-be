@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { AppConfigService } from 'src/config/config.service';
-import { ImageGenerationProvider } from '../interface/image-generation-provider.interface';
+import {
+  ImageGenerationOptions,
+  ImageGenerationProvider,
+} from '../interface/image-generation-provider.interface';
 
 @Injectable()
 export class OpenAiImageProvider implements ImageGenerationProvider {
@@ -30,12 +33,21 @@ export class OpenAiImageProvider implements ImageGenerationProvider {
     return this.client;
   }
 
-  async generateImage(prompt: string, size: string): Promise<Buffer> {
+  async generateImage(
+    prompt: string,
+    size: string,
+    options?: ImageGenerationOptions,
+  ): Promise<Buffer> {
+    const model = this.getModel();
     const response = await this.getClient().images.generate({
-      model: this.getModel(),
+      model,
       prompt,
       n: 1,
       size: size as OpenAI.Images.ImageGenerateParams['size'],
+      // low/medium/high are gpt-image tiers; dall-e models reject them.
+      ...(options?.quality && model.startsWith('gpt-image')
+        ? { quality: options.quality }
+        : {}),
     });
 
     const base64 = response.data?.[0]?.b64_json;

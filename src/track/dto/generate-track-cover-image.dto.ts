@@ -42,11 +42,3 @@ export class GenerateTrackCoverImageRequestDto {
   @MaxLength(300)
   trackTitle?: string;
 }
-
-export class GenerateTrackCoverImageResponseDto {
-  @ApiProperty({
-    description:
-      'Public URL of the generated image, under track-media/image/ like an uploaded cover',
-  })
-  imageUrl!: string;
-}

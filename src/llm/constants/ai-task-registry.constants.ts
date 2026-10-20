@@ -1267,7 +1267,11 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     task: LlmTask.GENERATE_COVER_IMAGE,
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An author generates a simulation cover image',
-    detail: 'Gemini renders from an aspect ratio rather than pixel dimensions.',
+    detail:
+      'Runs as a background job the editor polls (generate-jobs): at the default ' +
+      'quality gpt-image-1 took 79–95 s in prod, past the 60 s load-balancer idle ' +
+      'timeout. Sent at quality medium (~25 s). Gemini renders from an aspect ' +
+      'ratio rather than pixel dimensions and has no quality setting.',
     kind: AiTaskKind.IMAGE,
     provider: 'openai',
     defaultModel: 'gpt-image-1',
@@ -1283,8 +1287,10 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     detail:
       'One image per press, from the prompt exactly as the trainer edited it (the ' +
       'default prompt carries the style and safety rules; nothing is appended ' +
-      'server-side). Each retry after a rejected image is another call. Stored under ' +
-      'track-media/image/ and not added to the roleplay cover library.',
+      'server-side). Each retry after a rejected image is another call. Background ' +
+      'job the pop-up polls, at quality medium (~25 s) — the default ran past the ' +
+      '60 s load-balancer timeout. Stored under track-media/image/ and not added to ' +
+      'the roleplay cover library.',
     kind: AiTaskKind.IMAGE,
     provider: 'openai',
     defaultModel: 'gpt-image-1',
