@@ -74,6 +74,12 @@ JSON message, so the files have no placeholders. Both are AI-task-registry rows
 `llm_usage` with `metadata.experimentId`. The judge scores each criterion 1–5; the overall score is
 the weighted mean mapped to 0–100.
 
+## User feedback (Debrief improvements)
+
+Debrief skills can also be improved using direct learner feedback. When a learner rates a debrief (thumbs up/down) via the learner app, the rating is translated into a score (100 for positive, 0 for negative) and stored in `skill_experiment_observations`. 
+
+A weekly job (`SkillExperimentChallengerJobService`) aggregates this feedback and generates a new challenger prompt using the `skill_experiment_challenger_generator` system skill. This allows the debrief quality to improve recursively based on real user sentiment, handled automatically by the same engine that manages standard AI-judged experiments.
+
 ## Data
 
 `skill_experiment_observations` stores each judged execution's **raw input and output** — for the

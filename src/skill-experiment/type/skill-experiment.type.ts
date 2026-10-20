@@ -54,4 +54,6 @@ export interface SkillOutputReport {
   /** Set when the call failed (provider error, unparsable reply). */
   error?: string;
   tenantId?: string | null;
+  /** Metadata to store with the observation (e.g. scenarioSessionId). */
+  context?: Record<string, any> | null;
 }

@@ -1129,6 +1129,7 @@ export class AiService {
       ? null
       : await this.skillExperiments.assign(promptCode);
     const experimentInput = {
+      scenarioSessionId: scenarioSessionId ?? null,
       transcript: messages.map((m) => `${m.role}: ${m.content}`).join('\n'),
       languageCode: languageCode ?? null,
       workerType: supervisorContext?.workerType ?? null,

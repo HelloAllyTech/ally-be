@@ -128,6 +128,9 @@ export class SkillExperimentRouterService {
             : report.output.slice(0, SKILL_EXPERIMENT_ENGINE.MAX_OUTPUT_CHARS),
         skillError: report.error ? report.error.slice(0, 2000) : null,
         status: SkillObservationStatus.PENDING,
+        context: report.input?.scenarioSessionId
+          ? { scenarioSessionId: report.input.scenarioSessionId }
+          : null,
       });
       const live = this.snapshot?.get(arm.promptCode);
       if (live) live.pending += 1;

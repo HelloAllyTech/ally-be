@@ -276,6 +276,7 @@ export enum LlmTask {
   // llm_usage query.
   SKILL_EXPERIMENT_JUDGE = 'skill_experiment_judge',
   SKILL_EXPERIMENT_DESIGNER = 'skill_experiment_designer',
+  SKILL_EXPERIMENT_CHALLENGER_JOB = 'skill_experiment_challenger_job',
 
   // Course Copilot: the admin agent that interviews a trainer, plans a course
   // blueprint and generates every component into a DRAFT course. One label per

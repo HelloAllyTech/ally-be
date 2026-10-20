@@ -319,6 +319,11 @@ describe('AiService', () => {
         mockMessages,
         false,
         null,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'sess-1',
       );
 
       expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE);
@@ -334,7 +339,34 @@ describe('AiService', () => {
           output: JSON.stringify({ summary: 'ok' }),
           input: expect.objectContaining({
             transcript: 'COUNSELOR: Hello\nCLIENT: Hi',
+            scenarioSessionId: 'sess-1',
           }),
+        }),
+      );
+    });
+
+    it('records scenarioSessionId in input even when no experiment is live', async () => {
+      mockSkillExperiments.assign.mockResolvedValue(null);
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        false,
+        'en',
+        undefined,
+        'sess-1',
+      );
+
+      // assign is called but returns null
+      expect(mockSkillExperiments.assign).toHaveBeenCalled();
+      // record is called even with null arm (guard is internal to record)
+      expect(mockSkillExperiments.record).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          input: expect.objectContaining({ scenarioSessionId: 'sess-1' }),
         }),
       );
     });

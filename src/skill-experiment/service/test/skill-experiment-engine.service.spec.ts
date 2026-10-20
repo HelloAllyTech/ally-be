@@ -320,6 +320,23 @@ describe('SkillExperimentEngineService', () => {
       expect(h.experiment.challengerVariantId).toBe('v-1');
       expect(h.events).toEqual([]);
     });
+
+    it('promotes a challenger based on binary scores (user feedback simulated)', async () => {
+      // 0 and 100 scores average to a mean.
+      // Champion: 30 positive, 10 negative -> mean 75
+      // Challenger: 38 positive, 2 negative -> mean 95
+      const h = harness({
+        withChallenger: true,
+        stats: { 'v-0': arm(40, 75, 43), 'v-1': arm(40, 95, 21) },
+        experiment: { minSamplesPerVariant: 30, minImprovement: 2 },
+      });
+      await run(h);
+
+      expect(h.experiment.championVariantId).toBe('v-1');
+      expect(h.events.map((e) => e.type)).toContain(
+        SkillExperimentEventType.CHAMPION_CHANGED,
+      );
+    });
   });
 
   describe('designer failures', () => {
