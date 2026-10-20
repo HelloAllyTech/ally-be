@@ -3,7 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -35,6 +38,10 @@ import {
   GenerateCoverImageResponseDto,
 } from '../dto/generate-cover-image.dto';
 import { CoverImageGenerationService } from '../service/cover-image-generation.service';
+import { ImageGenerationJobService } from 'src/image-generation/service/image-generation-job.service';
+import { ImageGenerationJobDto } from 'src/image-generation/dto/image-generation-job.dto';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 @ApiTags('Scenario Cover Image Library')
 @ApiBearerAuth()
@@ -44,13 +51,58 @@ export class ScenarioCoverImageLibraryController {
   constructor(
     private readonly scenarioCoverImageLibraryService: ScenarioCoverImageLibraryService,
     private readonly coverImageGenerationService: CoverImageGenerationService,
+    private readonly imageGenerationJobService: ImageGenerationJobService,
   ) {}
+
+  @Post('generate-jobs')
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Start generating a scenario cover image with AI',
+    description:
+      'Same generation as POST generate, as a background job: returns 202 ' +
+      "with a job id at once, because generation can outlast the load balancer's " +
+      '60 s idle timeout. Poll GET generate-jobs/:jobId.',
+  })
+  @ApiResponse({ status: 202, type: ImageGenerationJobDto })
+  async startCoverImageGeneration(
+    @Body() generateCoverImageDto: GenerateCoverImageRequestDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<ImageGenerationJobDto> {
+    return this.imageGenerationJobService.start('scenario-cover', user.id, () =>
+      this.coverImageGenerationService.generateCoverImage(
+        generateCoverImageDto,
+      ),
+    );
+  }
+
+  @Get('generate-jobs/:jobId')
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
+  @ApiOperation({
+    summary: 'Poll a scenario cover image generation',
+    description:
+      "status is 'running', 'succeeded' (with imageUrl) or 'failed' (with an " +
+      'error to show the author). Only the user who started it can read it; ' +
+      'records expire after an hour.',
+  })
+  @ApiResponse({ status: 200, type: ImageGenerationJobDto })
+  @ApiResponse({ status: 404, description: 'Unknown, expired or not yours' })
+  async getCoverImageGeneration(
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<ImageGenerationJobDto> {
+    return this.imageGenerationJobService.get('scenario-cover', user.id, jobId);
+  }
 
   @Post('generate')
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
   @ApiOperation({
-    summary: 'Generate a scenario cover image with AI',
+    summary: 'Generate a scenario cover image with AI (deprecated)',
+    deprecated: true,
     description:
+      'Deprecated — use POST generate-jobs. Kept so an admin bundle deployed ' +
+      'before it keeps working; a generation slower than the load ' +
+      "balancer's 60 s idle timeout is cut off here. " +
       'Stateless: renders the managed `cover_image_generation` prompt with ' +
       'the scenario title/description, generates the image, stores it in S3 ' +
       'and the library, and returns the URL. The client saves it on the ' +

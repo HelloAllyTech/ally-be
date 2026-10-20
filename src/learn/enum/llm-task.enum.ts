@@ -229,6 +229,10 @@ export enum LlmTask {
   TRANSLATE_SCENARIO = 'translate_scenario',
   // Admin-dashboard scenario cover-image generation (Simulation Studio).
   GENERATE_COVER_IMAGE = 'generate_cover_image',
+  // Course editor (Track settings): a trainer generates the course cover from
+  // a prompt they wrote. Not the scenario template above, and not filed into
+  // the roleplay cover library.
+  GENERATE_COURSE_COVER_IMAGE = 'generate_course_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
   // Scribe voice note: turning one dictation transcript into note fields.

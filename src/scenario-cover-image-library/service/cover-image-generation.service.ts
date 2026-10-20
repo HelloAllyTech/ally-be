@@ -14,7 +14,10 @@ import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 import { ImageGenerationProviderFactory } from 'src/image-generation/provider/image-generation-provider.factory';
-import { DEFAULT_IMAGE_SIZE } from 'src/image-generation/interface/image-generation-provider.interface';
+import {
+  DEFAULT_IMAGE_SIZE,
+  INTERACTIVE_IMAGE_QUALITY,
+} from 'src/image-generation/interface/image-generation-provider.interface';
 import { ScenarioCoverImageLibraryService } from './scenario-cover-image-library.service';
 import { COVER_IMAGE_LIBRARY_S3_PREFIX } from '../constants/scenario-cover-image-library.constants';
 import {
@@ -120,7 +123,9 @@ export class CoverImageGenerationService {
 
     let imageBuffer: Buffer;
     try {
-      imageBuffer = await provider.generateImage(prompt, DEFAULT_IMAGE_SIZE);
+      imageBuffer = await provider.generateImage(prompt, DEFAULT_IMAGE_SIZE, {
+        quality: INTERACTIVE_IMAGE_QUALITY,
+      });
     } catch (error) {
       this.logger.error(
         `[COVER_IMAGE] failed provider=${providerType} elapsedMs=${Date.now() - startedAt}: ${
@@ -135,7 +140,11 @@ export class CoverImageGenerationService {
       model: provider.getModel(),
       task: LlmTask.GENERATE_COVER_IMAGE,
       unit: 'images',
-      metadata: { title: dto.title, size: DEFAULT_IMAGE_SIZE },
+      metadata: {
+        title: dto.title,
+        size: DEFAULT_IMAGE_SIZE,
+        quality: INTERACTIVE_IMAGE_QUALITY,
+      },
     });
 
     // Upload only after a successful generation so failures leave no orphans.
