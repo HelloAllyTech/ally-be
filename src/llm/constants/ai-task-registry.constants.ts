@@ -1999,6 +1999,28 @@ const COURSE_COPILOT_TASKS: AiTaskEntry[] = [
     promptOverride: 'course_copilot_course_reviewer',
   },
   {
+    id: 'course-copilot-landing-page',
+    task: LlmTask.COURSE_COPILOT_LANDING_PAGE,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      "An admin asks Course Copilot to draft a course's landing page story",
+    detail:
+      "One call per click on the builder's Landing page tab, outside any " +
+      'Copilot session. It drafts the hook, question, persona, first move, ' +
+      'chapter beats and teasers, outcomes and cast from the saved course ' +
+      '(sections, items, roleplay summaries, trigger warnings and the current ' +
+      'page). JSON mode, with one repair call if the output cannot be parsed. ' +
+      'The builder fills only empty fields; nothing is saved server-side. ' +
+      'Tagged with metadata.trackId rather than a session id, so it is not ' +
+      "counted against a build's budget.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'course_copilot_landing_page_writer',
+  },
+  {
     id: 'course-copilot-summary',
     task: LlmTask.COURSE_COPILOT_SUMMARY,
     runtime: LlmRuntime.ALLY_BE,

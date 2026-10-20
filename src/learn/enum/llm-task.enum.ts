@@ -293,6 +293,9 @@ export enum LlmTask {
   COURSE_COPILOT_ROLEPLAY_BRIEF = 'course_copilot_roleplay_brief',
   COURSE_COPILOT_IMAGE_PROMPT = 'course_copilot_image_prompt',
   COURSE_COPILOT_IMAGE = 'course_copilot_image',
+  // The one Course Copilot call made outside a session: an admin's click on the
+  // builder's Landing page tab. Tagged with metadata.trackId, not a session id.
+  COURSE_COPILOT_LANDING_PAGE = 'course_copilot_landing_page',
 
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',

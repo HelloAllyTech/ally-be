@@ -1,3 +1,4 @@
+import { TrackLandingPage } from 'src/track/type/track-landing-page.type';
 import {
   CourseBlueprint,
   CourseBlueprintItem,
@@ -113,6 +114,39 @@ export interface ImagePromptInput {
   title: string;
   /** Course description, or the article's imageBrief + excerpt. */
   context: string;
+  usageMetadata: Record<string, any>;
+}
+
+/** One section of the saved course, as the landing-page writer reads it. */
+export interface LandingPageSectionInput {
+  id: string;
+  title: string;
+  description?: string | null;
+  items: {
+    type: string;
+    title: string;
+    description?: string | null;
+    /** ROLEPLAY items only: the scenario behind the item. */
+    scenario?: { title?: string | null; story?: string | null };
+  }[];
+}
+
+/**
+ * Input to the landing-page writer. Unlike the content specialists it works
+ * from the SAVED course, outside any session, so it carries a track id rather
+ * than a session id.
+ */
+export interface LandingPageInput {
+  trackId: string;
+  title: string;
+  /** Plain text. */
+  description: string;
+  durationMinutes?: number | null;
+  sections: LandingPageSectionInput[];
+  /** Distinct English names of the trigger warnings on the course's roleplays. */
+  triggerWarnings: { name: string; sectionIds: string[] }[];
+  /** The page as saved, so a partial one stays consistent (an existing persona). */
+  currentPage: TrackLandingPage | null;
   usageMetadata: Record<string, any>;
 }
 

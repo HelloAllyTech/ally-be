@@ -90,7 +90,11 @@ export class TrackLearnerController {
       'No login required. Served only while the course is published and its ' +
       'author has switched public view on; otherwise 404, with the same ' +
       'message whether or not the course exists. Titles, descriptions and ' +
-      'component types only — no content, no progress.',
+      'component types only — no content, no progress. `story` is the ' +
+      "course's story-led landing page with its display rules already " +
+      'applied (null unless the author set a hook): a block is present only ' +
+      'when it is switched on and has the content it needs, and the content ' +
+      'note lists the trigger warnings on the course’s roleplays and cases.',
   })
   @Get('tracks/:trackId/public')
   async getPublicTrackOutline(
