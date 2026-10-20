@@ -1,5 +1,9 @@
-import { ROADMAP_BRIEF_LIMITS } from '../constants/product-roadmap.constants';
 import {
+  ROADMAP_BRIEF_LIMITS,
+  ROADMAP_LIMITS,
+} from '../constants/product-roadmap.constants';
+import {
+  RoadmapFilingInterviewMessage,
   RoadmapBriefEvidence,
   RoadmapBriefEvidenceSource,
   RoadmapBriefRating,
@@ -113,6 +117,34 @@ export const normaliseOpportunityBrief = (
     !brief.assessment.summary &&
     !brief.assessment.openRecommendations.length;
   return empty ? null : brief;
+};
+
+/**
+ * The filing conversation, coerced to the stored shape — or null when nothing in it survives.
+ *
+ * NEVER THROWS, on purpose. This rides on the filing request, and a filing refused over its
+ * transcript would lose the very conversation it was trying to keep. So a malformed message is
+ * dropped rather than rejected, content is capped at the interview route's own per-message
+ * limit, and the count at that route's message limit plus one: a turn carries at most that
+ * many messages, and filing sends them together with the copilot's answer to the last.
+ */
+export const normaliseFilingInterview = (
+  raw: unknown,
+): RoadmapFilingInterviewMessage[] | null => {
+  const messages = list<RoadmapFilingInterviewMessage>(
+    raw,
+    ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX + 1,
+    (item: any) => {
+      const role = item?.role;
+      if (role !== 'admin' && role !== 'agent') return null;
+      const content = text(
+        item?.content,
+        ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX,
+      );
+      return content ? { role, content } : null;
+    },
+  );
+  return messages.length ? messages : null;
 };
 
 /**

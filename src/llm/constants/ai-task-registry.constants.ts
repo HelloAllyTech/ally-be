@@ -1675,7 +1675,10 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     task: LlmTask.BUILDER_INTERVIEW,
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An admin talks to Builder about what to build',
-    detail: 'Streamed PRD interview, tool loop capped at 16 round-trips.',
+    detail:
+      'Streamed PRD interview, tool loop capped at 16 round-trips. A session opened from a ' +
+      "roadmap opportunity also carries the opportunity's hand-off (description, copilot brief, " +
+      'filing interview) as a third cached system block on every turn.',
     kind: AiTaskKind.COMPLETION,
     provider: 'gemini',
     defaultModel: 'gemini-2.5-pro',

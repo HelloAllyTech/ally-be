@@ -62,6 +62,17 @@ export const BUG_REPORT_RATE_LIMIT = {
  */
 export const BUILDER_SEED_TITLE_MAX = 80;
 
+/**
+ * How much of the filing interview the Builder hand-off carries, in characters.
+ *
+ * Bounded here, by the side that knows the transcript's shape, so that an over-long one loses
+ * its middle — the hand-off keeps the opening ask and the most recent turns, where the
+ * decisions landed. Left to Builder's own cap (BUILDER_HANDOFF_CONTEXT_MAX, which is larger),
+ * it would be cut from the end, which is exactly the part worth keeping. A ten-minute interview
+ * is around 10–15k characters; this is for an unusually long one.
+ */
+export const BUILDER_HANDOFF_TRANSCRIPT_MAX = 80_000;
+
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,
   PRD_MAX: 20000,

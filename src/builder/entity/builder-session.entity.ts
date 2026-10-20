@@ -124,6 +124,26 @@ export class BuilderSession extends BaseWithoutTenantEntity {
   metadata?: Record<string, any> | null;
 
   /**
+   * What the thing that started this session already settled, handed over so the interview
+   * starts where that work ended rather than from zero. Today the only writer is the roadmap's
+   * "Open in Builder Agent", which renders the opportunity, the copilot's brief and the filing
+   * interview into it (RoadmapBuilderService). Builder treats it as opaque text: it knows
+   * nothing about opportunities, and the roadmap may depend on Builder but never the reverse.
+   *
+   * Frozen once written. It is rendered into the interview's cached system prefix on every
+   * turn, so a value that changed would cost a cache miss each time — and what was decided
+   * before the session began does not change after it.
+   *
+   * Its own column rather than a `metadata` key: the interview-summary writer replaces
+   * `metadata` wholesale from the copy it loaded, so a key written beside it by another path
+   * could be overwritten by a turn that started before it landed. `select: false` because the
+   * session list returns whole rows, unpaginated, and nothing there reads this — only the
+   * interview turn loads it (BuilderSessionService.getHandoffContext).
+   */
+  @Column({ type: 'text', nullable: true, select: false })
+  handoffContext?: string | null;
+
+  /**
    * Set when someone archives the session. Null = active. Sessions are shared,
    * so archiving hides it from every Builder user's default feed view — it does not touch status, and never cascades to the PRD,
    * transcript, runs, events, PRs or reports underneath it.

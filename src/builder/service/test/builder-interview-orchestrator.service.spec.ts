@@ -45,7 +45,11 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   /** Whole requests, for assertions about what was SENT rather than replayed. */
   let sentRequests: any[];
   let sessionRepository: { update: jest.Mock };
-  let sessionService: { getSession: jest.Mock; syncReadinessStatus: jest.Mock };
+  let sessionService: {
+    getSession: jest.Mock;
+    syncReadinessStatus: jest.Mock;
+    getHandoffContext: jest.Mock;
+  };
   let summariseCalls: number;
 
   beforeEach(() => {
@@ -80,6 +84,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     sessionService = {
       getSession: jest.fn().mockResolvedValue({ id: 'session-1', title: 'T' }),
       syncReadinessStatus: jest.fn().mockResolvedValue('scoping'),
+      getHandoffContext: jest.fn().mockResolvedValue(null),
     };
     toolsService = {
       getToolDefinitions: jest.fn().mockReturnValue([]),
@@ -246,6 +251,43 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     // The PRD and the admin's message ride in `messages`, after the cached
     // prefix. A volatile block inside it would invalidate the cache per turn.
     expect(JSON.stringify(system)).not.toContain('Cut the runner cost.');
+  });
+
+  /**
+   * A session opened from a roadmap opportunity carries what its filing interview settled.
+   * It rides as its own cached block, LAST — the two above stay a prefix every session shares
+   * — and never in `messages`, where a long interview's summariser would compress it away.
+   */
+  it('renders a hand-off as a third cached block, after the shared prefix', async () => {
+    sessionService.getHandoffContext.mockResolvedValue(
+      '## The opportunity\n\nLearners rate the debrief.',
+    );
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    const system = sentRequests[0].system;
+    expect(system).toHaveLength(3);
+    expect(system.slice(0, 2)).toEqual([
+      { text: 'Interview them.\n\n## Platform rules', cache: true },
+      { text: 'context', cache: true },
+    ]);
+    expect(system[2].cache).toBe(true);
+    expect(system[2].text).toContain('Learners rate the debrief.');
+    // The block says how to use it, since the interviewer prompt does not mention it.
+    expect(system[2].text).toContain('Treat every decision in it as settled');
+    expect(JSON.stringify(sentRequests[0].messages)).not.toContain(
+      'Learners rate the debrief.',
+    );
+  });
+
+  it('sends no hand-off block for a session started in Builder itself', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    expect(sentRequests[0].system).toHaveLength(2);
+    expect(JSON.stringify(sentRequests[0].system)).not.toContain('Hand-off');
   });
 
   /**

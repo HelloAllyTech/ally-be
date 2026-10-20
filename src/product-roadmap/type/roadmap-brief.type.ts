@@ -81,3 +81,15 @@ export interface RoadmapOpportunityBrief {
   alternativesDropped: string[];
   assessment: RoadmapBriefAssessment;
 }
+
+/**
+ * One message of the conversation that filed an opportunity through the copilot.
+ *
+ * `agent` is the copilot, `admin` the filer — the same two roles the interview route takes.
+ * Kept on the filed row (`roadmap_opportunities.interviewTranscript`) so the work that follows
+ * it, today a Builder session, can start where the conversation ended instead of re-asking it.
+ */
+export interface RoadmapFilingInterviewMessage {
+  role: 'admin' | 'agent';
+  content: string;
+}
