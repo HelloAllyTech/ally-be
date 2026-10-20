@@ -153,6 +153,8 @@ export class CourseCopilotLibraryService {
       [TrackGameKey.SNAKE]: 'Classic snake. Fast, playful break.',
       [TrackGameKey.SPROUT]:
         'Grow a plant by tending it — slow and restful, good after a hard roleplay.',
+      [TrackGameKey.BREATHING_EXERCISE]:
+        'A guided box-breathing exercise to help learners regulate their emotional state.',
     };
     return Object.values(TrackGameKey).map((key) => ({
       key,
