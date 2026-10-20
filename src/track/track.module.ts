@@ -4,6 +4,7 @@ import { LearnModule } from 'src/learn/learn.module';
 import { TenantModule } from 'src/tenant/tenant.module';
 import { LanguageModule } from 'src/language/language.module';
 import { AwsModule } from 'src/aws/aws.module';
+import { ImageGenerationModule } from 'src/image-generation/image-generation.module';
 import { CaseModule } from 'src/case/case.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
@@ -18,6 +19,7 @@ import { TrackService } from './service/track.service';
 import { TrackSharedService } from './service/track-shared.service';
 import { TrackTenantService } from './service/track-tenant.service';
 import { TrackMediaService } from './service/track-media.service';
+import { TrackCoverImageService } from './service/track-cover-image.service';
 import { TrackProgressService } from './service/track-progress.service';
 import { TrackEnrollmentService } from './service/track-enrollment.service';
 import { TrackResourceEmbedService } from './service/track-resource-embed.service';
@@ -52,6 +54,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TenantModule,
     LanguageModule,
     AwsModule,
+    ImageGenerationModule,
     forwardRef(() => PromptModule),
     LlmUsageModule,
     LlmAgentModule,
@@ -70,6 +73,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackSharedService,
     TrackTenantService,
     TrackMediaService,
+    TrackCoverImageService,
     TrackProgressService,
     TrackEnrollmentService,
     TrackResourceEmbedService,

@@ -49,6 +49,11 @@ import {
   UpdateTrackTranslationFieldsDto,
 } from '../dto/track-translation.dto';
 import { TrackTranslationService } from '../service/track-translation.service';
+import { TrackCoverImageService } from '../service/track-cover-image.service';
+import {
+  GenerateTrackCoverImageRequestDto,
+  GenerateTrackCoverImageResponseDto,
+} from '../dto/generate-track-cover-image.dto';
 import { TrackSortBy, TrackSortOrder } from '../type/track.type';
 
 @ApiTags('Learn Tracks (Admin)')
@@ -61,6 +66,7 @@ export class TrackAdminController {
     private readonly trackTenantService: TrackTenantService,
     private readonly trackMediaService: TrackMediaService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly trackCoverImageService: TrackCoverImageService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
@@ -107,6 +113,29 @@ export class TrackAdminController {
     @Body() dto: TrackMediaUploadRequestDto,
   ): Promise<TrackMediaUploadResponseDto> {
     return this.trackMediaService.getPresignedUploadUrl(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Generate a course cover image with AI',
+    description:
+      'Stateless: sends the trainer-edited prompt to the image provider ' +
+      'verbatim, stores the PNG under track-media/image/ and returns its URL. ' +
+      'Nothing is saved on the track — the editor applies an accepted image ' +
+      'to the form and the normal track save persists it.',
+  })
+  @ApiResponse({ status: 201, type: GenerateTrackCoverImageResponseDto })
+  @ApiResponse({ status: 400, description: 'The provider refused the prompt' })
+  @ApiResponse({ status: 502, description: 'The provider is busy or down' })
+  @ApiResponse({
+    status: 503,
+    description: 'Image generation is not configured on this environment',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/cover-image/generate')
+  async generateCoverImage(
+    @Body() dto: GenerateTrackCoverImageRequestDto,
+  ): Promise<GenerateTrackCoverImageResponseDto> {
+    return this.trackCoverImageService.generate(dto);
   }
 
   // Declared before the `tracks/:id` routes so "media" isn't captured as :id.

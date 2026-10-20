@@ -1275,6 +1275,23 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configPath: 'openai.imageModel',
   },
   {
+    id: 'course-cover-image',
+    task: LlmTask.GENERATE_COURSE_COVER_IMAGE,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'A trainer presses Generate in the cover-image pop-up on a course’s Track settings',
+    detail:
+      'One image per press, from the prompt exactly as the trainer edited it (the ' +
+      'default prompt carries the style and safety rules; nothing is appended ' +
+      'server-side). Each retry after a rejected image is another call. Stored under ' +
+      'track-media/image/ and not added to the roleplay cover library.',
+    kind: AiTaskKind.IMAGE,
+    provider: 'openai',
+    defaultModel: 'gpt-image-1',
+    configuredBy: 'OPENAI_IMAGE_MODEL / GEMINI_IMAGE_MODEL',
+    configPath: 'openai.imageModel',
+  },
+  {
     id: 'analytics-suggestions',
     task: LlmTask.ANALYTICS_SUGGESTIONS,
     runtime: LlmRuntime.ALLY_BE,
