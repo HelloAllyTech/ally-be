@@ -151,7 +151,7 @@ then the guidance, and treat the dashboard override as the thing that actually s
 
 ### Course Copilot (`course_copilot/`)
 
-One agent prompt and ten one-shot specialist prompts, all under the "Course Copilot" category
+One agent prompt and eleven one-shot specialist prompts, all under the "Course Copilot" category
 (see [`course-copilot.md`](./course-copilot.md)):
 
 - `interviewer_system.txt` is the agent system prompt (above): read through
@@ -161,9 +161,18 @@ One agent prompt and ten one-shot specialist prompts, all under the "Course Copi
   written here, because the tools enforce them.
 - The specialists (`blueprint_planner`, `article_writer`, `quiz_writer`, `journal_writer`,
   `annotation_writer`, `course_meta`, `course_reviewer`, `image_prompt`, `roleplay_brief`,
-  `history_summary`) are templates with `{{variables}}` rendered by `renderTemplate`, called in
+  `history_summary`, `landing_page_writer`) are templates with `{{variables}}` rendered by `renderTemplate`, called in
   JSON mode. Unlike the agent prompt they **throw** when the row is missing — a course built
   from a fallback prompt would be quietly worse rather than visibly broken.
+- `landing_page_writer` is the one specialist that runs outside a session: the builder's Landing
+  page tab calls it (`POST /v1/course-copilot/tracks/:trackId/landing-page-draft`) against the
+  *saved* course and the model's answer is never stored — the builder fills only empty fields.
+  Its output is `TrackLandingPage` minus `version`, `persona.imageUrl` and `persona.characterId`,
+  and `normaliseLandingPageDraft` enforces the limits, the known section ids, the single hard
+  call and the no-exclamation-marks rule in code. The prompt's writing rules (the hook opens on a
+  person and an extraordinary moment; exactly three replies, each labelled for the learner's move
+  and never scoring the client's outcome; teasers that never reveal a roleplay's hidden events or
+  a quiz answer) are the product's design rules, so change them deliberately.
 - Like `character_interview/`, each specialist's output shape is **also validated in code**
   (`src/course-copilot/service/specialists/*` normalise ids and shapes, then run the track
   validator). The same rule applies: if a prompt may be dashboard-overridden, a changed output

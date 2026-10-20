@@ -11,6 +11,7 @@ import {
   TrackStatus,
 } from '../../type/track.type';
 import { QuizQuestionType } from '../../type/quiz.type';
+import { StoryBeat } from '../../type/track-landing-page.type';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -35,6 +36,7 @@ describe('TrackEnrollmentService — shared course link', () => {
   const TENANT_ID = 'tenant-1';
   const USER_ID = 42;
 
+  const dataSource = { query: jest.fn() };
   const trackRepository = { findOne: jest.fn() };
   const trackTenantRepository = { findOne: jest.fn() };
   const trackEnrollmentRepository = { findByTrackAndUser: jest.fn() };
@@ -49,7 +51,7 @@ describe('TrackEnrollmentService — shared course link', () => {
   };
 
   const service = new TrackEnrollmentService(
-    {} as any, // dataSource
+    dataSource as any,
     trackRepository as any,
     trackTenantRepository as any,
     trackEnrollmentRepository as any,
@@ -127,6 +129,7 @@ describe('TrackEnrollmentService — shared course link', () => {
     trackEnrollmentRepository.findByTrackAndUser.mockResolvedValue(null);
     trackTenantRepository.findOne.mockResolvedValue({ id: 'mapping' });
     cohortVisibilityService.canAccess.mockResolvedValue(true);
+    dataSource.query.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -200,6 +203,134 @@ describe('TrackEnrollmentService — shared course link', () => {
       await expect(service.getPublicTrackOutline(TRACK_ID)).rejects.toThrow(
         new NotFoundException('This course is not available'),
       );
+    });
+
+    describe('story', () => {
+      const landingPage = {
+        version: 1,
+        hero: {
+          hook: 'Meera’s message arrives at 2am.',
+          question: 'Will you know what to say?',
+          courseLine: null,
+          buttonLabel: null,
+        },
+        persona: {
+          name: 'Meera, 19',
+          descriptor: null,
+          imageUrl: null,
+          characterId: 'character-internal',
+        },
+        arc: {
+          enabled: true,
+          chapters: [
+            {
+              sectionId: 'section-1',
+              beat: 'SETUP',
+              teaser: 'It starts quietly.',
+            },
+            { sectionId: 'section-gone', beat: 'CLIMAX', teaser: 'Deleted.' },
+          ],
+          hardCallSectionId: 'section-1',
+        },
+        xp: { enabled: true },
+      };
+
+      it('is null for a course with no landing page, and runs no extra query', async () => {
+        trackSharedService.getTrackWithStructure.mockResolvedValue(structure());
+
+        const outline = await service.getPublicTrackOutline(TRACK_ID);
+
+        expect(outline.story).toBeNull();
+        expect(dataSource.query).not.toHaveBeenCalled();
+      });
+
+      it('is null when the landing page has no hook (classic layout), without querying', async () => {
+        trackSharedService.getTrackWithStructure.mockResolvedValue(
+          structure({
+            landingPage: { ...landingPage, hero: { hook: '   ' } },
+          }),
+        );
+
+        const outline = await service.getPublicTrackOutline(TRACK_ID);
+
+        expect(outline.story).toBeNull();
+        expect(dataSource.query).not.toHaveBeenCalled();
+      });
+
+      it('applies the display rules: arc from the live sections, stale ids ignored', async () => {
+        trackSharedService.getTrackWithStructure.mockResolvedValue(
+          structure({ landingPage }),
+        );
+
+        const { story } = await service.getPublicTrackOutline(TRACK_ID);
+
+        expect(story).toMatchObject({
+          hook: 'Meera’s message arrives at 2am.',
+          question: 'Will you know what to say?',
+          persona: { name: 'Meera, 19', descriptor: null, imageUrl: null },
+          firstMove: null,
+          outcomes: null,
+          arc: {
+            chapters: [
+              {
+                sectionId: 'section-1',
+                beat: StoryBeat.SETUP,
+                teaser: 'It starts quietly.',
+              },
+            ],
+            hardCallSectionId: 'section-1',
+          },
+          // quiz 30 + roleplay (0 + 10 completion award)
+          xp: { activityXp: 40, hasRoleplays: true },
+          contentNotes: null,
+        });
+        expect(JSON.stringify(story)).not.toContain('section-gone');
+        expect(JSON.stringify(story)).not.toContain('character-internal');
+      });
+
+      it('groups trigger warnings by section with one query, localised for the resolved language', async () => {
+        trackLocalizationService.resolveLearnerLanguage.mockResolvedValueOnce(
+          'hi',
+        );
+        trackSharedService.getTrackWithStructure.mockResolvedValue(
+          structure({ landingPage }),
+        );
+        dataSource.query.mockResolvedValue([
+          {
+            sectionId: 'section-1',
+            name: 'Suicide',
+            translations: { hi: { name: 'आत्महत्या' } },
+          },
+          { sectionId: 'section-1', name: 'Grief', translations: null },
+        ]);
+
+        const { story } = await service.getPublicTrackOutline(TRACK_ID, 'hi');
+
+        expect(dataSource.query).toHaveBeenCalledTimes(1);
+        expect(dataSource.query).toHaveBeenCalledWith(expect.any(String), [
+          TRACK_ID,
+        ]);
+        expect(story?.contentNotes).toEqual({
+          warnings: [
+            { name: 'Grief', chapters: [1] },
+            { name: 'आत्महत्या', chapters: [1] },
+          ],
+          extraNote: null,
+        });
+      });
+
+      it('reads the CASE items’ scenarios too, through case_items', async () => {
+        trackSharedService.getTrackWithStructure.mockResolvedValue(
+          structure({ landingPage }),
+        );
+
+        await service.getPublicTrackOutline(TRACK_ID);
+
+        const sql = dataSource.query.mock.calls[0][0] as string;
+        expect(sql).toContain('"case_items"');
+        expect(sql).toContain('"scenario_trigger_warnings"');
+        expect(sql).toContain('"trigger_warnings"');
+      });
     });
 
     it('needs no signed-in user', async () => {

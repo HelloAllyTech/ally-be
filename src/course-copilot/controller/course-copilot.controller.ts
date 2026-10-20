@@ -45,6 +45,7 @@ import { CourseCopilotOrchestratorService } from '../service/course-copilot-orch
 import { CourseCopilotBlueprintService } from '../service/course-copilot-blueprint.service';
 import { CourseCopilotBuildService } from '../service/course-copilot-build.service';
 import { CourseCopilotCostService } from '../service/course-copilot-cost.service';
+import { CourseCopilotLandingPageService } from '../service/course-copilot-landing-page.service';
 import {
   COURSE_COPILOT_ANALYTICS_EVENTS,
   CourseCopilotAnalyticsService,
@@ -80,6 +81,7 @@ export class CourseCopilotController {
     private readonly costService: CourseCopilotCostService,
     private readonly redisService: RedisService,
     private readonly analytics: CourseCopilotAnalyticsService,
+    private readonly landingPageService: CourseCopilotLandingPageService,
   ) {}
 
   @Post('sessions')
@@ -240,6 +242,25 @@ export class CourseCopilotController {
   ) {
     await this.sessionService.archive(sessionId, user.id);
     return { success: true };
+  }
+
+  @Post('tracks/:trackId/landing-page-draft')
+  @RequireFeatureToggle(FeatureToggleKey.COURSE_COPILOT, EDIT)
+  @ApiOperation({
+    summary:
+      "Draft a course's story-led landing page from the saved course (nothing is saved)",
+    description:
+      'Reads the saved course — title, description, sections, items, roleplay ' +
+      'summaries, trigger warnings and the current landing page — and returns ' +
+      '`{ draft }`, a full landing page: chapters only for sections that exist, ' +
+      'no persona image or character id, every block switched on. The caller ' +
+      'merges it into the fields the author left empty and saves through the ' +
+      "course's own PUT. 404 when the course does not exist; 502 with a " +
+      'readable message when the model output cannot be used after one repair ' +
+      'pass.',
+  })
+  draftLandingPage(@Param('trackId', ParseUUIDPipe) trackId: string) {
+    return this.landingPageService.draft(trackId);
   }
 
   @Post('sessions/:sessionId/messages/stream')
