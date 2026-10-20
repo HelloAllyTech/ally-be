@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  NotFoundException,
+  ValidationPipe,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { v4 as uuidv4 } from 'uuid';
 import { BugHunterPipelineController } from './bug-hunter-pipeline.controller';
@@ -43,6 +47,7 @@ describe('BugHunterPipelineController', () => {
 
     mockBugFindingService = {
       persistFindings: jest.fn().mockResolvedValue([]),
+      getOne: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -147,6 +152,20 @@ describe('BugHunterPipelineController', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  describe('getFindingForPipeline', () => {
+    it('should return 204 No Content when the finding does not exist', async () => {
+      const findingId = uuidv4();
+      (mockBugFindingService.getOne as jest.Mock).mockRejectedValue(
+        new NotFoundException(),
+      );
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/bug-hunter/pipeline/findings/${findingId}`)
+        .set('x-api-key', 'test-api-key')
+        .expect(204);
+    });
   });
 
   it('should 404 the old /pipeline/runs/:id/model route and never call the service', async () => {

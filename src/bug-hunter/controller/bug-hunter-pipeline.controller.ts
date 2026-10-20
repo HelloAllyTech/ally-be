@@ -4,11 +4,14 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -20,6 +23,7 @@ import {
 
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { AppConfigService } from 'src/config/config.service';
+import { Response } from 'express';
 
 import { BugHunterService } from '../service/bug-hunter.service';
 import { BugFindingService } from '../service/bug-finding.service';
@@ -566,10 +570,20 @@ export class BugHunterPipelineController {
       'reads the bug itself, plus any escalation answer already on record ' +
       'from a previous attempt, from here.',
   })
+  @HttpCode(200)
   async getFindingForPipeline(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<BugFindingDto> {
-    return toFindingDto(await this.bugFindingService.getOne(id));
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<BugFindingDto | void> {
+    try {
+      return toFindingDto(await this.bugFindingService.getOne(id));
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        res.status(204);
+        return;
+      }
+      throw error;
+    }
   }
 
   @Get('pipeline/repo-commands')
