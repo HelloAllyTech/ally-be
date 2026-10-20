@@ -12,7 +12,7 @@
 > live in the separate **`ally-ai`** repository (`HelloAllyTech/ally-ai`), checked out alongside
 > this one in the workspace.
 >
-> Last reconciled with the codebase: **2026-06-12**.
+> Last reconciled with the codebase: **2026-10-20**.
 
 ---
 
@@ -814,9 +814,9 @@ enum column is a CHECK listed in `check-constraints-cover-enums.spec.ts`.
 | `skill_experiment_observations` | BaseWithoutTenant | `id` (uuid), `experimentId`/`variantId` (FKs ON DELETE CASCADE), `promptCode`, `tenantId` (nullable), `input` (jsonb — the data the skill ran on, string fields capped at 30k chars), `output` (text), `skillError`, `status` (CHECK `pending`/`judged`/`failed`), `formatOk`, `score` (numeric(5,2), 0–100), `criterionScores` (jsonb `{key: {score 1–5, reason}}`), `judgeSummary`, `judgeModel`, `judgeError`, `judgeAttempts`, `judgedAt`, `context` (jsonb); idx `(experimentId, status)`, `(variantId, status)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **Holds raw skill input and output** (e.g. a roleplay transcript and its debrief) and is **kept indefinitely** — a product decision; `tenantId` is stamped so it can be scoped or purged per tenant later. `context` stores metadata like `scenarioSessionId`. Readable only with `view:admin:skill-experiments`, granted to roles holding `edit:admin:prompts` (not multi-tenant admins) |
 | `skill_experiment_events`       | BaseWithoutTenant | `id` (uuid), `experimentId` (FK ON DELETE CASCADE), `variantId` (nullable, no FK), `type` (CHECK, 13 values — `started`, `variant_launched`, `champion_changed`, `paused`, `applied` …), `message` (text the admin reads), `metadata` (jsonb — numbers only, never skill input/output), `actorId` (null = the loop); idx `(experimentId, createdAt)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The append-only timeline                                                                                                                                                                                                                                                                                                                                                                  |
 
-**Cost telemetry:** judge and designer calls record to `llm_usage` under
-`LlmTask.SKILL_EXPERIMENT_JUDGE` / `SKILL_EXPERIMENT_DESIGNER` with `metadata.experimentId`, which is
-how the admin drawer shows an experiment's spend.
+**Cost telemetry:** judge, designer and challenger calls record to `llm_usage` under
+`LlmTask.SKILL_EXPERIMENT_JUDGE`, `SKILL_EXPERIMENT_DESIGNER` or `SKILL_EXPERIMENT_CHALLENGER_JOB`
+with `metadata.experimentId`, which is how the admin drawer shows an experiment's spend.
 
 ### 3.19 Course Copilot (`course-copilot`)
 
