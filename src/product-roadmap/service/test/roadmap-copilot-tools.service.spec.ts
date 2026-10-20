@@ -52,6 +52,7 @@ describe('RoadmapCopilotToolsService', () => {
       'analytics_ask',
       'ux_signals_lookup',
       'bug_findings_search',
+      'docs_search',
       'github_search_code',
       'github_read_file',
       'github_repo_tree',
@@ -151,6 +152,81 @@ describe('RoadmapCopilotToolsService', () => {
       ROADMAP_COPILOT.TOOL_RESULT_MAX_CHARS + 100,
     );
     expect(outcome.modelResult).toMatch(/truncated/);
+  });
+
+  describe('docs_search', () => {
+    it('searches markdown only, and drops hits in repos the copilot cannot read', async () => {
+      const searchCode = jest.fn().mockResolvedValue({
+        ok: true,
+        totalCount: 3,
+        results: [
+          { repo: 'ally-be', path: 'docs/course-copilot.md' },
+          { repo: 'infra', path: 'README.md' },
+          { repo: 'helloallytech.github.io', path: 'wiki/repos/ally-be.md' },
+        ],
+      });
+      const { service } = build({ githubRead: { searchCode } });
+
+      const outcome = await service.execute(
+        'docs_search',
+        { query: 'course copilot' },
+        { userId: 1 },
+      );
+
+      expect(searchCode).toHaveBeenCalledWith(
+        'course copilot extension:md',
+        undefined,
+      );
+      expect(JSON.parse(outcome.modelResult).results).toEqual([
+        { repo: 'ally-be', path: 'docs/course-copilot.md' },
+        { repo: 'helloallytech.github.io', path: 'wiki/repos/ally-be.md' },
+      ]);
+      expect(outcome.summary).toBe('2 matching pages');
+    });
+
+    it('scopes to one repo when asked', async () => {
+      const searchCode = jest.fn().mockResolvedValue({ ok: true, results: [] });
+      const { service } = build({ githubRead: { searchCode } });
+
+      const outcome = await service.execute(
+        'docs_search',
+        { query: 'roleplay logs', repo: 'ally-web' },
+        { userId: 1 },
+      );
+
+      expect(searchCode).toHaveBeenCalledWith(
+        'roleplay logs extension:md',
+        'ally-web',
+      );
+      // Nothing found must not read as "nothing documented".
+      expect(JSON.parse(outcome.modelResult).note).toMatch(/before concluding/);
+    });
+
+    it('passes a GitHub failure through as a failure, not as an empty result', async () => {
+      const { service } = build({
+        githubRead: {
+          searchCode: jest.fn().mockResolvedValue({
+            ok: false,
+            error: 'github_not_configured',
+          }),
+        },
+      });
+
+      const outcome = await service.execute(
+        'docs_search',
+        { query: 'scribe' },
+        { userId: 1 },
+      );
+
+      expect(outcome.ok).toBe(false);
+      expect(outcome.summary).toBe("Couldn't check: github_not_configured");
+    });
+
+    it('describes itself to the admin as reading the docs', () => {
+      expect(
+        build().service.describe('docs_search', { query: 'debrief' }),
+      ).toBe('Searching the docs for "debrief"');
+    });
   });
 
   it('tells the model when interview notes found nothing, so it tries a shorter keyword', async () => {

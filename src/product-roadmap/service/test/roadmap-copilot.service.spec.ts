@@ -158,6 +158,12 @@ describe('RoadmapCopilotService', () => {
         ]),
       } as any,
       { issue } as any,
+      {
+        render: jest.fn(
+          async () =>
+            "# Ally as built — the product map\n- Roleplay Logs (`roleplay_logs`) — every learner's sessions.",
+        ),
+      } as any,
     );
     return { service, requests, tools, issue, llmUsage, factory, prompts };
   };
@@ -307,19 +313,26 @@ describe('RoadmapCopilotService', () => {
       );
 
       const system = requests[0].system as { text: string; cache?: boolean }[];
+      expect(system).toHaveLength(3);
       expect(system[0]).toEqual({ text: 'SYSTEM PROMPT' });
+      // The product map first: it changes least, so a board change re-pays only the block after.
       expect(system[1].cache).toBe(true);
-      expect(system[1].text).toContain('Help helpers.');
-      expect(system[1].text).toContain('Cut time-to-first-value');
-      expect(system[1].text).toContain('OPP-0714');
-      for (const id of allIds) expect(system[1].text).toContain(`id: ${id}`);
+      expect(system[1].text).toContain('Ally as built');
+      expect(system[1].text).toContain('Roleplay Logs');
+      const context = system[2];
+      expect(context.cache).toBe(true);
+      expect(context.text).toContain('Help helpers.');
+      expect(context.text).toContain('Cut time-to-first-value');
+      expect(context.text).toContain('OPP-0714');
+      for (const id of allIds) expect(context.text).toContain(`id: ${id}`);
 
       // Speaker labels, so the model can tell its own words from the admin's — and nothing
-      // volatile inside the cached block.
+      // volatile inside either cached block.
       const user = requests[0].messages[0].content as string;
       expect(user).toContain('YOU: Who is this for?');
       expect(user).toContain('ADMIN: Counsellors.');
       expect(system[1].text).not.toContain('Counsellors.');
+      expect(context.text).not.toContain('Counsellors.');
     });
 
     it('returns no brief before the admin has said anything', async () => {

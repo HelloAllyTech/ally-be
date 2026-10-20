@@ -34,6 +34,7 @@ import { RoadmapStrategyGoalRepository } from '../repository/roadmap-strategy.re
 import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 import { RoadmapStrategyContextService } from './roadmap-strategy-context.service';
 import { RoadmapOpportunityService } from './roadmap-opportunity.service';
+import { RoadmapCopilotProductMapService } from './roadmap-copilot-product-map.service';
 import {
   COPILOT_SUBMIT_TOOL,
   RoadmapCopilotToolsService,
@@ -124,6 +125,7 @@ export class RoadmapCopilotService {
     private readonly productGoalRepository: RoadmapProductGoalRepository,
     private readonly strategyGoalRepository: RoadmapStrategyGoalRepository,
     private readonly readinessToken: RoadmapReadinessTokenService,
+    private readonly productMap: RoadmapCopilotProductMapService,
   ) {}
 
   /** One turn, collected — for the JSON endpoint the pre-streaming admin bundle still calls. */
@@ -438,20 +440,25 @@ export class RoadmapCopilotService {
   }
 
   /**
-   * The system prompt, then everything the copilot always knows, as one cached block: the
-   * Vision & strategy page, both goal lists, the readiness criteria and the board as it stands.
-   * All of it is stable across the passes of a turn and across the turns of a conversation,
-   * so a ten-turn interview pays full price for it once.
+   * The system prompt, then everything the copilot always knows, as two cached blocks.
+   *
+   * First the product map — what Ally is as built: repos, admin surfaces, knowledge packs and
+   * the documentation index. Then the Vision & strategy page, both goal lists, the readiness
+   * criteria and the board as it stands. The map goes first because it changes least (it is
+   * re-rendered at most every half hour; the board moves whenever someone files or votes), so
+   * a board change re-pays only the second block. All of it is stable across the passes of a
+   * turn and across the turns of a conversation, so a ten-turn interview pays full price once.
    */
   private async buildSystem(userId: number): Promise<{
     system: AgentSystemBlock[];
     productGoalNames: string[];
   }> {
-    const [prompt, strategy, productGoals, strategyGoals, board] =
+    const [prompt, productMap, strategy, productGoals, strategyGoals, board] =
       await Promise.all([
         this.promptSharedService.getPromptByCode(
           ROADMAP_PROMPT_CODES.OPPORTUNITY_COPILOT,
         ),
+        this.productMap.render(),
         this.strategyContext.renderForCopilot(),
         this.productGoalRepository.findAllOrdered(),
         this.strategyGoalRepository.findAllOrdered(),
@@ -485,7 +492,11 @@ export class RoadmapCopilotService {
     ].join('\n\n');
 
     return {
-      system: [{ text: prompt }, { text: context, cache: true }],
+      system: [
+        { text: prompt },
+        { text: productMap, cache: true },
+        { text: context, cache: true },
+      ],
       productGoalNames,
     };
   }

@@ -1485,11 +1485,14 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
       'Someone files a roadmap opportunity — every turn of the "New opportunity" conversation',
     detail:
       'A tool loop per turn: up to 8 research passes (the board, user-interview notes, the ' +
-      'Analytics Agent, UX signals, Bug Hunter findings, GitHub code and wiki, Stacks), then a ' +
-      'structured turn — question, readiness verdicts, draft and brief. One llm_usage row per ' +
-      'pass. The Vision & strategy page, goals and a board snapshot sit in a cached system ' +
-      'prefix. Falls back to ROADMAP_COPILOT_FALLBACK_MODEL when the resolved provider has no ' +
-      'key here. The Analytics Agent it calls records its own usage.',
+      'Analytics Agent, UX signals, Bug Hunter findings, repo docs, GitHub code and wiki, ' +
+      'Stacks), then a structured turn — question, readiness verdicts, draft and brief. One ' +
+      'llm_usage row per pass. Two cached system blocks: a product map (repos, admin ' +
+      'surfaces, the head of each Builder knowledge pack, the wiki and repo-docs index — ' +
+      '~10k tokens, re-rendered at most every 30 min) and the Vision & strategy page, goals ' +
+      'and a board snapshot. Falls back to ROADMAP_COPILOT_FALLBACK_MODEL when the resolved ' +
+      'provider has no key here or its call fails. The Analytics Agent it calls records its ' +
+      'own usage.',
     kind: AiTaskKind.COMPLETION,
     provider: 'anthropic',
     defaultModel: 'claude-sonnet-5-5',
