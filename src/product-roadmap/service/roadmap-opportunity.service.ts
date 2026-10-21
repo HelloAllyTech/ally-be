@@ -72,7 +72,10 @@ import {
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
-import { normaliseOpportunityBrief } from '../util/roadmap-brief.util';
+import {
+  normaliseFilingInterview,
+  normaliseOpportunityBrief,
+} from '../util/roadmap-brief.util';
 import { RoadmapGoalImpactService } from './roadmap-goal-impact.service';
 import { RoadmapStrategyGoalService } from './roadmap-strategy-goal.service';
 import { RoadmapVectorService } from './roadmap-vector.service';
@@ -243,6 +246,14 @@ export class RoadmapOpportunityService {
     // which was already normalised, so this is idempotent on an honest brief and only bounds
     // what a future write path might forget to.
     const brief = normaliseOpportunityBrief(dto.brief);
+    // The conversation behind the draft, kept for the Builder session that picks it up. Same
+    // door as the brief — only the copilot's own filing carries one — but ignored elsewhere
+    // rather than refused: unlike the brief it claims nothing on anyone's behalf, and a filing
+    // refused over its transcript would lose the conversation it was trying to keep.
+    const interviewTranscript =
+      extra?.enforceReadiness && dto.readinessToken
+        ? normaliseFilingInterview(dto.interviewTranscript)
+        : null;
 
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
@@ -261,6 +272,7 @@ export class RoadmapOpportunityService {
         // the same shape as one read back — which is what the response mapper reads.
         referenceImages,
         brief,
+        interviewTranscript,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,

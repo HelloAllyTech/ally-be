@@ -120,8 +120,18 @@ jobs:
       - name: Engine output normalisers
         run: node scripts/builder/test/forward-events.test.mjs
 
+      # The platform catalog extractor, against throwaway git repos of each
+      # kind it reads (NestJS, Nx web, React Native, FastAPI).
+      - name: Capability catalog extractor
+        run: node scripts/builder/test/extract-catalog.test.mjs
+
       - name: Outcome gate
         run: bash scripts/builder/test/outcome-gate.test.sh
+
+      # The floor under refresh-repo-map.sh: a 54-character "map" once replaced a
+      # good one because only an empty reply was refused.
+      - name: Repo map size floor
+        run: bash scripts/builder/test/refresh-repo-map.test.sh
 
       # The design run's reporting channel. Real subprocess, real JSON-RPC,
       # real HTTP — the seams between processes are the whole reason this

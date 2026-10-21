@@ -15,6 +15,7 @@ import { Competency } from 'src/learn/entity/competency.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { Track } from '../entity/track.entity';
+import { applyPromptHtml, storedPromptsOf } from '../util/prompt-html.util';
 import { TrackItem } from '../entity/track-item.entity';
 import { TrackSection } from '../entity/track-section.entity';
 import { TrackTenant } from '../entity/track-tenant.entity';
@@ -262,13 +263,15 @@ export class TrackService {
       throw new NotFoundException('Track not found');
     }
 
+    const existing = await this.trackSharedService.getTrackWithStructure(id);
+
     this.addMissingQuizOptionIds(dto.sections);
     this.sanitizeStructure(dto.sections);
+    this.applyPromptHtml(dto.sections, existing);
     validateTrackStructure(dto.sections);
     this.applyContentDefaults(dto.sections);
     await this.validateReferences(dto.sections);
 
-    const existing = await this.trackSharedService.getTrackWithStructure(id);
     const existingSectionIds = new Set(existing.sections.map((s) => s.id));
     const existingItemIds = new Set(
       existing.sections.flatMap((s) => s.items.map((i) => i.id)),
@@ -682,6 +685,32 @@ export class TrackService {
    * Fill in completion-criteria defaults and keep the graded components'
    * passScore mirrored onto completionCriteria.
    */
+  /**
+   * Sanitizes each prompt's rich text and keeps its plain `prompt` in step
+   * (see `applyPromptHtml`). Must run before validation, and needs what is
+   * stored so a plain-text-only edit is not reverted by stale HTML.
+   */
+  private applyPromptHtml(
+    sections: UpsertTrackSectionDto[],
+    existing: TrackWithStructure,
+  ): void {
+    const storedItems = new Map(
+      existing.sections.flatMap((s) => s.items.map((i) => [i.id, i] as const)),
+    );
+    for (const section of sections) {
+      for (const item of section.items) {
+        const before = item.id ? storedItems.get(item.id) : undefined;
+        applyPromptHtml(
+          item.type,
+          item.content,
+          before && before.type === item.type
+            ? storedPromptsOf(before.type, before.content)
+            : undefined,
+        );
+      }
+    }
+  }
+
   private applyContentDefaults(sections: UpsertTrackSectionDto[]): void {
     for (const section of sections) {
       for (const item of section.items) {

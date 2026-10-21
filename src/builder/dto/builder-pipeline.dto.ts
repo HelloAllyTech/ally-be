@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsIn,
@@ -181,6 +182,35 @@ export class UpsertBuilderRepoMapDto {
   @IsOptional()
   @IsString()
   commitSha?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  stats?: Record<string, any>;
+}
+
+export class UpsertBuilderRepoCatalogDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  repo!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  commitSha?: string;
+
+  /**
+   * Loose on each entry's shape, like the event DTOs: the extractor is ours,
+   * and the service keeps only the declared keys. Bounded on count, so a
+   * runaway extraction cannot write an unbounded row.
+   */
+  @ApiProperty({ type: [Object] })
+  @IsArray()
+  @ArrayMaxSize(20_000)
+  entries!: Record<string, any>[];
 
   @ApiPropertyOptional({ type: Object })
   @IsOptional()

@@ -28,6 +28,8 @@ import { BuilderPullRequest } from './entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from './entity/builder-pr-feedback.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
+import { BuilderRepoCatalog } from './entity/builder-repo-catalog.entity';
+import { BuilderEvidence } from './entity/builder-evidence.entity';
 import { BuilderController } from './controller/builder.controller';
 import { BuilderPipelineController } from './controller/builder-pipeline.controller';
 import { BuilderGateway } from './gateway/builder.gateway';
@@ -49,6 +51,23 @@ import { BuilderOutcomeService } from './service/builder-outcome.service';
 import { BuilderMetricsService } from './service/builder-metrics.service';
 import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
+import { BuilderCatalogService } from './service/builder-catalog.service';
+import { BuilderEvidenceLogService } from './service/builder-evidence-log.service';
+import { BuilderPrdReviewService } from './service/builder-prd-review.service';
+import { BuilderEvalFixture } from './entity/builder-eval-fixture.entity';
+import { BuilderEvalSuite } from './entity/builder-eval-suite.entity';
+import { BuilderEvalRun } from './entity/builder-eval-run.entity';
+import { BuilderEvalSandboxFactory } from './eval/sandbox/builder-eval-sandbox.factory';
+import { BuilderEvalRunnerService } from './eval/service/builder-eval-runner.service';
+import { BuilderEvalFixtureService } from './eval/service/builder-eval-fixture.service';
+import { BuilderEvalService } from './eval/service/builder-eval.service';
+import { BuilderEvalController } from './eval/controller/builder-eval.controller';
+import { BuilderCorrection } from './entity/builder-correction.entity';
+import { BuilderCorrectionService } from './service/builder-correction.service';
+import { BuilderCorrectionsController } from './controller/builder-corrections.controller';
+import { BuilderReadinessService } from './service/builder-readiness.service';
+import { BuilderProductMapService } from './service/builder-product-map.service';
+import { BuilderPlatformContextService } from './service/builder-platform-context.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
@@ -59,7 +78,9 @@ import {
 } from './repository/builder-prd.repository';
 import {
   BuilderLessonRepository,
+  BuilderEvidenceRepository,
   BuilderExemplarRepository,
+  BuilderRepoCatalogRepository,
   BuilderRepoMapRepository,
 } from './repository/builder-knowledge.repository';
 import {
@@ -105,6 +126,12 @@ import {
       BuilderPrFeedback,
       BuilderSettings,
       BuilderNotification,
+      BuilderRepoCatalog,
+      BuilderEvidence,
+      BuilderEvalFixture,
+      BuilderEvalSuite,
+      BuilderEvalRun,
+      BuilderCorrection,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -137,6 +164,8 @@ import {
     BuilderSlackController,
     BuilderController,
     BuilderPipelineController,
+    BuilderEvalController,
+    BuilderCorrectionsController,
   ],
   providers: [
     BuilderSlackService,
@@ -159,6 +188,17 @@ import {
     BuilderMetricsService,
     BuilderEpicService,
     BuilderResearchService,
+    BuilderCatalogService,
+    BuilderEvidenceLogService,
+    BuilderPrdReviewService,
+    BuilderReadinessService,
+    BuilderEvalSandboxFactory,
+    BuilderEvalRunnerService,
+    BuilderEvalFixtureService,
+    BuilderEvalService,
+    BuilderCorrectionService,
+    BuilderProductMapService,
+    BuilderPlatformContextService,
     BuilderNotificationService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
@@ -166,6 +206,8 @@ import {
     BuilderPrdDocRepository,
     BuilderPrdVersionRepository,
     BuilderRepoMapRepository,
+    BuilderRepoCatalogRepository,
+    BuilderEvidenceRepository,
     BuilderLessonRepository,
     BuilderExemplarRepository,
     BuilderBuildRunRepository,
@@ -183,6 +225,10 @@ import {
     BuilderGithubReadService,
     BuilderStacksService,
     BuilderEvidenceService,
+    // One product map for both agents: the copilot renders it whole, the interview reads the
+    // reusable-systems and docs sections. See BuilderProductMapService.
+    BuilderProductMapService,
+    BuilderCatalogService,
   ],
 })
 export class BuilderModule {}

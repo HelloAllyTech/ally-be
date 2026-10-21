@@ -2,7 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { In, IsNull, Not } from 'typeorm';
 import { BuilderSessionService } from '../builder-session.service';
 import { BuilderSessionStatus } from '../../enum/builder.enum';
-import { BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT } from '../../constants/builder.constants';
+import {
+  BUILDER_HANDOFF_CONTEXT_MAX,
+  BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT,
+} from '../../constants/builder.constants';
 
 describe('BuilderSessionService', () => {
   let service: BuilderSessionService;
@@ -24,6 +27,8 @@ describe('BuilderSessionService', () => {
   };
   let settingsService: { get: jest.Mock };
   let buildService: { findCancellableRun: jest.Mock; cancelRun: jest.Mock };
+  let readinessService: { assess: jest.Mock; settle: jest.Mock };
+  let reviewService: { dismiss: jest.Mock };
 
   beforeEach(() => {
     sessionRepository = {
@@ -59,6 +64,13 @@ describe('BuilderSessionService', () => {
       }),
     };
 
+    const notReady = { score: 0, ready: false, sections: [], blockers: [] };
+    readinessService = {
+      assess: jest.fn().mockResolvedValue(notReady),
+      settle: jest.fn().mockResolvedValue(notReady),
+    };
+    reviewService = { dismiss: jest.fn().mockResolvedValue({}) };
+
     service = new BuilderSessionService(
       { builder: { defaultBudgetUsd: 25 } } as any,
       sessionRepository as any,
@@ -69,6 +81,8 @@ describe('BuilderSessionService', () => {
       prdService as any,
       settingsService as any,
       buildService as any,
+      readinessService as any,
+      reviewService as any,
     );
   });
 
@@ -153,6 +167,64 @@ describe('BuilderSessionService', () => {
     });
   });
 
+  describe('hand-off context', () => {
+    it('stores what the caller handed over, trimmed and bounded', async () => {
+      await service.createSession(1, {
+        title: 'From the roadmap',
+        handoffContext: `  ${'x'.repeat(BUILDER_HANDOFF_CONTEXT_MAX + 50)}  `,
+      });
+
+      const created = sessionRepository.create.mock.calls[0][0];
+      expect(created.handoffContext).toHaveLength(BUILDER_HANDOFF_CONTEXT_MAX);
+      expect(created.handoffContext.startsWith('x')).toBe(true);
+    });
+
+    it('stores none for a session started in Builder itself', async () => {
+      await service.createSession(1, { title: 'Plain', handoffContext: '   ' });
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ handoffContext: null }),
+      );
+    });
+
+    it('attaches to an existing session only where none is set yet', async () => {
+      // Frozen once written: a second press must not replace the first, and the guard has to
+      // be the UPDATE's own WHERE to hold under two presses racing.
+      sessionRepository.update.mockResolvedValue({ affected: 1 });
+
+      await expect(
+        service.attachHandoffContext('session-1', 'the brief'),
+      ).resolves.toBe(true);
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1', handoffContext: IsNull() },
+        { handoffContext: 'the brief' },
+      );
+    });
+
+    it('reports when there was already a hand-off and it wrote nothing', async () => {
+      sessionRepository.update.mockResolvedValue({ affected: 0 });
+
+      await expect(
+        service.attachHandoffContext('session-1', 'the brief'),
+      ).resolves.toBe(false);
+    });
+
+    it('reads the column explicitly, since no other session read loads it', async () => {
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        handoffContext: 'the brief',
+      });
+
+      await expect(service.getHandoffContext('session-1')).resolves.toBe(
+        'the brief',
+      );
+      expect(sessionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
+        select: { id: true, handoffContext: true },
+      });
+    });
+  });
+
   describe('getSession', () => {
     it("serves another admin's session — sessions are shared across Builder users", async () => {
       sessionRepository.findOne.mockResolvedValue({
@@ -183,13 +255,14 @@ describe('BuilderSessionService', () => {
         { listBySession: jest.fn().mockResolvedValue([]) } as any,
         { listBySession: jest.fn().mockResolvedValue([]) } as any,
         {
-          getPrdWithReadiness: jest.fn().mockResolvedValue({
-            doc: { draft: {}, versionNumber: 3 },
-            readiness: { score: 0, ready: false, sections: [], blockers: [] },
-          }),
+          getOrCreateDoc: jest
+            .fn()
+            .mockResolvedValue({ id: 'doc-1', draft: {}, versionNumber: 3 }),
         } as any,
         settingsService as any,
         buildService as any,
+        readinessService as any,
+        reviewService as any,
       );
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
@@ -235,6 +308,64 @@ describe('BuilderSessionService', () => {
       ]);
 
       expect(prdService.applyPatch).toHaveBeenCalled();
+    });
+
+    it('settles readiness as an admin edit, which may run the reviewer', async () => {
+      sessionInStatus(BuilderSessionStatus.INTERVIEWING);
+
+      await service.patchPrd('session-1', 1, [
+        { op: 'replace', path: '/summary', value: 'x' },
+      ]);
+
+      expect(readinessService.settle).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ versionNumber: 2 }),
+        'admin_edit',
+      );
+    });
+  });
+
+  describe('dismissReviewFinding', () => {
+    const inStatus = (status: BuilderSessionStatus) =>
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        createdBy: 1,
+        status,
+      });
+
+    it('records the admin as the dismisser and re-scores the PRD', async () => {
+      inStatus(BuilderSessionStatus.INTERVIEWING);
+      readinessService.assess.mockResolvedValue({
+        score: 100,
+        ready: true,
+        sections: [],
+        blockers: [],
+      });
+
+      const result = await service.dismissReviewFinding(
+        'session-1',
+        7,
+        'F2',
+        'Mobile is a separate opportunity this quarter.',
+      );
+
+      expect(reviewService.dismiss).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'doc-1' }),
+        'F2',
+        'Mobile is a separate opportunity this quarter.',
+        7,
+        'admin',
+      );
+      expect(result.status).toBe(BuilderSessionStatus.PRD_READY);
+    });
+
+    it('is refused while a build is reading the PRD', async () => {
+      inStatus(BuilderSessionStatus.BUILDING);
+
+      await expect(
+        service.dismissReviewFinding('session-1', 7, 'F2', 'Not relevant now.'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(reviewService.dismiss).not.toHaveBeenCalled();
     });
   });
 

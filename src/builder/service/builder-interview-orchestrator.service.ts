@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import {
   AgentLlmProviderFactory,
@@ -31,12 +31,15 @@ import { BuilderMessageRole } from '../enum/builder.enum';
 import { BuilderSessionService } from './builder-session.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
+import { BuilderPlatformContextService } from './builder-platform-context.service';
+import { BuilderReadinessService } from './builder-readiness.service';
 import {
   BuilderInterviewToolsService,
   BuilderToolExecutionContext,
 } from './builder-interview-tools.service';
 import { BuilderSseFrame } from '../type/builder-sse.type';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
+import { BuilderPrdReadiness } from '../type/builder-prd.type';
 import {
   BUILDER_INTERVIEW_MAX_TOKENS,
   BUILDER_SYSTEM_PROMPT_TTL_MS,
@@ -144,11 +147,13 @@ const BUILDER_TRUNCATION_ERROR =
 @Injectable()
 export class BuilderInterviewOrchestratorService {
   /**
-   * Process-wide, not per-instance: the service is a singleton, but making the
-   * cache static also keeps it shared if that ever changes.
+   * Per instance, deliberately. The live service is a singleton, so this is
+   * one cache in practice — but the replay eval builds its own orchestrator
+   * around a candidate prompt, and a static cache would hand that candidate
+   * to every live interview for the next minute (or a live prompt to the
+   * candidate's replay, which would then test the wrong thing).
    */
-  private static systemPromptCache: { text: string; expiresAt: number } | null =
-    null;
+  private systemPromptCache: { text: string; expiresAt: number } | null = null;
 
   private readonly logger = LoggerService.getInstance(
     BuilderInterviewOrchestratorService.name,
@@ -167,6 +172,10 @@ export class BuilderInterviewOrchestratorService {
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly agentLlmFactory: AgentLlmProviderFactory,
     private readonly llmCompletion: LlmCompletionService,
+    private readonly readiness: BuilderReadinessService,
+    /** The platform map block. Optional so a fixture without one still runs a turn. */
+    @Optional()
+    private readonly platformContext?: BuilderPlatformContextService,
   ) {}
 
   /**
@@ -366,10 +375,18 @@ export class BuilderInterviewOrchestratorService {
     const system = await this.buildSystemBlocks(
       session.repos ?? undefined,
       exemplars,
+      await this.sessionService.getHandoffContext(sessionId),
     );
     const messages: any[] = [
       ...(await this.replayHistory(session, history)),
-      { role: 'user', content: this.buildLiveUserTurn(doc.draft, userContent) },
+      {
+        role: 'user',
+        content: this.buildLiveUserTurn(
+          doc.draft,
+          await this.readiness.assess(sessionId, doc),
+          userContent,
+        ),
+      },
     ];
     const tools = this.toolsService.getToolDefinitions();
 
@@ -729,8 +746,58 @@ export class BuilderInterviewOrchestratorService {
     await checkpoint(true);
 
     // Readiness may have moved during the turn; settle the status before the
-    // client reads it off the `done` frame.
-    const readiness = this.prdService.computeReadiness(context.doc.draft);
+    // client reads it off the `done` frame. Settling may run the cold
+    // reviewer — a first review the turn's edits did not trigger, a retry of
+    // a failed one, or a recheck of open findings against what changed — and
+    // the admin is told it is running rather than left looking at a turn that
+    // has gone quiet.
+    let readiness: BuilderPrdReadiness;
+    try {
+      const plan = await this.readiness.plan(
+        sessionId,
+        context.doc,
+        'turn_end',
+      );
+      readiness = plan.readiness;
+      if (plan.review) {
+        const name = plan.review === 'review' ? 'prd_review' : 'prd_recheck';
+        yield { event: 'tool_call', data: { name, input: {} } };
+        readiness = await this.readiness.runReview(
+          sessionId,
+          context.doc,
+          plan.review,
+          'turn_end',
+        );
+        const open = (readiness.review?.findings ?? []).filter(
+          (finding) => finding.status === 'open',
+        ).length;
+        yield {
+          event: 'tool_result',
+          data: {
+            name,
+            summary:
+              readiness.review?.status === 'failed'
+                ? 'PRD review could not run; it will retry'
+                : open
+                  ? `PRD review: ${open} finding(s) to fix or dismiss`
+                  : 'PRD review: nothing to fix',
+          },
+        };
+      }
+    } catch (error) {
+      // The rubric's own inputs failed to load. Fall back to the draft-only
+      // rubric rather than leave the turn without a status.
+      this.logger.warn(
+        `Builder session ${sessionId}: readiness settle failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      readiness = this.prdService.computeReadiness(context.doc.draft);
+    }
+    yield {
+      event: 'readiness',
+      data: readiness as unknown as Record<string, any>,
+    };
     const sessionStatus = await this.sessionService.syncReadinessStatus(
       session,
       readiness,
@@ -785,8 +852,11 @@ export class BuilderInterviewOrchestratorService {
    * therefore cacheable, and the model always sees the document as it is now
    * rather than as it was when the session started.
    */
-  private buildLiveUserTurn(draft: unknown, userContent: string): string {
-    const readiness = this.prdService.computeReadiness(draft as any);
+  private buildLiveUserTurn(
+    draft: unknown,
+    readiness: BuilderPrdReadiness,
+    userContent: string,
+  ): string {
     const blockers = readiness.blockers.length
       ? readiness.blockers.map((blocker) => `- ${blocker}`).join('\n')
       : '- none; the PRD is build-ready';
@@ -844,12 +914,15 @@ export class BuilderInterviewOrchestratorService {
   private async buildSystemBlocks(
     repos?: string[],
     exemplars: string[] = [],
+    handoffContext: string | null = null,
   ): Promise<AgentSystemBlock[]> {
-    const [instructions, context, platformRules] = await Promise.all([
-      this.buildSystemPrompt(),
-      this.knowledgeService.buildContextBlock(repos, exemplars),
-      this.knowledgeService.platformRules(),
-    ]);
+    const [instructions, context, platformRules, platformMap] =
+      await Promise.all([
+        this.buildSystemPrompt(),
+        this.knowledgeService.buildContextBlock(repos, exemplars),
+        this.knowledgeService.platformRules(),
+        this.platformContext?.render() ?? Promise.resolve(''),
+      ]);
     // Typed, not `any[]`. These used to be Anthropic's own shape
     // (`cache_control: ephemeral`) written straight into the request; the
     // provider-neutral layer takes `cache` instead and each adapter honours it
@@ -861,10 +934,60 @@ export class BuilderInterviewOrchestratorService {
     // the technical plan is written knowing them. The plan that renamed a
     // persisted key in session 880e73e6 was written by this agent, which had
     // never been told released clients lag the backend.
-    return [
+    const blocks: AgentSystemBlock[] = [
       { text: `${instructions}\n\n${platformRules}`, cache: true },
       { text: context, cache: true },
     ];
+    // The reusable systems and the docs index: what already exists, read before any question.
+    // Its own block because it refreshes on its own schedule; shared by every session, so it
+    // stays inside the common prefix. Session 2bc3a5cf proposed rebuilding Auto-improve
+    // because nothing in its context said Auto-improve existed.
+    if (platformMap.trim()) {
+      blocks.push({ text: platformMap, cache: true });
+    }
+    // Last, so the two blocks above stay a prefix shared with every other session. Frozen
+    // per session, so it caches as well as they do.
+    if (handoffContext) {
+      blocks.push({ text: this.renderHandoff(handoffContext), cache: true });
+    }
+    return blocks;
+  }
+
+  /**
+   * What the work before this session settled, with how to use it.
+   *
+   * The instructions live here, beside the block, rather than in the interviewer prompt: the
+   * block only exists for sessions something else started, and a rule in the prompt about a
+   * block most sessions never see is one more thing every other interview reads past. Written
+   * after a live session opened from a roadmap opportunity spent its first questions on what
+   * the filing interview had already decided — debrief-specific feedback alongside the
+   * session rating, and the rating's shape, were both in the copilot's brief it was never
+   * shown.
+   *
+   * "Reference what was said rather than asking from scratch" is Stacks, "Sequencing
+   * clarification questions to avoid user overwhelm".
+   */
+  private renderHandoff(handoffContext: string): string {
+    return [
+      '# Hand-off — what was settled before this session started',
+      '',
+      'This session was opened from earlier work, and what follows is its record. The admin ' +
+        'has already answered these questions once. So:',
+      '',
+      '- Treat every decision in it as settled. Write what it settles into the PRD with ' +
+        '`update_prd` on your first turn, before you ask anything.',
+      '- Ask only about what it leaves open — usually how it gets built, not whether or for ' +
+        'whom. Never re-ask something it answers, including as a "just to confirm" question.',
+      '- Reuse its research. Where it cites a file, a query or a board item, start from that ' +
+        'reference rather than searching again from nothing.',
+      '- When the code contradicts it, or two parts of it disagree, quote what was said and ask ' +
+        'which should give — that is a contradiction to resolve, not a fresh question.',
+      '- Alternatives it records as dropped stay dropped unless the admin reopens them.',
+      '',
+      '<handoff>',
+      handoffContext,
+      '</handoff>',
+    ].join('\n');
   }
 
   /**
@@ -878,11 +1001,8 @@ export class BuilderInterviewOrchestratorService {
     // edits a prompt in the admin UI — a minute of staleness there is nobody's
     // problem, and the turn is the latency a person is actually sitting through.
     const now = Date.now();
-    if (
-      BuilderInterviewOrchestratorService.systemPromptCache &&
-      BuilderInterviewOrchestratorService.systemPromptCache.expiresAt > now
-    ) {
-      return BuilderInterviewOrchestratorService.systemPromptCache.text;
+    if (this.systemPromptCache && this.systemPromptCache.expiresAt > now) {
+      return this.systemPromptCache.text;
     }
 
     try {
@@ -890,7 +1010,7 @@ export class BuilderInterviewOrchestratorService {
         BUILDER_PROMPTS.INTERVIEWER_SYSTEM,
       );
       if (template) {
-        BuilderInterviewOrchestratorService.systemPromptCache = {
+        this.systemPromptCache = {
           text: template,
           expiresAt: now + BUILDER_SYSTEM_PROMPT_TTL_MS,
         };

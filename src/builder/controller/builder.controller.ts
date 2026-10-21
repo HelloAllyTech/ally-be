@@ -43,6 +43,8 @@ import { BuilderExemplarService } from '../service/builder-exemplar.service';
 import { BuilderMetricsService } from '../service/builder-metrics.service';
 import { BuilderEpicService } from '../service/builder-epic.service';
 import { BuilderResearchService } from '../service/builder-research.service';
+import { BuilderCatalogService } from '../service/builder-catalog.service';
+import { BuilderEvidenceLogService } from '../service/builder-evidence-log.service';
 import { BuilderPrdVersionRepository } from '../repository/builder-prd.repository';
 import { BuilderBuildRunRepository } from '../repository/builder-build.repository';
 import {
@@ -50,6 +52,7 @@ import {
   CreateBuilderSessionDto,
   ListBuilderSessionsQueryDto,
   PatchBuilderPrdDto,
+  DismissBuilderReviewFindingDto,
   RaiseBuilderBudgetDto,
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
@@ -100,6 +103,8 @@ export class BuilderController {
     private readonly prdVersionRepository: BuilderPrdVersionRepository,
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly redisService: RedisService,
+    private readonly catalogService: BuilderCatalogService,
+    private readonly evidenceLog: BuilderEvidenceLogService,
   ) {}
 
   @Post('sessions')
@@ -279,6 +284,28 @@ export class BuilderController {
     );
   }
 
+  @Post('sessions/:sessionId/prd/review/findings/:findingId/dismiss')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Dismiss a PRD review finding with the reason it is wrong; returns readiness',
+  })
+  dismissReviewFinding(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('findingId') findingId: string,
+    @Body() dto: DismissBuilderReviewFindingDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.sessionService.dismissReviewFinding(
+      sessionId,
+      user.id,
+      findingId,
+      dto.reason,
+    );
+  }
+
   @Get('sessions/:sessionId/prd/versions')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
@@ -320,6 +347,46 @@ export class BuilderController {
         stats: map.stats,
       })),
     };
+  }
+
+  @Get('catalog')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'The platform map: reusable systems, per-repo catalog freshness, web/mobile twins and the modules no reuse line covers',
+  })
+  async getCatalog() {
+    const [catalogs, twins, coverage] = await Promise.all([
+      this.catalogService.listCatalogs(),
+      this.catalogService.parityTwins(),
+      this.catalogService.coverage(),
+    ]);
+    return {
+      capabilities: this.catalogService.capabilities(),
+      catalogs: catalogs.map((row) => ({
+        repo: row.repo,
+        commitSha: row.commitSha,
+        generatedAt: row.generatedAt,
+        stats: row.stats,
+      })),
+      twins,
+      coverage,
+    };
+  }
+
+  @Get('sessions/:sessionId/evidence')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Every lookup this session made and what came back (the evidence log)',
+  })
+  async listEvidence(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    await this.sessionService.getSession(sessionId);
+    return { evidence: await this.evidenceLog.listBySession(sessionId) };
   }
 
   /* ── Builds ───────────────────────────────────────────────────────────── */

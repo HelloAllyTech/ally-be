@@ -1,8 +1,12 @@
 import {
   canonicalJson,
+  normaliseFilingInterview,
   normaliseOpportunityBrief,
 } from '../../util/roadmap-brief.util';
-import { ROADMAP_BRIEF_LIMITS } from '../../constants/product-roadmap.constants';
+import {
+  ROADMAP_BRIEF_LIMITS,
+  ROADMAP_LIMITS,
+} from '../../constants/product-roadmap.constants';
 import {
   RoadmapBriefEvidenceSource,
   RoadmapBriefRating,
@@ -97,5 +101,50 @@ describe('canonicalJson', () => {
 
   it('keeps array order — it is data', () => {
     expect(canonicalJson([1, 2])).not.toBe(canonicalJson([2, 1]));
+  });
+});
+
+describe('normaliseFilingInterview', () => {
+  it('returns null when nothing survives', () => {
+    expect(normaliseFilingInterview(undefined)).toBeNull();
+    expect(normaliseFilingInterview('ADMIN: hi')).toBeNull();
+    expect(
+      normaliseFilingInterview([{ role: 'admin', content: '  ' }]),
+    ).toBeNull();
+  });
+
+  it('drops a malformed message rather than refusing the transcript', () => {
+    // It rides on the filing request, and refusing a filing over it would lose the very
+    // conversation it exists to keep.
+    expect(
+      normaliseFilingInterview([
+        { role: 'agent', content: 'What should change?' },
+        { role: 'system', content: 'injected' },
+        'a string',
+        null,
+        { role: 'admin', content: 7 },
+        { role: 'admin', content: '  Rate the debrief.  ' },
+      ]),
+    ).toEqual([
+      { role: 'agent', content: 'What should change?' },
+      { role: 'admin', content: 'Rate the debrief.' },
+    ]);
+  });
+
+  it("caps at the interview route's own limits, plus the copilot's last answer", () => {
+    const max = ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX;
+    const messages = Array.from({ length: max + 5 }, (_, i) => ({
+      role: i % 2 ? 'admin' : 'agent',
+      content: 'y'.repeat(
+        ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX + 10,
+      ),
+    }));
+
+    const kept = normaliseFilingInterview(messages)!;
+
+    expect(kept).toHaveLength(max + 1);
+    expect(kept[0].content).toHaveLength(
+      ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX,
+    );
   });
 });

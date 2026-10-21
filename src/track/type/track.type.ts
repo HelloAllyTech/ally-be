@@ -157,6 +157,7 @@ export interface VideoContent {
 export interface JournalPrompt {
   id: string;
   prompt: string;
+  promptHtml?: string;
   required?: boolean;
   placeholder?: string;
 }

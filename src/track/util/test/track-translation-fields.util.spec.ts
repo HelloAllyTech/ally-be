@@ -290,6 +290,36 @@ describe('applyItemFields', () => {
     expect(source.title).toBe('Spotting risk');
   });
 
+  it('re-derives prompt from translated promptHtml', () => {
+    const source = item({
+      type: TrackItemType.QUIZ,
+      content: {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: QuizQuestionType.MCQ_SINGLE,
+            prompt: 'Original prompt',
+            promptHtml: '<p>Original <strong>prompt</strong></p>',
+            options: [{ id: 'o1', text: 'A' }],
+            correctOptionIds: ['o1'],
+          },
+        ],
+      } as any,
+    });
+
+    const fields = translateAll(source);
+    // Simulation of translated promptHtml
+    fields['content.questions[q1].promptHtml'].value =
+      '<h1>Translated</h1><p>Prompt</p>';
+
+    const localized = applyItemFields(source, fields);
+    const question = (localized.content as any).questions[0];
+
+    expect(question.promptHtml).toBe('<h1>Translated</h1><p>Prompt</p>');
+    expect(question.prompt).toBe('Translated Prompt');
+  });
+
   it('falls back to English for a field whose source has since changed', () => {
     const source = item({
       type: TrackItemType.ARTICLE,
@@ -471,6 +501,99 @@ describe('question media translation', () => {
     );
     // The URL is untouched — a translated URL would be a broken image.
     expect((applied.content as any).questions[0].media.url).toBe(image.url);
+  });
+
+  it('does not extract prompt when promptHtml is present', () => {
+    const source = item({
+      type: TrackItemType.QUIZ,
+      content: {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: QuizQuestionType.MCQ_SINGLE,
+            prompt: 'Plain text prompt',
+            promptHtml: '<p>Rich text prompt</p>',
+            options: [{ id: 'o1', text: 'A' }],
+            correctOptionIds: ['o1'],
+          },
+        ],
+      } as any,
+    });
+
+    const fields = extractItemFields(source);
+    const paths = fields.map((f) => f.path);
+
+    expect(paths).toContain('content.questions[q1].promptHtml');
+    expect(paths).not.toContain('content.questions[q1].prompt');
+  });
+
+  it('allows applying legacy prompt translation when promptHtml translation is missing', () => {
+    const source = item({
+      type: TrackItemType.QUIZ,
+      content: {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: QuizQuestionType.MCQ_SINGLE,
+            prompt: 'English prompt',
+            promptHtml: '<p>English prompt</p>',
+            options: [{ id: 'o1', text: 'A' }],
+            correctOptionIds: ['o1'],
+          },
+        ],
+      } as any,
+    });
+
+    // Translation map only has legacy 'prompt', no 'promptHtml'
+    const fields: TranslatedFieldMap = {
+      'content.questions[q1].prompt': {
+        value: 'Legacy Translated Prompt',
+        sourceHash: hashSource('English prompt'),
+      },
+    };
+
+    const localized = applyItemFields(source, fields);
+    const question = (localized.content as any).questions[0];
+
+    // promptHtml was not translated, so prompt should fall back to legacy translation
+    expect(question.promptHtml).toBeUndefined(); // Deleted because it is stale
+    expect(question.prompt).toBe('Legacy Translated Prompt'); // Applied from legacy
+  });
+
+  it('handles journal prompts translation correctly', () => {
+    const source = item({
+      type: TrackItemType.JOURNAL,
+      content: {
+        prompts: [
+          {
+            id: 'p1',
+            prompt: 'Journal prompt',
+            promptHtml: '<p>Journal prompt</p>',
+          },
+        ],
+      } as any,
+    });
+
+    const fields = extractItemFields(source);
+    const paths = fields.map((f) => f.path);
+
+    expect(paths).toContain('content.prompts[p1].promptHtml');
+    expect(paths).not.toContain('content.prompts[p1].prompt');
+
+    // Application test
+    const translationMap: TranslatedFieldMap = {
+      'content.prompts[p1].prompt': {
+        value: 'Legacy Journal Translation',
+        sourceHash: hashSource('Journal prompt'),
+      },
+    };
+
+    const localized = applyItemFields(source, translationMap);
+    const journal = localized.content as any;
+    expect(journal.prompts[0].prompt).toBe('Legacy Journal Translation');
+    expect(journal.prompts[0].promptHtml).toBeUndefined();
   });
 
   it('extracts nothing extra for media with no description', () => {

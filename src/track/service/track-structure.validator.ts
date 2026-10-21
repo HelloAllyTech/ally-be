@@ -34,7 +34,11 @@ import {
   AnnotationSwatch,
   markKey,
 } from '../type/annotation.type';
-import { GameContent, TrackGameKey } from '../type/game.type';
+import {
+  BreathingExerciseContent,
+  GameContent,
+  TrackGameKey,
+} from '../type/game.type';
 import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
@@ -332,7 +336,11 @@ function validateVideoContent(
  */
 function validateInterjections(video: VideoContent, title: string): void {
   const interjections = video.interjections;
-  if (!interjections || interjections.length === 0) return;
+  if (!interjections) return;
+  if (!Array.isArray(interjections)) {
+    fail(`Video component "${title}": interjections must be an array.`);
+  }
+  if (interjections.length === 0) return;
 
   if (video.source !== VideoSource.S3) {
     fail(
@@ -373,7 +381,11 @@ function validateJournalContent(
   content: JournalContent | undefined,
   title: string,
 ): void {
-  if (!content?.prompts || content.prompts.length === 0) {
+  if (
+    !content?.prompts ||
+    !Array.isArray(content.prompts) ||
+    content.prompts.length === 0
+  ) {
     fail(`Journal component "${title}" must have at least one prompt.`);
   }
   const seen = new Set<string>();
@@ -407,6 +419,40 @@ export function validateGameContent(
   }
   if (content.intro !== undefined && typeof content.intro !== 'string') {
     fail(`${label}: intro must be text.`);
+  }
+
+  if (content.gameKey === TrackGameKey.BREATHING_EXERCISE) {
+    validateBreathingExerciseContent(content.breathingExercise, label);
+  }
+}
+
+function validateBreathingExerciseContent(
+  content: BreathingExerciseContent | undefined,
+  label: string,
+): void {
+  if (!content) {
+    fail(`${label} is missing the breathing exercise configuration.`);
+  }
+  const durations = ['inhale', 'holdIn', 'exhale', 'holdOut'] as const;
+  for (const field of durations) {
+    const value = content[field];
+    if (typeof value !== 'number' || value <= 0) {
+      fail(`${label}: ${field} duration must be a positive number.`);
+    }
+  }
+  if (!Number.isInteger(content.cycles) || content.cycles <= 0) {
+    fail(`${label}: cycles must be a positive integer.`);
+  }
+  const texts = [
+    'inhaleText',
+    'holdInText',
+    'exhaleText',
+    'holdOutText',
+  ] as const;
+  for (const field of texts) {
+    if (!content[field]?.trim()) {
+      fail(`${label}: ${field} cannot be empty.`);
+    }
   }
 }
 
@@ -539,7 +585,7 @@ export function validateQuizContent(
   ) {
     fail(`Quiz component "${title}": invalid showExplanations value.`);
   }
-  if (!questions || questions.length === 0) {
+  if (!Array.isArray(questions) || questions.length === 0) {
     fail(`Quiz component "${title}" must have at least one question.`);
   }
   if (questions.length > TRACK_MAX_QUIZ_QUESTIONS) {
@@ -984,7 +1030,13 @@ function annotationStructuralSignature(item: UpsertTrackItemDto): unknown {
  */
 function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
   if (item.type !== TrackItemType.GAME || !item.content) return null;
-  return { gameKey: (item.content as GameContent).gameKey };
+  const game = item.content as GameContent;
+  return {
+    gameKey: game.gameKey,
+    ...(game.gameKey === TrackGameKey.BREATHING_EXERCISE
+      ? { breathingExercise: game.breathingExercise }
+      : {}),
+  };
 }
 
 /**

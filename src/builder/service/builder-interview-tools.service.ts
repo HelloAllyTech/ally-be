@@ -16,10 +16,17 @@ import { BuilderPrdService } from './builder-prd.service';
 import { BuilderGithubReadService } from './builder-github-read.service';
 import { BuilderStacksService } from './builder-stacks.service';
 import { BuilderEvidenceService } from './builder-evidence.service';
+import { BuilderCatalogService } from './builder-catalog.service';
+import { BuilderEvidenceLogService } from './builder-evidence-log.service';
+import { BuilderReadinessService } from './builder-readiness.service';
+import { BuilderPrdReviewService } from './builder-prd-review.service';
+import { BuilderMessageRepository } from '../repository/builder-message.repository';
+import { BuilderMessageRole } from '../enum/builder.enum';
 import {
   BUILDER_REPO_NAMES,
   BUILDER_REPOS,
   BUILDER_WIKI_REPO,
+  isBuilderReadableRepo,
 } from '../constants/builder-repos.constants';
 import { BUILDER_STACKS_DEFAULT_RESULTS } from '../constants/builder.constants';
 
@@ -82,6 +89,11 @@ export class BuilderInterviewToolsService {
     private readonly githubRead: BuilderGithubReadService,
     private readonly stacks: BuilderStacksService,
     private readonly evidence: BuilderEvidenceService,
+    private readonly catalog: BuilderCatalogService,
+    private readonly evidenceLog: BuilderEvidenceLogService,
+    private readonly readiness: BuilderReadinessService,
+    private readonly reviewService: BuilderPrdReviewService,
+    private readonly messageRepository: BuilderMessageRepository,
   ) {}
 
   getToolDefinitions(): any[] {
@@ -192,6 +204,32 @@ export class BuilderInterviewToolsService {
             },
           },
           required: ['ops'],
+        },
+      },
+      {
+        name: 'dismiss_review_finding',
+        description:
+          'Record that the admin says a PRD review finding is wrong, so it ' +
+          'stops blocking readiness. Only for a finding the admin rejected in ' +
+          'their latest message: `adminQuote` must be their words, copied ' +
+          'exactly from that message, and it is kept as the reason. Never ' +
+          'dismiss a finding on your own judgement — fix it in the PRD, or ' +
+          'ask the admin about it.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            findingId: {
+              type: 'string',
+              description:
+                'The finding id from the readiness blockers, e.g. "F2"',
+            },
+            adminQuote: {
+              type: 'string',
+              description:
+                "The admin's words rejecting it, copied exactly from their latest message",
+            },
+          },
+          required: ['findingId', 'adminQuote'],
         },
       },
       {
@@ -392,19 +430,128 @@ export class BuilderInterviewToolsService {
           },
         },
       },
+      {
+        name: 'capability_lookup',
+        description:
+          "Search the platform's map of what already exists: the reusable systems " +
+          '(Auto-improve, the prompt registry, the scheduler, notifications…), every ' +
+          "repo's modules, tables, routes, screens, components and docs, the AI task " +
+          'registry and the prompts connected to Auto-improve. Run it before you ' +
+          'propose building anything new, with the nouns of the request — one to three ' +
+          'words per query ("a/b test", "challenger", "rating", "debrief"). A hit is a ' +
+          'place to read next, not a description of how it works.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'ai_tasks_lookup',
+        description:
+          'Find which model call produces an AI output — a debrief, a grade, a summary, ' +
+          'a translation — from the AI task registry, and whether its prompt is ' +
+          'connected to Auto-improve (so it can be A/B tested and improved without new ' +
+          'code). Run it whenever a request touches something a model writes.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'docs_search',
+        description:
+          "Search the platform's written documentation — every repo's README, " +
+          'CLAUDE.md, DATA_SCHEMA.md and docs/ pages, and the wiki — and get back ' +
+          'matching file paths. Docs say what an area is for and why; read the one or ' +
+          'two that match with github_read_file (or wiki_read for the wiki) before ' +
+          'reading code. Every word must match, so search one to three words.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+            repo: {
+              type: 'string',
+              enum: [...BUILDER_REPO_NAMES, BUILDER_WIKI_REPO],
+            },
+          },
+          required: ['query'],
+        },
+      },
     ];
   }
 
+  /**
+   * Run one tool, and record it in the evidence log when it is a lookup.
+   *
+   * Recorded here rather than in each research branch so no lookup can be
+   * added without leaving a trace — the log is only useful if it is complete.
+   */
   async execute(
     name: string,
     input: Record<string, any>,
     context: BuilderToolExecutionContext,
   ): Promise<BuilderToolExecutionOutcome> {
+    const outcome = await this.dispatch(name, input, context);
+    this.evidenceLog.recordToolResult(
+      context.session?.id,
+      name,
+      input ?? {},
+      outcome.modelResult ?? {},
+    );
+    return outcome;
+  }
+
+  private async dispatch(
+    name: string,
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+  ): Promise<BuilderToolExecutionOutcome> {
     switch (name) {
+      case 'capability_lookup': {
+        const hits = await this.catalog.search(String(input?.query ?? ''));
+        return {
+          modelResult: {
+            ok: true,
+            results: hits,
+            ...(hits.length
+              ? {}
+              : {
+                  note:
+                    'Nothing matched those words. Try the name a screen or system has in the ' +
+                    'product, or one shorter word, before concluding nothing exists.',
+                }),
+          },
+          summary: `Platform map: "${input?.query}" — ${hits.length} match(es)`,
+        };
+      }
+      case 'ai_tasks_lookup': {
+        const hits = this.catalog.aiTasksLookup(String(input?.query ?? ''));
+        return {
+          modelResult: { ok: true, results: hits },
+          summary: `AI tasks: "${input?.query}" — ${hits.length} match(es)`,
+        };
+      }
+      case 'docs_search':
+        return this.wrapResearch(
+          await this.searchDocs(
+            String(input?.query ?? ''),
+            input?.repo ? String(input.repo) : undefined,
+          ),
+          (result) =>
+            `Docs: "${input?.query}" — ${result.results?.length ?? 0} page(s)`,
+        );
       case 'ask_admin':
         return this.executeAskAdmin(input);
       case 'update_prd':
         return this.executeUpdatePrd(input, context);
+      case 'dismiss_review_finding':
+        return this.executeDismissFinding(input, context);
       case 'github_search_code':
         return this.wrapResearch(
           await this.githubRead.searchCode(
@@ -529,6 +676,39 @@ export class BuilderInterviewToolsService {
           summary: `Unknown tool "${name}"`,
         };
     }
+  }
+
+  /**
+   * Markdown-only code search, across every repo and the wiki — the same
+   * search the opportunity copilot uses, so both agents find the same pages.
+   */
+  private async searchDocs(
+    query: string,
+    repo?: string,
+  ): Promise<Record<string, any>> {
+    const trimmed = query.trim();
+    if (!trimmed)
+      return { ok: false, error: 'Give me something to search for.' };
+    const found = await this.githubRead.searchCode(
+      `${trimmed} extension:md`,
+      repo,
+    );
+    if (found?.ok === false) return found;
+    const results = (Array.isArray(found?.results) ? found.results : []).filter(
+      (hit: { repo?: string }) =>
+        !!hit?.repo && isBuilderReadableRepo(hit.repo),
+    );
+    return {
+      ok: true,
+      results,
+      ...(results.length
+        ? {}
+        : {
+            note:
+              'No page matched those words — try one word, or the name the product map ' +
+              'uses, before concluding nothing is documented.',
+          }),
+    };
   }
 
   /**
@@ -662,7 +842,14 @@ export class BuilderInterviewToolsService {
         input?.changeSummary ? String(input.changeSummary) : undefined,
       );
       context.doc = doc;
-      const readiness = this.prdService.computeReadiness(doc.draft);
+      // May run the cold reviewer: this is where a PRD first reads ready, and
+      // running it here puts the findings in this result, while the agent is
+      // still in the turn and can fix them.
+      const readiness = await this.readiness.settle(
+        context.session.id,
+        doc,
+        'edit',
+      );
 
       // What is now stored at each path the patch addressed. The PRD is
       // normalised on write, so "the op succeeded" and "the value you wrote is
@@ -735,5 +922,82 @@ export class BuilderInterviewToolsService {
         summary: `PRD patch rejected: ${message}`,
       };
     }
+  }
+
+  /**
+   * The admin rejected a review finding in chat. The agent may record that,
+   * but only in the admin's own words: the quote is checked against their
+   * latest message, so the reviewer cannot be overruled by the agent whose
+   * work it reviews.
+   */
+  private async executeDismissFinding(
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+  ): Promise<BuilderToolExecutionOutcome> {
+    const findingId = String(input?.findingId ?? '').trim();
+    const quote = String(input?.adminQuote ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const comparable = (text: string) =>
+      text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const messages = await this.messageRepository.listBySession(
+      context.session.id,
+    );
+    const latestAdmin = [...messages]
+      .reverse()
+      .find((message) => message.role === BuilderMessageRole.USER);
+    if (
+      quote.length < 12 ||
+      !latestAdmin ||
+      !comparable(String(latestAdmin.content ?? '')).includes(comparable(quote))
+    ) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'not_the_admins_words',
+          message:
+            "adminQuote must be copied exactly from the admin's latest message " +
+            '(at least a few words). Only the admin can dismiss a finding; if ' +
+            'they have not rejected it, fix it in the PRD or ask them.',
+        },
+        summary: `Review finding ${findingId || '?'} not dismissed: no admin quote`,
+      };
+    }
+
+    try {
+      await this.reviewService.dismiss(
+        context.doc,
+        findingId,
+        quote,
+        context.userId,
+        'interview',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        modelResult: { ok: false, error: 'dismiss_failed', message },
+        summary: `Review finding ${findingId} not dismissed: ${message}`,
+      };
+    }
+    const readiness = await this.readiness.assess(
+      context.session.id,
+      context.doc,
+    );
+    return {
+      modelResult: {
+        ok: true,
+        dismissed: findingId,
+        ready: readiness.ready,
+        blockers: readiness.blockers,
+      },
+      summary: `Review finding ${findingId} dismissed, in the admin's words`,
+      events: [
+        {
+          event: 'readiness',
+          data: readiness as unknown as Record<string, any>,
+        },
+      ],
+    };
   }
 }

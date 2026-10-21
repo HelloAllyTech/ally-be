@@ -95,6 +95,12 @@ export const COURSE_COPILOT_GAME_CATALOG: ReadonlyArray<{
     description:
       'Water a plant and grow it to bloom; the soil has a sweet spot and the plant cannot die. The gentlest one here, about a minute and a half.',
   },
+  {
+    key: TrackGameKey.BREATHING_EXERCISE,
+    name: 'Breathing Exercise',
+    description:
+      'A guided box-breathing exercise to help learners regulate. You can configure the timing for each step (inhale, hold, exhale, hold) and the total number of cycles.',
+  },
 ];
 
 /** `BlueprintPlannerInput.games`, ready to pass. */

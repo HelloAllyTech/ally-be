@@ -536,7 +536,11 @@ export class RoadmapCopilotToolsService {
           summary: (r) =>
             r.answer
               ? String(r.answer).replace(/\s+/g, ' ').slice(0, 160)
-              : `Analytics: ${r.outcome ?? 'answered'}`,
+              : `Analytics: ${r.outcome ?? 'answered'}${
+                  r.message
+                    ? ` — ${String(r.message).replace(/\s+/g, ' ').slice(0, 140)}`
+                    : ''
+                }`,
         };
       case 'ux_signals_lookup':
         return {

@@ -410,6 +410,32 @@ export class CreateOpportunityDto {
   brief?: Record<string, any>;
 
   /**
+   * The copilot conversation this draft came out of — the same `{role, content}` messages the
+   * interview route takes, plus the copilot's answer to the last of them.
+   *
+   * Kept so the Builder session started from this opportunity begins where the conversation
+   * ended. Stored only alongside the copilot's readiness token and ignored otherwise. Loosely
+   * validated on purpose: it is normalised server-side (normaliseFilingInterview), which drops a
+   * malformed message rather than refusing the filing — a 400 here would lose the very
+   * conversation this exists to keep.
+   */
+  @ApiPropertyOptional({
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', enum: ['admin', 'agent'] },
+        content: { type: 'string' },
+      },
+    },
+    description:
+      'The copilot interview that produced this draft. Kept for the Builder hand-off; ignored without `readinessToken`.',
+  })
+  @IsOptional()
+  @IsArray()
+  interviewTranscript?: Record<string, any>[];
+
+  /**
    * Reference images, attached at filing time.
    *
    * On the CREATE path deliberately, not edit-only: the moment somebody has the screenshot is the
@@ -433,18 +459,20 @@ export class CreateOpportunityDto {
 }
 
 /**
- * The quick-add body: `CreateOpportunityDto` minus the two fields that only the guided interview
- * can produce.
+ * The quick-add body: `CreateOpportunityDto` minus the fields that only the guided interview can
+ * produce.
  *
  * Built by omission rather than written out so the two filing paths cannot drift: a field added
  * to the full DTO (a new attachment, say) reaches the quick form for free, and the only thing the
- * quick form can never send is a readiness verdict or a copilot brief — the server would refuse
- * an unsigned brief on this path anyway (see create()'s brief rule), so leaving the fields off the
- * contract is clearer than accepting and rejecting them.
+ * quick form can never send is a readiness verdict, a copilot brief or the copilot conversation
+ * behind them — the server would refuse an unsigned brief on this path anyway (see create()'s
+ * brief rule), so leaving the fields off the contract is clearer than accepting and rejecting
+ * them.
  */
 export class QuickAddOpportunityDto extends OmitType(CreateOpportunityDto, [
   'readinessToken',
   'brief',
+  'interviewTranscript',
 ] as const) {}
 
 /**

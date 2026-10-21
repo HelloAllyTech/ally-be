@@ -15,7 +15,12 @@ import { BuilderSessionRepository } from '../repository/builder-session.reposito
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
 import { BuilderPullRequestRepository } from '../repository/builder-build.repository';
 import { BuilderPrdService } from './builder-prd.service';
-import { BuilderDesignReadiness } from '../util/builder-technical-design.util';
+import {
+  BuilderDesignReadiness,
+  computeDesignReadiness,
+} from '../util/builder-technical-design.util';
+import { BuilderReadinessService } from './builder-readiness.service';
+import { BuilderPrdReviewService } from './builder-prd-review.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderBuildService } from './builder-build.service';
 import {
@@ -30,6 +35,7 @@ export type BuilderSessionListItem = BuilderSession & {
   createdByName: string | null;
 };
 import {
+  BUILDER_HANDOFF_CONTEXT_MAX,
   BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT,
   BUILDER_MAX_SESSIONS_PER_TENANT_PER_MONTH,
   BUILDER_SLUG_MAX_LENGTH,
@@ -59,6 +65,8 @@ export class BuilderSessionService {
     // reach it — a DB-only cancel left the runner burning up to two hours.
     @Inject(forwardRef(() => BuilderBuildService))
     private readonly buildService: BuilderBuildService,
+    private readonly readiness: BuilderReadinessService,
+    private readonly reviewService: BuilderPrdReviewService,
   ) {}
 
   /**
@@ -106,7 +114,12 @@ export class BuilderSessionService {
 
   async createSession(
     userId: number,
-    params: { title?: string; tenantId?: string | null } = {},
+    params: {
+      title?: string;
+      tenantId?: string | null;
+      /** See BuilderSession.handoffContext. Only callers outside Builder pass it. */
+      handoffContext?: string | null;
+    } = {},
   ): Promise<BuilderSession> {
     if (params.tenantId) {
       await this.assertTenantWithinCaps(params.tenantId);
@@ -132,6 +145,7 @@ export class BuilderSessionService {
         slug: await this.allocateSlug(title),
         tenantId: params.tenantId ?? null,
         budgetUsd,
+        handoffContext: this.boundHandoff(params.handoffContext),
         createdBy: userId,
         updatedBy: userId,
       }),
@@ -140,6 +154,44 @@ export class BuilderSessionService {
     // very first paint rather than after the agent's first patch.
     await this.prdService.getOrCreateDoc(session.id, userId, session.title);
     return session;
+  }
+
+  /**
+   * Hand a session that already exists the context it would have been created with.
+   *
+   * For sessions opened before their caller passed any — today, roadmap sessions started
+   * before the hand-off existed. Writes only where the column is still NULL, in the UPDATE's
+   * own WHERE: the context is frozen once set (see the entity), and two presses racing each
+   * other must not have the second replace the first. Resolves true when it wrote.
+   */
+  async attachHandoffContext(
+    sessionId: string,
+    handoffContext: string,
+  ): Promise<boolean> {
+    const text = this.boundHandoff(handoffContext);
+    if (!text) return false;
+    const result = await this.sessionRepository.update(
+      { id: sessionId, handoffContext: IsNull() },
+      { handoffContext: text },
+    );
+    return !!result.affected;
+  }
+
+  /**
+   * The session's hand-off, or null. A read of its own because the column is `select: false`
+   * — every other session read leaves it out, and only the interview turn needs it.
+   */
+  async getHandoffContext(sessionId: string): Promise<string | null> {
+    const row = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+      select: { id: true, handoffContext: true },
+    });
+    return row?.handoffContext ?? null;
+  }
+
+  private boundHandoff(text?: string | null): string | null {
+    const trimmed = (text ?? '').trim();
+    return trimmed ? trimmed.slice(0, BUILDER_HANDOFF_CONTEXT_MAX) : null;
   }
 
   /**
@@ -290,12 +342,13 @@ export class BuilderSessionService {
     }
   > {
     const session = await this.getSession(sessionId);
-    const [messages, { doc, readiness, designReadiness }, createdByName] =
-      await Promise.all([
-        this.messageRepository.listBySession(sessionId),
-        this.prdService.getPrdWithReadiness(sessionId, userId),
-        this.sessionRepository.findCreatorName(session.createdBy),
-      ]);
+    const [messages, doc, createdByName] = await Promise.all([
+      this.messageRepository.listBySession(sessionId),
+      this.prdService.getOrCreateDoc(sessionId, userId),
+      this.sessionRepository.findCreatorName(session.createdBy),
+    ]);
+    const readiness = await this.readiness.assess(sessionId, doc);
+    const designReadiness = computeDesignReadiness(doc.draft);
     return {
       ...session,
       createdByName,
@@ -342,7 +395,14 @@ export class BuilderSessionService {
       BuilderPrdVersionAuthor.ADMIN,
       changeSummary,
     );
-    const readiness = this.prdService.computeReadiness(updated.draft);
+    // May run the cold reviewer, when this edit is what first makes the PRD
+    // read ready or it changes a PRD with findings open — under a timeout
+    // short enough for a save a person is waiting on.
+    const readiness = await this.readiness.settle(
+      sessionId,
+      updated,
+      'admin_edit',
+    );
 
     // An admin edit can be what tips the PRD over the line (or back under
     // it), so the session status tracks readiness while no build is running.
@@ -353,6 +413,35 @@ export class BuilderSessionService {
       readiness,
       versionNumber: updated.versionNumber,
     };
+  }
+
+  /**
+   * An admin dismisses one of the cold reviewer's findings, with the reason
+   * it is wrong. The reason is kept beside the finding — it is the record of
+   * where the reviewer misjudged, which the replay eval learns from.
+   *
+   * Allowed while no build is reading the PRD, like any other PRD change.
+   */
+  async dismissReviewFinding(
+    sessionId: string,
+    userId: number,
+    findingId: string,
+    reason: string,
+  ): Promise<{ readiness: BuilderPrdReadiness; status: BuilderSessionStatus }> {
+    const session = await this.getSession(sessionId);
+    if (
+      session.status === BuilderSessionStatus.BUILDING ||
+      session.status === BuilderSessionStatus.WAITING_FOR_INPUT
+    ) {
+      throw new BadRequestException(
+        'The PRD is locked while a build is running. Cancel the build to change it.',
+      );
+    }
+    const doc = await this.prdService.getOrCreateDoc(sessionId, userId);
+    await this.reviewService.dismiss(doc, findingId, reason, userId, 'admin');
+    const readiness = await this.readiness.assess(sessionId, doc);
+    const status = await this.syncReadinessStatus(session, readiness);
+    return { readiness, status };
   }
 
   /**

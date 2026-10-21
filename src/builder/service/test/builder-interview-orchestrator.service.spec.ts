@@ -45,8 +45,17 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   /** Whole requests, for assertions about what was SENT rather than replayed. */
   let sentRequests: any[];
   let sessionRepository: { update: jest.Mock };
-  let sessionService: { getSession: jest.Mock; syncReadinessStatus: jest.Mock };
+  let sessionService: {
+    getSession: jest.Mock;
+    syncReadinessStatus: jest.Mock;
+    getHandoffContext: jest.Mock;
+  };
   let summariseCalls: number;
+  let readinessService: {
+    assess: jest.Mock;
+    plan: jest.Mock;
+    runReview: jest.Mock;
+  };
 
   beforeEach(() => {
     streams = [];
@@ -80,6 +89,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     sessionService = {
       getSession: jest.fn().mockResolvedValue({ id: 'session-1', title: 'T' }),
       syncReadinessStatus: jest.fn().mockResolvedValue('scoping'),
+      getHandoffContext: jest.fn().mockResolvedValue(null),
     };
     toolsService = {
       getToolDefinitions: jest.fn().mockReturnValue([]),
@@ -87,6 +97,13 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
         modelResult: { ok: true },
         summary: 'PRD updated',
       })),
+    };
+
+    const notReady = { score: 40, ready: false, blockers: [], sections: [] };
+    readinessService = {
+      assess: jest.fn().mockResolvedValue(notReady),
+      plan: jest.fn().mockResolvedValue({ readiness: notReady, review: null }),
+      runReview: jest.fn(),
     };
 
     service = new BuilderInterviewOrchestratorService(
@@ -131,6 +148,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
           return { text: 'They want archiving.' };
         }),
       } as any,
+      readinessService as any,
     );
 
     // `create` is the non-streaming call the cheap-model summariser uses;
@@ -249,6 +267,43 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   });
 
   /**
+   * A session opened from a roadmap opportunity carries what its filing interview settled.
+   * It rides as its own cached block, LAST — the two above stay a prefix every session shares
+   * — and never in `messages`, where a long interview's summariser would compress it away.
+   */
+  it('renders a hand-off as a third cached block, after the shared prefix', async () => {
+    sessionService.getHandoffContext.mockResolvedValue(
+      '## The opportunity\n\nLearners rate the debrief.',
+    );
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    const system = sentRequests[0].system;
+    expect(system).toHaveLength(3);
+    expect(system.slice(0, 2)).toEqual([
+      { text: 'Interview them.\n\n## Platform rules', cache: true },
+      { text: 'context', cache: true },
+    ]);
+    expect(system[2].cache).toBe(true);
+    expect(system[2].text).toContain('Learners rate the debrief.');
+    // The block says how to use it, since the interviewer prompt does not mention it.
+    expect(system[2].text).toContain('Treat every decision in it as settled');
+    expect(JSON.stringify(sentRequests[0].messages)).not.toContain(
+      'Learners rate the debrief.',
+    );
+  });
+
+  it('sends no hand-off block for a session started in Builder itself', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    expect(sentRequests[0].system).toHaveLength(2);
+    expect(JSON.stringify(sentRequests[0].system)).not.toContain('Hand-off');
+  });
+
+  /**
    * Gemini garbles tool calls on a schema this size — the turn arrives empty
    * and is otherwise indistinguishable from the model choosing to say nothing.
    * Transient, so it is retried rather than settled as a silent turn.
@@ -309,6 +364,58 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     const final = calls[calls.length - 1][1];
     expect(final.metadata.streaming).toBe(false);
     expect(final.metadata.errored).toBe(true);
+  });
+
+  /**
+   * The turn's end is where the cold reviewer runs if the turn's own edits
+   * did not trigger it — a first review, a retry, or a recheck of open
+   * findings. The admin sees it running, and the readiness that reaches the
+   * client and the session status is the one after it.
+   */
+  it('runs the planned PRD review at the end of the turn, visibly', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+    const reviewed = {
+      score: 100,
+      ready: false,
+      sections: [],
+      blockers: ['1 review finding(s) to fix or dismiss.'],
+      review: {
+        status: 'done',
+        findings: [{ id: 'F1', status: 'open' }],
+      },
+    };
+    readinessService.plan.mockResolvedValue({
+      readiness: { score: 100, ready: false, sections: [], blockers: [] },
+      review: 'review',
+    });
+    readinessService.runReview.mockResolvedValue(reviewed);
+
+    const frames = await drain();
+    const names = frames.map((frame) => frame.event);
+
+    expect(readinessService.plan).toHaveBeenCalledWith(
+      'session-1',
+      expect.anything(),
+      'turn_end',
+    );
+    expect(frames).toEqual(
+      expect.arrayContaining([
+        { event: 'tool_call', data: { name: 'prd_review', input: {} } },
+        {
+          event: 'tool_result',
+          data: {
+            name: 'prd_review',
+            summary: 'PRD review: 1 finding(s) to fix or dismiss',
+          },
+        },
+        { event: 'readiness', data: reviewed },
+      ]),
+    );
+    expect(names.indexOf('readiness')).toBeLessThan(names.indexOf('done'));
+    expect(sessionService.syncReadinessStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      reviewed,
+    );
   });
 
   it('does not fail the turn when a checkpoint cannot be written', async () => {
