@@ -306,6 +306,7 @@ export class BuilderEvalRunnerService {
       .flatMap((row) => row.toolResults ?? [])
       .filter((result) => !BUILDER_TERMINAL_TOOLS.has(String(result?.name)));
     const metrics: BuilderEvalMetrics = {
+      loop: sandbox.validatedTurns ? 'validated' : 'legacy',
       turns,
       // Questions delivered, not ask_admin calls made: the same count on the
       // legacy loop, where every call was delivered.

@@ -30,6 +30,7 @@ import { BuilderReadinessService } from '../../service/builder-readiness.service
 import { BuilderPrdReviewService } from '../../service/builder-prd-review.service';
 import { BuilderPlatformContextService } from '../../service/builder-platform-context.service';
 import { BuilderSettingsService } from '../../service/builder-settings.service';
+import { BuilderSettings } from '../../entity/builder-settings.entity';
 import { BuilderEvalOverrides } from '../type/builder-eval.type';
 import { SandboxStores } from './builder-eval-stores';
 
@@ -52,6 +53,8 @@ export interface BuilderEvalSandbox {
   passes: SandboxPass[];
   /** Estimated spend so far, all model calls in the replay. */
   costUsd: () => number;
+  /** Which interview loop this replay runs. */
+  validatedTurns: boolean;
 }
 
 /**
@@ -74,8 +77,11 @@ export interface BuilderEvalSandbox {
  *   real interviews, and summed into the run's cost;
  * - exemplar selection, which is off: it writes to the session row and is a
  *   ranking call the replay does not need to repeat;
- * - the validated-turns switch, from the run's overrides (every suite stamps
- *   it), falling back to the live setting — so a suite can replay either loop.
+ * - the validated-turns switch, from the run's overrides. Every suite stamps
+ *   it when it starts; one with no stamp was started before the switch
+ *   existed and replays the legacy loop it began on — never the live
+ *   setting, or a suite resumed across the deploy that added the switch
+ *   would change loops halfway through and measure neither.
  */
 @Injectable()
 export class BuilderEvalSandboxFactory {
@@ -92,7 +98,6 @@ export class BuilderEvalSandboxFactory {
     private readonly evidence: BuilderEvidenceService,
     private readonly catalog: BuilderCatalogService,
     private readonly platformContext: BuilderPlatformContextService,
-    private readonly settingsService: BuilderSettingsService,
   ) {}
 
   create(options: {
@@ -120,6 +125,7 @@ export class BuilderEvalSandboxFactory {
     } as unknown as BuilderSession;
 
     const overrides = options.overrides ?? {};
+    const validatedTurns = overrides.validatedTurns === true;
     const realPrompts = this.promptSharedService;
     const prompts = new Proxy(realPrompts, {
       get(target, property, receiver) {
@@ -301,12 +307,7 @@ export class BuilderEvalSandboxFactory {
       readiness,
       this.platformContext,
       {
-        get: async () => ({
-          ...(await this.settingsService.get()),
-          ...(overrides.validatedTurns !== undefined
-            ? { validatedTurns: overrides.validatedTurns }
-            : {}),
-        }),
+        get: async () => ({ validatedTurns }) as BuilderSettings,
       } as BuilderSettingsService,
     );
 
@@ -319,6 +320,7 @@ export class BuilderEvalSandboxFactory {
       llmCompletion,
       passes,
       costUsd: () => cost,
+      validatedTurns,
     };
   }
 }

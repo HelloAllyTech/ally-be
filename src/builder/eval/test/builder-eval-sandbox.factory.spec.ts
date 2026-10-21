@@ -114,7 +114,6 @@ describe('BuilderEvalSandboxFactory', () => {
         renderContextSection: jest.fn().mockResolvedValue(''),
       } as any,
       { render: jest.fn().mockResolvedValue('') } as any,
-      { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
     );
     return { factory, requests, promptSharedService, llmUsage, githubRead };
   };
@@ -217,6 +216,47 @@ describe('BuilderEvalSandboxFactory', () => {
 
     expect(requests[0].system[0].text).toContain(
       'LIVE builder_interviewer_system',
+    );
+  });
+
+  /**
+   * Every suite stamps the loop it runs. One with no stamp was started before
+   * validated turns existed, and must keep replaying the loop it began on — a
+   * suite resumed across that deploy would otherwise switch loops halfway and
+   * measure neither.
+   */
+  it('replays the legacy loop for a suite with no loop stamped', async () => {
+    const { factory, requests } = build();
+    const sandbox = factory.create({
+      evalRunId: 'run-1',
+      title: 'Old',
+      userId: 7,
+    });
+
+    await playOneTurn(sandbox);
+
+    expect(sandbox.validatedTurns).toBe(false);
+    expect(requests[0].system[0].text).not.toContain('# How a turn ends');
+    expect(requests[0].tools.map((tool: any) => tool.name)).not.toContain(
+      'finish_turn',
+    );
+  });
+
+  it('replays validated turns when the suite was stamped with them', async () => {
+    const { factory, requests } = build();
+    const sandbox = factory.create({
+      evalRunId: 'run-1',
+      title: 'New',
+      userId: 7,
+      overrides: { validatedTurns: true },
+    });
+
+    await playOneTurn(sandbox);
+
+    expect(sandbox.validatedTurns).toBe(true);
+    expect(requests[0].system[0].text).toContain('# How a turn ends');
+    expect(requests[0].tools.map((tool: any) => tool.name)).toContain(
+      'finish_turn',
     );
   });
 });
