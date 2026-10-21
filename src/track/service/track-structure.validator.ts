@@ -40,6 +40,21 @@ import {
   TrackGameKey,
 } from '../type/game.type';
 import {
+  BranchingImage,
+  BranchingNode,
+  BranchingOutcomeTone,
+  BranchingScenarioContent,
+  branchingEndingScore,
+  isBranchingEnding,
+} from '../type/branching.type';
+import {
+  TRACK_MAX_BRANCHING_CHOICE_TEXT,
+  TRACK_MAX_BRANCHING_CHOICES,
+  TRACK_MAX_BRANCHING_NODE_TEXT,
+  TRACK_MAX_BRANCHING_NODES,
+  TRACK_MAX_BRANCHING_TAKEAWAY,
+  TRACK_MAX_BRANCHING_TITLE,
+  TRACK_MIN_BRANCHING_CHOICES,
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
   TRACK_MAX_ARTICLE_QUESTIONS,
@@ -182,8 +197,231 @@ export function validateTrackItemContent({
     case TrackItemType.GAME:
       validateGameContent(content as GameContent | undefined, title);
       return;
+    case TrackItemType.BRANCHING_SCENARIO:
+      validateBranchingContent(
+        content as BranchingScenarioContent | undefined,
+        title,
+      );
+      return;
     default:
       fail(`Unknown component type: ${type}`);
+  }
+}
+
+/**
+ * A branching scenario has no answer key, so what can go wrong is the graph:
+ * a choice that leads nowhere, a scene the learner can never reach, or a loop
+ * with no way out. Each one would strand a learner inside a component that
+ * only completes at an ending, so each is rejected at save time with a message
+ * the trainer can act on.
+ */
+export function validateBranchingContent(
+  content: BranchingScenarioContent | undefined,
+  title: string,
+): void {
+  const label = `Branching scenario "${title}"`;
+  if (!content || !Array.isArray(content.nodes) || content.nodes.length === 0) {
+    fail(`${label} must have at least one scene.`);
+  }
+  if (content.nodes.length > TRACK_MAX_BRANCHING_NODES) {
+    fail(`${label} can have at most ${TRACK_MAX_BRANCHING_NODES} scenes.`);
+  }
+  if (content.intro !== undefined && typeof content.intro !== 'string') {
+    fail(`${label}: intro must be text.`);
+  }
+
+  const nodesById = new Map<string, BranchingNode>();
+  for (const node of content.nodes) {
+    if (!node?.id || typeof node.id !== 'string') {
+      fail(`${label}: every scene needs an id.`);
+    }
+    if (nodesById.has(node.id)) {
+      fail(`${label}: two scenes share the id "${node.id}".`);
+    }
+    nodesById.set(node.id, node);
+  }
+  if (!nodesById.has(content.startNodeId)) {
+    fail(`${label} must have a first scene.`);
+  }
+
+  const choiceIds = new Set<string>();
+  let endingCount = 0;
+  for (const node of content.nodes) {
+    const sceneLabel = `${label}, scene "${node.title?.trim() || node.id}"`;
+    if (typeof node.text !== 'string' || !node.text.trim()) {
+      fail(`${sceneLabel} needs some text.`);
+    }
+    if (node.text.length > TRACK_MAX_BRANCHING_NODE_TEXT) {
+      fail(
+        `${sceneLabel}: text must be ${TRACK_MAX_BRANCHING_NODE_TEXT} characters or fewer.`,
+      );
+    }
+    if (
+      node.title !== undefined &&
+      (typeof node.title !== 'string' ||
+        node.title.length > TRACK_MAX_BRANCHING_TITLE)
+    ) {
+      fail(
+        `${sceneLabel}: title must be ${TRACK_MAX_BRANCHING_TITLE} characters or fewer.`,
+      );
+    }
+    if (node.image !== undefined) {
+      validateBranchingImage(node.image, sceneLabel);
+    }
+
+    const choices = node.choices ?? [];
+    if (isBranchingEnding(node)) {
+      endingCount += 1;
+      if (
+        node.outcome !== undefined &&
+        !Object.values(BranchingOutcomeTone).includes(node.outcome)
+      ) {
+        fail(`${sceneLabel}: outcome must be positive, mixed or negative.`);
+      }
+      if (
+        node.score !== undefined &&
+        (!Number.isInteger(node.score) || node.score < 0 || node.score > 100)
+      ) {
+        fail(`${sceneLabel}: score must be a whole number from 0 to 100.`);
+      }
+      if (
+        node.takeaway !== undefined &&
+        (typeof node.takeaway !== 'string' ||
+          node.takeaway.length > TRACK_MAX_BRANCHING_TAKEAWAY)
+      ) {
+        fail(
+          `${sceneLabel}: takeaway must be ${TRACK_MAX_BRANCHING_TAKEAWAY} characters or fewer.`,
+        );
+      }
+      continue;
+    }
+
+    if (
+      node.outcome !== undefined ||
+      node.takeaway !== undefined ||
+      node.score !== undefined
+    ) {
+      fail(
+        `${sceneLabel}: only an ending can have an outcome, score or takeaway.`,
+      );
+    }
+    if (
+      choices.length < TRACK_MIN_BRANCHING_CHOICES ||
+      choices.length > TRACK_MAX_BRANCHING_CHOICES
+    ) {
+      fail(
+        `${sceneLabel} needs ${TRACK_MIN_BRANCHING_CHOICES} to ${TRACK_MAX_BRANCHING_CHOICES} choices, or none to be an ending.`,
+      );
+    }
+    for (const choice of choices) {
+      if (!choice?.id || typeof choice.id !== 'string') {
+        fail(`${sceneLabel}: every choice needs an id.`);
+      }
+      if (choiceIds.has(choice.id)) {
+        fail(`${label}: two choices share the id "${choice.id}".`);
+      }
+      choiceIds.add(choice.id);
+      if (typeof choice.text !== 'string' || !choice.text.trim()) {
+        fail(`${sceneLabel}: every choice needs some text.`);
+      }
+      if (choice.text.length > TRACK_MAX_BRANCHING_CHOICE_TEXT) {
+        fail(
+          `${sceneLabel}: choice text must be ${TRACK_MAX_BRANCHING_CHOICE_TEXT} characters or fewer.`,
+        );
+      }
+      if (!nodesById.has(choice.nextNodeId)) {
+        fail(`${sceneLabel}: a choice does not lead to a scene.`);
+      }
+    }
+  }
+  if (endingCount === 0) {
+    fail(`${label} needs at least one ending, a scene with no choices.`);
+  }
+
+  const { passScore, maxAttempts } = content.settings ?? {};
+  if (
+    passScore !== undefined &&
+    (!Number.isInteger(passScore) || passScore < 0 || passScore > 100)
+  ) {
+    fail(`${label}: the pass mark must be a whole number from 0 to 100.`);
+  }
+  if (
+    maxAttempts !== undefined &&
+    maxAttempts !== null &&
+    (!Number.isInteger(maxAttempts) || maxAttempts < 1)
+  ) {
+    fail(`${label}: attempts must be a whole number of 1 or more.`);
+  }
+  // Every ending is reachable (checked below), so a pass mark above the best
+  // ending would be a gate no learner can ever cross.
+  if (passScore) {
+    const best = Math.max(
+      ...content.nodes.filter(isBranchingEnding).map(branchingEndingScore),
+    );
+    if (best < passScore) {
+      fail(
+        `${label}: no ending scores ${passScore} or more, so nobody could pass. Raise an ending's score or lower the pass mark.`,
+      );
+    }
+  }
+
+  // Everything must be reachable from the start...
+  const reachable = new Set<string>();
+  const queue = [content.startNodeId];
+  while (queue.length) {
+    const id = queue.pop()!;
+    if (reachable.has(id)) continue;
+    reachable.add(id);
+    for (const choice of nodesById.get(id)!.choices ?? []) {
+      queue.push(choice.nextNodeId);
+    }
+  }
+  const unreachable = content.nodes.find((n) => !reachable.has(n.id));
+  if (unreachable) {
+    fail(
+      `${label}: scene "${unreachable.title?.trim() || unreachable.id}" cannot be reached from the first scene.`,
+    );
+  }
+
+  // ...and every scene must be able to reach an ending, or a loop could trap a learner.
+  const canFinish = new Set<string>(
+    content.nodes.filter(isBranchingEnding).map((n) => n.id),
+  );
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const node of content.nodes) {
+      if (canFinish.has(node.id)) continue;
+      if ((node.choices ?? []).some((c) => canFinish.has(c.nextNodeId))) {
+        canFinish.add(node.id);
+        grew = true;
+      }
+    }
+  }
+  const trapped = content.nodes.find((n) => !canFinish.has(n.id));
+  if (trapped) {
+    fail(
+      `${label}: scene "${trapped.title?.trim() || trapped.id}" has no way to reach an ending.`,
+    );
+  }
+}
+
+function validateBranchingImage(image: BranchingImage, label: string): void {
+  if (
+    typeof image.url !== 'string' ||
+    !image.url.trim().startsWith('https://')
+  ) {
+    fail(`${label}: image must be an uploaded file (https link).`);
+  }
+  if (image.alt !== undefined) {
+    if (typeof image.alt !== 'string') {
+      fail(`${label}: image description must be text.`);
+    }
+    if (image.alt.length > TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH) {
+      fail(
+        `${label}: image description must be ${TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH} characters or fewer.`,
+      );
+    }
   }
 }
 
@@ -336,7 +574,11 @@ function validateVideoContent(
  */
 function validateInterjections(video: VideoContent, title: string): void {
   const interjections = video.interjections;
-  if (!interjections || interjections.length === 0) return;
+  if (!interjections) return;
+  if (!Array.isArray(interjections)) {
+    fail(`Video component "${title}": interjections must be an array.`);
+  }
+  if (interjections.length === 0) return;
 
   if (video.source !== VideoSource.S3) {
     fail(
@@ -377,7 +619,11 @@ function validateJournalContent(
   content: JournalContent | undefined,
   title: string,
 ): void {
-  if (!content?.prompts || content.prompts.length === 0) {
+  if (
+    !content?.prompts ||
+    !Array.isArray(content.prompts) ||
+    content.prompts.length === 0
+  ) {
     fail(`Journal component "${title}" must have at least one prompt.`);
   }
   const seen = new Set<string>();
@@ -577,7 +823,7 @@ export function validateQuizContent(
   ) {
     fail(`Quiz component "${title}": invalid showExplanations value.`);
   }
-  if (!questions || questions.length === 0) {
+  if (!Array.isArray(questions) || questions.length === 0) {
     fail(`Quiz component "${title}" must have at least one question.`);
   }
   if (questions.length > TRACK_MAX_QUIZ_QUESTIONS) {
@@ -958,6 +1204,7 @@ export function computeStructuralSignature(
           article: articleStructuralSignature(item),
           annotation: annotationStructuralSignature(item),
           game: gameStructuralSignature(item),
+          branching: branchingStructuralSignature(item),
           video: videoStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
@@ -1028,6 +1275,24 @@ function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
     ...(game.gameKey === TrackGameKey.BREATHING_EXERCISE
       ? { breathingExercise: game.breathingExercise }
       : {}),
+  };
+}
+
+/**
+ * The graph is the structure: which scenes exist and where each choice leads.
+ * Rewording a scene or a choice is content-safe; rewiring is not.
+ */
+function branchingStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.BRANCHING_SCENARIO || !item.content) {
+    return null;
+  }
+  const content = item.content as BranchingScenarioContent;
+  return {
+    start: content.startNodeId,
+    nodes: (content.nodes ?? []).map((node) => ({
+      id: node.id,
+      choices: (node.choices ?? []).map((c) => [c.id, c.nextNodeId]),
+    })),
   };
 }
 

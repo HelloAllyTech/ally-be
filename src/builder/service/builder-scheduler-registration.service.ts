@@ -4,7 +4,10 @@ import { BuilderBuildService } from './builder-build.service';
 import { BuilderPullRequestService } from './builder-pull-request.service';
 import { BuilderOutcomeService } from './builder-outcome.service';
 import { BuilderLessonCuratorService } from './builder-lesson-curator.service';
+import { BuilderCorrectionService } from './builder-correction.service';
 import {
+  BUILDER_CORRECTIONS_INTERVAL,
+  BUILDER_CORRECTIONS_TASK,
   BUILDER_CURATE_INTERVAL,
   BUILDER_CURATE_TASK,
   BUILDER_OUTCOME_INTERVAL,
@@ -20,6 +23,7 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
     private readonly pullRequestService: BuilderPullRequestService,
     private readonly outcomeService: BuilderOutcomeService,
     private readonly curatorService: BuilderLessonCuratorService,
+    private readonly correctionService: BuilderCorrectionService,
   ) {}
 
   onModuleInit(): void {
@@ -76,6 +80,16 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
       BUILDER_CURATE_INTERVAL,
       BUILDER_CURATE_TASK,
       () => this.curatorService.consolidate().then(() => undefined),
+    );
+
+    // The learning loop. Each admin correction in an interview becomes a
+    // lesson candidate (folded in by the curator above), drafts for a person
+    // and an eval case. Daily over a three-day window: corrections arrive at
+    // the pace of interviews, and the overlap means a missed day loses nothing.
+    scheduledTaskRegistry.register(
+      BUILDER_CORRECTIONS_INTERVAL,
+      BUILDER_CORRECTIONS_TASK,
+      () => this.correctionService.scan().then(() => undefined),
     );
   }
 }

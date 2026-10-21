@@ -15,7 +15,12 @@ import { BuilderSessionRepository } from '../repository/builder-session.reposito
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
 import { BuilderPullRequestRepository } from '../repository/builder-build.repository';
 import { BuilderPrdService } from './builder-prd.service';
-import { BuilderDesignReadiness } from '../util/builder-technical-design.util';
+import {
+  BuilderDesignReadiness,
+  computeDesignReadiness,
+} from '../util/builder-technical-design.util';
+import { BuilderReadinessService } from './builder-readiness.service';
+import { BuilderPrdReviewService } from './builder-prd-review.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderBuildService } from './builder-build.service';
 import {
@@ -60,6 +65,8 @@ export class BuilderSessionService {
     // reach it — a DB-only cancel left the runner burning up to two hours.
     @Inject(forwardRef(() => BuilderBuildService))
     private readonly buildService: BuilderBuildService,
+    private readonly readiness: BuilderReadinessService,
+    private readonly reviewService: BuilderPrdReviewService,
   ) {}
 
   /**
@@ -335,12 +342,13 @@ export class BuilderSessionService {
     }
   > {
     const session = await this.getSession(sessionId);
-    const [messages, { doc, readiness, designReadiness }, createdByName] =
-      await Promise.all([
-        this.messageRepository.listBySession(sessionId),
-        this.prdService.getPrdWithReadiness(sessionId, userId),
-        this.sessionRepository.findCreatorName(session.createdBy),
-      ]);
+    const [messages, doc, createdByName] = await Promise.all([
+      this.messageRepository.listBySession(sessionId),
+      this.prdService.getOrCreateDoc(sessionId, userId),
+      this.sessionRepository.findCreatorName(session.createdBy),
+    ]);
+    const readiness = await this.readiness.assess(sessionId, doc);
+    const designReadiness = computeDesignReadiness(doc.draft);
     return {
       ...session,
       createdByName,
@@ -387,7 +395,14 @@ export class BuilderSessionService {
       BuilderPrdVersionAuthor.ADMIN,
       changeSummary,
     );
-    const readiness = this.prdService.computeReadiness(updated.draft);
+    // May run the cold reviewer, when this edit is what first makes the PRD
+    // read ready or it changes a PRD with findings open — under a timeout
+    // short enough for a save a person is waiting on.
+    const readiness = await this.readiness.settle(
+      sessionId,
+      updated,
+      'admin_edit',
+    );
 
     // An admin edit can be what tips the PRD over the line (or back under
     // it), so the session status tracks readiness while no build is running.
@@ -398,6 +413,35 @@ export class BuilderSessionService {
       readiness,
       versionNumber: updated.versionNumber,
     };
+  }
+
+  /**
+   * An admin dismisses one of the cold reviewer's findings, with the reason
+   * it is wrong. The reason is kept beside the finding — it is the record of
+   * where the reviewer misjudged, which the replay eval learns from.
+   *
+   * Allowed while no build is reading the PRD, like any other PRD change.
+   */
+  async dismissReviewFinding(
+    sessionId: string,
+    userId: number,
+    findingId: string,
+    reason: string,
+  ): Promise<{ readiness: BuilderPrdReadiness; status: BuilderSessionStatus }> {
+    const session = await this.getSession(sessionId);
+    if (
+      session.status === BuilderSessionStatus.BUILDING ||
+      session.status === BuilderSessionStatus.WAITING_FOR_INPUT
+    ) {
+      throw new BadRequestException(
+        'The PRD is locked while a build is running. Cancel the build to change it.',
+      );
+    }
+    const doc = await this.prdService.getOrCreateDoc(sessionId, userId);
+    await this.reviewService.dismiss(doc, findingId, reason, userId, 'admin');
+    const readiness = await this.readiness.assess(sessionId, doc);
+    const status = await this.syncReadinessStatus(session, readiness);
+    return { readiness, status };
   }
 
   /**

@@ -220,6 +220,17 @@ export enum LlmTask {
   BUILDER_RESEARCH = 'builder_research',
   // Bounding interview context growth by summarising older turns.
   BUILDER_INTERVIEW_SUMMARY = 'builder_interview_summary',
+  // The cold PRD reviewer: one full review when a PRD first reads ready, then
+  // rechecks of its open findings as the PRD changes (metadata.mode says which).
+  BUILDER_PRD_REVIEW = 'builder_prd_review',
+  // Builder's replay eval: every model call a replay makes — the sandboxed
+  // interviewer and reviewer (relabelled so eval spend is not reported as real
+  // interviews; metadata.evalOf keeps the original task), the simulated admin
+  // and the checklist judge.
+  BUILDER_EVAL = 'builder_eval',
+  // The learning loop: is an admin's reply in a Builder interview a
+  // correction, and of what kind.
+  BUILDER_CORRECTION_CLASSIFY = 'builder_correction_classify',
   // The roadmap's opportunity copilot: one pass of the guided interview's tool
   // loop (research, then a structured turn). Tagged with metadata.iteration so
   // a turn's passes can be summed.

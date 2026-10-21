@@ -52,6 +52,7 @@ import {
   CreateBuilderSessionDto,
   ListBuilderSessionsQueryDto,
   PatchBuilderPrdDto,
+  DismissBuilderReviewFindingDto,
   RaiseBuilderBudgetDto,
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
@@ -280,6 +281,28 @@ export class BuilderController {
       user.id,
       dto.ops,
       dto.changeSummary,
+    );
+  }
+
+  @Post('sessions/:sessionId/prd/review/findings/:findingId/dismiss')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Dismiss a PRD review finding with the reason it is wrong; returns readiness',
+  })
+  dismissReviewFinding(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('findingId') findingId: string,
+    @Body() dto: DismissBuilderReviewFindingDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.sessionService.dismissReviewFinding(
+      sessionId,
+      user.id,
+      findingId,
+      dto.reason,
     );
   }
 

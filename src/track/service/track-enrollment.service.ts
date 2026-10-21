@@ -43,6 +43,7 @@ import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { GameContent } from '../type/game.type';
+import { BranchingScenarioContent } from '../type/branching.type';
 import {
   sanitizeQuizForLearner,
   sanitizeQuizQuestionForLearner,
@@ -708,6 +709,29 @@ export class TrackEnrollmentService {
         };
       }
 
+      case TrackItemType.BRANCHING_SCENARIO: {
+        const scenario = item.content as BranchingScenarioContent;
+        /**
+         * No answer key exists, so the whole scenario ships as authored. The
+         * item is not completed here — it completes when a finished run is
+         * recorded and clears the pass mark, if there is one (see
+         * TrackBranchingService).
+         */
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          intro: scenario.intro ?? null,
+          startNodeId: scenario.startNodeId,
+          nodes: scenario.nodes,
+          passScore: scenario.settings?.passScore || null,
+          maxAttempts: scenario.settings?.maxAttempts ?? null,
+          attemptsUsed: progress.meta?.branchingRunCount ?? 0,
+          bestScore: progress.meta?.branchingBestScore ?? null,
+          completed: progress.status === SessionItemStatus.COMPLETED,
+          endingsReached: progress.meta?.branchingEndingsReached ?? [],
+        };
+      }
+
       case TrackItemType.ARTICLE: {
         if (!progress.meta?.articleFirstOpenedAt) {
           await this.trackItemProgressRepository.update(progress.id, {
@@ -1179,6 +1203,16 @@ export class TrackEnrollmentService {
       case TrackItemType.GAME: {
         const game = item.content as GameContent | undefined;
         return { gameKey: game?.gameKey ?? null };
+      }
+      case TrackItemType.BRANCHING_SCENARIO: {
+        const scenario = item.content as BranchingScenarioContent | undefined;
+        const nodes = scenario?.nodes ?? [];
+        return {
+          sceneCount: nodes.length,
+          endingCount: nodes.filter((n) => !n.choices?.length).length,
+          passScore: scenario?.settings?.passScore || null,
+          maxAttempts: scenario?.settings?.maxAttempts ?? null,
+        };
       }
       case TrackItemType.ANNOTATED_ARTIFACT: {
         const annotation = item.content as AnnotationContent | undefined;
