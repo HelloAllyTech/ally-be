@@ -2089,6 +2089,96 @@ describe('BuilderPullRequestService', () => {
     });
   });
 
+  describe('a pull request that conflicts with master', () => {
+    const dirty = { headSha: 'abc1234def', mergeableState: 'dirty' };
+    const opencodePr = (overrides: Record<string, any> = {}) =>
+      openPr({ branch: 'opencode/issue1-thing', ...overrides });
+
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 2,
+      });
+      github.createIssueComment = jest.fn().mockResolvedValue('url');
+      buildService.hasRunInFlight = jest.fn().mockResolvedValue(false);
+      sessionRepository.findOne.mockResolvedValue({ id: 'session-1' });
+    });
+
+    /** No CI runs on a conflicting PR, so waiting for it never ends. */
+    it('asks opencode to resolve it and counts the round', async () => {
+      await reconcileWith(dirty, opencodePr());
+
+      expect(github.createIssueComment).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        expect.stringContaining('/oc This pull request conflicts with master'),
+      );
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({
+          fixRunCount: 1,
+          fixRequestedSha: 'abc1234def',
+        }),
+      );
+    });
+
+    it('does not ask again while a request is outstanding', async () => {
+      await reconcileWith(
+        dirty,
+        opencodePr({
+          fixRequestedAt: new Date(),
+          fixRequestedSha: 'abc1234def',
+        }),
+      );
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('hands it to a person once the rounds are spent', async () => {
+      await reconcileWith(dirty, opencodePr({ fixRunCount: 2 }));
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(notificationService.prNeedsHuman).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.stringContaining('conflicts with master'),
+      );
+    });
+
+    it('hands it to a person when automatic fixes are off', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: false,
+        maxFixRunsPerPr: 2,
+      });
+
+      await reconcileWith(dirty, opencodePr());
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(notificationService.prNeedsHuman).toHaveBeenCalled();
+    });
+
+    it('hands it to a person when somebody else pushed last', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'a-person',
+        name: 'A Person',
+      });
+
+      await reconcileWith(dirty, opencodePr());
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(notificationService.prNeedsHuman).toHaveBeenCalled();
+    });
+
+    it('hands over a conflicted branch opencode did not make', async () => {
+      await reconcileWith(dirty, openPr());
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+      expect(notificationService.prNeedsHuman).toHaveBeenCalled();
+    });
+  });
+
   describe('keeping a stale branch up to date', () => {
     const behind = { mergeableState: 'behind' };
 
