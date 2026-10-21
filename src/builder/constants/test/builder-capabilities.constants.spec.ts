@@ -57,11 +57,13 @@ describe('BUILDER_CAPABILITIES', () => {
   });
 
   /**
-   * A warning, not a failure, while the list catches up with the codebase: a
-   * new feature module should get a line, and this is where its absence shows.
-   * Tighten to a failure once the uncovered list is empty.
+   * Every ally-be module has a reuse line or is declared plumbing. A new
+   * feature module that lands without one fails here, because a system the
+   * interview cannot find is a system it will propose building again — the
+   * failure in session 2bc3a5cf. Fix it by adding a capability entry (or the
+   * module to an existing one), or by exempting it as plumbing.
    */
-  it('reports the ally-be feature modules no capability covers', () => {
+  it('covers every ally-be module with a reuse line or an exemption', () => {
     const srcDir = path.join(repoRoot, 'src');
     const modules = fs
       .readdirSync(srcDir, { withFileTypes: true })
@@ -83,11 +85,7 @@ describe('BUILDER_CAPABILITIES', () => {
       (name) =>
         !covered.has(name) && !BUILDER_CAPABILITY_EXEMPT_MODULES.has(name),
     );
-    if (uncovered.length) {
-      console.warn(
-        `[builder-capabilities] ${uncovered.length} ally-be module(s) have no reuse line: ${uncovered.join(', ')}`,
-      );
-    }
+    expect(uncovered).toEqual([]);
     // Every exempt name must still be a real module, or the list rots silently.
     const staleExempt = [...BUILDER_CAPABILITY_EXEMPT_MODULES].filter(
       (name) => !modules.includes(name),
