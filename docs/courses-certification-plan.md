@@ -69,7 +69,7 @@ This needs, before Phase 3 merges:
 
 ### 1.2 Certify training, never outcomes
 
-The tombstoned-but-still-authoritative Ally guidance (`wiki/product/gamification.md`, principle 2) is explicit:
+The tombstoned-but-still-authoritative Ally guidance (`helloallytech.github.io/wiki/product/gamification.md`, principle 2) is explicit:
 never attach reward to a client's outcome — points on a distressed persona's "result" teach performance, not care.
 A certificate is the heaviest reward the product can issue, so this binds hardest here. The credential attaches to
 *completion plus assessed knowledge*, never to simulation "success", empathy scores, or client-outcome proxies.
@@ -245,7 +245,7 @@ This is the judgement call with the most at stake. Today `passed = scorePct >= p
 (`track-quiz.service.ts:259`), and open-ended questions are scored by an Anthropic call
 (`track-quiz-llm-grader.service.ts`). A model deciding, unreviewed, that someone earns a credential violates the
 principle Ally already wrote down for itself: *a model output is a proposal until a person accepts it*
-(`wiki/product/ai-product-patterns.md`, principle 1). Stacks corroborates the general form — combining automated
+(`helloallytech.github.io/wiki/product/ai-product-patterns.md`, principle 1). Stacks corroborates the general form — combining automated
 evaluation with expert review of sampled outputs, and using those reviews to calibrate the automated grader
 (Stacks: *Human-in-the-loop validation for agent output verification*).
 
@@ -328,7 +328,7 @@ later must still state what it certified, at what pass mark, graded how.
 **Course config** — add `tracks.certificationConfig jsonb` (no new table):
 `{ enabled, assessmentItemId, passScore, validityMonths (null = never expires), templateId, requiresAllItems }`.
 
-**Issuance consumer** — `src/certificate/consumer/certificate-issuance.consumer.ts`, `@OnEvent(TRACK_EVENTS.TRACK_COMPLETED)`.
+**Issuance consumer** — `src/certificate/consumer/certificate-issuance.consumer.ts`, `@OnEvent(TRACK_EVENTS.TRACK_COMPLETED)`. <!-- docs-path-lint: planned -->
 Guards, in order: tenant certification toggle ON → `certificationConfig.enabled` → designated assessment passed at
 ≥ `passScore` → no pending human review → all required items complete → no existing non-revoked certificate for
 `(user, track, version)`.
@@ -425,8 +425,8 @@ applied to an artefact people will screenshot.
 
 ### Phase 5 — Mobile parity + reporting (1 PR)
 
-`ally-mobile` mirrors `ally-web` file-for-file (`src/services/coursesApi.ts` is commented as mirroring
-`api/tracks.ts`). Port: credentials list, certificate detail with native share sheet, assessment-mode player chrome,
+`ally-mobile` mirrors `ally-web` file-for-file (`ally-mobile/src/services/coursesApi.ts` is commented as mirroring
+`ally-web/apps/ally-helpline-dashboard/src/api/tracks.ts`). Port: credentials list, certificate detail with native share sheet, assessment-mode player chrome,
 certificate reveal on completion. The PDF opens in the system viewer via the presigned URL — do not build an
 in-app renderer.
 
@@ -486,10 +486,10 @@ Per the documented fallback for Ally-specific questions a general corpus has no 
 from the tombstoned `wiki/product/` pages, which remain the only written Ally-specific product rules on these
 topics:
 
-- `wiki/product/gamification.md` — principles 2 (never gamify the client's outcome), 4 (impossible to lose earned
+- `helloallytech.github.io/wiki/product/gamification.md` — principles 2 (never gamify the client's outcome), 4 (impossible to lose earned
   ground), 5 (one-sentence explainability), 6 (proportional celebration), 9 (per-tenant switch), 10 (instrument for
   gaming).
-- `wiki/product/ai-product-patterns.md` — principles 1 (a model output is a proposal until a person accepts it),
+- `helloallytech.github.io/wiki/product/ai-product-patterns.md` — principles 1 (a model output is a proposal until a person accepts it),
   2 (provenance on the artefact), 5 (empty ≠ broken), 12 (meter every LLM call).
 
 These are deprecated, not gates; where future Stacks guidance conflicts, Stacks wins.

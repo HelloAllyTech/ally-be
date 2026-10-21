@@ -30,7 +30,7 @@ Base path: **`/api/v1/prompts`**
 - **Dashboard (user):** Endpoints other than `POST /sync` use **Bearer token** (access token) and require:
   - `VIEW_PROMPT` for GET list and by-codes.
   - `EDIT_PROMPT` for create, update, revert.
-- **Sync (automation):** `POST /api/v1/prompts/sync` uses **x-api-key** (AI API key), not Bearer. This is for deployment scripts and ally-ai-learn's `scripts/sync_prompts.py`.
+- **Sync (automation):** `POST /api/v1/prompts/sync` uses **x-api-key** (AI API key), not Bearer. This is for deployment scripts and `ally-ai-learn/scripts/sync_prompts.py`.
 
 ## Using the API from the dashboard (ally-web)
 
