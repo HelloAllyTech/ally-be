@@ -95,13 +95,24 @@ export class LlmTargetResolverService {
   ) {}
 
   async resolve(options: ResolveLlmTargetOptions): Promise<ResolvedLlmTarget> {
+    const explicitModel = options.model?.trim() || undefined;
     const tierModel =
       options.fallbackModel?.trim() ||
-      (options.tier ? this.configService.llmTiers[options.tier] : undefined);
+      (options.tier ? this.configService.llmTiers[options.tier] : undefined) ||
+      // A call that names its own model on a row with no tier: that model is
+      // its own floor. `callConfigForAiTask` deliberately gives such rows no
+      // tier (a tier exists to choose a model, and this call already chose),
+      // and the registry forbids a tier beside a `configPath` — so demanding
+      // one here made every config-selected call throw. From 2026-10-14 to
+      // 2026-10-21 that was 363 failed calls in production: Bug Hunter's
+      // decider, study reviewer and miss classifier, and Builder's exemplar
+      // re-rank and outcome categoriser. With the model as its own floor there
+      // is nothing different to fall back to, so a failure surfaces as itself.
+      explicitModel;
     if (!tierModel) {
       throw new Error(
-        `Cannot resolve AI task "${options.taskId}": no tier and no fallback ` +
-          `model, so there is no floor to land on.`,
+        `Cannot resolve AI task "${options.taskId}": no tier, no fallback ` +
+          `model and no model named by the call, so there is no floor to land on.`,
       );
     }
     const promptRow = options.promptCode
@@ -131,7 +142,10 @@ export class LlmTargetResolverService {
       // for models that reject one.
       temperature: this.resolveTemperature(options, promptRow),
       source,
-      fallbackEnabled: !options.neverFallback,
+      // Nothing to fall back to when the named model is its own floor.
+      fallbackEnabled:
+        !options.neverFallback &&
+        !(tierModel === explicitModel && !options.tier),
       tierModel,
     };
   }
