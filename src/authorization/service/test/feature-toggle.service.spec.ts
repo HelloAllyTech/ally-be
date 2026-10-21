@@ -72,6 +72,8 @@ describe('FeatureToggleService — platform-only toggles', () => {
     FeatureToggleKey.LOGS,
     FeatureToggleKey.ADMIN_USER_MANAGEMENT,
     FeatureToggleKey.MULTI_TENANT_ALLOWLIST_MANAGEMENT,
+    FeatureToggleKey.UX_SIGNALS,
+    FeatureToggleKey.KNOWLEDGE_BASE,
   ])('withholds %s from a restricted admin', async (key) => {
     tenantScopeService.isRestricted.mockResolvedValue(true);
 

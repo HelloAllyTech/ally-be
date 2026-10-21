@@ -251,6 +251,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
       'The PostHog UX scan that files findings to Bug Hunter and suggestions ' +
       'to the Analytics Suggestions queue, plus its "Scan now" control.',
     legacyGrants: SDA_ONLY,
+    // Scans every user's PostHog sessions across the platform.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.USER_BADGES,
@@ -330,6 +332,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'View, edit, upload and archive documents in the WhatsApp bot’s knowledge base.',
     legacyGrants: SDA_ONLY,
+    // Feeds the one platform-wide WhatsApp bot.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.PRODUCT_ROADMAP_MANAGE,
