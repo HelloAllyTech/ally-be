@@ -65,6 +65,7 @@ describe('SkillGrowthAnalyticsService', () => {
             getLearnerIdentity: jest.fn().mockResolvedValue(null),
             getLearnerIdentities: jest.fn().mockResolvedValue([]),
             getLearnerKnowledgeAttempts: jest.fn().mockResolvedValue([]),
+            isLearnerInTenant: jest.fn().mockResolvedValue(true),
           },
         },
         {
@@ -282,6 +283,33 @@ describe('SkillGrowthAnalyticsService', () => {
 
       await expect(service.getLearnerSeries(999)).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+    });
+
+    it('404s a learner outside the org an org-restricted admin is looking at', async () => {
+      await setup();
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+      repository.isLearnerInTenant.mockResolvedValue(false);
+
+      await expect(service.getLearnerSeries(7, 'org-b')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(repository.isLearnerInTenant).toHaveBeenCalledWith(7, 'org-b');
+    });
+
+    it("shows only the learner's cuts in the named org, against the platform noise band", async () => {
+      await setup([row(7, 1, 2)]);
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+
+      await service.getLearnerSeries(7, 'org-a');
+
+      expect(cuts.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        undefined,
+      );
+      expect(cuts.getAllLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        'org-a',
       );
     });
 

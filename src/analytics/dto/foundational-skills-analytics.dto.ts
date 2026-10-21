@@ -254,6 +254,16 @@ export class FoundationalSkillsLearnersQueryDto {
   @IsInt()
   @Min(1)
   userId?: number;
+  @ApiProperty({
+    description:
+      'Only cuts practised in this org (uuid or code). Required of an ' +
+      'organization-restricted admin, and then only for one of their orgs.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/)
+  tenantId?: string;
 }
 
 export class FoundationalSkillsCutSessionDto {

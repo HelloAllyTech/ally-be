@@ -199,20 +199,32 @@ export class SkillGrowthAnalyticsService {
    * is a valid answer with empty series — "no scored practice yet" is
    * information where an error would read as a bug.
    */
+  /**
+   * With `tenantId` — the org an organization-restricted admin is looking at —
+   * the learner must belong to that org (404 otherwise, the same as an unknown
+   * id), and only their cuts practised there are shown. The noise band stays
+   * platform-wide: it is a calibration constant, not another org's data.
+   */
   async getLearnerSeries(
     learnerId: number,
+    tenantId?: string,
   ): Promise<SkillGrowthLearnerSeriesResponseDto> {
     const identity = await this.repository.getLearnerIdentity(learnerId);
-    if (!identity) {
+    if (
+      !identity ||
+      (tenantId &&
+        !(await this.repository.isLearnerInTenant(learnerId, tenantId)))
+    ) {
       throw new NotFoundException(`No user with id ${learnerId}`);
     }
 
-    const [learners, knowledgeAttempts] = await Promise.all([
+    const [learners, scopedLearners, knowledgeAttempts] = await Promise.all([
       this.loadLearners(undefined),
+      tenantId ? this.loadLearners(tenantId) : Promise.resolve(null),
       this.repository.getLearnerKnowledgeAttempts(learnerId),
     ]);
     const noise = cutNoiseSd(learners);
-    const learner: SkillGrowthLearner = learners.find(
+    const learner: SkillGrowthLearner = (scopedLearners ?? learners).find(
       (l) => l.userId === learnerId,
     ) ?? { userId: learnerId, name: identity.name, tenantId: null, cuts: [] };
 
