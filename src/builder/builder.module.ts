@@ -53,6 +53,8 @@ import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderCatalogService } from './service/builder-catalog.service';
 import { BuilderEvidenceLogService } from './service/builder-evidence-log.service';
+import { BuilderPrdReviewService } from './service/builder-prd-review.service';
+import { BuilderReadinessService } from './service/builder-readiness.service';
 import { BuilderProductMapService } from './service/builder-product-map.service';
 import { BuilderPlatformContextService } from './service/builder-platform-context.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
@@ -171,6 +173,8 @@ import {
     BuilderResearchService,
     BuilderCatalogService,
     BuilderEvidenceLogService,
+    BuilderPrdReviewService,
+    BuilderReadinessService,
     BuilderProductMapService,
     BuilderPlatformContextService,
     BuilderNotificationService,

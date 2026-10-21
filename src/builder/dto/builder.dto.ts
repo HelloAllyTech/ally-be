@@ -14,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -137,6 +138,18 @@ export class PatchBuilderPrdDto {
   @IsString()
   @MaxLength(500)
   changeSummary?: string;
+}
+
+export class DismissBuilderReviewFindingDto {
+  @ApiProperty({
+    description:
+      'Why the finding is wrong. Kept beside the finding as the record of ' +
+      'where the reviewer misjudged.',
+  })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  reason!: string;
 }
 
 export class StartBuilderBuildDto {

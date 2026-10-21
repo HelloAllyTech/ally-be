@@ -18,6 +18,10 @@ import { BuilderStacksService } from './builder-stacks.service';
 import { BuilderEvidenceService } from './builder-evidence.service';
 import { BuilderCatalogService } from './builder-catalog.service';
 import { BuilderEvidenceLogService } from './builder-evidence-log.service';
+import { BuilderReadinessService } from './builder-readiness.service';
+import { BuilderPrdReviewService } from './builder-prd-review.service';
+import { BuilderMessageRepository } from '../repository/builder-message.repository';
+import { BuilderMessageRole } from '../enum/builder.enum';
 import {
   BUILDER_REPO_NAMES,
   BUILDER_REPOS,
@@ -87,6 +91,9 @@ export class BuilderInterviewToolsService {
     private readonly evidence: BuilderEvidenceService,
     private readonly catalog: BuilderCatalogService,
     private readonly evidenceLog: BuilderEvidenceLogService,
+    private readonly readiness: BuilderReadinessService,
+    private readonly reviewService: BuilderPrdReviewService,
+    private readonly messageRepository: BuilderMessageRepository,
   ) {}
 
   getToolDefinitions(): any[] {
@@ -197,6 +204,32 @@ export class BuilderInterviewToolsService {
             },
           },
           required: ['ops'],
+        },
+      },
+      {
+        name: 'dismiss_review_finding',
+        description:
+          'Record that the admin says a PRD review finding is wrong, so it ' +
+          'stops blocking readiness. Only for a finding the admin rejected in ' +
+          'their latest message: `adminQuote` must be their words, copied ' +
+          'exactly from that message, and it is kept as the reason. Never ' +
+          'dismiss a finding on your own judgement — fix it in the PRD, or ' +
+          'ask the admin about it.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            findingId: {
+              type: 'string',
+              description:
+                'The finding id from the readiness blockers, e.g. "F2"',
+            },
+            adminQuote: {
+              type: 'string',
+              description:
+                "The admin's words rejecting it, copied exactly from their latest message",
+            },
+          },
+          required: ['findingId', 'adminQuote'],
         },
       },
       {
@@ -517,6 +550,8 @@ export class BuilderInterviewToolsService {
         return this.executeAskAdmin(input);
       case 'update_prd':
         return this.executeUpdatePrd(input, context);
+      case 'dismiss_review_finding':
+        return this.executeDismissFinding(input, context);
       case 'github_search_code':
         return this.wrapResearch(
           await this.githubRead.searchCode(
@@ -807,7 +842,14 @@ export class BuilderInterviewToolsService {
         input?.changeSummary ? String(input.changeSummary) : undefined,
       );
       context.doc = doc;
-      const readiness = this.prdService.computeReadiness(doc.draft);
+      // May run the cold reviewer: this is where a PRD first reads ready, and
+      // running it here puts the findings in this result, while the agent is
+      // still in the turn and can fix them.
+      const readiness = await this.readiness.settle(
+        context.session.id,
+        doc,
+        'edit',
+      );
 
       // What is now stored at each path the patch addressed. The PRD is
       // normalised on write, so "the op succeeded" and "the value you wrote is
@@ -880,5 +922,82 @@ export class BuilderInterviewToolsService {
         summary: `PRD patch rejected: ${message}`,
       };
     }
+  }
+
+  /**
+   * The admin rejected a review finding in chat. The agent may record that,
+   * but only in the admin's own words: the quote is checked against their
+   * latest message, so the reviewer cannot be overruled by the agent whose
+   * work it reviews.
+   */
+  private async executeDismissFinding(
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+  ): Promise<BuilderToolExecutionOutcome> {
+    const findingId = String(input?.findingId ?? '').trim();
+    const quote = String(input?.adminQuote ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const comparable = (text: string) =>
+      text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const messages = await this.messageRepository.listBySession(
+      context.session.id,
+    );
+    const latestAdmin = [...messages]
+      .reverse()
+      .find((message) => message.role === BuilderMessageRole.USER);
+    if (
+      quote.length < 12 ||
+      !latestAdmin ||
+      !comparable(String(latestAdmin.content ?? '')).includes(comparable(quote))
+    ) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'not_the_admins_words',
+          message:
+            "adminQuote must be copied exactly from the admin's latest message " +
+            '(at least a few words). Only the admin can dismiss a finding; if ' +
+            'they have not rejected it, fix it in the PRD or ask them.',
+        },
+        summary: `Review finding ${findingId || '?'} not dismissed: no admin quote`,
+      };
+    }
+
+    try {
+      await this.reviewService.dismiss(
+        context.doc,
+        findingId,
+        quote,
+        context.userId,
+        'interview',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        modelResult: { ok: false, error: 'dismiss_failed', message },
+        summary: `Review finding ${findingId} not dismissed: ${message}`,
+      };
+    }
+    const readiness = await this.readiness.assess(
+      context.session.id,
+      context.doc,
+    );
+    return {
+      modelResult: {
+        ok: true,
+        dismissed: findingId,
+        ready: readiness.ready,
+        blockers: readiness.blockers,
+      },
+      summary: `Review finding ${findingId} dismissed, in the admin's words`,
+      events: [
+        {
+          event: 'readiness',
+          data: readiness as unknown as Record<string, any>,
+        },
+      ],
+    };
   }
 }

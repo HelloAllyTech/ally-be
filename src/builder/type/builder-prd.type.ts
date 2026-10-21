@@ -277,6 +277,121 @@ export interface BuilderPrdReadiness {
    * them; the text a human sees comes from `sections[].hint`.
    */
   blockers: string[];
+  /**
+   * The cold reviewer's record, when this readiness was assessed with it —
+   * findings, their status and any dismissals. Null before the first review.
+   */
+  review?: BuilderPrdReview | null;
+}
+
+/**
+ * What the cold reviewer can object to. The five ways a PRD that passes every
+ * structural check can still send a build the wrong way — each one seen in
+ * session 2bc3a5cf, whose v8 read ready while doing all five.
+ */
+export type BuilderPrdReviewCategory =
+  | 'contradiction'
+  | 'unsupported_claim'
+  | 'unapplied_correction'
+  | 'missed_reuse'
+  | 'missing_success_metric';
+
+export const BUILDER_PRD_REVIEW_CATEGORIES: BuilderPrdReviewCategory[] = [
+  'contradiction',
+  'unsupported_claim',
+  'unapplied_correction',
+  'missed_reuse',
+  'missing_success_metric',
+];
+
+/** A person's decision that a finding is wrong, kept as eval data. */
+export interface BuilderPrdReviewDismissal {
+  reason: string;
+  /** The admin who dismissed it — directly, or through the interview quoting them. */
+  by: number;
+  at: string;
+  /** `admin` from the PRD panel; `interview` when the agent recorded the admin's words. */
+  via: 'admin' | 'interview';
+}
+
+export interface BuilderPrdReviewFinding {
+  /** "F1", "F2"… stable for the life of the review. */
+  id: string;
+  category: BuilderPrdReviewCategory;
+  /** The PRD key it is about — `requirements`, `technicalPlan`, `existingBehaviour`… */
+  section: string;
+  /** What is wrong, in a sentence or two. */
+  detail: string;
+  /** What would resolve it. */
+  fix: string;
+  /** The words in the PRD or transcript it rests on, when there are some. */
+  quote?: string;
+  status: 'open' | 'fixed' | 'dismissed';
+  /** PRD version the reviewer read. */
+  raisedInVersion: number;
+  /** PRD version a recheck found it resolved in. */
+  fixedInVersion?: number;
+  /** The recheck's one line on why it now reads resolved — or still open. */
+  checkNote?: string;
+  dismissal?: BuilderPrdReviewDismissal;
+}
+
+/**
+ * The cold reviewer's record on a PRD: run once, when the document first reads
+ * ready, then rechecked against its own open findings as the PRD changes.
+ *
+ * Stored on the doc row (`builder_prd_docs.review`), not in the draft: a
+ * dismissal is not a PRD edit and should not cut a version, and nothing an
+ * `update_prd` patch does can reach it.
+ */
+export interface BuilderPrdReview {
+  /**
+   * `done` — the reviewer answered (possibly with no findings).
+   * `failed` — the call itself failed; the next write retries it, and in the
+   * meantime it does not block. A crashed reviewer says nothing about the PRD.
+   */
+  status: 'done' | 'failed';
+  /** PRD version the full review read. */
+  versionNumber: number;
+  /** PRD version the open findings were last checked against. */
+  checkedVersion: number;
+  model: string | null;
+  reviewedAt: string;
+  checkedAt: string;
+  findings: BuilderPrdReviewFinding[];
+  error?: string | null;
+  /** Failed attempts in a row; reset by a success. */
+  failures?: number;
+}
+
+/**
+ * Facts about the session the readiness rubric cannot read off the draft.
+ *
+ * Gathered by `BuilderReadinessService`. Every field is optional and a field
+ * left undefined skips the check that needs it — so a caller that has none of
+ * them (a unit test, the pure rubric) gets the structural rubric unchanged,
+ * and a deployment with no catalog yet is not blocked for want of one.
+ */
+export interface BuilderReadinessSignals {
+  /** Learner components on both web and mobile, by name. */
+  parityTwins?: { name: string; web: string; mobile: string }[];
+  /** What the session's evidence log shows was read. */
+  evidence?: {
+    /** Rows in the log at all — zero means a session from before the log. */
+    total: number;
+    /** `repo:path` of every successful read. */
+    readOk: string[];
+    /** `repo:path` of every failed read. */
+    readFailed: string[];
+  };
+  /**
+   * The admin's latest message that said something in their own words, and
+   * when the PRD last changed. `null` message: none to check.
+   */
+  lastAdminMessage?: { text: string; at: Date } | null;
+  lastPrdEditAt?: Date | null;
+  /** `null`: not reviewed yet. Undefined: not part of this assessment. */
+  review?: BuilderPrdReview | null;
 }
 
 /** A fresh, empty PRD. Every key present so RFC-6902 `replace` always resolves. */

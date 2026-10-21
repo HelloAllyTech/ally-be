@@ -102,6 +102,40 @@ export class BuilderEvidenceLogService {
   }
 
   /**
+   * What the readiness rubric checks "What already exists" against: every
+   * read, split by outcome, plus how many rows the log holds at all — zero
+   * means a session from before the log existed, which the rubric skips
+   * rather than blocks. Undefined when the log cannot be read, so a database
+   * hiccup leaves the check out instead of failing every PRD.
+   */
+  async readOutcomes(sessionId: string): Promise<
+    | {
+        total: number;
+        readOk: string[];
+        readFailed: string[];
+      }
+    | undefined
+  > {
+    try {
+      const rows = await this.evidenceRepository.listBySession(sessionId);
+      const reads = rows.filter(
+        (row) => row.tool === 'github_read_file' || row.tool === 'wiki_read',
+      );
+      return {
+        total: rows.length,
+        readOk: [
+          ...new Set(reads.filter((row) => row.ok).map((row) => row.source)),
+        ],
+        readFailed: [
+          ...new Set(reads.filter((row) => !row.ok).map((row) => row.source)),
+        ],
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * A compact list for a prompt: what was read and what was searched, failures
    * marked. Used by the PRD reviewer and the technical design so both start
    * from what the interview found.

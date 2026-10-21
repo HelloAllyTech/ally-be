@@ -24,4 +24,14 @@ export class BuilderPrdVersionRepository extends Repository<BuilderPrdVersion> {
   listByDoc(docId: string): Promise<BuilderPrdVersion[]> {
     return this.find({ where: { docId }, order: { versionNumber: 'DESC' } });
   }
+
+  /** When the PRD last changed, by anyone. Null for a doc never written. */
+  async latestCreatedAt(docId: string): Promise<Date | null> {
+    const latest = await this.findOne({
+      where: { docId },
+      order: { versionNumber: 'DESC' },
+      select: { id: true, createdAt: true },
+    });
+    return latest?.createdAt ?? null;
+  }
 }

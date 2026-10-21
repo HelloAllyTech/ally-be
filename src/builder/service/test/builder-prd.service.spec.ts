@@ -35,7 +35,12 @@ const buildReadyPrd = (): BuilderPrdDocument => ({
   ],
   assumptions: [{ id: 'A1', text: 'Admins are internal', status: 'confirmed' }],
   technicalPlan: {
-    repos: [{ repo: 'ally-be', changesMd: 'New src/builder module.' }],
+    repos: [
+      {
+        repo: 'ally-be',
+        changesMd: 'New src/builder module (R1: the interview).',
+      },
+    ],
     dataModelMd: 'Six tables.',
     apiMd: 'REST under /v1/builder.',
   },
@@ -179,7 +184,10 @@ describe('BuilderPrdService', () => {
           '- ally-be: the unread count is computed here.';
         draft.technicalPlan.repos = [
           { repo: 'ally-web', changesMd: 'Clear the badge.' },
-          { repo: 'ally-be', changesMd: 'Match unread rows with IS NULL.' },
+          {
+            repo: 'ally-be',
+            changesMd: 'Match unread rows with IS NULL (R1).',
+          },
         ];
 
         expect(service.computeReadiness(draft).ready).toBe(true);
@@ -197,7 +205,10 @@ describe('BuilderPrdService', () => {
           '- ally-be: the count is computed here, and nothing in ally-mobile ' +
           'or ally-web has to change for it.';
         draft.technicalPlan.repos = [
-          { repo: 'ally-be', changesMd: 'Match unread rows with IS NULL.' },
+          {
+            repo: 'ally-be',
+            changesMd: 'Match unread rows with IS NULL (R1).',
+          },
         ];
 
         expect(service.computeReadiness(draft).ready).toBe(true);
@@ -671,6 +682,291 @@ describe('BuilderPrdService', () => {
           }),
         }),
       );
+    });
+  });
+
+  /**
+   * The rows that check what the PRD means. Each case is a defect session
+   * 2bc3a5cf's v8 shipped to "ready" with.
+   */
+  describe('computeReadiness — meaning checks', () => {
+    const row = (readiness: any, key: string) =>
+      readiness.sections.find((section: any) => section.key === key);
+    const at = (iso: string) => new Date(iso);
+
+    it('leaves the signal-driven rows out when it has no signals', () => {
+      const keys = service
+        .computeReadiness(buildReadyPrd())
+        .sections.map((section: any) => section.key);
+
+      expect(keys).toEqual(
+        expect.arrayContaining(['testPlanRepos', 'requirementHomes']),
+      );
+      for (const key of [
+        'mobileTwins',
+        'existingGrounded',
+        'lastMessageApplied',
+        'prdReview',
+      ]) {
+        expect(keys).not.toContain(key);
+      }
+    });
+
+    it('blocks a test plan that tests a repo the plan does not change', () => {
+      const draft = buildReadyPrd();
+      draft.testPlanMd +=
+        '\n- ally-ai: pytest for the challenger job in `ally-ai/tests/test_job.py`.';
+
+      const readiness = service.computeReadiness(draft);
+
+      expect(readiness.ready).toBe(false);
+      expect(row(readiness, 'testPlanRepos').hint).toContain('ally-ai');
+    });
+
+    it('blocks a requirement no repo plans to build, naming it', () => {
+      const draft = buildReadyPrd();
+      draft.requirements.push({
+        id: 'R2',
+        title: 'Attribution',
+        description: 'Record which prompt version wrote each debrief.',
+        acceptanceCriteria: ['Each debrief stores its prompt version'],
+      });
+
+      const readiness = service.computeReadiness(draft);
+
+      expect(row(readiness, 'requirementHomes').ok).toBe(false);
+      expect(row(readiness, 'requirementHomes').detail).toContain(
+        'R2 at /requirements/1',
+      );
+      // Score is about what is written; this row only blocks.
+      expect(readiness.score).toBe(100);
+    });
+
+    describe('mobile twins', () => {
+      const twins = [
+        {
+          name: 'DebriefTab',
+          web: 'apps/ally-helpline-dashboard/src/DebriefTab.tsx',
+          mobile: 'src/screens/DebriefTab.tsx',
+        },
+      ];
+      const webOnly = () => {
+        const draft = buildReadyPrd();
+        draft.technicalPlan.repos = [
+          { repo: 'ally-be', changesMd: 'Store the rating (R1).' },
+          { repo: 'ally-web', changesMd: 'Thumbs in `DebriefTab` (R1).' },
+        ];
+        draft.whereChangesBelong =
+          '- ally-be: storage.\n- ally-web: the control.';
+        return draft;
+      };
+
+      it('blocks a change to a web screen mobile also has', () => {
+        const readiness = service.computeReadiness(webOnly(), {
+          parityTwins: twins,
+        });
+
+        expect(row(readiness, 'mobileTwins').ok).toBe(false);
+        expect(row(readiness, 'mobileTwins').detail).toContain(
+          'ally-mobile:src/screens/DebriefTab.tsx',
+        );
+      });
+
+      it('passes once ally-mobile is planned or ruled out in non-goals', () => {
+        const planned = webOnly();
+        planned.technicalPlan.repos.push({
+          repo: 'ally-mobile',
+          changesMd: 'Thumbs in DebriefTab (R1).',
+        });
+        const ruledOut = webOnly();
+        ruledOut.nonGoals = 'Mobile waits for the next app release.';
+
+        expect(
+          row(
+            service.computeReadiness(planned, { parityTwins: twins }),
+            'mobileTwins',
+          ).ok,
+        ).toBe(true);
+        expect(
+          row(
+            service.computeReadiness(ruledOut, { parityTwins: twins }),
+            'mobileTwins',
+          ).ok,
+        ).toBe(true);
+      });
+    });
+
+    describe('what already exists was read', () => {
+      const withExisting = (text: string) => {
+        const draft = buildReadyPrd();
+        draft.existingBehaviour = text;
+        return draft;
+      };
+
+      it('blocks a section whose cited files only ever 404d', () => {
+        const readiness = service.computeReadiness(
+          withExisting(
+            'The skill-experiment module handles this: see ' +
+              '`src/skill-experiment/entities/skill-experiment.entity.ts`.',
+          ),
+          {
+            evidence: {
+              total: 4,
+              readOk: [],
+              readFailed: [
+                'ally-be:src/skill-experiment/entities/skill-experiment.entity.ts',
+              ],
+            },
+          },
+        );
+
+        expect(row(readiness, 'existingGrounded').ok).toBe(false);
+        expect(row(readiness, 'existingGrounded').hint).toContain(
+          "couldn't be read",
+        );
+      });
+
+      it('passes when a cited path was read', () => {
+        const readiness = service.computeReadiness(
+          withExisting(
+            'DEBRIEF_RUBRIC is defined in src/skill-experiment/constants/skill-experiment.constants.ts.',
+          ),
+          {
+            evidence: {
+              total: 2,
+              readOk: [
+                'ally-be:src/skill-experiment/constants/skill-experiment.constants.ts',
+              ],
+              readFailed: [],
+            },
+          },
+        );
+
+        expect(row(readiness, 'existingGrounded').ok).toBe(true);
+      });
+
+      it('asks for a citation when the section cites nothing', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          evidence: { total: 3, readOk: ['ally-be:src/a.ts'], readFailed: [] },
+        });
+
+        expect(row(readiness, 'existingGrounded').detail).toContain(
+          'cites no file paths',
+        );
+      });
+
+      it('skips a session from before the evidence log', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          evidence: { total: 0, readOk: [], readFailed: [] },
+        });
+
+        expect(row(readiness, 'existingGrounded')).toBeUndefined();
+      });
+    });
+
+    describe("the admin's latest message", () => {
+      it('blocks when it arrived after the last PRD change', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          lastAdminMessage: {
+            text: 'Auto-improve already writes challengers — reuse it.',
+            at: at('2026-10-20T10:05:00Z'),
+          },
+          lastPrdEditAt: at('2026-10-20T10:00:00Z'),
+        });
+
+        expect(readiness.ready).toBe(false);
+        expect(row(readiness, 'lastMessageApplied').detail).toContain(
+          'Auto-improve already writes challengers',
+        );
+      });
+
+      it('passes once the PRD changed after it, or when there is none to apply', () => {
+        const edited = service.computeReadiness(buildReadyPrd(), {
+          lastAdminMessage: {
+            text: 'Mobile too.',
+            at: at('2026-10-20T10:05:00Z'),
+          },
+          lastPrdEditAt: at('2026-10-20T10:06:00Z'),
+        });
+        const none = service.computeReadiness(buildReadyPrd(), {
+          lastAdminMessage: null,
+          lastPrdEditAt: null,
+        });
+
+        expect(row(edited, 'lastMessageApplied').ok).toBe(true);
+        expect(row(none, 'lastMessageApplied').ok).toBe(true);
+      });
+    });
+
+    describe('cold review', () => {
+      const finding = (status: 'open' | 'fixed' | 'dismissed') => ({
+        id: 'F1',
+        category: 'missing_success_metric' as const,
+        section: 'goals',
+        detail: 'No measurable outcome.',
+        fix: 'Name the thumbs-up rate and who sets its target.',
+        status,
+        raisedInVersion: 8,
+      });
+      const review = (status: 'open' | 'fixed' | 'dismissed') => ({
+        status: 'done' as const,
+        versionNumber: 8,
+        checkedVersion: 8,
+        model: 'gpt-5-mini',
+        reviewedAt: '2026-10-20T10:00:00Z',
+        checkedAt: '2026-10-20T10:00:00Z',
+        findings: [finding(status)],
+      });
+
+      it('blocks a PRD that is otherwise ready until the review has run', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          review: null,
+        });
+
+        expect(readiness.ready).toBe(false);
+        expect(row(readiness, 'prdReview').hint).toContain("hasn't run");
+      });
+
+      it('says nothing about the review while other rows still block', () => {
+        const draft = buildReadyPrd();
+        draft.openQuestions = ['Who owns the target?'];
+
+        const readiness = service.computeReadiness(draft, { review: null });
+
+        expect(row(readiness, 'prdReview').ok).toBe(true);
+        expect(readiness.blockers.join(' ')).not.toContain('review');
+      });
+
+      it('blocks on an open finding and hands the agent its fix', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          review: review('open'),
+        });
+
+        expect(readiness.ready).toBe(false);
+        expect(row(readiness, 'prdReview').detail).toContain(
+          'F1 [missing_success_metric, goals]',
+        );
+        expect(readiness.review?.findings[0].id).toBe('F1');
+      });
+
+      it.each(['fixed', 'dismissed'] as const)(
+        'is ready once the finding is %s',
+        (status) => {
+          expect(
+            service.computeReadiness(buildReadyPrd(), {
+              review: review(status),
+            }).ready,
+          ).toBe(true);
+        },
+      );
+
+      it('does not block when the reviewer itself failed', () => {
+        const readiness = service.computeReadiness(buildReadyPrd(), {
+          review: { ...review('open'), status: 'failed', findings: [] },
+        });
+
+        expect(readiness.ready).toBe(true);
+      });
     });
   });
 });

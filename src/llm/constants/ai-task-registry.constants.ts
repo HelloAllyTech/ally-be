@@ -1712,6 +1712,26 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     configPath: 'builder.mechanicalModel',
   },
   {
+    id: 'builder-prd-review',
+    task: LlmTask.BUILDER_PRD_REVIEW,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'A PRD first reads ready, then each time it changes with findings open',
+    detail:
+      'A cold reviewer over the PRD, the evidence log, the transcript and the reusable-systems ' +
+      'map. The first pass files contradictions, unsupported claims, unapplied corrections, ' +
+      'missed reuse and a missing success metric; later passes (usage metadata.mode=recheck) ' +
+      'only re-read the open findings against the current PRD and can close but never add ' +
+      'one. Findings block readiness until fixed or dismissed with a reason. On the platform ' +
+      'reasoning tier on purpose: a different model family from the Gemini interviewer it ' +
+      'checks, so the two do not share blind spots.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
     id: 'builder-epic-decomposition',
     task: LlmTask.BUILDER_EPIC_DECOMPOSITION,
     runtime: LlmRuntime.ALLY_BE,

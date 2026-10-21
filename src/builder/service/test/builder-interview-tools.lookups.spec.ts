@@ -40,6 +40,9 @@ const build = () => {
     {} as any,
     catalog as any,
     evidenceLog as any,
+    {} as any,
+    {} as any,
+    {} as any,
   );
   const context = { session: { id: 'session-1' }, doc: {}, userId: 1 } as any;
   return { service, githubRead, catalog, evidenceLog, context };
