@@ -4,6 +4,7 @@ import {
   ValidatedTurnAgent,
   ValidatedTurnState,
 } from '../agent-turn.types';
+import { joinCallsToResults } from '../agent-turn-receipt.util';
 import { flushHeldFrames, runValidatedTurn } from '../validated-turn.runner';
 
 /**
@@ -375,6 +376,66 @@ describe('runValidatedTurn', () => {
     expect(events.indexOf('question')).toBeGreaterThan(events.indexOf('token'));
     expect(turn.questions).toEqual([{ id: 'q-confirm', prompt: 'Publish?' }]);
     expect(execute).not.toHaveBeenCalledWith('ask_user', expect.anything());
+  });
+
+  it('does not hold a refused call against the reply: it never ran', async () => {
+    // Seen live on gemini-2.5-pro: the draft saved, then the model tried to
+    // save again in the next pass. That call was not offered and never ran;
+    // the saved draft stands, so there is no failed edit to repair.
+    passes = [
+      pass([call('p1', 'confirm_publish')]),
+      pass([call('e1', 'edit')]),
+      pass([call('f1', 'finish_turn', { message: 'Confirm below.' })]),
+    ];
+
+    const { turn } = await run();
+
+    expect(resultFor('e1')).toMatchObject({
+      error: 'not_available',
+      notRun: true,
+    });
+    expect(turn.rejections).toBe(0);
+    expect(turn.warnings).toEqual([]);
+    expect(execute).not.toHaveBeenCalledWith('edit', expect.anything());
+  });
+
+  it('joins calls to results by occurrence when a provider repeats an id across passes', async () => {
+    // Gemini's ids were unique only within one response: the same tool in two
+    // passes got the same id, and a join by id alone read the later result for both.
+    execute.mockImplementationOnce(() =>
+      Promise.resolve({ modelResult: { ok: true }, summary: 'Edited' }),
+    );
+    execute.mockImplementationOnce(() =>
+      Promise.resolve({
+        modelResult: { ok: false, error: 'patch_failed', message: 'bad path' },
+        summary: 'Edit rejected',
+      }),
+    );
+    passes = [
+      pass([call('same', 'edit')]),
+      pass([call('same', 'edit')]),
+      pass([
+        call('f1', 'finish_turn', {
+          message: 'The second change did not land.',
+        }),
+      ]),
+      pass([
+        call('f2', 'finish_turn', {
+          message: 'The second change did not land.',
+        }),
+      ]),
+    ];
+    state.changed = true;
+
+    const { turn } = await run();
+
+    // The last edit failed and nothing repaired it: held once, then delivered.
+    expect(turn.rejections).toBe(1);
+    // Each call reads its own result; by id alone both would read the failure.
+    const edits = joinCallsToResults(turn.toolCalls, turn.toolResults).filter(
+      (joined) => joined.name === 'edit',
+    );
+    expect(edits.map((joined) => joined.result?.ok)).toEqual([true, false]);
   });
 
   it('nudges a prose-only pass twice, then delivers its notes with a warning', async () => {

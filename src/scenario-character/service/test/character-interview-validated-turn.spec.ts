@@ -205,6 +205,32 @@ describe('CharacterInterviewOrchestratorService — validated turns', () => {
     expect(assistantRow().metadata.workingNotes).toEqual(['Saving.']);
   });
 
+  it('ignores a second save the turn no longer offered — the first one stands', async () => {
+    // Seen live on gemini-2.5-pro (2026-10-21): after the draft saved, the
+    // model sent save_character_draft again. It is refused without running,
+    // and must not read as a failed save under a reply that says it saved.
+    passes = [
+      pass([draft('d1')]),
+      pass([draft('d2')]),
+      pass([
+        call('f1', 'finish_turn', {
+          message: "Aisha's draft is ready for your review.",
+        }),
+      ]),
+    ];
+
+    const frames = await collect();
+
+    expect(toolsExecute.mock.calls.map(([name]) => name)).toEqual([
+      'save_character_draft',
+      'finish_turn',
+    ]);
+    const receipt = frames.find((f) => f.event === 'receipt').data;
+    expect(receipt.failed).toEqual([]);
+    expect(receipt.warnings).toEqual([]);
+    expect(assistantRow().metadata.rejections).toBeUndefined();
+  });
+
   it('will not say the draft is ready when save_character_draft failed', async () => {
     toolsExecute.mockImplementationOnce(async () => ({
       modelResult: {

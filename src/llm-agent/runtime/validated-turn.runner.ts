@@ -434,6 +434,9 @@ async function* runCalls(
           modelResult: {
             ok: false,
             error: 'not_available',
+            // Never ran, so it changed nothing and failed at nothing: the
+            // checks below and the receipt leave it out.
+            notRun: true,
             message: turn.endRequestedBy
               ? `Not run: ${turn.endRequestedBy} already ended the turn — only ` +
                 `\`${agent.closingTool}\` is left.`
@@ -506,7 +509,9 @@ async function replyProblems(
     });
   }
 
-  const failedHere = others.filter((use) => results.get(use.id)?.ok === false);
+  const failedHere = others.filter(
+    (use) => results.get(use.id)?.ok === false && !results.get(use.id)?.notRun,
+  );
   if (failedHere.length) {
     problems.push({
       key: `failed:${failedHere.map((use) => use.id).join(',')}`,
@@ -544,7 +549,7 @@ async function replyProblems(
 
   // An edit that failed in an earlier step, with no successful edit since.
   const edits = joinCallsToResults(turn.toolCalls, turn.toolResults).filter(
-    (call) => agent.isEdit(call.name) && call.result,
+    (call) => agent.isEdit(call.name) && call.result && !call.result.notRun,
   );
   const lastFailure = edits
     .map((call) => call.result?.ok === false)

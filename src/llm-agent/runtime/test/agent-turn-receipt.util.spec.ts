@@ -79,6 +79,35 @@ describe('agent turn receipts', () => {
     expect(receipt.failed).toEqual(['Search "q" — the corpus was unreachable']);
   });
 
+  it('joins a repeated id by occurrence and leaves out a call that never ran', () => {
+    const receipt = buildAgentTurnReceipt({
+      calls: joinCallsToResults(
+        [
+          { id: 'g_0', name: 'search', input: { query: 'one' } },
+          { id: 'g_0', name: 'search', input: { query: 'two' } },
+          { id: 'x', name: 'edit', input: {} },
+        ],
+        [
+          { toolUseId: 'g_0', name: 'search', result: { ok: true, hits: [1] } },
+          {
+            toolUseId: 'g_0',
+            name: 'search',
+            result: { ok: false, message: 'timed out' },
+          },
+          {
+            toolUseId: 'x',
+            name: 'edit',
+            result: { ok: false, error: 'not_available', notRun: true },
+          },
+        ],
+      ),
+      vocabulary,
+      changed: [],
+    });
+    expect(receipt.searched).toEqual(['Search "one" — 1 hits']);
+    expect(receipt.failed).toEqual(['Search "two" — timed out']);
+  });
+
   it("names a validation failure's first errors", () => {
     expect(
       describeToolFailure({

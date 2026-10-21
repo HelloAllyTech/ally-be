@@ -28,7 +28,13 @@ export interface AgentReceiptCall {
   result: Record<string, any> | undefined;
 }
 
-/** Calls and results as the transcript stores them, joined by tool_use id. */
+/**
+ * Calls and results as the transcript stores them, joined by tool_use id.
+ *
+ * By occurrence, not by id alone: Gemini's ids were unique only within one
+ * response until 2026-10-21, so a stored turn can hold two calls with the same
+ * id. The nth call with an id gets the nth result with it.
+ */
 export function joinCallsToResults(
   toolCalls: AgentTurnCall[] | Record<string, any>[] | null | undefined,
   toolResults:
@@ -37,16 +43,15 @@ export function joinCallsToResults(
     | null
     | undefined,
 ): AgentReceiptCall[] {
-  const byId = new Map(
-    (toolResults ?? []).map((result: Record<string, any>) => [
-      String(result?.toolUseId),
-      result,
-    ]),
-  );
-  return (toolCalls ?? []).map((call: Record<string, any>) => ({
+  const queues = new Map<string, Record<string, any>[]>();
+  for (const result of (toolResults ?? []) as Record<string, any>[]) {
+    const id = String(result?.toolUseId);
+    queues.set(id, [...(queues.get(id) ?? []), result]);
+  }
+  return ((toolCalls ?? []) as Record<string, any>[]).map((call) => ({
     name: String(call?.name ?? ''),
     input: (call?.input ?? {}) as Record<string, any>,
-    result: byId.get(String(call?.id))?.result as
+    result: queues.get(String(call?.id))?.shift()?.result as
       | Record<string, any>
       | undefined,
   }));
@@ -122,9 +127,9 @@ export function buildAgentTurnReceipt(input: {
 
   for (const call of input.calls) {
     if (!call.name || vocabulary.isEnding(call.name)) continue;
-    // A call with no result never ran to completion (an interrupted turn);
-    // it is neither done nor failed.
-    if (!call.result) continue;
+    // A call with no result never ran to completion (an interrupted turn),
+    // and one the runner refused never ran at all: neither is done or failed.
+    if (!call.result || call.result.notRun) continue;
     if (call.result.ok === false) {
       failed.push(
         `${vocabulary.describeAttempt(call.name, call.input)} — ${
