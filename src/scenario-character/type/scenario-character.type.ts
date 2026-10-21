@@ -15,6 +15,11 @@ export type ScenarioCharacterGetOptions = {
    * caller; omitted for a platform caller, who sees the whole library.
    */
   tenantId?: string | null;
+  /**
+   * For an organization-restricted platform caller: the global (Ally-owned)
+   * characters plus these organizations' — never another org's.
+   */
+  visibleTenantIds?: string[] | null;
 };
 
 /**
