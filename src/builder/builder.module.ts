@@ -62,6 +62,9 @@ import { BuilderEvalRunnerService } from './eval/service/builder-eval-runner.ser
 import { BuilderEvalFixtureService } from './eval/service/builder-eval-fixture.service';
 import { BuilderEvalService } from './eval/service/builder-eval.service';
 import { BuilderEvalController } from './eval/controller/builder-eval.controller';
+import { BuilderCorrection } from './entity/builder-correction.entity';
+import { BuilderCorrectionService } from './service/builder-correction.service';
+import { BuilderCorrectionsController } from './controller/builder-corrections.controller';
 import { BuilderReadinessService } from './service/builder-readiness.service';
 import { BuilderProductMapService } from './service/builder-product-map.service';
 import { BuilderPlatformContextService } from './service/builder-platform-context.service';
@@ -128,6 +131,7 @@ import {
       BuilderEvalFixture,
       BuilderEvalSuite,
       BuilderEvalRun,
+      BuilderCorrection,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -161,6 +165,7 @@ import {
     BuilderController,
     BuilderPipelineController,
     BuilderEvalController,
+    BuilderCorrectionsController,
   ],
   providers: [
     BuilderSlackService,
@@ -191,6 +196,7 @@ import {
     BuilderEvalRunnerService,
     BuilderEvalFixtureService,
     BuilderEvalService,
+    BuilderCorrectionService,
     BuilderProductMapService,
     BuilderPlatformContextService,
     BuilderNotificationService,

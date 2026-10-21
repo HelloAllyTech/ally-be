@@ -112,6 +112,9 @@ export const BUILDER_CURATE_INTERVAL = 'hourly';
 export const BUILDER_CURATE_TASK = 'builder-lesson-curate';
 export const BUILDER_OUTCOME_INTERVAL = 'hourly';
 export const BUILDER_OUTCOME_TASK = 'builder-outcome-sweep';
+/** The learning loop's scan of recent admin replies; daily is plenty for tens of sessions a week. */
+export const BUILDER_CORRECTIONS_INTERVAL = 'daily';
+export const BUILDER_CORRECTIONS_TASK = 'builder-corrections-scan';
 
 /** Stacks retrieval defaults — small on purpose; hits are compact. */
 export const BUILDER_STACKS_DEFAULT_RESULTS = 4;
@@ -318,6 +321,7 @@ export const BUILDER_AI_TASKS = {
   PRD_REVIEW: 'builder-prd-review',
   EVAL_ADMIN: 'builder-eval-admin',
   EVAL_JUDGE: 'builder-eval-judge',
+  CORRECTION_CLASSIFY: 'builder-correction-classify',
 } as const;
 
 // Prompt registry code (src/prompts/builder/interviewer_system.txt).

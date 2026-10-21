@@ -95,6 +95,28 @@ settings, or both. The flow:
 
 The prompt editor's own save and revert refuse behaviour changes to these prompts (409).
 
+## Corrections become eval cases
+
+`BuilderCorrectionService` runs daily over the last three days of admin replies. You can also
+start it with `POST /v1/builder/corrections/scan`.
+
+It classifies each free-text reply that follows a Builder message: is it a correction, and if so
+which kind (missing capability, stale doc, platform scope, over-asking). Card picks and
+acknowledgements are skipped without a model call.
+
+Each correction is routed four ways:
+
+- **A lesson candidate.** The curator folds it into the lessons every interview reads.
+- **A draft reuse line.** A person adds it to `builder-capabilities.constants.ts`.
+- **A draft doc fix.** Never published automatically: the repos and wiki are public, and the text
+  came from production.
+- **A checklist line on an `auto:` fixture** cut from the session. The fixture starts inactive. A
+  person reads the line, adds what else a correct PRD contains, and switches it on. A fixture a
+  person already curated for that session is never changed.
+
+`GET /v1/builder/corrections` lists them, with corrections per session. That count is the fix
+plan's north star.
+
 ## Cost
 
 A run is a full interview plus one simulated-admin call per turn and a judge call. A suite of

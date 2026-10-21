@@ -1763,6 +1763,24 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     configuredBy: 'LLM_REASONING_MODEL',
   },
   {
+    id: 'builder-correction-classify',
+    task: LlmTask.BUILDER_CORRECTION_CLASSIFY,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'Daily, over the last three days of admin replies in Builder interviews',
+    detail:
+      'Decides whether an admin reply corrected Builder and of what kind (missing capability, ' +
+      'stale doc, platform scope, over-asking), and drafts what it should teach: a lesson ' +
+      'candidate, a reuse line, a doc fix and an eval checklist line. One call per free-text ' +
+      'reply that follows a Builder message; card picks and acknowledgements are skipped ' +
+      'without a call. Capped at 200 messages a scan.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
     id: 'builder-epic-decomposition',
     task: LlmTask.BUILDER_EPIC_DECOMPOSITION,
     runtime: LlmRuntime.ALLY_BE,
