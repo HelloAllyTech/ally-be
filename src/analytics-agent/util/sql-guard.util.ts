@@ -219,3 +219,40 @@ export const guardSelectQuery = (rawSql: string): SqlGuardResult => {
  */
 export const wrapWithRowCap = (sql: string, limit: number): string =>
   `SELECT * FROM (\n${sql}\n) AS agent_result LIMIT ${Math.floor(limit) + 1}`;
+
+/**
+ * Double-quote camelCase column names the planner left bare.
+ *
+ * Postgres folds an unquoted `counselorId` to `counselorid`, which does not
+ * exist, so the query fails with "column does not exist" even though the
+ * planner named a real column. The catalogue asks for quoting and models still
+ * forget it, so this restores it deterministically.
+ *
+ * Runs on the planner's SQL *before* the guard, so the SQL the reader is shown
+ * is exactly the SQL that executed. Only names the catalogue lists as mixed-case
+ * are touched; string literals and already-quoted identifiers are left alone.
+ */
+export const quoteMixedCaseColumns = (
+  sql: string,
+  columnNames: string[],
+): string => {
+  const mixed = new Map<string, string>();
+  for (const name of columnNames) {
+    if (/[A-Z]/.test(name)) mixed.set(name.toLowerCase(), name);
+  }
+  if (!mixed.size) return sql;
+  const escaped = [...mixed.values()].map((n) =>
+    n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  );
+  const bare = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
+  // Quoted runs ('...' strings, "..." identifiers) pass through untouched.
+  return sql.replace(
+    /('(?:[^']|'')*'|"(?:[^"]|"")*")|([^'"]+)/g,
+    (_m, quoted: string | undefined, plain: string | undefined) =>
+      quoted ??
+      (plain as string).replace(
+        bare,
+        (hit) => `"${mixed.get(hit.toLowerCase())}"`,
+      ),
+  );
+};

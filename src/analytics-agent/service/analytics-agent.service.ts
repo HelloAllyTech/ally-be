@@ -16,7 +16,10 @@ import {
   AskAnalyticsAgentDto,
   AskAnalyticsAgentResponseDto,
 } from '../dto/analytics-agent.dto';
-import { guardSelectQuery } from '../util/sql-guard.util';
+import {
+  guardSelectQuery,
+  quoteMixedCaseColumns,
+} from '../util/sql-guard.util';
 import { SchemaCatalogService } from './schema-catalog.service';
 import { SqlExecutorService } from './sql-executor.service';
 
@@ -107,6 +110,11 @@ export class AnalyticsAgentService {
         promptVersion,
       });
     }
+
+    const columnNames = (await this.schemaCatalog.getCatalog()).flatMap(
+      (table) => table.columns.map((column) => column.name),
+    );
+    plan.sql = quoteMixedCaseColumns(plan.sql, columnNames);
 
     const guard = guardSelectQuery(plan.sql);
     if (!guard.ok) {
