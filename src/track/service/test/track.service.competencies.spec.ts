@@ -14,6 +14,7 @@ import { TrackStatus } from '../../type/track.type';
 import { TrackService } from '../track.service';
 import { TrackSharedService } from '../track-shared.service';
 import { TrackTranslationService } from '../track-translation.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 
 const EMPATHY = '00000000-0000-4000-8000-000000000001';
 const HOPE = '00000000-0000-4000-8000-000000000002';
@@ -49,6 +50,11 @@ const dataSource = {
 
 const trackSharedService = { getTrackWithStructure: jest.fn() };
 
+// An unrestricted caller unless a test says otherwise.
+const mockTenantScopeService = {
+  isRestricted: jest.fn().mockResolvedValue(false),
+};
+
 describe('TrackService — course competency tag (tracks.competencyIds)', () => {
   let service: TrackService;
 
@@ -67,6 +73,10 @@ describe('TrackService — course competency tag (tracks.competencyIds)', () => 
         { provide: ScenarioSharedService, useValue: {} },
         { provide: CaseSharedService, useValue: {} },
         { provide: TenantService, useValue: { findAll: jest.fn() } },
+        {
+          provide: TenantScopeService,
+          useValue: mockTenantScopeService,
+        },
         {
           provide: TrackTranslationService,
           useValue: { handleSourceChanged: jest.fn() },
