@@ -123,6 +123,22 @@ describe('the situation brief', () => {
     expect(problems[0].toModel).toContain('A rating table already exists');
   });
 
+  it('shows what a citation found, once, however many searches found it', () => {
+    const { brief } = normaliseSituationBrief(
+      {
+        ...goodBrief,
+        exists: [{ text: 'Auto-improve', cites: ['E1', 'e1', 'E1'] }],
+      },
+      evidence,
+    );
+    expect(brief.lines[0].cites).toEqual([
+      {
+        ref: 'E1',
+        label: 'capability Auto-improve (ally-be:src/skill-experiment)',
+      },
+    ]);
+  });
+
   it('holds reuse and extend to a citation, and every proposal to an approach', () => {
     const { problems } = normaliseSituationBrief(
       {

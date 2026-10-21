@@ -179,10 +179,9 @@ export function resolveCitation(
       (entry) => entry.ref.toUpperCase() === ref.toUpperCase(),
     );
     if (!item || !item.ok || !item.found.length) return null;
-    return {
-      ref: item.ref,
-      label: `${item.tool} "${item.query}" — ${item.found.slice(0, 2).join('; ')}`,
-    };
+    // What was found, not how: the admin is checking the claim against its
+    // source, and the tool and query that surfaced it are plumbing.
+    return { ref: item.ref, label: clip(item.found[0], 200) };
   }
   const needle = ref.toLowerCase().replace(/^\/+/, '');
   if (needle.length < 4) return null;
@@ -217,8 +216,11 @@ export function normaliseSituationBrief(
     const cites: BuilderBriefCitation[] = [];
     for (const cite of asStrings(raw)) {
       const resolved = resolveCitation(cite, evidence);
-      if (resolved) cites.push(resolved);
-      else unresolved.push(cite);
+      if (!resolved) unresolved.push(cite);
+      // Three searches that found the same thing are one source.
+      else if (!cites.some((existing) => existing.label === resolved.label)) {
+        cites.push(resolved);
+      }
     }
     return cites;
   };
