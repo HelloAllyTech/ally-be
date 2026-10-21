@@ -311,7 +311,7 @@ Five rules matter when writing one:
 - **A research tool the model has no index for goes unused.** The copilot had GitHub tools for
   a week and called none of them, because nothing told it what existed to look up. It started
   using them once the service put a product map in the cached system prefix
-  (`RoadmapCopilotProductMapService`: repos, admin surfaces, knowledge-pack heads, the wiki and
+  (`BuilderProductMapService`: repos, admin surfaces, knowledge-pack heads, the wiki and
   repo-docs index). Ship the index with the tool, and say in the tool description how its
   search actually matches — GitHub code search ANDs every word, so the model's natural
   eight-word queries all came back empty until the description said "one to three words".
