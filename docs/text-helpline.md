@@ -635,7 +635,7 @@ and who supports them), `next_step` (Agreed next step).
 
 ## 9. Copilot
 
-### 9.1 ally-ai endpoints (`app/api/v1/endpoints/helpline.py`, `app/core/helpline/`)
+### 9.1 ally-ai endpoints (`ally-ai/app/api/v1/endpoints/helpline.py`, `ally-ai/app/core/helpline/`)
 
 `POST /api/v1/helpline/risk` — always 200.
 ```py
@@ -644,7 +644,7 @@ class HelplineRiskRequest: message: str; recent: list[{role: 'talker'|'listener'
 class HelplineRiskResponse: is_crisis: bool = False; confidence: float = 0.0; signal: str = ""   # verbatim substring of `message`, ≤120 chars
                             subject: Literal['SELF','OTHER','UNCLEAR'] = 'UNCLEAR'; failed: bool = False; provider: str = ""; model: str = ""
 ```
-Prompt `app/prompts/helpline/risk_classify.txt` (code `ally_ai_helpline_risk_classify`) — written for
+Prompt `ally-ai/app/prompts/helpline/risk_classify.txt` (code `ally_ai_helpline_risk_classify`) — written for
 a **person in distress talking to a listener**, not a worker asking a bot. False-positive-biased,
 indirect phrasing, Hinglish and Indic scripts, "my friend is…" → `subject: OTHER`. `signal` is
 logged to `phi_logger` only.
@@ -660,7 +660,7 @@ class HelplineTurnResponse: stage: Literal['Engage','Understand','Support','Clos
                             failed: bool = False; provider: str = ""; model: str = ""
 ```
 `skill_key` ∈ `rapport, confidentiality, feelings, empathy, harm, functioning, explanation, family,
-goals, hope, coping, psychoeducation, feedback, verbal`. Prompt `app/prompts/helpline/copilot_turn.txt`
+goals, hope, coping, psychoeducation, feedback, verbal`. Prompt `ally-ai/app/prompts/helpline/copilot_turn.txt`
 (code `ally_ai_helpline_copilot_turn`), grounded in tentative, validating language: validate →
 normalise → invite reflection; never "I know how you feel". A post-generation filter drops any
 suggestion that promises unconditional confidentiality, diagnoses, or mentions medication/dosage.

@@ -701,13 +701,13 @@ Acceptance for every chart:
 ### 9.2 Frontend (ally-web, **Node 22**)
 
 - Endpoints: add paths to `ApiEndpoints.ANALYTICS` in
-  `apps/ally-admin-dashboard/src/constants/common.ts` and hooks to `src/api/analytics.ts`
+  `ally-web/apps/ally-admin-dashboard/src/constants/common.ts` and hooks to `ally-web/apps/ally-admin-dashboard/src/api/analytics.ts`
   (`baseAPI.injectEndpoints`, `windowParams()` for window queries). Types in
-  `src/types/analyticsTesting.ts` or beside their transform in `pages/Analytics/*Chart.ts`.
-- New sub-tab: add an entry to the `SUB_TABS` list in `pages/Analytics/tabs/HighlightsTab.tsx`
+  `ally-web/apps/ally-admin-dashboard/src/types/analyticsTesting.ts` or beside their transform in `pages/Analytics/*Chart.ts`.
+- New sub-tab: add an entry to the `SUB_TABS` list in `ally-web/apps/ally-admin-dashboard/src/pages/Analytics/tabs/HighlightsTab.tsx`
   (`{id:'effectiveness', label:'Effectiveness', blurb, render}`) and a component
-  `tabs/EffectivenessSubTab.tsx`. Only the selected sub-tab mounts.
-- Cards: `ChartCard` and `KpiTile` from `pages/Analytics/chartKit.tsx`; option factories
+  `ally-web/apps/ally-admin-dashboard/src/pages/Analytics/tabs/EffectivenessSubTab.tsx`. Only the selected sub-tab mounts.
+- Cards: `ChartCard` and `KpiTile` from `ally-web/apps/ally-admin-dashboard/src/pages/Analytics/chartKit.tsx`; option factories
   (`lineOpts`, `hBarOpts`, `stackedBarOpts`, `scatterOpts`), `colorScale` from
   `chartScales.ts` (`CATEGORICAL` capped at 8; `stableScale` for course/scenario names;
   `OUTCOME_SCALE` for passed/stuck). Existing custom bodies to reuse: `ChangeWhiskers`
@@ -719,7 +719,7 @@ Acceptance for every chart:
   `buildSource({derivation, window, n, asOf})`, and a `takeaway` string computed from the
   response (never from client-side arithmetic that could undo a suppression).
 - Tests: stub `requestAnimationFrame` in `vi.hoisted`, mock `@api` wholesale, assert query args
-  with the `lastArgs` helper; model files `tabs/__tests__/FoundationalSkillsSubTab.test.tsx`
+  with the `lastArgs` helper; model files `ally-web/apps/ally-admin-dashboard/src/pages/Analytics/tabs/__tests__/FoundationalSkillsSubTab.test.tsx`
   and `HighlightsTab.render.test.tsx`. Run `npx vitest run --project ally-admin-dashboard
   src/pages/Analytics`.
 - The `dataviz` skill is available in the session, but the repo's `chartKit`/`chartScales`

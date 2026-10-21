@@ -94,7 +94,7 @@ npm run lint:fix
 
 [`.docs-map.yml`](.docs-map.yml) declares which docs cover which code, and CI enforces it.
 Touching `src/**/entity/*.entity.ts` without updating `DATA_SCHEMA.md` fails the build —
-either update it, or apply the `docs:skip` label with a reason.
+either update it, or apply the `docs:skip` label with a reason. Backticked file paths in any doc are checked too: `node scripts/docs-path-lint.mjs` fails on one that no longer exists — fix it, or mark a deliberate one `<!-- docs-path-lint: planned -->`.
 
 Wiki edits do **not** need a hand-rolled second PR:
 

@@ -12,7 +12,7 @@ Prompt template files (`.txt`) in `src/prompts/` are synced to the database on s
 |------|---------|-------|
 | Use `snake_case` | `code_mixed_system.txt` | `system.txt` |
 | Filename must describe purpose | `general_text_translation.txt` | `text.txt` |
-| Minimum: subdir + descriptive filename | `openai_translation/speech_reexpression_user.txt` | `openai_translation/user.txt` |
+| Minimum: subdir + descriptive filename | `openai_translation/speech_reexpression_user.txt` | `openai_translation/user.txt` <!-- docs-path-lint: ignore --> |
 | Combine generic terms with context | `translation_system_prompt.txt` | `system.txt` |
 
 ### Why
@@ -336,7 +336,7 @@ subdir/_meta/<stem>.meta.json
 
 **Schema:** JSON object with optional `name`, `description`, and `category` (strings). If a key is missing or empty, the sync falls back to the path-derived value (via `formatLabel`).
 
-**Example:** For `openai_translation/guardrail_translation.txt`, create `openai_translation/_meta/guardrail_translation.meta.json`:
+**Example:** For `openai_translation/guardrail_translation.txt`, create `openai_translation/_meta/guardrail_translation.meta.json`: <!-- docs-path-lint: ignore -->
 
 ```json
 {
