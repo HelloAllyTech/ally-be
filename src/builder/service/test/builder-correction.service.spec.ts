@@ -297,3 +297,25 @@ describe('BuilderCorrectionService', () => {
     expect(corrections).toHaveLength(2);
   });
 });
+
+describe('checklistLine', () => {
+  const { checklistLine } = require('../builder-correction.service');
+
+  it('turns a "must not" sentence tagged must into a must_not line', () => {
+    expect(
+      checklistLine('The PRD must not redefine win/promotion criteria', 'must'),
+    ).toEqual({ text: 'Redefine win/promotion criteria', kind: 'must_not' });
+  });
+
+  it('keeps a plain line and its tag', () => {
+    expect(
+      checklistLine('Reuses Auto-improve for challengers', 'must'),
+    ).toEqual({
+      text: 'Reuses Auto-improve for challengers',
+      kind: 'must',
+    });
+    expect(checklistLine('A new challenger job', 'must_not').kind).toBe(
+      'must_not',
+    );
+  });
+});

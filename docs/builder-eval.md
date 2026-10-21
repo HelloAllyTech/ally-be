@@ -77,7 +77,7 @@ The default is three runs per fixture, because the model is not deterministic.
 `POST /v1/builder/eval/suites` runs the active fixtures (or `fixtureIds`) on the live
 settings, in the background, two runs at a time. A suite survives a deploy: it heartbeats every minute, and one
 silent for 10 minutes is resumed by another process. Finished runs are kept, and a run cut off
-mid-way starts again. After three resumes it is marked errored. Every suite records which
+mid-way starts again. After three resumes it is marked errored. `POST /v1/builder/eval/suites/:id/cancel` stops a running suite: unstarted runs are cancelled, a run already in flight finishes and keeps its result, and a cancelled prompt-gate suite never publishes. Every suite records which
 interview loop it ran in `overrides.validatedTurns` — the live `builder_settings.validatedTurns`
 unless the request passes `validatedTurns` to compare the two loops. Suites from before the
 switch existed have no value and replay the legacy loop even when resumed after a deploy, so a

@@ -516,3 +516,121 @@ describe('BuilderEvalService — resuming a suite a deploy cut off', () => {
     );
   });
 });
+
+/** Two duplicate baselines started minutes apart both ran to the end: nothing could stop one. */
+describe('BuilderEvalService — cancelling a suite', () => {
+  const build = (affected: number) => {
+    const suites = {
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ id: 'suite-1', status: 'running' }),
+      findOneOrFail: jest
+        .fn()
+        .mockResolvedValue({ id: 'suite-1', status: 'cancelled' }),
+      update: jest.fn().mockResolvedValue({ affected }),
+    };
+    const runs = { update: jest.fn() };
+    const service = new BuilderEvalService(
+      {
+        getRepository: (entity: any) =>
+          entity?.name === 'BuilderEvalSuite' ? suites : runs,
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, suites, runs };
+  };
+
+  it('cancels a running suite and its unstarted runs', async () => {
+    const { service, suites, runs } = build(1);
+
+    const suite = await service.cancelSuite('suite-1', 7);
+
+    expect(suites.update).toHaveBeenCalledWith(
+      { id: 'suite-1', status: 'running' },
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+    expect(runs.update).toHaveBeenCalledWith(
+      { suiteId: 'suite-1', status: 'queued' },
+      { status: 'cancelled' },
+    );
+    expect(suite.status).toBe('cancelled');
+  });
+
+  it('refuses a suite that is not running', async () => {
+    const { service, runs } = build(0);
+
+    await expect(service.cancelSuite('suite-1', 7)).rejects.toThrow(
+      /nothing to cancel/,
+    );
+    expect(runs.update).not.toHaveBeenCalled();
+  });
+
+  it('takes no more runs once the suite is no longer running', async () => {
+    const runner = { run: jest.fn() };
+    const suites = {
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ id: 'suite-1', status: 'cancelled' }),
+      update: jest.fn(),
+    };
+    const runs = {
+      find: jest.fn().mockResolvedValue([
+        { id: 'r1', fixtureId: 'f1', repetition: 1 },
+        { id: 'r2', fixtureId: 'f1', repetition: 2 },
+      ]),
+      update: jest.fn(),
+    };
+    const service = new BuilderEvalService(
+      {
+        getRepository: (entity: any) =>
+          entity?.name === 'BuilderEvalSuite' ? suites : runs,
+      } as any,
+      {} as any,
+      runner as any,
+      {} as any,
+      {} as any,
+    );
+
+    await (service as any).runQueued({ id: 'suite-1', createdBy: 7 }, [
+      { id: 'f1' },
+    ]);
+
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it('never completes or publishes a suite that was cancelled meanwhile', async () => {
+    const promptsService = { findIdByCode: jest.fn(), updatePrompt: jest.fn() };
+    const suites = {
+      findOneOrFail: jest.fn().mockResolvedValue({
+        id: 'gate-1',
+        trigger: 'manual',
+        candidate: { promptCode: 'builder_interviewer_system', content: 'x' },
+      }),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const runs = { find: jest.fn().mockResolvedValue([]) };
+    const service = new BuilderEvalService(
+      {
+        getRepository: (entity: any) =>
+          entity?.name === 'BuilderEvalSuite' ? suites : runs,
+      } as any,
+      {} as any,
+      {} as any,
+      promptsService as any,
+      {} as any,
+    );
+    jest.spyOn(service as any, 'runQueued').mockResolvedValue(undefined);
+
+    await (service as any).execute('gate-1', []);
+
+    // The completion write is conditional on still running, and it matched nothing.
+    expect(suites.update).toHaveBeenCalledWith(
+      { id: 'gate-1', status: 'running' },
+      expect.objectContaining({ status: 'completed' }),
+    );
+    expect(promptsService.updatePrompt).not.toHaveBeenCalled();
+  });
+});

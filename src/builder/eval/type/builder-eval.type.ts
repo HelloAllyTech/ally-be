@@ -181,9 +181,16 @@ export type BuilderEvalRunStatus =
   | 'running'
   | 'passed'
   | 'failed'
-  | 'errored';
+  | 'errored'
+  /** Never run: its suite was cancelled first. */
+  | 'cancelled';
 
-export type BuilderEvalSuiteStatus = 'running' | 'completed' | 'errored';
+export type BuilderEvalSuiteStatus =
+  | 'running'
+  | 'completed'
+  | 'errored'
+  /** Stopped by a person; runs that had finished keep their results. */
+  | 'cancelled';
 
 export type BuilderEvalSuiteTrigger = 'manual' | 'baseline' | 'prompt_gate';
 
