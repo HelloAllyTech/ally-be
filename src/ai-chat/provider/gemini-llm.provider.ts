@@ -92,10 +92,22 @@ export class GeminiLlmProvider implements LlmProvider {
       });
     }
 
+    const system = systemParts.join('\n\n');
+
+    // Gemini rejects a call with no `contents` ("contents are required"), and a
+    // system message only ever lands in `systemInstruction`. A prompt made of
+    // system messages alone (e.g. the keyed course-translation call, which has
+    // no user turn) would therefore fail on every request. Send that text as
+    // the one user turn instead of as an instruction nobody is following.
+    if (contents.length === 0 && systemParts.length) {
+      return {
+        systemInstruction: undefined,
+        contents: [{ role: 'user', parts: [{ text: system }] }],
+      };
+    }
+
     return {
-      systemInstruction: systemParts.length
-        ? systemParts.join('\n\n')
-        : undefined,
+      systemInstruction: systemParts.length ? system : undefined,
       contents,
     };
   }
