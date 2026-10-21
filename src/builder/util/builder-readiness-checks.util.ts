@@ -167,49 +167,7 @@ export function citedPathMatchesRead(cited: string, read: string): boolean {
 
 /**
  * Messages that answer nothing and so owe the PRD nothing: "ok", "thanks",
- * "looks good, go ahead". Each comma- or full-stop-separated clause must be
- * one of these for the whole message to count as an acknowledgement.
+ * "looks good, go ahead". Shared with the validated-turn runtime, so the
+ * other agents read an acknowledgement the same way.
  */
-const ACKNOWLEDGEMENTS = new Set([
-  'ok',
-  'okay',
-  'k',
-  'yes',
-  'yep',
-  'yeah',
-  'sure',
-  'fine',
-  'thanks',
-  'thank you',
-  'thx',
-  'ty',
-  'great',
-  'good',
-  'cool',
-  'nice',
-  'perfect',
-  'done',
-  'agreed',
-  'looks good',
-  'sounds good',
-  'lgtm',
-  'go ahead',
-  'go on',
-  'continue',
-  'proceed',
-  'carry on',
-  'next',
-]);
-
-export function isAcknowledgement(text: string): boolean {
-  const clauses = String(text ?? '')
-    .toLowerCase()
-    .replace(/[!?'"’]/g, '')
-    .split(/[,.;\n]+|\band\b/)
-    .map((clause) => clause.trim().replace(/\s+/g, ' '))
-    .filter(Boolean);
-  return (
-    clauses.length > 0 &&
-    clauses.every((clause) => ACKNOWLEDGEMENTS.has(clause))
-  );
-}
+export { isAcknowledgement } from 'src/llm-agent/runtime/agent-turn-words.util';

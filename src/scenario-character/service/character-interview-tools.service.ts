@@ -20,6 +20,14 @@ import {
   KbRetrievalConsumer,
 } from 'src/knowledge-base/enum/knowledge-base.enum';
 import { KnowledgeBaseService } from 'src/knowledge-base/service/knowledge-base.service';
+import {
+  closingToolDefinition,
+  withValidatedAsk,
+} from 'src/llm-agent/runtime/agent-turn-tools.util';
+import {
+  CHARACTER_INTERVIEW_FINISH_WHEN,
+  CHARACTER_INTERVIEW_TURN_VOCABULARY,
+} from '../util/character-interview-turn.util';
 
 /**
  * How many served chunk ids a session carries.
@@ -176,7 +184,28 @@ export class CharacterInterviewToolsService {
     private readonly knowledgeBaseService: KnowledgeBaseService,
   ) {}
 
-  getToolDefinitions(): any[] {
+  /**
+   * The belt for one turn. With validated turns on, ask_question carries the
+   * reply (`message`) and finish_turn ends a turn with no question; off, it is
+   * exactly the belt the interview had before.
+   */
+  getToolDefinitions(options: { validatedTurns?: boolean } = {}): any[] {
+    const tools = this.legacyToolDefinitions();
+    if (!options.validatedTurns) return tools;
+    return [
+      ...tools.map((tool) =>
+        tool.name === 'ask_question'
+          ? withValidatedAsk(tool, CHARACTER_INTERVIEW_TURN_VOCABULARY)
+          : tool,
+      ),
+      closingToolDefinition(
+        CHARACTER_INTERVIEW_TURN_VOCABULARY,
+        CHARACTER_INTERVIEW_FINISH_WHEN,
+      ),
+    ];
+  }
+
+  private legacyToolDefinitions(): any[] {
     return [
       {
         name: 'ask_question',
@@ -403,6 +432,12 @@ export class CharacterInterviewToolsService {
         return this.executeSearchCorpus(input, context);
       case 'save_character_draft':
         return this.executeSaveCharacterDraft(input, context);
+      case 'finish_turn':
+        return {
+          modelResult: { ok: true, delivered: true },
+          summary: 'Turn finished',
+          endTurn: true,
+        };
       default:
         return {
           modelResult: { ok: false, error: `Unknown tool "${name}"` },

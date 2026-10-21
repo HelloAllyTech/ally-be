@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
@@ -30,7 +30,10 @@ import {
   CharacterInterviewToolsService,
   InterviewToolExecutionContext,
 } from './character-interview-tools.service';
-import { CharacterInterviewSseFrame } from '../type/character-interview-sse.type';
+import {
+  CharacterInterviewSseFrame,
+  InterviewToolExecutionOutcome,
+} from '../type/character-interview-sse.type';
 import { CreateCharacterInterviewMessageDto } from '../dto/character-interview.dto';
 import {
   CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES,
@@ -38,6 +41,29 @@ import {
   CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES,
   CHARACTER_INTERVIEW_PROMPTS,
 } from '../constants/character-interview.constants';
+import { AgentTurnSettingsService } from 'src/llm-agent/runtime/agent-turn-settings.service';
+import {
+  AgentTurnReceipt,
+  createValidatedTurnState,
+  ValidatedTurnAgent,
+  ValidatedTurnState,
+} from 'src/llm-agent/runtime/agent-turn.types';
+import { runValidatedTurn } from 'src/llm-agent/runtime/validated-turn.runner';
+import {
+  buildAgentTurnReceipt,
+  joinCallsToResults,
+} from 'src/llm-agent/runtime/agent-turn-receipt.util';
+import { renderTurnProtocol } from 'src/llm-agent/runtime/agent-turn-tools.util';
+import {
+  CHARACTER_INTERVIEW_RECEIPT_VOCABULARY,
+  CHARACTER_INTERVIEW_TURN_RULES,
+  CHARACTER_INTERVIEW_TURN_VOCABULARY,
+  claimsCharacterDraft,
+  describeCharacterInterviewAttempt,
+  describeCharacterInterviewChanges,
+  isCharacterInterviewEdit,
+  isCharacterInterviewLookup,
+} from '../util/character-interview-turn.util';
 
 /**
  * What the model is told when its own message was cut off at the output cap.
@@ -93,6 +119,14 @@ const CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR =
   'was abandoned. Your answers are all still here — send your message again. ' +
   'If it keeps happening, ask an administrator to switch the interviewer ' +
   'prompt to a different model.';
+
+/**
+ * A validated turn that did work but never sent a reply. Not "came back
+ * empty": its receipt lists what it read and saved.
+ */
+const CHARACTER_INTERVIEW_NO_REPLY_ERROR =
+  'That turn ended without a reply. What it looked up is listed under this ' +
+  'message — send your message again to carry on.';
 
 /** Shown to the admin when a turn came back with nothing in it at all. */
 const CHARACTER_INTERVIEW_EMPTY_TURN_ERROR =
@@ -188,6 +222,58 @@ const CHARACTER_INTERVIEW_MISCONFIGURED_ERROR =
   'the turn could not run. Your answers are all still here. Ask an ' +
   "administrator to check the interviewer prompt's model setting.";
 
+/** Everything one turn accumulates, shared by both loops and the persisted row. */
+interface CharacterInterviewTurnState extends ValidatedTurnState {
+  /** Legacy loop: the prose the admin watched stream in. */
+  textParts: string[];
+  characterDraft: Record<string, any> | null;
+  receipt: AgentTurnReceipt | null;
+}
+
+function createTurnState(): CharacterInterviewTurnState {
+  return {
+    ...createValidatedTurnState(),
+    textParts: [],
+    characterDraft: null,
+    receipt: null,
+  };
+}
+
+/** What both loops run with; fixed for the turn. */
+interface CharacterInterviewLoopContext {
+  sessionId: string;
+  provider: IAgentLlmProvider;
+  model: string;
+  providerName: string;
+  system: string;
+  messages: AgentMessage[];
+  context: InterviewToolExecutionContext;
+  maxIterations: number;
+}
+
+/**
+ * The `tool_result` frame. A failure carries its reason — the summary
+ * alone ("Draft rejected: 3 validation error(s)") gives the admin nothing to
+ * act on.
+ */
+function toolResultData(
+  name: string,
+  outcome: Pick<InterviewToolExecutionOutcome, 'summary' | 'modelResult'>,
+): Record<string, any> {
+  return {
+    name,
+    summary: outcome.summary,
+    ...(outcome.modelResult.ok === false
+      ? {
+          ok: outcome.modelResult.ok,
+          error: outcome.modelResult.error,
+          message: outcome.modelResult.message,
+          errors: outcome.modelResult.errors,
+        }
+      : {}),
+  };
+}
+
 /**
  * The interview turn loop (modeled on CopilotOrchestratorService): stream a
  * model response, execute tool calls through CharacterInterviewToolsService,
@@ -218,6 +304,14 @@ export class CharacterInterviewOrchestratorService {
     private readonly messageRepository: CharacterInterviewMessageRepository,
     private readonly llmUsage: LlmUsageService,
     private readonly agentLlmFactory: AgentLlmProviderFactory,
+    /**
+     * The validated-turns switch. Optional so a fixture without it runs the
+     * previous loop. Typed as the class, not a Pick of it: the parameter type
+     * is the injection token, and a structural type would emit `Object`,
+     * which @Optional() would quietly resolve to nothing.
+     */
+    @Optional()
+    private readonly agentTurnSettings?: AgentTurnSettingsService,
   ) {}
 
   /**
@@ -287,12 +381,12 @@ export class CharacterInterviewOrchestratorService {
       createdBy: userId,
     });
 
-    const system = await this.buildSystemPrompt();
+    const validatedTurns = await this.validatedTurnsEnabled();
+    const system = await this.buildSystemPrompt(validatedTurns);
     const messages: AgentMessage[] = [
       ...this.rebuildHistory(history),
       { role: 'user', content: userContent },
     ];
-    const tools = this.toolsService.getToolDefinitions();
 
     const context: InterviewToolExecutionContext = {
       session,
@@ -302,17 +396,18 @@ export class CharacterInterviewOrchestratorService {
     // Turn accumulators for the persisted assistant message. Question payloads
     // are persisted in the row's metadata so a resumed chat can reconstruct
     // the cards faithfully.
-    const textParts: string[] = [];
-    const allToolCalls: Record<string, any>[] = [];
-    const allToolResults: Record<string, any>[] = [];
-    const questions: Record<string, any>[] = [];
-    let characterDraft: Record<string, any> | null = null;
-    let iterations = 0;
-    let stopReason: string | null = null;
-    let turnErrored = false;
-    let turnError: string | null = null;
-    let truncations = 0;
-    let invalidToolCalls = 0;
+    const turn = createTurnState();
+    const loop: CharacterInterviewLoopContext = {
+      sessionId,
+      provider,
+      model,
+      providerName,
+      system,
+      messages,
+      context,
+      maxIterations,
+    };
+    const run = { provider: providerName, model, validatedTurns };
     // False until the turn reaches its own end (normally, or through the
     // error classifier below). It stays false when the consumer abandons the
     // generator mid-turn — the controller does that as soon as the admin's
@@ -321,316 +416,23 @@ export class CharacterInterviewOrchestratorService {
     let turnCompleted = false;
 
     try {
-      for (let iteration = 0; iteration < maxIterations; iteration++) {
-        iterations = iteration + 1;
-
-        const turn = yield* this.runPass(provider, {
-          model,
-          maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
-          system,
-          messages,
-          tools,
-        });
-
-        stopReason = turn.stopReason;
-        this.recordUsage(
-          turn.usage,
-          providerName,
-          model,
-          sessionId,
-          iterations,
-        );
-
-        const contentBlocks = turn.content;
-        for (const block of contentBlocks) {
-          if (block?.type === 'text' && block.text) {
-            textParts.push(block.text);
-          }
-        }
-        const toolUses = contentBlocks.filter(
-          (block): block is Extract<AgentContentBlock, { type: 'tool_use' }> =>
-            block?.type === 'tool_use',
-        );
-
-        // The model tried to call a tool and produced something unreadable.
-        //
-        // The turn comes back empty, so this is the one failure that would
-        // otherwise be indistinguishable from the model choosing to say
-        // nothing — it would surface as `empty_turn` and lose the turn. There
-        // is nothing partial to salvage and nothing to tell the model (it
-        // cannot see the malformed call either), so the recovery is to send
-        // the identical request again.
-        if (stopReason === 'invalid_tool_call') {
-          invalidToolCalls += 1;
-          if (
-            invalidToolCalls > CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES
-          ) {
-            this.logger.error(
-              `Interview session ${sessionId}: ${providerName}/${model} ` +
-                'returned an unreadable tool call after ' +
-                `${CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES} ` +
-                'retries; ending the turn.',
-            );
-            turnErrored = true;
-            turnError = CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR;
-            yield {
-              event: 'error',
-              data: {
-                code: 'invalid_tool_call',
-                message: CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR,
-              },
-            };
-            break;
-          }
-
-          this.logger.warn(
-            `Interview session ${sessionId}: ${providerName}/${model} ` +
-              'returned an unreadable tool call (retry ' +
-              `${invalidToolCalls}/${CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES}).`,
-          );
-          continue;
-        }
-
-        // The model ran out of output room mid-message.
-        //
-        // A `max_tokens` stop carries whatever text it managed plus, usually,
-        // a half-written tool_use whose `input` the SDK reconstructs by
-        // partial JSON parse — present, and unusable. Executing it would save
-        // an arbitrary fragment of a character; dropping it silently (which is
-        // what this loop used to do) ends the turn with the agent having
-        // announced a draft it never wrote. Tell the model and let it retry
-        // smaller.
-        if (stopReason === 'max_tokens') {
-          truncations += 1;
-          if (truncations > CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES) {
-            this.logger.error(
-              `Interview session ${sessionId}: model output still truncated ` +
-                `at ${CHARACTER_INTERVIEW_MAX_TOKENS} tokens after ` +
-                `${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES} retries; ` +
-                'ending the turn.',
-            );
-            turnErrored = true;
-            turnError = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
-            yield {
-              event: 'error',
-              data: {
-                code: 'response_truncated',
-                message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
-              },
-            };
-            break;
-          }
-
-          this.logger.warn(
-            `Interview session ${sessionId}: model output truncated at ` +
-              `${CHARACTER_INTERVIEW_MAX_TOKENS} tokens ` +
-              `(retry ${truncations}/${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES}, ` +
-              `${toolUses.length} tool call(s) discarded).`,
-          );
-
-          // Only the completed text blocks are replayed — a truncated
-          // tool_use has no result to pair it with, and the API rejects a
-          // dangling one.
-          const textBlocks = contentBlocks.filter(
-            (block): block is Extract<AgentContentBlock, { type: 'text' }> =>
-              block?.type === 'text' && Boolean(block.text),
-          );
-          if (textBlocks.length > 0) {
-            messages.push({ role: 'assistant', content: textBlocks });
-          }
-          messages.push({
-            role: 'user',
-            content: CHARACTER_INTERVIEW_TRUNCATION_NUDGE,
-          });
-          continue;
-        }
-
-        if (stopReason !== 'tool_use' || toolUses.length === 0) {
-          break;
-        }
-
-        // Feed the assistant turn (with its tool_use blocks) back verbatim.
-        messages.push({ role: 'assistant', content: contentBlocks });
-
-        const toolResultBlocks: AgentContentBlock[] = [];
-        let endTurn = false;
-
-        for (const toolUse of toolUses) {
-          const name = String(toolUse.name);
-          const input = (toolUse.input ?? {}) as Record<string, any>;
-          yield { event: 'tool_call', data: { name, input } };
-          allToolCalls.push({ id: toolUse.id, name, input });
-
-          let outcome;
-          try {
-            outcome = await this.toolsService.execute(name, input, context);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            this.logger.error(
-              `Interview tool "${name}" failed for session ${sessionId}: ${message}`,
-            );
-            outcome = {
-              // The model gets the real reason — it is what lets it retry the
-              // call differently — but the summary goes over the wire to the
-              // browser, so it carries the tool name and nothing else.
-              modelResult: { ok: false, error: 'tool_failed', message },
-              summary: `Tool ${name} failed.`,
-            };
-          }
-
-          for (const frame of outcome.events ?? []) {
-            if (frame.event === 'question') {
-              questions.push(frame.data);
-            } else if (frame.event === 'character_draft') {
-              characterDraft = frame.data.draft ?? null;
-            }
-            yield frame;
-          }
-          yield {
-            event: 'tool_result',
-            data: {
-              name,
-              summary: outcome.summary,
-              ...(outcome.modelResult.ok === false
-                ? {
-                    ok: outcome.modelResult.ok,
-                    error: outcome.modelResult.error,
-                    message: outcome.modelResult.message,
-                    errors: outcome.modelResult.errors,
-                  }
-                : {}),
-            },
-          };
-
-          allToolResults.push({
-            toolUseId: toolUse.id,
-            name,
-            result: outcome.modelResult,
-          });
-          toolResultBlocks.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(outcome.modelResult),
-          });
-          if (outcome.endTurn) {
-            endTurn = true;
-          }
-        }
-
-        messages.push({ role: 'user', content: toolResultBlocks });
-
-        if (endTurn) {
-          stopReason = 'end_turn';
-          break;
-        }
-      }
-
-      // The iteration cap landed on a truncated pass, so the retry above never
-      // got to run. Nothing was saved, and the admin is owed the same
-      // explanation as the give-up path.
-      if (stopReason === 'max_tokens' && !turnErrored) {
-        turnErrored = true;
-        turnError = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
-        yield {
-          event: 'error',
-          data: {
-            code: 'response_truncated',
-            message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
-          },
-        };
-      }
-
-      // Same for the iteration cap landing on an unreadable tool call: the
-      // retry never ran, and the turn is empty for a reason the admin should
-      // be told rather than being reported as the model having nothing to say.
-      if (stopReason === 'invalid_tool_call' && !turnErrored) {
-        turnErrored = true;
-        turnError = CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR;
-        yield {
-          event: 'error',
-          data: {
-            code: 'invalid_tool_call',
-            message: CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR,
-          },
-        };
-      }
-
-      // We exhausted the round-trip budget while the model still wanted
-      // tools. Make one final tool-less pass so the agent wraps up in prose
-      // instead of dying with a raw error.
-      if (stopReason === 'tool_use') {
-        this.logger.warn(
-          `Interview session ${sessionId} hit the ${maxIterations}-iteration ` +
-            'cap; making a tool-less wrap-up pass.',
-        );
-        // No `tools` on this pass — that is what makes it a wrap-up. Said in
-        // the system prompt rather than as a trailing message, which would
-        // follow the tool results with a second user turn in a row.
-        const wrapUp = yield* this.runPass(provider, {
-          model,
-          maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
-          system: characterDraft
-            ? system
-            : `${system}\n\n${CHARACTER_INTERVIEW_WRAP_UP_NO_DRAFT_NOTE}`,
-          messages,
-        });
-        this.recordUsage(
-          wrapUp.usage,
-          providerName,
-          model,
-          sessionId,
-          iterations,
-        );
-        for (const block of wrapUp.content) {
-          if (block?.type === 'text' && block.text) {
-            textParts.push(block.text);
-          }
-        }
-        stopReason = wrapUp.stopReason;
-
-        // The wrap-up pass has no retry budget behind it — if it is itself
-        // cut off, the partial text it produced is not a complete answer and
-        // must not be persisted as one.
-        if (stopReason === 'max_tokens') {
-          turnErrored = true;
-          turnError = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
-          yield {
-            event: 'error',
-            data: {
-              code: 'response_truncated',
-              message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
-            },
-          };
-        }
-
-        // The turn was trying to save and never did. The note above asks the
-        // model to say so, but the admin is not left relying on it: the turn
-        // is marked failed, so the reason survives a reload too.
-        const triedToSave = allToolCalls.some(
-          (call) => call.name === 'save_character_draft',
-        );
-        if (!characterDraft && triedToSave && !turnErrored) {
-          turnErrored = true;
-          turnError = CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR;
-          yield {
-            event: 'error',
-            data: {
-              code: 'draft_not_saved',
-              message: CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR,
-            },
-          };
-        }
+      if (validatedTurns) {
+        yield* runValidatedTurn(
+          this.validatedAgent(loop, turn),
+          turn,
+        ) as AsyncGenerator<CharacterInterviewSseFrame>;
+      } else {
+        yield* this.runLegacyLoop(loop, turn);
       }
       turnCompleted = true;
     } catch (error) {
-      turnErrored = true;
+      turn.errored = true;
       // Classified rather than relayed: what the provider threw is written to
       // the log, and what the admin is shown is our own copy for that kind of
-      // failure. `turnError` is persisted on the assistant row, so this is
+      // failure. `turn.error` is persisted on the assistant row, so this is
       // also what a reload of the interview renders.
       const failure = classifyAgentProviderError(error);
-      turnError = CHARACTER_INTERVIEW_PROVIDER_ERRORS[failure];
+      turn.error = CHARACTER_INTERVIEW_PROVIDER_ERRORS[failure];
       this.logger.error(
         `Interview turn failed for session ${sessionId} on ` +
           `${providerName}/${model} (${failure}): ` +
@@ -640,7 +442,7 @@ export class CharacterInterviewOrchestratorService {
         event: 'error',
         data: {
           code: CHARACTER_INTERVIEW_PROVIDER_ERROR_CODES[failure],
-          message: turnError,
+          message: turn.error,
         },
       };
       turnCompleted = true;
@@ -655,22 +457,13 @@ export class CharacterInterviewOrchestratorService {
       if (!turnCompleted) {
         this.logger.warn(
           `Interview session ${sessionId}: turn abandoned mid-stream after ` +
-            `${iterations} iteration(s); persisting what it produced.`,
+            `${turn.iterations} iteration(s); persisting what it produced.`,
         );
         try {
-          await this.persistAssistantTurn(sessionId, userId, {
-            textParts,
-            toolCalls: allToolCalls,
-            toolResults: allToolResults,
-            questions,
-            characterDraft,
-            provider: providerName,
-            model,
-            iterations,
-            stopReason,
-            errored: true,
-            error: CHARACTER_INTERVIEW_ABANDONED_ERROR,
-          });
+          turn.errored = true;
+          turn.error = CHARACTER_INTERVIEW_ABANDONED_ERROR;
+          turn.receipt = this.buildReceipt(turn);
+          await this.persistAssistantTurn(sessionId, userId, turn, run);
         } catch (error) {
           this.logger.error(
             `Interview session ${sessionId}: could not persist the abandoned ` +
@@ -684,41 +477,46 @@ export class CharacterInterviewOrchestratorService {
     // handled above, but the shape of the failure — the admin's message with
     // nothing under it — is indistinguishable from the agent having hung, so
     // anything that still gets here says so rather than settling quietly.
-    if (!turnErrored && textParts.length === 0 && allToolCalls.length === 0) {
-      turnErrored = true;
-      turnError = CHARACTER_INTERVIEW_EMPTY_TURN_ERROR;
+    const saidNothing = validatedTurns
+      ? !turn.reply && turn.questions.length === 0
+      : turn.textParts.length === 0 && turn.toolCalls.length === 0;
+    if (!turn.errored && saidNothing) {
+      turn.errored = true;
+      // A validated turn can have done work and still not replied — the
+      // receipt lists it, so "nothing was written" would be untrue.
+      const worked = validatedTurns && turn.toolCalls.length > 0;
+      turn.error = worked
+        ? CHARACTER_INTERVIEW_NO_REPLY_ERROR
+        : CHARACTER_INTERVIEW_EMPTY_TURN_ERROR;
       this.logger.warn(
-        `Interview session ${sessionId}: turn produced no text and no tool ` +
-          `calls (stop reason ${stopReason ?? 'none'}).`,
+        `Interview session ${sessionId}: turn ended without a reply ` +
+          `(stop reason ${turn.stopReason ?? 'none'}, ${turn.toolCalls.length} tool call(s)).`,
       );
       yield {
         event: 'error',
         data: {
-          code: 'empty_turn',
-          message: CHARACTER_INTERVIEW_EMPTY_TURN_ERROR,
+          code: worked ? 'no_reply' : 'empty_turn',
+          message: turn.error,
         },
       };
     }
+
+    // Built from what the tools returned — for a failed turn too, since a
+    // draft that saved before the failure is real.
+    turn.receipt = this.buildReceipt(turn);
 
     // Persist the assistant message even for aborted turns.
     const assistantMessage = await this.persistAssistantTurn(
       sessionId,
       userId,
-      {
-        textParts,
-        toolCalls: allToolCalls,
-        toolResults: allToolResults,
-        questions,
-        characterDraft,
-        provider: providerName,
-        model,
-        iterations,
-        stopReason,
-        errored: turnErrored,
-        error: turnError,
-      },
+      turn,
+      run,
     );
 
+    yield {
+      event: 'receipt',
+      data: turn.receipt as unknown as Record<string, any>,
+    };
     yield {
       event: 'done',
       data: {
@@ -729,6 +527,399 @@ export class CharacterInterviewOrchestratorService {
   }
 
   /**
+   * Whether this turn runs validated (global_settings `validated_agent_turns`).
+   * Read per turn, so the switch takes effect on the next message. With no
+   * settings service — a fixture — the previous loop runs.
+   */
+  private async validatedTurnsEnabled(): Promise<boolean> {
+    return this.agentTurnSettings
+      ? this.agentTurnSettings.enabled('characterInterview')
+      : false;
+  }
+
+  private buildReceipt(turn: CharacterInterviewTurnState) {
+    return buildAgentTurnReceipt({
+      calls: joinCallsToResults(turn.toolCalls, turn.toolResults),
+      vocabulary: CHARACTER_INTERVIEW_RECEIPT_VOCABULARY,
+      changed: describeCharacterInterviewChanges(turn.characterDraft),
+      warnings: turn.warnings,
+    });
+  }
+
+  /**
+   * The interview as the validated runner sees it: two lookups, one write,
+   * and a reply checked against whether the draft really was saved.
+   */
+  private validatedAgent(
+    loop: CharacterInterviewLoopContext,
+    turn: CharacterInterviewTurnState,
+  ): ValidatedTurnAgent {
+    const { sessionId, provider, model, providerName, context } = loop;
+    return {
+      agentName: 'The interview agent',
+      userNoun: CHARACTER_INTERVIEW_TURN_VOCABULARY.userNoun,
+      logTag: `[CHARACTER_INTERVIEW] session=${sessionId}`,
+      provider,
+      model,
+      system: loop.system,
+      messages: loop.messages,
+      tools: () =>
+        this.toolsService.getToolDefinitions({ validatedTurns: true }),
+      maxIterations: loop.maxIterations,
+      maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
+      maxRetries: CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES,
+      closingTool: CHARACTER_INTERVIEW_TURN_VOCABULARY.closingTool,
+      askingTool: CHARACTER_INTERVIEW_TURN_VOCABULARY.askingTool,
+      isEdit: isCharacterInterviewEdit,
+      isResearch: isCharacterInterviewLookup,
+      // The answers live in the transcript until the draft is written, so a
+      // turn owes them no record of their own.
+      userWordsToApply: null,
+      stateMoved: () => turn.characterDraft !== null,
+      claimsChange: claimsCharacterDraft,
+      execute: (name, input) => this.toolsService.execute(name, input, context),
+      describeAttempt: describeCharacterInterviewAttempt,
+      onToolFrame: (frame) => {
+        if (frame.event === 'character_draft') {
+          turn.characterDraft = frame.data.draft ?? null;
+        }
+      },
+      toolResultData: (name, outcome) => toolResultData(name, outcome),
+      recordUsage: (usage, iteration) =>
+        this.recordUsage(usage, providerName, model, sessionId, iteration),
+      // The row is written once, when the turn settles (or is abandoned).
+      checkpoint: async () => undefined,
+      truncationNudge: CHARACTER_INTERVIEW_TRUNCATION_NUDGE,
+      errors: {
+        truncated: {
+          code: 'response_truncated',
+          message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+        },
+        invalidToolCall: {
+          code: 'invalid_tool_call',
+          message: CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR,
+        },
+      },
+    };
+  }
+
+  /**
+   * The interview loop as it ran before validated turns: prose streams as it
+   * is written, tools run in the order called, and ask_question /
+   * save_character_draft end the loop after their batch. Kept behind
+   * `validated_agent_turns.characterInterview` so the switch is a real way
+   * back.
+   */
+  private async *runLegacyLoop(
+    loop: CharacterInterviewLoopContext,
+    turn: CharacterInterviewTurnState,
+  ): AsyncGenerator<CharacterInterviewSseFrame> {
+    const {
+      sessionId,
+      provider,
+      model,
+      providerName,
+      system,
+      messages,
+      context,
+      maxIterations,
+    } = loop;
+    const tools = this.toolsService.getToolDefinitions();
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      turn.iterations = iteration + 1;
+
+      const pass = yield* this.runPass(provider, {
+        model,
+        maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
+        system,
+        messages,
+        tools,
+      });
+
+      turn.stopReason = pass.stopReason;
+      this.recordUsage(
+        pass.usage,
+        providerName,
+        model,
+        sessionId,
+        turn.iterations,
+      );
+
+      const contentBlocks = pass.content;
+      for (const block of contentBlocks) {
+        if (block?.type === 'text' && block.text) {
+          turn.textParts.push(block.text);
+        }
+      }
+      const toolUses = contentBlocks.filter(
+        (block): block is Extract<AgentContentBlock, { type: 'tool_use' }> =>
+          block?.type === 'tool_use',
+      );
+
+      // The model tried to call a tool and produced something unreadable.
+      //
+      // The turn comes back empty, so this is the one failure that would
+      // otherwise be indistinguishable from the model choosing to say
+      // nothing — it would surface as `empty_turn` and lose the turn. There
+      // is nothing partial to salvage and nothing to tell the model (it
+      // cannot see the malformed call either), so the recovery is to send
+      // the identical request again.
+      if (turn.stopReason === 'invalid_tool_call') {
+        turn.invalidToolCalls += 1;
+        if (
+          turn.invalidToolCalls >
+          CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES
+        ) {
+          this.logger.error(
+            `Interview session ${sessionId}: ${providerName}/${model} ` +
+              'returned an unreadable tool call after ' +
+              `${CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES} ` +
+              'retries; ending the turn.',
+          );
+          turn.errored = true;
+          turn.error = CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR;
+          yield {
+            event: 'error',
+            data: {
+              code: 'invalid_tool_call',
+              message: CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR,
+            },
+          };
+          break;
+        }
+
+        this.logger.warn(
+          `Interview session ${sessionId}: ${providerName}/${model} ` +
+            'returned an unreadable tool call (retry ' +
+            `${turn.invalidToolCalls}/${CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES}).`,
+        );
+        continue;
+      }
+
+      // The model ran out of output room mid-message.
+      //
+      // A `max_tokens` stop carries whatever text it managed plus, usually,
+      // a half-written tool_use whose `input` the SDK reconstructs by
+      // partial JSON parse — present, and unusable. Executing it would save
+      // an arbitrary fragment of a character; dropping it silently (which is
+      // what this loop used to do) ends the turn with the agent having
+      // announced a draft it never wrote. Tell the model and let it retry
+      // smaller.
+      if (turn.stopReason === 'max_tokens') {
+        turn.truncations += 1;
+        if (turn.truncations > CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES) {
+          this.logger.error(
+            `Interview session ${sessionId}: model output still truncated ` +
+              `at ${CHARACTER_INTERVIEW_MAX_TOKENS} tokens after ` +
+              `${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES} retries; ` +
+              'ending the turn.',
+          );
+          turn.errored = true;
+          turn.error = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
+          yield {
+            event: 'error',
+            data: {
+              code: 'response_truncated',
+              message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+            },
+          };
+          break;
+        }
+
+        this.logger.warn(
+          `Interview session ${sessionId}: model output truncated at ` +
+            `${CHARACTER_INTERVIEW_MAX_TOKENS} tokens ` +
+            `(retry ${turn.truncations}/${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES}, ` +
+            `${toolUses.length} tool call(s) discarded).`,
+        );
+
+        // Only the completed text blocks are replayed — a truncated
+        // tool_use has no result to pair it with, and the API rejects a
+        // dangling one.
+        const textBlocks = contentBlocks.filter(
+          (block): block is Extract<AgentContentBlock, { type: 'text' }> =>
+            block?.type === 'text' && Boolean(block.text),
+        );
+        if (textBlocks.length > 0) {
+          messages.push({ role: 'assistant', content: textBlocks });
+        }
+        messages.push({
+          role: 'user',
+          content: CHARACTER_INTERVIEW_TRUNCATION_NUDGE,
+        });
+        continue;
+      }
+
+      if (turn.stopReason !== 'tool_use' || toolUses.length === 0) {
+        break;
+      }
+
+      // Feed the assistant turn (with its tool_use blocks) back verbatim.
+      messages.push({ role: 'assistant', content: contentBlocks });
+
+      const toolResultBlocks: AgentContentBlock[] = [];
+      let endTurn = false;
+
+      for (const toolUse of toolUses) {
+        const name = String(toolUse.name);
+        const input = (toolUse.input ?? {}) as Record<string, any>;
+        yield { event: 'tool_call', data: { name, input } };
+        turn.toolCalls.push({ id: toolUse.id, name, input });
+
+        let outcome: InterviewToolExecutionOutcome;
+        try {
+          outcome = await this.toolsService.execute(name, input, context);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(
+            `Interview tool "${name}" failed for session ${sessionId}: ${message}`,
+          );
+          outcome = {
+            // The model gets the real reason — it is what lets it retry the
+            // call differently — but the summary goes over the wire to the
+            // browser, so it carries the tool name and nothing else.
+            modelResult: { ok: false, error: 'tool_failed', message },
+            summary: `Tool ${name} failed.`,
+          };
+        }
+
+        for (const frame of outcome.events ?? []) {
+          if (frame.event === 'question') {
+            turn.questions.push(frame.data);
+          } else if (frame.event === 'character_draft') {
+            turn.characterDraft = frame.data.draft ?? null;
+          }
+          yield frame;
+        }
+        yield {
+          event: 'tool_result',
+          data: toolResultData(name, outcome),
+        };
+
+        turn.toolResults.push({
+          toolUseId: toolUse.id,
+          name,
+          result: outcome.modelResult,
+        });
+        toolResultBlocks.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: JSON.stringify(outcome.modelResult),
+        });
+        if (outcome.endTurn) {
+          endTurn = true;
+        }
+      }
+
+      messages.push({ role: 'user', content: toolResultBlocks });
+
+      if (endTurn) {
+        turn.stopReason = 'end_turn';
+        break;
+      }
+    }
+
+    // The iteration cap landed on a truncated pass, so the retry above never
+    // got to run. Nothing was saved, and the admin is owed the same
+    // explanation as the give-up path.
+    if (turn.stopReason === 'max_tokens' && !turn.errored) {
+      turn.errored = true;
+      turn.error = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
+      yield {
+        event: 'error',
+        data: {
+          code: 'response_truncated',
+          message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+        },
+      };
+    }
+
+    // Same for the iteration cap landing on an unreadable tool call: the
+    // retry never ran, and the turn is empty for a reason the admin should
+    // be told rather than being reported as the model having nothing to say.
+    if (turn.stopReason === 'invalid_tool_call' && !turn.errored) {
+      turn.errored = true;
+      turn.error = CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR;
+      yield {
+        event: 'error',
+        data: {
+          code: 'invalid_tool_call',
+          message: CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR,
+        },
+      };
+    }
+
+    // We exhausted the round-trip budget while the model still wanted
+    // tools. Make one final tool-less pass so the agent wraps up in prose
+    // instead of dying with a raw error.
+    if (turn.stopReason === 'tool_use') {
+      this.logger.warn(
+        `Interview session ${sessionId} hit the ${maxIterations}-iteration ` +
+          'cap; making a tool-less wrap-up pass.',
+      );
+      // No `tools` on this pass — that is what makes it a wrap-up. Said in
+      // the system prompt rather than as a trailing message, which would
+      // follow the tool results with a second user turn in a row.
+      const wrapUp = yield* this.runPass(provider, {
+        model,
+        maxTokens: CHARACTER_INTERVIEW_MAX_TOKENS,
+        system: turn.characterDraft
+          ? system
+          : `${system}\n\n${CHARACTER_INTERVIEW_WRAP_UP_NO_DRAFT_NOTE}`,
+        messages,
+      });
+      this.recordUsage(
+        wrapUp.usage,
+        providerName,
+        model,
+        sessionId,
+        turn.iterations,
+      );
+      for (const block of wrapUp.content) {
+        if (block?.type === 'text' && block.text) {
+          turn.textParts.push(block.text);
+        }
+      }
+      turn.stopReason = wrapUp.stopReason;
+
+      // The wrap-up pass has no retry budget behind it — if it is itself
+      // cut off, the partial text it produced is not a complete answer and
+      // must not be persisted as one.
+      if (turn.stopReason === 'max_tokens') {
+        turn.errored = true;
+        turn.error = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
+        yield {
+          event: 'error',
+          data: {
+            code: 'response_truncated',
+            message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+          },
+        };
+      }
+
+      // The turn was trying to save and never did. The note above asks the
+      // model to say so, but the admin is not left relying on it: the turn
+      // is marked failed, so the reason survives a reload too.
+      const triedToSave = turn.toolCalls.some(
+        (call) => call.name === 'save_character_draft',
+      );
+      if (!turn.characterDraft && triedToSave && !turn.errored) {
+        turn.errored = true;
+        turn.error = CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR;
+        yield {
+          event: 'error',
+          data: {
+            code: 'draft_not_saved',
+            message: CHARACTER_INTERVIEW_DRAFT_NOT_SAVED_ERROR,
+          },
+        };
+      }
+    }
+  }
+
+  /**
    * Writes the turn's assistant row. One place, because two paths reach it:
    * the turn ending on its own, and the turn being abandoned when the admin's
    * stream goes away.
@@ -736,37 +927,36 @@ export class CharacterInterviewOrchestratorService {
   private async persistAssistantTurn(
     sessionId: string,
     userId: number,
-    turn: {
-      textParts: string[];
-      toolCalls: Record<string, any>[];
-      toolResults: Record<string, any>[];
-      questions: Record<string, any>[];
-      characterDraft: Record<string, any> | null;
-      provider: string;
-      model: string;
-      iterations: number;
-      stopReason: string | null;
-      errored: boolean;
-      error: string | null;
-    },
+    turn: CharacterInterviewTurnState,
+    run: { provider: string; model: string; validatedTurns: boolean },
   ): Promise<CharacterInterviewMessage> {
     return this.messageRepository.appendMessage(sessionId, {
       role: CharacterInterviewMessageRole.ASSISTANT,
-      content: turn.textParts.join('\n\n') || null,
+      // What the admin saw. In a validated turn that is the delivered reply
+      // alone; the model's other prose is working notes.
+      content: run.validatedTurns
+        ? turn.reply || null
+        : turn.textParts.join('\n\n') || null,
       toolCalls: turn.toolCalls.length > 0 ? turn.toolCalls : null,
       toolResults: turn.toolResults.length > 0 ? turn.toolResults : null,
       metadata: {
-        provider: turn.provider,
-        model: turn.model,
+        provider: run.provider,
+        model: run.model,
         iterations: turn.iterations,
         stopReason: turn.stopReason,
         errored: turn.errored,
+        loop: run.validatedTurns ? 'validated' : 'legacy',
         // Persisted, not just streamed: an `error` frame only reaches the tab
         // that was open when it happened, so without the message on the row a
         // reload renders a failed turn as no turn at all.
         ...(turn.error ? { errorMessage: turn.error } : {}),
         ...(turn.questions.length > 0 ? { questions: turn.questions } : {}),
         ...(turn.characterDraft ? { characterDraft: turn.characterDraft } : {}),
+        ...(turn.workingNotes.length
+          ? { workingNotes: turn.workingNotes }
+          : {}),
+        ...(turn.rejections ? { rejections: turn.rejections } : {}),
+        ...(turn.receipt ? { receipt: turn.receipt } : {}),
       },
       createdBy: userId,
     });
@@ -900,13 +1090,22 @@ export class CharacterInterviewOrchestratorService {
    * (e.g. before the first sync) degrades to a minimal built-in instruction
    * rather than failing the turn.
    */
-  private async buildSystemPrompt(): Promise<string> {
+  private async buildSystemPrompt(validatedTurns = false): Promise<string> {
+    // How a turn ends is code's to say, not the dashboard prompt's, and only
+    // true while validated turns are on — so it follows the prompt, and only
+    // then.
+    const protocol = validatedTurns
+      ? `\n\n${renderTurnProtocol(
+          CHARACTER_INTERVIEW_TURN_VOCABULARY,
+          CHARACTER_INTERVIEW_TURN_RULES,
+        )}`
+      : '';
     try {
       const template = await this.promptSharedService.getPromptByCode(
         CHARACTER_INTERVIEW_PROMPTS.INTERVIEWER_SYSTEM,
       );
       if (template) {
-        return template;
+        return `${template}${protocol}`;
       }
     } catch (error) {
       this.logger.warn(
@@ -919,7 +1118,8 @@ export class CharacterInterviewOrchestratorService {
       'You are a character-profile interviewer. Ask the admin one question ' +
       'at a time via ask_question (always offering default options plus a ' +
       'custom answer), build a rich and consistent character, then submit it ' +
-      'with save_character_draft.'
+      'with save_character_draft.' +
+      protocol
     );
   }
 

@@ -22,6 +22,14 @@ import {
   EDIT_TOOL_NAMES,
   READ_ONLY_EDIT_TOOLS,
 } from './course-copilot-edit-tools.service';
+import {
+  closingToolDefinition,
+  withValidatedAsk,
+} from 'src/llm-agent/runtime/agent-turn-tools.util';
+import {
+  COURSE_COPILOT_FINISH_WHEN,
+  COURSE_COPILOT_TURN_VOCABULARY,
+} from '../util/course-copilot-turn.util';
 
 /** Per-turn context threaded through tool executions. */
 export interface CourseCopilotToolContext {
@@ -34,6 +42,11 @@ export interface CourseCopilotToolContext {
     customValues?: string[];
     none?: boolean;
   };
+  /**
+   * Validated turns (global_settings `validated_agent_turns`): the turn ends
+   * only through ask_trainer / finish_turn, which carry the reply.
+   */
+  validatedTurns?: boolean;
 }
 
 const DATA_NOTE =
@@ -254,7 +267,8 @@ const UPDATE_BLUEPRINT: AgentToolDefinition = {
  *  - EDITING: interview tools + the course-editing tools.
  *
  * Only `ask_trainer` and `propose_blueprint` (and the confirmation questions
- * the edit tools raise) end the turn.
+ * the edit tools raise) end the turn. In a validated turn the last two only
+ * ask for the end: the reply still comes through `finish_turn`.
  */
 @Injectable()
 export class CourseCopilotToolsService {
@@ -271,7 +285,31 @@ export class CourseCopilotToolsService {
     private readonly editTools: CourseCopilotEditToolsService,
   ) {}
 
-  getToolDefinitions(session: CourseCopilotSession): AgentToolDefinition[] {
+  /**
+   * The belt for the session's state. With validated turns on, ask_trainer
+   * carries the reply (`message`) and finish_turn ends a turn with no
+   * question; off, it is exactly the belt the copilot had before.
+   */
+  getToolDefinitions(
+    session: CourseCopilotSession,
+    options: { validatedTurns?: boolean } = {},
+  ): AgentToolDefinition[] {
+    const tools = this.toolsForState(session);
+    if (!options.validatedTurns || !tools.length) return tools;
+    return [
+      ...tools.map((tool) =>
+        tool.name === ASK_TRAINER.name
+          ? withValidatedAsk(tool, COURSE_COPILOT_TURN_VOCABULARY)
+          : tool,
+      ),
+      closingToolDefinition(
+        COURSE_COPILOT_TURN_VOCABULARY,
+        COURSE_COPILOT_FINISH_WHEN,
+      ),
+    ];
+  }
+
+  private toolsForState(session: CourseCopilotSession): AgentToolDefinition[] {
     switch (session.status) {
       case CourseCopilotSessionStatus.INTERVIEWING:
         return [...INTERVIEW_TOOLS, PROPOSE_BLUEPRINT];
@@ -299,7 +337,9 @@ export class CourseCopilotToolsService {
     input: Record<string, any>,
     context: CourseCopilotToolContext,
   ): Promise<CourseCopilotToolOutcome> {
-    const allowed = this.getToolDefinitions(context.session).map((t) => t.name);
+    const allowed = this.getToolDefinitions(context.session, {
+      validatedTurns: context.validatedTurns,
+    }).map((t) => t.name);
     if (!allowed.includes(name)) {
       return {
         modelResult: {
@@ -313,6 +353,12 @@ export class CourseCopilotToolsService {
     switch (name) {
       case 'ask_trainer':
         return this.askTrainer(input);
+      case 'finish_turn':
+        return {
+          modelResult: { ok: true, delivered: true },
+          summary: 'Turn finished',
+          endTurn: true,
+        };
       case 'update_brief':
         return this.updateBrief(input, context);
       case 'list_competencies': {
