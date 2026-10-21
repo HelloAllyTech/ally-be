@@ -581,6 +581,8 @@ export class BuilderPullRequestService {
     }
     if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
+    // A conflicted PR gets no CI at all, so nothing below can make progress.
+    if (await this.considerConflict(pullRequest, remote)) return;
 
     // Review before fix, and only one of them per tick. A review that
     // dispatches leaves an active run behind, which a fix refuses to race
@@ -1410,6 +1412,91 @@ export class BuilderPullRequestService {
     this.logger.warn(
       `Could not update ${pullRequest.repo}#${pullRequest.prNumber}: ${message ?? 'no reason given'}.`,
     );
+  }
+
+  /**
+   * A pull request that conflicts with master, and what to do about it.
+   *
+   * GitHub does not start `pull_request` workflows on a conflicting PR, so
+   * the head sits with no check runs and the rollup reads as "still running"
+   * for as long as the conflict stands: on ally-be#664 a fix request waited a
+   * day for CI that could never start. `considerBranchUpdate` leaves `dirty`
+   * alone because merging master in cannot fix it; this is the other half.
+   *
+   *  - **opencode's own branch, ours at the head:** ask opencode to merge
+   *    master in and resolve it, as a `/oc` comment. It counts as a fix round,
+   *    so `maxFixRunsPerPr` bounds it, and past the ceiling a person is told.
+   *  - **anything else** (automatic fixes off, a `builder/*` branch, a person's
+   *    commit at the head): a person is told. Nobody was going to resolve it.
+   *
+   * Returns true when the conflict held this tick back, so the caller does not
+   * review or fix a head that has no checks. One request at a time, settled by
+   * `settleOpencodeFix`; the tick that settles one does not ask again, because
+   * GitHub reports `dirty` for a few seconds after the push that cleared it.
+   */
+  private async considerConflict(
+    pullRequest: BuilderPullRequest,
+    remote: { headSha: string | null; mergeableState: string | null },
+  ): Promise<boolean> {
+    if (remote.mergeableState !== 'dirty') return false;
+    const settings = await this.settingsService.get();
+    if (!settings.enabled) return false;
+
+    if (pullRequest.fixRequestedAt) {
+      await this.settleOpencodeFix(pullRequest);
+      return true;
+    }
+
+    const conflict = 'It conflicts with master, so CI cannot run on it.';
+    if (!settings.autoFixEnabled || !isOpencodeBranch(pullRequest.branch)) {
+      await this.escalate(pullRequest, conflict);
+      return true;
+    }
+    const ceiling = settings.maxFixRunsPerPr ?? 0;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) {
+      await this.escalate(
+        pullRequest,
+        `${conflict} ${pullRequest.fixRunCount} fix rounds are spent.`,
+      );
+      return true;
+    }
+    if (!remote.headSha) return true;
+    const author = await this.github.getCommitAuthor(
+      pullRequest.repo,
+      remote.headSha,
+    );
+    // Could not tell, or somebody else is mid-work on the branch.
+    if (!author) return true;
+    if (!this.isOwnActor(author.login ?? author.name ?? '')) {
+      await this.escalate(pullRequest, conflict);
+      return true;
+    }
+    if (await this.buildService.hasRunInFlight(pullRequest.sessionId)) {
+      return true;
+    }
+
+    const commentUrl = await this.github.createIssueComment(
+      pullRequest.repo,
+      pullRequest.prNumber,
+      '/oc This pull request conflicts with master, so CI cannot run on it. ' +
+        'Merge the latest master into this branch, resolve every conflict ' +
+        'keeping the intent of both sides, make sure the checks pass, and ' +
+        'push. Do not reformat files you did not change.',
+    );
+    if (!commentUrl) return true;
+
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        fixRunCount: pullRequest.fixRunCount + 1,
+        fixRequestedSha: remote.headSha,
+        fixRequestedAt: new Date(),
+      },
+    );
+    this.logger.info(
+      `[BUILDER] Asked opencode to resolve the conflict on ${pullRequest.repo}#${pullRequest.prNumber}: ${commentUrl}`,
+    );
+    return true;
   }
 
   /**

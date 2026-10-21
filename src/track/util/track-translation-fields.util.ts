@@ -14,6 +14,7 @@ import {
 import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { GameContent, TrackGameKey } from '../type/game.type';
+import { BranchingScenarioContent } from '../type/branching.type';
 import {
   TranslatableField,
   TranslatableFieldKind,
@@ -531,10 +532,85 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
       }
       break;
 
+    case TrackItemType.BRANCHING_SCENARIO:
+      walkBranchingContent(item.content as BranchingScenarioContent, visit);
+      break;
+
     case TrackItemType.VIDEO:
     case TrackItemType.ROLEPLAY:
     case TrackItemType.CASE:
       break;
+  }
+}
+
+function walkBranchingContent(
+  content: BranchingScenarioContent,
+  visit: FieldVisitor,
+): void {
+  visitField(
+    {
+      path: 'content.intro',
+      kind: TranslatableFieldKind.PROSE,
+      get: () => content.intro,
+      set: (value) => (content.intro = value),
+    },
+    visit,
+  );
+  for (const node of content.nodes ?? []) {
+    const prefix = `content.nodes[${node.id}]`;
+    visitField(
+      {
+        path: `${prefix}.title`,
+        kind: TranslatableFieldKind.LABEL,
+        get: () => node.title,
+        set: (value) => (node.title = value),
+      },
+      visit,
+    );
+    visitField(
+      {
+        path: `${prefix}.text`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => node.text,
+        set: (value) => (node.text = value),
+      },
+      visit,
+    );
+    if (node.image) {
+      const image = node.image;
+      visitField(
+        {
+          path: `${prefix}.image.alt`,
+          kind: TranslatableFieldKind.LABEL,
+          get: () => image.alt,
+          set: (value) => (image.alt = value),
+          context: node.text,
+        },
+        visit,
+      );
+    }
+    for (const choice of node.choices ?? []) {
+      visitField(
+        {
+          path: `${prefix}.choices[${choice.id}].text`,
+          kind: TranslatableFieldKind.PROSE,
+          get: () => choice.text,
+          set: (value) => (choice.text = value),
+          context: node.text,
+        },
+        visit,
+      );
+    }
+    visitField(
+      {
+        path: `${prefix}.takeaway`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => node.takeaway,
+        set: (value) => (node.takeaway = value),
+        context: node.text,
+      },
+      visit,
+    );
   }
 }
 

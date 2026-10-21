@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CommonUtil } from '../../common/util/common.util';
 import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
@@ -50,8 +46,7 @@ import {
 import { UpdateSummarySectionsDto } from '../dto/summary-sections.dto';
 import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { CustomFieldType } from '../../custom-fields/entity/custom-field-definition.entity';
 import {
   AUDIT_ACTIONS,
@@ -64,8 +59,7 @@ export class SettingsService {
     private readonly preferenceService: PreferenceService,
     private readonly permissionValidator: PermissionValidator,
     private readonly auditLogService: AuditLogService,
-    private permissionsService: PermissionsService,
-    private readonly adminTenantService: AdminTenantService,
+    private readonly tenantScopeService: TenantScopeService,
     private readonly dataSource: DataSource,
     private readonly globalSettingsRepository: GlobalSettingsRepository,
   ) {}
@@ -198,6 +192,10 @@ export class SettingsService {
    * fallback, so the getter reported one thing and the setter refused to
    * change it.
    *
+   * Every platform admin holds SYSTEM_ACCESS, including one restricted to an
+   * organization allowlist, so the staff branch is then held to that
+   * allowlist — the tenant named, or the own tenant it falls back to, alike.
+   *
    * Returns the resolved tenant CODE (see resolveTenantCode) — preference rows
    * are keyed by code, not by uuid.
    */
@@ -212,7 +210,42 @@ export class SettingsService {
       ? (tenantId ?? ExecutionManager.getTenantId())
       : ExecutionManager.getTenantId();
     if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(scopedTenantId);
+    }
     return this.resolveTenantCode(scopedTenantId);
+  }
+
+  /**
+   * Which tenant a settings READ lands on, as a tenant code — the same pinning
+   * as resolveWritableTenantId with one difference: a restricted platform
+   * admin is checked only on a tenant they NAME. Naming none reads their own
+   * organization's flags, which the admin console's sidebar does on every
+   * page, and which every tenant user may read about their own org anyway.
+   */
+  private async resolveReadableTenantId(tenantId?: string): Promise<string> {
+    const resolved = await this.findReadableTenantId(tenantId);
+    if (!resolved) throw new BadRequestException('Tenant ID is required');
+    return resolved;
+  }
+
+  /** resolveReadableTenantId, but `undefined` for a caller with no tenant at all. */
+  private async findReadableTenantId(
+    tenantId?: string,
+  ): Promise<string | undefined> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    if (hasSystemAccess && tenantId) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
+    }
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    return rawTenantId ? this.resolveTenantCode(rawTenantId) : undefined;
   }
 
   async getSummaryFieldsConfig(getSummaryFieldsDto?: GetSummaryFieldsDto) {
@@ -231,6 +264,9 @@ export class SettingsService {
       : ExecutionManager.getTenantId();
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
+    }
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
     }
 
     const [hiddenOrgPreference, hiddenSectionsPreference] = await Promise.all([
@@ -314,6 +350,9 @@ export class SettingsService {
       : ExecutionManager.getTenantId();
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
+    }
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
     }
 
     const [hiddenOrgPreference, hiddenSectionsPreference] = await Promise.all([
@@ -413,6 +452,9 @@ export class SettingsService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
+    }
 
     const { hiddenFields: summaryFields } = updateSummaryFieldsDto;
 
@@ -472,22 +514,14 @@ export class SettingsService {
       throw new BadRequestException('Tenant ID is required');
     }
 
-    const isMultiTenantAdmin = userId
-      ? await this.permissionsService.isMultiTenantAdmin(parseInt(userId))
-      : false;
-
-    if (isMultiTenantAdmin) {
-      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
-        Number(userId),
-      );
-
-      const adminTenantIds = adminTenants.data.map((t: any) => t.id);
-
-      if (!adminTenantIds.includes(scopedTenantId)) {
-        throw new ForbiddenException(
+    const isMultiTenantAdmin = await this.tenantScopeService.isRestricted(
+      parseInt(userId),
+    );
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(scopedTenantId, {
+        message:
           'You are not authorized to update summary sections for this tenant',
-        );
-      }
+      });
     }
 
     const { hiddenSections } = dto;
@@ -617,6 +651,9 @@ export class SettingsService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
+    if (hasSystemAccess) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
+    }
 
     const hiddenChatTypes = await this.getHiddenChatTypesForEntity(
       tenantId,
@@ -652,18 +689,7 @@ export class SettingsService {
   }
 
   async getEnabledCustomFieldTypes(tenantId?: string): Promise<string[]> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.resolveReadableTenantId(tenantId);
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
@@ -680,18 +706,7 @@ export class SettingsService {
   }
 
   async getCustomFieldsEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.resolveReadableTenantId(tenantId);
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.CUSTOM_FIELDS_ENABLED,
@@ -736,18 +751,8 @@ export class SettingsService {
    * PreferenceName.CHARACTER_LIBRARY_ENABLED.
    */
   async getCharacterLibraryEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) return false;
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.findReadableTenantId(tenantId);
+    if (!resolvedTenantId) return false;
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.CHARACTER_LIBRARY_ENABLED,
@@ -765,20 +770,9 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Only a platform admin may grant this — a tenant admin must not be able to
-    // switch on their own access. The `??` on the staff branch matters: the
-    // helpline app's own Org Settings screen sends no tenantId at all.
-    const scopedTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    // Only a platform admin may grant this (EDIT_GLOBAL_SETTINGS on the route);
+    // a tenant admin must not be able to switch on their own access.
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
 
     const existing = await this.preferenceService.getPreference(
       PreferenceName.CHARACTER_LIBRARY_ENABLED,
@@ -807,18 +801,8 @@ export class SettingsService {
    * flip here takes effect immediately for the guard as well.
    */
   async getProgressDashboardEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) return false;
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.findReadableTenantId(tenantId);
+    if (!resolvedTenantId) return false;
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.PROGRESS_DASHBOARD_ENABLED,
@@ -836,20 +820,9 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Only a platform admin may grant this — a tenant admin must not be able to
-    // switch it on for themselves. The `??` on the staff branch matters: the
-    // helpline app's own Org Settings screen sends no tenantId at all.
-    const scopedTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    // Only a platform admin may grant this (EDIT_GLOBAL_SETTINGS on the route);
+    // a tenant admin must not be able to switch it on for themselves.
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
 
     const existing = await this.preferenceService.getPreference(
       PreferenceName.PROGRESS_DASHBOARD_ENABLED,
@@ -878,18 +851,8 @@ export class SettingsService {
    * check uses, so a flip here governs the very next start.
    */
   async getTextChatRoleplayEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) return false;
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.findReadableTenantId(tenantId);
+    if (!resolvedTenantId) return false;
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.TEXT_CHAT_ROLEPLAY_ENABLED,
@@ -931,18 +894,7 @@ export class SettingsService {
   }
 
   async getScribeNoteCreationEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.resolveReadableTenantId(tenantId);
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
@@ -981,18 +933,7 @@ export class SettingsService {
   }
 
   async getScribeVoiceNoteEnabled(tenantId?: string): Promise<boolean> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    const rawTenantId = hasSystemAccess
-      ? (tenantId ?? ExecutionManager.getTenantId())
-      : ExecutionManager.getTenantId();
-    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+    const resolvedTenantId = await this.resolveReadableTenantId(tenantId);
 
     const preference = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_VOICE_NOTE_ENABLED,

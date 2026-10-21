@@ -6,6 +6,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { OwnTenantScopeGuard } from '../own-tenant-scope.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 
@@ -16,6 +17,7 @@ describe('OwnTenantScopeGuard', () => {
 
   const OWN_TENANT = 'tenant-own';
   const OTHER_TENANT = 'tenant-other';
+  const ALLOWED_TENANT = 'tenant-allowed';
 
   const makeContext = ({
     user,
@@ -34,8 +36,25 @@ describe('OwnTenantScopeGuard', () => {
 
   beforeEach(() => {
     mockReflector = { getAllAndOverride: jest.fn() } as any;
-    mockPermissionsService = { getUserPermissions: jest.fn() } as any;
-    guard = new OwnTenantScopeGuard(mockReflector, mockPermissionsService);
+    mockPermissionsService = {
+      getUserPermissions: jest.fn(),
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    } as any;
+    // The real resolver over fake repositories: an allowlisted platform admin
+    // holds one admin_tenants row, for ALLOWED_TENANT, which is still live.
+    const adminTenantRepository = {
+      find: jest.fn().mockResolvedValue([{ tenantId: ALLOWED_TENANT }]),
+    };
+    const tenantRepository = {
+      find: jest.fn().mockResolvedValue([{ id: ALLOWED_TENANT }]),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    const tenantScopeService = new TenantScopeService(
+      mockPermissionsService,
+      adminTenantRepository as any,
+      tenantRepository as any,
+    );
+    guard = new OwnTenantScopeGuard(mockReflector, tenantScopeService);
 
     // Default decorator options: no overrides.
     mockReflector.getAllAndOverride.mockReturnValue({});
@@ -135,5 +154,61 @@ describe('OwnTenantScopeGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  describe('platform admin restricted to an allowlist (admin_tenants)', () => {
+    beforeEach(() => {
+      // Every platform admin holds SYSTEM_ACCESS; the allowlist is what
+      // narrows them, so it must win over the permission.
+      mockPermissionsService.getUserPermissions.mockResolvedValue([
+        PERMISSIONS.SYSTEM_ACCESS,
+        PERMISSIONS.EDIT_COHORTS,
+      ]);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+    });
+
+    it('allows a tenant on their allowlist', async () => {
+      const ctx = makeContext({
+        user: { id: 8 },
+        params: { tenantId: ALLOWED_TENANT },
+      });
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('denies a tenant off their allowlist, despite SYSTEM_ACCESS', async () => {
+      const ctx = makeContext({
+        user: { id: 8 },
+        params: { tenantId: OTHER_TENANT },
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        'You can only manage the organizations assigned to you',
+      );
+    });
+
+    it('denies their own JWT tenant when it is not on the allowlist', async () => {
+      const ctx = makeContext({
+        user: { id: 8 },
+        params: { tenantId: OWN_TENANT },
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('denies a badge assignment that reaches past the allowlist', async () => {
+      const ctx = makeContext({
+        user: { id: 8 },
+        body: { badgeId: 'b1', tenantIds: [ALLOWED_TENANT, OTHER_TENANT] },
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('requires a target tenant rather than passing on none', async () => {
+      const ctx = makeContext({ user: { id: 8 }, params: {}, body: {} });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(BadRequestException);
+    });
   });
 });

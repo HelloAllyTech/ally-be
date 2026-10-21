@@ -20,6 +20,8 @@ import { CallDetails } from '../../../chat/entity/call.details.entity';
 import { ScribeSessionMode } from '../../../common/constants/chat.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { UserService } from '../../../user/service/user.service';
 import { DEFAULT_FIELD_TEMPLATES } from '../../constants/default-field-templates.constants';
 
@@ -30,6 +32,10 @@ describe('CustomFieldsService', () => {
   let definitionRepo: jest.Mocked<Repository<CustomFieldDefinition>>;
   let valueRepo: jest.Mocked<Repository<ChatCustomFieldValue>>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
+  let permissionsService: {
+    isMultiTenantAdmin: jest.Mock;
+    getUserPermissions: jest.Mock;
+  };
   let userService: jest.Mocked<UserService>;
 
   const mockTenantId = 'tenant-uuid';
@@ -95,6 +101,25 @@ describe('CustomFieldsService', () => {
       save: jest.fn(),
     } as any;
 
+    // The real resolver: an unrestricted platform admin unless a test makes
+    // them allowlisted, in which case they hold 'allowed-tenant' only.
+    permissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+      getUserPermissions: jest
+        .fn()
+        .mockResolvedValue([PERMISSIONS.SYSTEM_ACCESS]),
+    };
+    const tenantScopeService = new TenantScopeService(
+      permissionsService as any,
+      {
+        find: jest.fn().mockResolvedValue([{ tenantId: 'allowed-tenant' }]),
+      } as any,
+      {
+        find: jest.fn().mockResolvedValue([{ id: 'allowed-tenant' }]),
+        findOne: jest.fn().mockResolvedValue(null),
+      } as any,
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CustomFieldsService,
@@ -121,6 +146,10 @@ describe('CustomFieldsService', () => {
         {
           provide: UserService,
           useValue: { get: jest.fn() },
+        },
+        {
+          provide: TenantScopeService,
+          useValue: tenantScopeService,
         },
       ],
     }).compile();
@@ -1312,6 +1341,64 @@ describe('CustomFieldsService', () => {
       expect(txDefinitionRepo.save).toHaveBeenCalled();
       expect(definitionRepo.find).not.toHaveBeenCalled();
       expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── organization-restricted platform admin ───────────────────────────────
+
+  describe('as a platform admin restricted to one organization', () => {
+    const baseDto = {
+      name: 'New Field',
+      fieldType: CustomFieldType.SINGLE_SELECT,
+      options: [{ id: 'opt-1', label: 'A', order: 0 }],
+      sectionKey: 'intake',
+      editPermission: CustomFieldEditPermission.BOTH,
+      displayOrder: 1,
+    };
+
+    beforeEach(() => {
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+    });
+
+    it('reads the definitions of an allowlisted organization', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+
+      await expect(service.getDefinitions('allowed-tenant')).resolves.toEqual(
+        expect.anything(),
+      );
+      expect(definitionRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ tenantId: 'allowed-tenant' }),
+        }),
+      );
+    });
+
+    it('refuses to read another organization', async () => {
+      await expect(service.getDefinitions('other-tenant')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(definitionRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('refuses to create a definition in another organization', async () => {
+      await expect(
+        service.createDefinition({ ...baseDto, tenantId: 'other-tenant' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses a write that falls back to their own, un-allowlisted organization', async () => {
+      await expect(service.createDefinition(baseDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a definition in another organization', async () => {
+      await expect(
+        service.deleteDefinition('def-1', 'other-tenant'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

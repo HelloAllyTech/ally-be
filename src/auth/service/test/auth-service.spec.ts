@@ -26,6 +26,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { AuthProvider } from 'src/auth/type/auth.types';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { OtpRateLimitedException } from 'src/auth/exception/login.exception';
 import {
   OTP_LIMIT_MESSAGES,
@@ -59,6 +60,8 @@ describe('AuthService', () => {
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
   let groupService: jest.Mocked<GroupService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
+  let tenantScopeService: jest.Mocked<TenantScopeService>;
 
   const mockLogger = {
     info: jest.fn(),
@@ -220,7 +223,12 @@ describe('AuthService', () => {
           provide: PermissionsService,
           useValue: {
             hasPermission: jest.fn(),
+            isMultiTenantAdmin: jest.fn(),
           },
+        },
+        {
+          provide: TenantScopeService,
+          useValue: { isRestricted: jest.fn() },
         },
       ],
     }).compile();
@@ -230,6 +238,8 @@ describe('AuthService', () => {
     jwtService = module.get(JwtService);
     redisService = module.get(RedisService);
     groupService = module.get(GroupService);
+    permissionsService = module.get(PermissionsService);
+    tenantScopeService = module.get(TenantScopeService);
 
     userRepository = dataSource.getRepository(User) as jest.Mocked<
       Repository<User>
@@ -1687,6 +1697,72 @@ describe('AuthService', () => {
           OtpRateLimitedException,
         );
       });
+    });
+  });
+
+  describe('impersonate', () => {
+    const CALLER_ID = 99;
+
+    beforeEach(() => {
+      tenantScopeService.isRestricted.mockResolvedValue(false);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+    });
+
+    it('mints tokens for an unrestricted platform admin', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 5,
+        username: 'learner@example.com',
+        tenantId: 'tenant-a',
+      } as User);
+
+      const result = await authService.impersonate(
+        { email: 'learner@example.com' },
+        CALLER_ID,
+      );
+
+      expect(result).toEqual({
+        message: 'Impersonation successful',
+        data: { accessToken: 'access-token', refreshToken: 'refresh-token' },
+      });
+      expect(tenantScopeService.isRestricted).toHaveBeenCalledWith(CALLER_ID);
+    });
+
+    it('refuses an organization-restricted platform admin before looking anyone up', async () => {
+      tenantScopeService.isRestricted.mockResolvedValue(true);
+
+      await expect(
+        authService.impersonate({ email: 'learner@example.com' }, CALLER_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(userRepository.findOne).not.toHaveBeenCalled();
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for an unknown email instead of signing a token for nobody', async () => {
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        authService.impersonate({ email: 'ghost@example.com' }, CALLER_ID),
+      ).rejects.toThrow(NotFoundException);
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('never selects the password hash it would otherwise audit-log', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 5,
+        username: 'learner@example.com',
+        tenantId: 'tenant-a',
+      } as User);
+
+      await authService.impersonate(
+        { email: 'learner@example.com' },
+        CALLER_ID,
+      );
+
+      const query = userRepository.findOne.mock.calls[0][0] as any;
+      expect(query.select).not.toContain('password');
     });
   });
 });

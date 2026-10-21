@@ -378,6 +378,7 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PlatformWidePermissions } from 'src/auth/decorators/platform-wide.decorator';
 import {
   ADMIN_ANALYTICS_CHART_REGISTRY,
   AdminAnalyticsChartEntry,
@@ -2407,7 +2408,9 @@ export class AnalyticsController {
     isArray: true,
   })
   @Get('dashboard/all')
-  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  // A dashboard definition is shared by every organization it is assigned to,
+  // so an organization-restricted admin may neither list nor change them.
+  @PlatformWidePermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   async getAllDashboards(): Promise<DashboardResponseDTO[]> {
     return this.analyticsService.getAllDashboards();
   }
@@ -2425,7 +2428,9 @@ export class AnalyticsController {
   }
 
   @Post('dashboard')
-  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  // A dashboard definition is shared by every organization it is assigned to,
+  // so an organization-restricted admin may neither list nor change them.
+  @PlatformWidePermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   createDashboard(
     @Body() dashboard: CreateDashboardDto,
   ): Promise<CreateDashboardResponseDto> {
@@ -2446,7 +2451,9 @@ export class AnalyticsController {
   })
   @ApiBody({ type: UpdateDashboardDto })
   @Patch('dashboard/:dashboardId')
-  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  // A dashboard definition is shared by every organization it is assigned to,
+  // so an organization-restricted admin may neither list nor change them.
+  @PlatformWidePermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   updateDashboard(
     @Param('dashboardId', ParseUUIDPipe) dashboardId: string,
     @Body() updateDashboardDto: UpdateDashboardDto,

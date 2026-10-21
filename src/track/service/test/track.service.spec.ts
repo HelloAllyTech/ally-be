@@ -9,6 +9,9 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { TrackTranslationService } from '../track-translation.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UpsertTrackStructureDto } from '../../dto/upsert-track-structure.dto';
 import { TrackItemType } from '../../type/track.type';
 import { QuizQuestionType } from '../../type/quiz.type';
@@ -48,6 +51,11 @@ const mockTrackTranslationService = {
   handleSourceChanged: jest.fn(),
 };
 
+// An unrestricted caller unless a test says otherwise.
+const mockTenantScopeService = {
+  isRestricted: jest.fn().mockResolvedValue(false),
+};
+
 describe('TrackService', () => {
   let service: TrackService;
 
@@ -68,6 +76,10 @@ describe('TrackService', () => {
         },
         { provide: CaseSharedService, useValue: mockCaseSharedService },
         { provide: TenantService, useValue: mockTenantService },
+        {
+          provide: TenantScopeService,
+          useValue: mockTenantScopeService,
+        },
         {
           provide: TrackTranslationService,
           useValue: mockTrackTranslationService,
@@ -498,6 +510,73 @@ describe('TrackService', () => {
         description: htmlText,
       });
       expect(newTrack.description).toBe('<p>Hello\nworld</p>');
+    });
+  });
+
+  describe('as a platform admin restricted to some organizations', () => {
+    const CALLER_ID = 31;
+
+    beforeEach(() => {
+      jest
+        .spyOn(ExecutionManager, 'getUserId')
+        .mockReturnValue(String(CALLER_ID));
+      mockTenantScopeService.isRestricted.mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+      mockTenantScopeService.isRestricted.mockResolvedValue(false);
+      jest.restoreAllMocks();
+    });
+
+    it('may edit a course they created', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce({
+        id: 't1',
+        createdBy: CALLER_ID,
+      });
+
+      await expect(service.assertCallerMayEdit('t1')).resolves.toBeUndefined();
+    });
+
+    it('may not edit a course someone else created', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce({
+        id: 't1',
+        createdBy: 99,
+      });
+
+      await expect(service.assertCallerMayEdit('t1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('gets a 404 for a course that does not exist', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.assertCallerMayEdit('t1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('may not make a course global', async () => {
+      await expect(service.assertCallerMayMakeGlobal(true)).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(
+        service.assertCallerMayMakeGlobal(false),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.assertCallerMayMakeGlobal(undefined),
+      ).resolves.toBeUndefined();
+    });
+
+    it('leaves an unrestricted admin free to edit any course or make it global', async () => {
+      mockTenantScopeService.isRestricted.mockResolvedValue(false);
+      mockTrackRepository.findOne.mockClear();
+
+      await expect(service.assertCallerMayEdit('t1')).resolves.toBeUndefined();
+      await expect(
+        service.assertCallerMayMakeGlobal(true),
+      ).resolves.toBeUndefined();
+      expect(mockTrackRepository.findOne).not.toHaveBeenCalled();
     });
   });
 });

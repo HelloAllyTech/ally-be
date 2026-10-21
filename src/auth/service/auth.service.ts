@@ -44,6 +44,7 @@ import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 import { EmailSendFailedException } from 'src/aws/service/ses.service';
 import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { Impersonate } from '../interface/impersonate.interface';
 import {
   describeWait,
@@ -77,6 +78,7 @@ export class AuthService {
     private readonly cache: RedisService,
     private readonly groupService: GroupService,
     private permissionsService: PermissionsService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
@@ -100,27 +102,42 @@ export class AuthService {
     return result;
   }
 
-  async impersonate(ImpersonateData: Impersonate) {
+  async impersonate(ImpersonateData: Impersonate, callerId: number) {
+    // PLATFORM_ADMIN carries impersonate:user, allowlisted or not. An
+    // organization allowlist cannot bound it: the session minted here carries
+    // the target's reach, not the caller's, so an admin confined to some orgs
+    // could take over any account on the platform — including an
+    // unrestricted admin's. Allowlisted admins don't impersonate at all.
+    if (await this.tenantScopeService.isRestricted(callerId)) {
+      throw new ForbiddenException(
+        'Organization-restricted admins cannot impersonate users',
+      );
+    }
+
     const userEmail = ImpersonateData.email;
 
     const user = await this.userRepository.findOne({
       where: { email: userEmail, status: UserStatus.ACTIVE },
-      select: ['id', 'username', 'password', 'tenantId'],
+      select: ['id', 'username', 'tenantId'],
     });
+    if (!user) {
+      throw new NotFoundException('No active user with that email');
+    }
 
     const isMultitenantAdmin = await this.permissionsService.isMultiTenantAdmin(
-      Number(user?.id),
+      user.id,
     );
 
     if (isMultitenantAdmin)
       return { message: 'Multi-tenant admin cannot be impersonated.' };
 
-    const tokens = await this.generateTokens(user as User);
+    const tokens = await this.generateTokens(user);
 
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.SUPER_ADMIN_IMPERSONATE,
       details: {
         purpose: 'Super admin impersonated a user',
+        impersonatedBy: callerId,
         userDetails: user,
       },
     });

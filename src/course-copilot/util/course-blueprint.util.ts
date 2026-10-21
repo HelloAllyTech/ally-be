@@ -45,6 +45,7 @@ export const COURSE_BLUEPRINT_ITEM_TYPE_LABELS: Record<TrackItemType, string> =
     [TrackItemType.JOURNAL]: 'Journal',
     [TrackItemType.ANNOTATED_ARTIFACT]: 'Annotated transcript',
     [TrackItemType.GAME]: 'Game',
+    [TrackItemType.BRANCHING_SCENARIO]: 'Branching scenario',
   };
 
 /**

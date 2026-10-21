@@ -69,6 +69,7 @@ import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { FeatureToggleGuard } from '../../../auth/guards/feature-toggle.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
 import { FeatureToggleService } from '../../../authorization/service/feature-toggle.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { UserService } from '../../../user/service/user.service';
@@ -408,6 +409,16 @@ describe('AnalyticsController', () => {
             get: jest.fn(),
             getAllAndOverride: jest.fn(),
             getAllAndMerge: jest.fn(),
+          },
+        },
+        {
+          // OwnTenantScopeGuard / PlatformWideGuard: an unrestricted caller.
+          provide: TenantScopeService,
+          useValue: {
+            isRestricted: jest.fn().mockResolvedValue(false),
+            resolveScope: jest
+              .fn()
+              .mockResolvedValue({ tenantIds: null, restricted: false }),
           },
         },
         {

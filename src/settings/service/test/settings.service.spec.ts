@@ -36,8 +36,7 @@ import {
 import { UpdateSummarySectionsDto } from '../../dto/summary-sections.dto';
 import { UpdateChatTypesDto } from '../../dto/chat-types.dto';
 import { AuditLogService } from '../../../audit/service/audit-log.service';
-import { PermissionsService } from '../../../authorization/service/permissions.service';
-import { AdminTenantService } from '../../../user/service/admin-tenant.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
 import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
@@ -49,12 +48,18 @@ describe('SettingsService', () => {
   let preferenceService: jest.Mocked<PreferenceService>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
   let auditLogService: jest.Mocked<AuditLogService>;
-  let permissionsService: jest.Mocked<PermissionsService>;
-  let adminTenantService: jest.Mocked<AdminTenantService>;
+  let permissionsService: {
+    isMultiTenantAdmin: jest.Mock;
+    getUserPermissions: jest.Mock;
+  };
+  // The organizations an allowlisted platform admin holds, read by the real
+  // TenantScopeService through fake repositories.
+  let allowlistedTenantIds: string[];
   let globalSettingsRepository: jest.Mocked<GlobalSettingsRepository>;
 
   const mockTenantId = 'test-tenant-id';
-  const mockUserId = 'test-user-id';
+  // Numeric, as in a real JWT: TenantScopeService reads it as a user id.
+  const mockUserId = '42';
   const mockPreferenceId = 'test-preference-id';
 
   const mockOrgPreference = {
@@ -108,6 +113,26 @@ describe('SettingsService', () => {
       updatePreference: jest.fn(),
     };
 
+    permissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+      getUserPermissions: jest
+        .fn()
+        .mockResolvedValue([PERMISSIONS.SYSTEM_ACCESS]),
+    };
+    allowlistedTenantIds = [];
+    const tenantScopeService = new TenantScopeService(
+      permissionsService as any,
+      {
+        find: jest.fn(async () =>
+          allowlistedTenantIds.map((tenantId) => ({ tenantId })),
+        ),
+      } as any,
+      {
+        find: jest.fn(async () => allowlistedTenantIds.map((id) => ({ id }))),
+        findOne: jest.fn().mockResolvedValue(null),
+      } as any,
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SettingsService,
@@ -126,12 +151,8 @@ describe('SettingsService', () => {
           useValue: { log: jest.fn() },
         },
         {
-          provide: PermissionsService,
-          useValue: { isMultiTenantAdmin: jest.fn() },
-        },
-        {
-          provide: AdminTenantService,
-          useValue: { getTenantsForAdmin: jest.fn() },
+          provide: TenantScopeService,
+          useValue: tenantScopeService,
         },
         {
           provide: DataSource,
@@ -152,8 +173,6 @@ describe('SettingsService', () => {
     preferenceService = module.get(PreferenceService);
     permissionValidator = module.get(PermissionValidator);
     auditLogService = module.get(AuditLogService) as any;
-    permissionsService = module.get(PermissionsService) as any;
-    adminTenantService = module.get(AdminTenantService) as any;
     globalSettingsRepository = module.get(GlobalSettingsRepository);
 
     // Mock ExecutionManager static methods
@@ -693,9 +712,7 @@ describe('SettingsService', () => {
 
     it('should throw ForbiddenException if multi-tenant admin does not manage the tenant', async () => {
       permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
-      adminTenantService.getTenantsForAdmin.mockResolvedValue({
-        data: [{ id: 'other-tenant-id' }],
-      } as any);
+      allowlistedTenantIds = ['other-tenant-id'];
 
       await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
         ForbiddenException,
@@ -707,9 +724,7 @@ describe('SettingsService', () => {
 
     it('should update SUMMARY_HIDDEN_SECTIONS and log audit event if updated by multi-tenant admin', async () => {
       permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
-      adminTenantService.getTenantsForAdmin.mockResolvedValue({
-        data: [{ id: mockTenantId }],
-      } as any);
+      allowlistedTenantIds = [mockTenantId];
 
       preferenceService.getPreference.mockResolvedValue(null);
       preferenceService.createPreference.mockResolvedValue({} as any);
@@ -1923,6 +1938,125 @@ describe('SettingsService', () => {
           turnMaxEndpointingDelay: 3,
         }),
       ).rejects.toThrow(new BadRequestException('User ID is required'));
+    });
+  });
+
+  describe('as a platform admin restricted to one organization', () => {
+    const ALLOWED = 'allowed-tenant-id';
+    const OTHER = 'other-tenant-id';
+
+    beforeEach(() => {
+      // Every platform admin holds SYSTEM_ACCESS; the allowlist narrows them.
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      allowlistedTenantIds = [ALLOWED];
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+    });
+
+    it('writes a setting for an allowlisted organization', async () => {
+      await expect(
+        service.updateCustomFieldsEnabled(ALLOWED, true),
+      ).resolves.toEqual({ success: true });
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedId: ALLOWED }),
+      );
+    });
+
+    it.each([
+      [
+        'updateCustomFieldsEnabled',
+        () => service.updateCustomFieldsEnabled(OTHER, true),
+      ],
+      [
+        'updateCharacterLibraryEnabled',
+        () => service.updateCharacterLibraryEnabled(OTHER, true),
+      ],
+      [
+        'updateProgressDashboardEnabled',
+        () => service.updateProgressDashboardEnabled(OTHER, true),
+      ],
+      [
+        'updateTextChatRoleplayEnabled',
+        () => service.updateTextChatRoleplayEnabled(OTHER, true),
+      ],
+      [
+        'updateScribeNoteCreationEnabled',
+        () => service.updateScribeNoteCreationEnabled(OTHER, true),
+      ],
+      [
+        'updateScribeVoiceNoteEnabled',
+        () => service.updateScribeVoiceNoteEnabled(OTHER, true),
+      ],
+      [
+        'updateEnabledCustomFieldTypes',
+        () => service.updateEnabledCustomFieldTypes(OTHER, []),
+      ],
+      [
+        'updateSummaryFields',
+        () =>
+          service.updateSummaryFields({ hiddenFields: [], tenantId: OTHER }),
+      ],
+      [
+        'updateSummarySections',
+        () =>
+          service.updateSummarySections({
+            hiddenSections: [],
+            tenantId: OTHER,
+          }),
+      ],
+    ])('%s refuses an organization off the allowlist', async (_name, call) => {
+      await expect(call()).rejects.toThrow(ForbiddenException);
+      expect(preferenceService.createPreference).not.toHaveBeenCalled();
+      expect(preferenceService.updatePreference).not.toHaveBeenCalled();
+    });
+
+    it('refuses a write that falls back to their own, un-allowlisted organization', async () => {
+      await expect(
+        service.updateCustomFieldsEnabled(undefined as any, true),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it.each([
+      ['getCustomFieldsEnabled', () => service.getCustomFieldsEnabled(OTHER)],
+      [
+        'getEnabledCustomFieldTypes',
+        () => service.getEnabledCustomFieldTypes(OTHER),
+      ],
+      [
+        'getCharacterLibraryEnabled',
+        () => service.getCharacterLibraryEnabled(OTHER),
+      ],
+      [
+        'getProgressDashboardEnabled',
+        () => service.getProgressDashboardEnabled(OTHER),
+      ],
+      ['getChatTypes', () => service.getChatTypes({ tenantId: OTHER })],
+      [
+        'getSummaryFieldsConfig',
+        () => service.getSummaryFieldsConfig({ tenantId: OTHER }),
+      ],
+      [
+        'getSummarySectionsConfig',
+        () => service.getSummarySectionsConfig({ tenantId: OTHER }),
+      ],
+    ])(
+      '%s refuses to read an organization off the allowlist',
+      async (_name, call) => {
+        await expect(call()).rejects.toThrow(ForbiddenException);
+        expect(preferenceService.getPreference).not.toHaveBeenCalled();
+      },
+    );
+
+    it("still reads their own organization's flags when naming none (the sidebar's call)", async () => {
+      await expect(service.getCharacterLibraryEnabled()).resolves.toBe(false);
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.CHARACTER_LIBRARY_ENABLED,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
     });
   });
 });
