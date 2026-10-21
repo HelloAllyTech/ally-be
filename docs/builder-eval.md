@@ -80,7 +80,9 @@ silent for 10 minutes is resumed by another process. Finished runs are kept, and
 mid-way starts again. After three resumes it is marked errored. Every suite records which
 interview loop it ran in `overrides.validatedTurns` — the live `builder_settings.validatedTurns`
 unless the request passes `validatedTurns` to compare the two loops. Suites from before the
-switch existed have no value and ran the legacy loop. Read the results with
+switch existed have no value and replay the legacy loop even when resumed after a deploy, so a
+suite never changes loops halfway. Each run's `metrics.loop` says which loop it replayed. Read
+the results with
 `GET /v1/builder/eval/suites/:id`. Each run carries its gates, metrics, judge, and a
 turn-by-turn transcript.
 

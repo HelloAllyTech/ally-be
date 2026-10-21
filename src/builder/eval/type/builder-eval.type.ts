@@ -125,6 +125,8 @@ export interface BuilderEvalGates {
 }
 
 export interface BuilderEvalMetrics {
+  /** The interview loop the run replayed; absent on runs from before it was recorded. */
+  loop?: 'validated' | 'legacy';
   turns: number;
   /** ask_admin calls. */
   questions: number;
