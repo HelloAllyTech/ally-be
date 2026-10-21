@@ -1,3 +1,4 @@
+import { BranchingScenarioContent } from '../type/branching.type';
 import {
   BadRequestException,
   ConflictException,
@@ -740,6 +741,14 @@ export class TrackService {
           item.completionCriteria = {
             ...item.completionCriteria,
             passScore: annotation.settings.passScore,
+          };
+        }
+        if (item.type === TrackItemType.BRANCHING_SCENARIO && item.content) {
+          const scenario = item.content as BranchingScenarioContent;
+          const passScore = scenario.settings?.passScore ?? 0;
+          item.completionCriteria = {
+            ...item.completionCriteria,
+            passScore: passScore || undefined,
           };
         }
         if (item.type === TrackItemType.VIDEO) {

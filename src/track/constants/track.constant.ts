@@ -48,6 +48,18 @@ export const TRACK_MAX_ANNOTATION_LABELS = 8;
 export const TRACK_DEFAULT_ANNOTATION_PASS_SCORE = 70;
 export const TRACK_DEFAULT_ANNOTATION_FALSE_POSITIVE_PENALTY = 1;
 
+/** BRANCHING_SCENARIO limits. */
+export const TRACK_DEFAULT_BRANCHING_PASS_SCORE = 70;
+export const TRACK_MAX_BRANCHING_NODES = 100;
+export const TRACK_MIN_BRANCHING_CHOICES = 2;
+export const TRACK_MAX_BRANCHING_CHOICES = 6;
+export const TRACK_MAX_BRANCHING_NODE_TEXT = 1500;
+export const TRACK_MAX_BRANCHING_CHOICE_TEXT = 250;
+export const TRACK_MAX_BRANCHING_TITLE = 120;
+export const TRACK_MAX_BRANCHING_TAKEAWAY = 800;
+/** A finished run can be no longer than this many choices; a sanity rail for cycles. */
+export const TRACK_MAX_BRANCHING_PATH_LENGTH = 100;
+
 /** Track lesson videos are full content (unlike 15s scenario cover videos). */
 export const TRACK_VIDEO_FILE_SIZE_LIMIT = 500 * 1024 * 1024; // 500MB
 export const TRACK_VIDEO_FILE_DURATION_LIMIT = 30 * 60; // 30 minutes
