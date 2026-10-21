@@ -24,6 +24,10 @@ import {
 } from '../constants/prompt.constants';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptTranslationService } from './prompt-translation.service';
+import {
+  BUILDER_EVAL_GATE_REFUSAL,
+  isBuilderEvalGatedPrompt,
+} from 'src/builder/constants/builder-eval-gate.constants';
 
 @Injectable()
 export class PromptsService {
@@ -80,6 +84,14 @@ export class PromptsService {
   async updatePrompt(
     id: string,
     updatePromptDto: UpdatePromptDto,
+    options: {
+      /**
+       * Set only by Builder's replay eval when it publishes a candidate that
+       * passed. Every other caller is refused a behaviour change to a gated
+       * Builder prompt — see builder-eval-gate.constants.
+       */
+      evalApproved?: boolean;
+    } = {},
   ): Promise<boolean> {
     const userId = Number(ExecutionManager.getUserId());
     const prompt = await this.promptsRepository.findOne({
@@ -88,6 +100,14 @@ export class PromptsService {
 
     if (!prompt) {
       throw new NotFoundException('Prompt not found');
+    }
+
+    if (
+      !options.evalApproved &&
+      isBuilderEvalGatedPrompt(prompt.promptCode) &&
+      (await this.changesBehaviour(prompt, updatePromptDto))
+    ) {
+      throw new ConflictException(BUILDER_EVAL_GATE_REFUSAL);
     }
 
     const updateData: DeepPartial<Prompt> = {};
@@ -813,12 +833,67 @@ export class PromptsService {
   }
 
   /**
+   * Whether an update would change what a prompt does at runtime: its text,
+   * which version serves (the override flag), or the model settings on the
+   * row. Renames, descriptions and studio visibility do not.
+   *
+   * The text counts only when it differs from what is live: the editor sends
+   * the whole form on every save, so an unchanged body arriving beside a new
+   * description is not an edit to the prompt.
+   */
+  private async changesBehaviour(
+    prompt: Prompt,
+    dto: UpdatePromptDto,
+  ): Promise<boolean> {
+    const differs = (next: unknown, current: unknown) =>
+      (next === '' ? null : (next ?? null)) !== (current ?? null);
+    if (
+      dto.useDashboardOverride !== undefined &&
+      dto.useDashboardOverride !== prompt.useDashboardOverride
+    ) {
+      return true;
+    }
+    if (dto.provider !== undefined && differs(dto.provider, prompt.provider)) {
+      return true;
+    }
+    if (dto.model !== undefined && differs(dto.model, prompt.model)) {
+      return true;
+    }
+    if (
+      dto.temperature !== undefined &&
+      differs(dto.temperature, prompt.temperature)
+    ) {
+      return true;
+    }
+    const next = dto.prompt?.trim();
+    if (!next) return false;
+    const live = (
+      await this.promptSharedService.getPromptByCode(prompt.promptCode)
+    )?.trim();
+    return next !== live;
+  }
+
+  /** A prompt's id from its code, or null. */
+  async findIdByCode(promptCode: string): Promise<string | null> {
+    const prompt = await this.promptsRepository.findOne({
+      where: { promptCode },
+      select: { id: true },
+    });
+    return prompt?.id ?? null;
+  }
+
+  /**
    * Revert prompt to codebase default (copies defaultPrompt into new version).
    */
   async revertPrompt(id: string): Promise<boolean> {
     const prompt = await this.promptsRepository.findOne({ where: { id } });
     if (!prompt) {
       throw new NotFoundException('Prompt not found');
+    }
+    // Reverting a gated Builder prompt to its file is a behaviour change like
+    // any other, and the file text has not been through the eval either.
+    if (isBuilderEvalGatedPrompt(prompt.promptCode)) {
+      throw new ConflictException(BUILDER_EVAL_GATE_REFUSAL);
     }
     if (!prompt.defaultPrompt) {
       throw new NotFoundException(

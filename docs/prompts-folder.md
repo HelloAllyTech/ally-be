@@ -211,6 +211,15 @@ and update the `.txt` to match.** The update endpoint only commits a new version
 content and `useDashboardOverride: true` arrive together, which is what keeps the live
 prompt from passing through a wrong state on the way.
 
+**Since 2026-10-21 the prompt editor cannot change Builder's prompts directly.**
+`builder_interviewer_system` and `builder_platform_rules` are gated by Builder's replay eval
+(`src/builder/constants/builder-eval-gate.constants.ts`): `PUT /prompts/:id` and the revert
+refuse any change to their text, override flag or model settings with a 409. A change goes
+to `POST /v1/builder/eval/prompt-candidates` instead, which replays the eval fixtures with the
+candidate, compares against the live settings, and publishes it through the same update path
+only if nothing got measurably worse. Renaming or re-describing them still works. How the
+eval works: [`docs/builder-eval.md`](builder-eval.md).
+
 **`ok:false` means "repair and retry" — so never use it for an honest negative.** The model
 obliges an `ok:false`, which is right for a validation failure and wrong for a retrieval that
 found nothing: it becomes a rephrase loop against a corpus that genuinely lacks the material.

@@ -316,6 +316,8 @@ export const BUILDER_AI_TASKS = {
   OUTCOME_CATEGORISE: 'builder-outcome-categorise',
   CONTEXT_SELECTION: 'builder-context-selection',
   PRD_REVIEW: 'builder-prd-review',
+  EVAL_ADMIN: 'builder-eval-admin',
+  EVAL_JUDGE: 'builder-eval-judge',
 } as const;
 
 // Prompt registry code (src/prompts/builder/interviewer_system.txt).
