@@ -175,9 +175,13 @@ describe('BuilderPrdReviewService', () => {
             .mockResolvedValue('- github_read_file: ally-be:src/a.ts'),
         } as any,
         {
-          renderContextSection: jest
-            .fn()
-            .mockResolvedValue('# Reusable platform systems'),
+          capabilities: () => [
+            {
+              name: 'Auto-improve',
+              whatItIs: 'Challenger prompts judged against a rubric.',
+              reuseWhen: 'A feature wants to test prompt versions.',
+            },
+          ],
         } as any,
       );
     });
@@ -216,6 +220,13 @@ describe('BuilderPrdReviewService', () => {
       expect(llmCompletion.complete.mock.calls[0][0].prompt).toContain(
         '<evidence_log>',
       );
+      // The systems are facts for the reviewer, not the interviewer's
+      // instructions — those read as requirements on the PRD.
+      const prompt = llmCompletion.complete.mock.calls[0][0].prompt;
+      expect(prompt).toContain(
+        '- Auto-improve: Challenger prompts judged against a rubric. Reuse when: A feature wants to test prompt versions.',
+      );
+      expect(prompt).not.toContain('ai_tasks_lookup');
       expect(review).toEqual(
         expect.objectContaining({
           status: 'done',

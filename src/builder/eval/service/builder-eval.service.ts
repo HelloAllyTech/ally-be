@@ -514,8 +514,8 @@ export class BuilderEvalService {
               ...(candidate.model !== undefined
                 ? { model: candidate.model ?? '' }
                 : {}),
-              ...(candidate.temperature !== undefined &&
-              candidate.temperature !== null
+              // null clears the row's override, as it does from the editor.
+              ...(candidate.temperature !== undefined
                 ? { temperature: candidate.temperature }
                 : {}),
             } as any,
