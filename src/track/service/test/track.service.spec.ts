@@ -512,6 +512,21 @@ describe('TrackService', () => {
       });
       expect(newTrack.description).toBe('<p>Hello\nworld</p>');
     });
+
+    it('should preserve allowed rich text formatting tags', async () => {
+      mockTrackRepository.save.mockImplementation((track) =>
+        Promise.resolve({ ...track, id: 'new-id' }),
+      );
+      const richText =
+        '<h1>Heading 1</h1><h2>Heading 2</h2><h3>Heading 3</h3><p>This is a paragraph with <strong>bold</strong>, <em>italics</em>, <u>underline</u>, and <s>strikethrough</s>.</p><blockquote>Quote</blockquote><hr/>';
+      const expectedSanitizedText =
+        '<h1>Heading 1</h1><h2>Heading 2</h2><h3>Heading 3</h3><p>This is a paragraph with <strong>bold</strong>, <em>italics</em>, <u>underline</u>, and <s>strikethrough</s>.</p><blockquote>Quote</blockquote><hr />';
+      const newTrack = await service.createTrack({
+        title: 'Test',
+        description: richText,
+      });
+      expect(newTrack.description).toBe(expectedSanitizedText);
+    });
   });
 
   describe('as a platform admin restricted to some organizations', () => {

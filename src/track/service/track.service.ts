@@ -918,7 +918,25 @@ export class TrackService {
       : description;
 
     return sanitizeHtml(processed, {
-      allowedTags: ['p', 'b', 'i', 'u', 'ul', 'ol', 'li', 'a', 'br'],
+      allowedTags: [
+        'p',
+        'b',
+        'i',
+        'u',
+        'ul',
+        'ol',
+        'li',
+        'a',
+        'br',
+        'strong',
+        'em',
+        's',
+        'h1',
+        'h2',
+        'h3',
+        'blockquote',
+        'hr',
+      ],
       allowedAttributes: {
         a: ['href'],
       },
