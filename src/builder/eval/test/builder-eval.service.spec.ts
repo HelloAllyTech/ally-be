@@ -538,6 +538,7 @@ describe('BuilderEvalService — cancelling a suite', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     return { service, suites, runs };
   };
@@ -590,6 +591,7 @@ describe('BuilderEvalService — cancelling a suite', () => {
       {} as any,
       runner as any,
       {} as any,
+      {} as any,
     );
 
     await (service as any).runQueued({ id: 'suite-1', createdBy: 7 }, [
@@ -618,6 +620,7 @@ describe('BuilderEvalService — cancelling a suite', () => {
       {} as any,
       {} as any,
       promptsService as any,
+      {} as any,
     );
     jest.spyOn(service as any, 'runQueued').mockResolvedValue(undefined);
 
