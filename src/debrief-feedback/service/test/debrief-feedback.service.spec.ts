@@ -1,10 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DebriefFeedbackService } from '../debrief-feedback.service';
 import { DebriefFeedback } from '../../entity/debrief-feedback.entity';
 import { SkillExperimentObservation } from 'src/skill-experiment/entity/skill-experiment-observation.entity';
@@ -24,7 +20,7 @@ describe('DebriefFeedbackService', () => {
     feedbackRepo = {
       findOne: jest.fn(),
       create: jest.fn((x) => x),
-      save: jest.fn((x) => ({ ...x, id: 'f-1' })),
+      save: jest.fn((x) => ({ id: 'f-1', ...x })),
     };
     queryBuilder = {
       where: jest.fn().mockReturnThis(),
@@ -101,12 +97,119 @@ describe('DebriefFeedbackService', () => {
     );
   });
 
-  it('throws ConflictException if feedback already exists', async () => {
-    feedbackRepo.findOne.mockResolvedValue({ id: 'existing' });
+  describe('when the session already has feedback', () => {
+    const existingRow = () => ({
+      id: 'existing',
+      tenantId: 'tenant-1',
+      scenarioSessionId: 'sess-1',
+      rating: 'positive' as const,
+      comment: null,
+    });
 
-    await expect(
-      service.createFeedback('tenant-1', LEARNER_ID, 'sess-1', 'positive'),
-    ).rejects.toThrow(ConflictException);
+    it('adds the comment to the existing row instead of rejecting', async () => {
+      feedbackRepo.findOne.mockResolvedValue(existingRow());
+
+      const result = await service.createFeedback(
+        'tenant-1',
+        LEARNER_ID,
+        'sess-1',
+        'positive',
+        'Specific and kind.',
+      );
+
+      expect(feedbackRepo.create).not.toHaveBeenCalled();
+      expect(feedbackRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'existing',
+          rating: 'positive',
+          comment: 'Specific and kind.',
+        }),
+      );
+      expect(result).toMatchObject({
+        id: 'existing',
+        comment: 'Specific and kind.',
+      });
+    });
+
+    it('keeps the first rating and does not re-judge the observation', async () => {
+      feedbackRepo.findOne.mockResolvedValue(existingRow());
+
+      const result = await service.createFeedback(
+        'tenant-1',
+        LEARNER_ID,
+        'sess-1',
+        'negative',
+        'Changed my mind',
+      );
+
+      expect(feedbackRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ rating: 'positive' }),
+      );
+      expect(result.rating).toBe('positive');
+      expect(observationRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(observationRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('returns the stored row unchanged when no comment is given', async () => {
+      const row = existingRow();
+      feedbackRepo.findOne.mockResolvedValue(row);
+
+      const result = await service.createFeedback(
+        'tenant-1',
+        LEARNER_ID,
+        'sess-1',
+        'positive',
+      );
+
+      expect(result).toBe(row);
+      expect(feedbackRepo.save).not.toHaveBeenCalled();
+      expect(observationRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank comment as no comment', async () => {
+      feedbackRepo.findOne.mockResolvedValue({
+        ...existingRow(),
+        comment: 'Earlier note',
+      });
+
+      const result = await service.createFeedback(
+        'tenant-1',
+        LEARNER_ID,
+        'sess-1',
+        'positive',
+        '   ',
+      );
+
+      expect(feedbackRepo.save).not.toHaveBeenCalled();
+      expect(result.comment).toBe('Earlier note');
+    });
+  });
+
+  it('trims the comment and stores a blank one as none on first post', async () => {
+    feedbackRepo.findOne.mockResolvedValue(null);
+    queryBuilder.getOne.mockResolvedValue(null);
+
+    await service.createFeedback(
+      'tenant-1',
+      LEARNER_ID,
+      'sess-1',
+      'positive',
+      '  Clear next steps.  ',
+    );
+    expect(feedbackRepo.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ comment: 'Clear next steps.' }),
+    );
+
+    await service.createFeedback(
+      'tenant-1',
+      LEARNER_ID,
+      'sess-1',
+      'positive',
+      '  ',
+    );
+    expect(feedbackRepo.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ comment: undefined }),
+    );
   });
 
   it('looks the session up within the caller tenant', async () => {
