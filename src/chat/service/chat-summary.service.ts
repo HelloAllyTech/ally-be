@@ -18,6 +18,7 @@ import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 
 @Injectable()
 export class ChatSummaryService {
@@ -29,6 +30,7 @@ export class ChatSummaryService {
     private readonly settingsService: SettingsService,
     private readonly userService: UserService,
     private readonly permissionValidator: PermissionValidator,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   async exportSummary(
@@ -38,6 +40,18 @@ export class ChatSummaryService {
     const { chat, callDetails } =
       await this.chatService.getChatWithCallDetails(chatId);
     if (!chat) throw new NotFoundException(`Chat with ID ${chatId} not found`);
+
+    // A caller with no tenant on their token (a platform admin) reaches every
+    // chat through the lookup above; one restricted to some organizations must
+    // still be held to them. Not-found, not forbidden: chat ids are sequential,
+    // and a different answer would confirm which ones exist.
+    try {
+      await this.tenantScopeService.assertTenantInScope(chat.tenantId, {
+        userId: tokenUser.id,
+      });
+    } catch {
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
+    }
 
     // Check if user can access other users' chats (admin/super admin) or is the counselor for this chat
     const canAccessOtherChats =

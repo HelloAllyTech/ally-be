@@ -167,6 +167,7 @@ export class TrackAdminController {
   async deleteMedia(
     @Body() dto: DeleteTrackMediaDto,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayDeleteMedia(dto.url);
     return this.trackMediaService.deleteMedia(dto);
   }
 

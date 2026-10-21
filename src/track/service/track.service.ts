@@ -111,6 +111,45 @@ export class TrackService {
     }
   }
 
+  /**
+   * DELETE /tracks/media takes a bare file URL, so an organization-restricted
+   * admin could otherwise delete media from any course on the platform. Refuse
+   * a file that is still referenced by a course — its card, sections, items or
+   * translations — or a library template they did not create. An unreferenced
+   * upload (one they replaced or abandoned) stays theirs to clean up.
+   */
+  async assertCallerMayDeleteMedia(url: string): Promise<void> {
+    const userId = this.getUserId();
+    if (!(await this.tenantScopeService.isRestricted(userId))) {
+      return;
+    }
+    const owners: { createdBy: number | null }[] = await this.dataSource.query(
+      `SELECT t."createdBy" FROM tracks t
+         WHERE position($1 in row_to_json(t)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_sections s
+         JOIN tracks t ON t.id = s."trackId"
+         WHERE position($1 in row_to_json(s)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_items i
+         JOIN tracks t ON t.id = i."trackId"
+         WHERE position($1 in row_to_json(i)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_translations tr
+         JOIN tracks t ON t.id = tr."trackId"
+         WHERE position($1 in row_to_json(tr)::text) > 0
+       UNION ALL
+       SELECT c.created_by AS "createdBy" FROM track_component_templates c
+         WHERE position($1 in row_to_json(c)::text) > 0`,
+      [url],
+    );
+    if (owners.some((owner) => owner.createdBy !== userId)) {
+      throw new ForbiddenException(
+        'This file is still used by a course you cannot edit',
+      );
+    }
+  }
+
   async assertCallerMayMakeGlobal(isGlobal?: boolean): Promise<void> {
     if (isGlobal !== true) {
       return;

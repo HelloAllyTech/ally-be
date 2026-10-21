@@ -12,6 +12,7 @@ describe('TrackAdminController — course ownership for restricted admins', () =
   let trackService: Record<string, jest.Mock>;
   let trackTranslationService: Record<string, jest.Mock>;
   let controller: TrackAdminController;
+  let trackMediaService: { deleteMedia: jest.Mock };
 
   beforeEach(() => {
     trackService = {
@@ -21,6 +22,9 @@ describe('TrackAdminController — course ownership for restricted admins', () =
           new ForbiddenException('You can only edit your own courses'),
         ),
       assertCallerMayMakeGlobal: jest.fn().mockResolvedValue(undefined),
+      assertCallerMayDeleteMedia: jest
+        .fn()
+        .mockRejectedValue(new ForbiddenException()),
       createTrack: jest.fn(),
       updateTrack: jest.fn(),
       upsertStructure: jest.fn(),
@@ -36,10 +40,11 @@ describe('TrackAdminController — course ownership for restricted admins', () =
       publish: jest.fn(),
       unpublish: jest.fn(),
     };
+    trackMediaService = { deleteMedia: jest.fn() };
     controller = new TrackAdminController(
       trackService as any,
       {} as any,
-      {} as any,
+      trackMediaService as any,
       trackTranslationService as any,
       {} as any,
       {} as any,
@@ -114,5 +119,15 @@ describe('TrackAdminController — course ownership for restricted admins', () =
     ).rejects.toThrow(ForbiddenException);
     expect(trackService.assertCallerMayMakeGlobal).toHaveBeenCalledWith(true);
     expect(trackService.createTrack).not.toHaveBeenCalled();
+  });
+
+  it("checks a media file is not another course's before deleting it", async () => {
+    const url = 'https://b.s3.r.amazonaws.com/track-media/image/x.png';
+
+    await expect(controller.deleteMedia({ url })).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(trackService.assertCallerMayDeleteMedia).toHaveBeenCalledWith(url);
+    expect(trackMediaService.deleteMedia).not.toHaveBeenCalled();
   });
 });
