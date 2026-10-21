@@ -1,3 +1,4 @@
+import { withholdPlatformWideHighlights } from '../highlights-analytics.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { HighlightsAnalyticsService } from '../highlights-analytics.service';
 import { HighlightsAnalyticsRepository } from '../../repository/highlights-analytics.repository';
@@ -668,6 +669,59 @@ describe('HighlightsAnalyticsService', () => {
       expect(res.scoping.unscopedSections).not.toContain(
         'summary.avgPlayTimeMinutes',
       );
+    });
+  });
+
+  describe('withholdPlatformWideHighlights (org-restricted admins)', () => {
+    const summary = {
+      activeOrgs: 12,
+      completedSimulations: 40,
+      totalAiCostUsd: 99,
+      costPerCompletedSimUsd: 2.4,
+      unpricedCalls: 3,
+      practiceMinutes: 120,
+    };
+    const full = {
+      range: '30d',
+      scoping: {
+        tenantId: 'org-a',
+        unscopedSections: ['summary.activeOrgs', 'topOrgs'],
+      },
+      summary,
+      previous: { ...summary },
+      topOrgs: [
+        { tenantId: 'org-z', name: 'Another org', completedSimulations: 9 },
+      ],
+      topOrgsBelowFloor: { orgs: 4, completedSimulations: 7 },
+      costPerSim: [{ bucket: '2026-10-01', estimatedCostUsd: 3 }],
+      practiceMinutes: [{ bucket: '2026-10-01', minutes: 30 }],
+    } as any;
+
+    it('drops other orgs, org adoption and platform spend, keeping the scoped numbers', () => {
+      const scoped = withholdPlatformWideHighlights(full) as any;
+
+      expect(scoped.topOrgs).toBeUndefined();
+      expect(scoped.topOrgsBelowFloor).toBeUndefined();
+      expect(scoped.costPerSim).toBeUndefined();
+      for (const s of [scoped.summary, scoped.previous]) {
+        expect(s).not.toHaveProperty('activeOrgs');
+        expect(s).not.toHaveProperty('totalAiCostUsd');
+        expect(s).not.toHaveProperty('costPerCompletedSimUsd');
+        expect(s).not.toHaveProperty('unpricedCalls');
+        expect(s.completedSimulations).toBe(40);
+      }
+      expect(scoped.practiceMinutes).toEqual(full.practiceMinutes);
+      expect(scoped.scoping.unscopedSections).toEqual([]);
+      expect(scoped.scoping.withheldSections).toEqual(
+        expect.arrayContaining(['topOrgs', 'summary.activeOrgs', 'costPerSim']),
+      );
+    });
+
+    it('leaves the response it was given untouched', () => {
+      withholdPlatformWideHighlights(full);
+
+      expect(full.topOrgs).toHaveLength(1);
+      expect(full.summary.activeOrgs).toBe(12);
     });
   });
 });

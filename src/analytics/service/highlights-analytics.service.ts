@@ -49,6 +49,56 @@ const TENANT_UNSCOPED_SECTIONS = [
 ];
 
 /**
+ * What an organization-restricted admin does not get from /highlights: the
+ * sections above, which describe other organizations (adoption, top orgs) or
+ * platform AI spend, plus the below-floor tally of other orgs and unpriced
+ * platform calls — in the comparison window too. They are withheld, not shown
+ * platform-wide with a badge as they are to an unrestricted admin.
+ */
+const RESTRICTED_WITHHELD_SECTIONS = [
+  ...TENANT_UNSCOPED_SECTIONS,
+  'summary.unpricedCalls',
+  'topOrgsBelowFloor',
+  'previous.totalAiCostUsd',
+  'previous.costPerCompletedSimUsd',
+  'previous.activeOrgs',
+  'previous.unpricedCalls',
+];
+
+function withholdPlatformWideSummary(
+  summary: HighlightsSummaryDto,
+): HighlightsSummaryDto {
+  const scoped: Partial<HighlightsSummaryDto> = { ...summary };
+  delete scoped.activeOrgs;
+  delete scoped.totalAiCostUsd;
+  delete scoped.costPerCompletedSimUsd;
+  delete scoped.unpricedCalls;
+  return scoped as HighlightsSummaryDto;
+}
+
+/** The /highlights response as an organization-restricted admin receives it. */
+export function withholdPlatformWideHighlights(
+  highlights: AnalyticsHighlightsResponseDto,
+): AnalyticsHighlightsResponseDto {
+  const scoped: Partial<AnalyticsHighlightsResponseDto> = {
+    ...highlights,
+    scoping: {
+      ...highlights.scoping,
+      unscopedSections: [],
+      withheldSections: RESTRICTED_WITHHELD_SECTIONS,
+    },
+    summary: withholdPlatformWideSummary(highlights.summary),
+    previous: highlights.previous
+      ? withholdPlatformWideSummary(highlights.previous)
+      : null,
+  };
+  delete scoped.topOrgs;
+  delete scoped.topOrgsBelowFloor;
+  delete scoped.costPerSim;
+  return scoped as AnalyticsHighlightsResponseDto;
+}
+
+/**
  * Bucket granularity this endpoint defaults to per range. `all` resolves to
  * month in the window util, which is where the all-time default belongs — it is
  * a property of the range, not of this endpoint.

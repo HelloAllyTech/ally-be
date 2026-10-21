@@ -492,6 +492,46 @@ describe('AnalyticsController', () => {
     jest.clearAllMocks();
   });
 
+  describe('getHighlights', () => {
+    const highlights = {
+      scoping: { tenantId: 'org-a', unscopedSections: ['topOrgs'] },
+      summary: { activeOrgs: 9, completedSimulations: 4, totalAiCostUsd: 12 },
+      previous: null,
+      topOrgs: [{ tenantId: 'org-z' }],
+      topOrgsBelowFloor: { orgs: 2, completedSimulations: 3 },
+      costPerSim: [],
+    } as any;
+
+    beforeEach(() => {
+      (
+        controller['highlightsAnalyticsService'].getHighlights as jest.Mock
+      ).mockResolvedValue(highlights);
+    });
+
+    it('returns the platform-wide sections to an unrestricted admin', async () => {
+      const result = await controller.getHighlights({
+        tenantId: 'org-a',
+      } as any);
+
+      expect(result).toBe(highlights);
+    });
+
+    it('withholds other orgs and platform spend from an org-restricted admin', async () => {
+      (
+        controller['tenantScopeService'].isRestricted as jest.Mock
+      ).mockResolvedValueOnce(true);
+
+      const result = (await controller.getHighlights({
+        tenantId: 'org-a',
+      } as any)) as any;
+
+      expect(result.topOrgs).toBeUndefined();
+      expect(result.summary).not.toHaveProperty('activeOrgs');
+      expect(result.summary).not.toHaveProperty('totalAiCostUsd');
+      expect(result.summary.completedSimulations).toBe(4);
+    });
+  });
+
   describe('getDashboardUrl', () => {
     it('should return dashboard URL successfully', async () => {
       const externalId = 'dashboard-123';

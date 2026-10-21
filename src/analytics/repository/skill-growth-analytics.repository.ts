@@ -46,6 +46,25 @@ export class SkillGrowthAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   /** The learner as the drill-down header shows them; null when no such user. */
+  /** Whether a learner's home org is this one (matched by uuid or code). */
+  async isLearnerInTenant(
+    learnerId: number,
+    tenantId: string,
+  ): Promise<boolean> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT 1
+        FROM users u
+        JOIN tenants t ON (t.id::text = u."tenant_id" OR t.code = u."tenant_id")
+       WHERE u.id = $1
+         AND (t.id::text = $2::text OR t.code = $2::text)
+       LIMIT 1
+      `,
+      [learnerId, tenantId],
+    );
+    return rows.length > 0;
+  }
+
   async getLearnerIdentity(
     learnerId: number,
   ): Promise<SkillGrowthLearnerIdentity | null> {

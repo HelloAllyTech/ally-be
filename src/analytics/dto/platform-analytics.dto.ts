@@ -126,6 +126,16 @@ export class AnalyticsScopingDto {
     type: [String],
   })
   unscopedSections!: string[];
+
+  @ApiProperty({
+    description:
+      'Sections left out of the response altogether for an organization-' +
+      'restricted admin, because they describe other organizations or ' +
+      'platform spend. Absent for everyone else.',
+    type: [String],
+    required: false,
+  })
+  withheldSections?: string[];
 }
 
 /**

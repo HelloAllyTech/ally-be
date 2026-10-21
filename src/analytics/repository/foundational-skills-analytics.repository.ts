@@ -167,30 +167,45 @@ export class FoundationalSkillsAnalyticsRepository {
    */
   async getLearnerCuts(
     rubricVersion: string,
-    opts: { minCut: number; limit: number; offset: number; userId?: number },
+    opts: {
+      minCut: number;
+      limit: number;
+      offset: number;
+      userId?: number;
+      /** Only cuts practised in this org (uuid or code). */
+      tenantId?: string;
+    },
   ): Promise<{ total: number; rows: FoundationalSkillsLearnerCutRow[] }> {
-    const userFilter = opts.userId !== undefined ? 'AND user_id = $3' : '';
-    const userParams = opts.userId !== undefined ? [opts.userId] : [];
-    const n = userParams.length;
+    const params: unknown[] = [rubricVersion, opts.minCut];
+    const userFilter =
+      opts.userId !== undefined
+        ? `AND user_id = $${params.push(opts.userId)}`
+        : '';
+    const tenantParam = opts.tenantId
+      ? `$${params.push(opts.tenantId)}`
+      : undefined;
+    const countParams = [...params];
+    const limitParam = params.push(opts.limit);
+    const offsetParam = params.push(opts.offset);
     const [rows, [count]] = await Promise.all([
       this.dataSource.query(
         `
-        WITH scored AS (${this.scoredCte()}),
+        WITH scored AS (${this.scoredCte(tenantParam)}),
         page AS (
           SELECT DISTINCT user_id FROM scored WHERE cut = $2 ${userFilter}
-           ORDER BY user_id LIMIT $${3 + n} OFFSET $${4 + n}
+           ORDER BY user_id LIMIT $${limitParam} OFFSET $${offsetParam}
         )
         ${this.learnerCutSelect('JOIN page p ON p.user_id = s.user_id')}
         `,
-        [rubricVersion, opts.minCut, ...userParams, opts.limit, opts.offset],
+        params,
       ),
       this.dataSource.query(
         `
-        WITH scored AS (${this.scoredCte()})
+        WITH scored AS (${this.scoredCte(tenantParam)})
         SELECT COUNT(DISTINCT user_id)::int AS total
           FROM scored WHERE cut = $2 ${userFilter}
         `,
-        [rubricVersion, opts.minCut, ...userParams],
+        countParams,
       ),
     ]);
     return {
