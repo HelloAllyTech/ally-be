@@ -92,7 +92,7 @@ export interface LearnerUsageRow {
   avgQuizScorePct: number | null;
   /** ARTICLE + VIDEO items completed. */
   readWatchCompleted: number;
-  /** JOURNAL + ANNOTATED_ARTIFACT + GAME + BRANCHING_SCENARIO items completed. */
+  /** JOURNAL + ANNOTATED_ARTIFACT + GAME + BRANCHING_SCENARIO + BUCKET_SORT items completed. */
   reflectionCompleted: number;
 }
 
@@ -742,7 +742,7 @@ export class TenantAnalyticsRepository {
           )::int AS "readWatchCompleted",
           COUNT(*) FILTER (
             WHERE tip.status = 'COMPLETED'
-              AND ti.type IN ('JOURNAL', 'ANNOTATED_ARTIFACT', 'GAME', 'BRANCHING_SCENARIO')
+              AND ti.type IN ('JOURNAL', 'ANNOTATED_ARTIFACT', 'GAME', 'BRANCHING_SCENARIO', 'BUCKET_SORT')
           )::int AS "reflectionCompleted"
         FROM track_item_progress tip
         JOIN track_enrollments te ON te.id = tip."trackEnrollmentId"

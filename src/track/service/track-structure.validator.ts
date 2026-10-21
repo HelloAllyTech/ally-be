@@ -47,6 +47,7 @@ import {
   branchingEndingScore,
   isBranchingEnding,
 } from '../type/branching.type';
+import { BucketSortContent } from '../type/bucket-sort.type';
 import {
   TRACK_MAX_BRANCHING_CHOICE_TEXT,
   TRACK_MAX_BRANCHING_CHOICES,
@@ -54,6 +55,14 @@ import {
   TRACK_MAX_BRANCHING_NODES,
   TRACK_MAX_BRANCHING_TAKEAWAY,
   TRACK_MAX_BRANCHING_TITLE,
+  TRACK_MAX_BUCKET_SORT_BUCKETS,
+  TRACK_MAX_BUCKET_SORT_DESCRIPTION,
+  TRACK_MAX_BUCKET_SORT_EXPLANATION,
+  TRACK_MAX_BUCKET_SORT_ITEMS,
+  TRACK_MAX_BUCKET_SORT_ITEM_TEXT,
+  TRACK_MAX_BUCKET_SORT_LABEL,
+  TRACK_MIN_BUCKET_SORT_BUCKETS,
+  TRACK_MIN_BUCKET_SORT_ITEMS,
   TRACK_MIN_BRANCHING_CHOICES,
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
@@ -203,8 +212,121 @@ export function validateTrackItemContent({
         title,
       );
       return;
+    case TrackItemType.BUCKET_SORT:
+      validateBucketSortContent(
+        content as BucketSortContent | undefined,
+        title,
+      );
+      return;
     default:
       fail(`Unknown component type: ${type}`);
+  }
+}
+
+/**
+ * A bucket sort is only fair if every item has exactly one real home, and only
+ * useful if each bucket can be told apart from the others. Anything else would
+ * hand the learner a "wrong" verdict for an item that has no right answer.
+ */
+export function validateBucketSortContent(
+  content: BucketSortContent | undefined,
+  title: string,
+): void {
+  const label = `Bucket sort "${title}"`;
+  if (
+    !content ||
+    !Array.isArray(content.buckets) ||
+    !Array.isArray(content.items)
+  ) {
+    fail(`${label} needs buckets and items.`);
+  }
+  if (content.intro !== undefined && typeof content.intro !== 'string') {
+    fail(`${label}: intro must be text.`);
+  }
+  const { buckets, items } = content;
+  if (
+    buckets.length < TRACK_MIN_BUCKET_SORT_BUCKETS ||
+    buckets.length > TRACK_MAX_BUCKET_SORT_BUCKETS
+  ) {
+    fail(
+      `${label} needs between ${TRACK_MIN_BUCKET_SORT_BUCKETS} and ${TRACK_MAX_BUCKET_SORT_BUCKETS} buckets.`,
+    );
+  }
+  if (
+    items.length < TRACK_MIN_BUCKET_SORT_ITEMS ||
+    items.length > TRACK_MAX_BUCKET_SORT_ITEMS
+  ) {
+    fail(
+      `${label} needs between ${TRACK_MIN_BUCKET_SORT_ITEMS} and ${TRACK_MAX_BUCKET_SORT_ITEMS} items.`,
+    );
+  }
+
+  const bucketIds = new Set<string>();
+  const bucketLabels = new Set<string>();
+  for (const bucket of buckets) {
+    if (!bucket?.id || typeof bucket.id !== 'string') {
+      fail(`${label}: every bucket needs an id.`);
+    }
+    if (bucketIds.has(bucket.id)) {
+      fail(`${label}: two buckets share the id "${bucket.id}".`);
+    }
+    bucketIds.add(bucket.id);
+    const name = typeof bucket.label === 'string' ? bucket.label.trim() : '';
+    if (!name) fail(`${label}: every bucket needs a name.`);
+    if (name.length > TRACK_MAX_BUCKET_SORT_LABEL) {
+      fail(
+        `${label}: bucket names must be ${TRACK_MAX_BUCKET_SORT_LABEL} characters or fewer.`,
+      );
+    }
+    if (bucketLabels.has(name.toLowerCase())) {
+      fail(`${label}: two buckets are both called "${name}".`);
+    }
+    bucketLabels.add(name.toLowerCase());
+    if (
+      bucket.description !== undefined &&
+      (typeof bucket.description !== 'string' ||
+        bucket.description.length > TRACK_MAX_BUCKET_SORT_DESCRIPTION)
+    ) {
+      fail(
+        `${label}, bucket "${name}": description must be ${TRACK_MAX_BUCKET_SORT_DESCRIPTION} characters or fewer.`,
+      );
+    }
+  }
+
+  const itemIds = new Set<string>();
+  for (const item of items) {
+    if (!item?.id || typeof item.id !== 'string') {
+      fail(`${label}: every item needs an id.`);
+    }
+    if (itemIds.has(item.id)) {
+      fail(`${label}: two items share the id "${item.id}".`);
+    }
+    itemIds.add(item.id);
+    const text = typeof item.text === 'string' ? item.text.trim() : '';
+    if (!text) fail(`${label}: every item needs some text.`);
+    if (text.length > TRACK_MAX_BUCKET_SORT_ITEM_TEXT) {
+      fail(
+        `${label}: item text must be ${TRACK_MAX_BUCKET_SORT_ITEM_TEXT} characters or fewer.`,
+      );
+    }
+    if (!bucketIds.has(item.bucketId)) {
+      fail(`${label}, item "${text}": choose which bucket it belongs in.`);
+    }
+    if (
+      item.explanation !== undefined &&
+      (typeof item.explanation !== 'string' ||
+        item.explanation.length > TRACK_MAX_BUCKET_SORT_EXPLANATION)
+    ) {
+      fail(
+        `${label}, item "${text}": explanation must be ${TRACK_MAX_BUCKET_SORT_EXPLANATION} characters or fewer.`,
+      );
+    }
+  }
+
+  const used = new Set(items.map((item) => item.bucketId));
+  const empty = buckets.find((bucket) => !used.has(bucket.id));
+  if (empty) {
+    fail(`${label}: no item belongs in the bucket "${empty.label}".`);
   }
 }
 
@@ -1205,6 +1327,7 @@ export function computeStructuralSignature(
           annotation: annotationStructuralSignature(item),
           game: gameStructuralSignature(item),
           branching: branchingStructuralSignature(item),
+          bucketSort: bucketSortStructuralSignature(item),
           video: videoStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
@@ -1275,6 +1398,20 @@ function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
     ...(game.gameKey === TrackGameKey.BREATHING_EXERCISE
       ? { breathingExercise: game.breathingExercise }
       : {}),
+  };
+}
+
+/**
+ * Which items exist and where each one belongs is the answer key, so changing
+ * it would make a learner's stored first placements mean something else.
+ * Rewording text, labels and explanations is content-safe.
+ */
+function bucketSortStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.BUCKET_SORT || !item.content) return null;
+  const content = item.content as BucketSortContent;
+  return {
+    buckets: (content.buckets ?? []).map((b) => b.id),
+    items: (content.items ?? []).map((i) => [i.id, i.bucketId]),
   };
 }
 

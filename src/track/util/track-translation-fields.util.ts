@@ -14,6 +14,7 @@ import {
 import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { GameContent, TrackGameKey } from '../type/game.type';
+import { BucketSortContent } from '../type/bucket-sort.type';
 import { BranchingScenarioContent } from '../type/branching.type';
 import {
   TranslatableField,
@@ -536,10 +537,72 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
       walkBranchingContent(item.content as BranchingScenarioContent, visit);
       break;
 
+    case TrackItemType.BUCKET_SORT:
+      walkBucketSortContent(item.content as BucketSortContent, visit);
+      break;
+
     case TrackItemType.VIDEO:
     case TrackItemType.ROLEPLAY:
     case TrackItemType.CASE:
       break;
+  }
+}
+
+function walkBucketSortContent(
+  content: BucketSortContent,
+  visit: FieldVisitor,
+): void {
+  visitField(
+    {
+      path: 'content.intro',
+      kind: TranslatableFieldKind.PROSE,
+      get: () => content.intro,
+      set: (value) => (content.intro = value),
+    },
+    visit,
+  );
+  for (const bucket of content.buckets ?? []) {
+    const prefix = `content.buckets[${bucket.id}]`;
+    visitField(
+      {
+        path: `${prefix}.label`,
+        kind: TranslatableFieldKind.LABEL,
+        get: () => bucket.label,
+        set: (value) => (bucket.label = value),
+      },
+      visit,
+    );
+    visitField(
+      {
+        path: `${prefix}.description`,
+        kind: TranslatableFieldKind.LABEL,
+        get: () => bucket.description,
+        set: (value) => (bucket.description = value),
+      },
+      visit,
+    );
+  }
+  for (const item of content.items ?? []) {
+    const prefix = `content.items[${item.id}]`;
+    visitField(
+      {
+        path: `${prefix}.text`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => item.text,
+        set: (value) => (item.text = value),
+      },
+      visit,
+    );
+    visitField(
+      {
+        path: `${prefix}.explanation`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => item.explanation,
+        set: (value) => (item.explanation = value),
+        context: item.text,
+      },
+      visit,
+    );
   }
 }
 

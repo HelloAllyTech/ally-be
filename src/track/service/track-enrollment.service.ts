@@ -43,6 +43,8 @@ import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { GameContent } from '../type/game.type';
+import { BucketSortContent } from '../type/bucket-sort.type';
+import { sanitizeBucketSortForLearner } from './track-bucket-sort.sanitizer';
 import {
   BranchingScenarioContent,
   resolveBranchingRound,
@@ -712,6 +714,23 @@ export class TrackEnrollmentService {
         };
       }
 
+      case TrackItemType.BUCKET_SORT: {
+        const sort = item.content as BucketSortContent;
+        // The key stays here. Each placement is checked one at a time (see
+        // TrackBucketSortService); the item completes when all are placed.
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          bucketSort: sanitizeBucketSortForLearner(
+            sort,
+            progress.meta?.bucketSortAnswers,
+            `${progress.id}:${progress.meta?.bucketSortRounds ?? 0}`,
+          ),
+          rounds: progress.meta?.bucketSortRounds ?? 0,
+          bestFirstTryPct: progress.meta?.bucketSortBestFirstTryPct ?? null,
+        };
+      }
+
       case TrackItemType.BRANCHING_SCENARIO: {
         const scenario = item.content as BranchingScenarioContent;
         const completed = progress.status === SessionItemStatus.COMPLETED;
@@ -1218,6 +1237,13 @@ export class TrackEnrollmentService {
       case TrackItemType.GAME: {
         const game = item.content as GameContent | undefined;
         return { gameKey: game?.gameKey ?? null };
+      }
+      case TrackItemType.BUCKET_SORT: {
+        const sort = item.content as BucketSortContent | undefined;
+        return {
+          bucketCount: sort?.buckets?.length ?? 0,
+          itemCount: sort?.items?.length ?? 0,
+        };
       }
       case TrackItemType.BRANCHING_SCENARIO: {
         const scenario = item.content as BranchingScenarioContent | undefined;

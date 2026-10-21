@@ -93,6 +93,7 @@ export const TRACK_ITEM_XP: Readonly<Record<TrackItemType, number>> = {
   [TrackItemType.ARTICLE]: 10,
   [TrackItemType.GAME]: 5,
   [TrackItemType.BRANCHING_SCENARIO]: 15,
+  [TrackItemType.BUCKET_SORT]: 15,
   [TrackItemType.ROLEPLAY]: 0,
 };
 

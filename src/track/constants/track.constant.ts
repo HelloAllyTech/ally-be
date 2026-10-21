@@ -60,6 +60,16 @@ export const TRACK_MAX_BRANCHING_TAKEAWAY = 800;
 /** A finished run can be no longer than this many choices; a sanity rail for cycles. */
 export const TRACK_MAX_BRANCHING_PATH_LENGTH = 100;
 
+/** BUCKET_SORT limits. */
+export const TRACK_MIN_BUCKET_SORT_BUCKETS = 2;
+export const TRACK_MAX_BUCKET_SORT_BUCKETS = 6;
+export const TRACK_MIN_BUCKET_SORT_ITEMS = 2;
+export const TRACK_MAX_BUCKET_SORT_ITEMS = 30;
+export const TRACK_MAX_BUCKET_SORT_LABEL = 60;
+export const TRACK_MAX_BUCKET_SORT_DESCRIPTION = 160;
+export const TRACK_MAX_BUCKET_SORT_ITEM_TEXT = 200;
+export const TRACK_MAX_BUCKET_SORT_EXPLANATION = 500;
+
 /** Track lesson videos are full content (unlike 15s scenario cover videos). */
 export const TRACK_VIDEO_FILE_SIZE_LIMIT = 500 * 1024 * 1024; // 500MB
 export const TRACK_VIDEO_FILE_DURATION_LIMIT = 30 * 60; // 30 minutes

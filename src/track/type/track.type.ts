@@ -1,6 +1,7 @@
 import { AssignmentStatus } from 'src/common/type/common.type';
 import { McqSingleQuestion, QuizQuestion } from './quiz.type';
 import { BranchingRun } from './branching.type';
+import { BucketSortAnswer } from './bucket-sort.type';
 
 export enum TrackStatus {
   DRAFT = 'DRAFT',
@@ -18,6 +19,7 @@ export enum TrackItemType {
   ANNOTATED_ARTIFACT = 'ANNOTATED_ARTIFACT',
   GAME = 'GAME',
   BRANCHING_SCENARIO = 'BRANCHING_SCENARIO',
+  BUCKET_SORT = 'BUCKET_SORT',
 }
 
 /**
@@ -178,6 +180,7 @@ export interface JournalContent {
  *  - VIDEO → watchPct
  *  - ARTICLE → minReadSeconds (0 = mark-as-read only)
  *  - GAME → nothing; games never gate progression (see game.type.ts)
+ *  - BUCKET_SORT → nothing; it completes once every item has been placed
  *  - BRANCHING_SCENARIO → passScore (kept in sync with
  *    content.settings.passScore on save); absent = completes on any ending
  */
@@ -215,6 +218,16 @@ export interface TrackItemProgressMeta {
   branchingEndingsReached?: string[];
   /** BRANCHING_SCENARIO: choice ids of the most recent finished run. */
   branchingLastPath?: string[];
+  /**
+   * BUCKET_SORT: the learner's first placement of each item, keyed by
+   * BucketSortItem.id. Written once per item and never rewritten, so it stays
+   * the record of what they believed before the feedback.
+   */
+  bucketSortAnswers?: Record<string, BucketSortAnswer>;
+  /** BUCKET_SORT: best first-try score across rounds (0-100), for reporting. */
+  bucketSortBestFirstTryPct?: number;
+  /** BUCKET_SORT: how many rounds the learner has finished. */
+  bucketSortRounds?: number;
   /** VIDEO: per-interjection result, keyed by VideoInterjection.id. */
   answeredInterjections?: Record<
     string,

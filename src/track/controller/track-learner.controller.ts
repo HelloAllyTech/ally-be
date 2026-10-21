@@ -34,6 +34,8 @@ import { SubmitArticleQuestionAnswerDto } from '../dto/article-question-answer.d
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 import { GameResultDto } from '../dto/game-result.dto';
 import { BranchingResultDto } from '../dto/branching-result.dto';
+import { BucketSortPlacementDto } from '../dto/bucket-sort-placement.dto';
+import { TrackBucketSortService } from '../service/track-bucket-sort.service';
 import { TrackBranchingService } from '../service/track-branching.service';
 import {
   EnrollTrackDto,
@@ -51,6 +53,7 @@ export class TrackLearnerController {
     private readonly trackJournalService: TrackJournalService,
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
+    private readonly trackBucketSortService: TrackBucketSortService,
     private readonly trackBranchingService: TrackBranchingService,
     private readonly trackProgressDashboardService: TrackProgressDashboardService,
     private readonly trackResourceEmbedService: TrackResourceEmbedService,
@@ -317,6 +320,34 @@ export class TrackLearnerController {
     @Body() dto: GameResultDto,
   ) {
     return this.trackGameService.recordResult(itemId, dto.score);
+  }
+
+  @ApiOperation({
+    summary: 'Check where the learner placed one bucket-sort item',
+    description:
+      'Returns the verdict, the correct bucket and the explanation for that ' +
+      'item only. The first placement of each item is the one recorded.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/bucket-sort/place')
+  async placeBucketSortItem(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: BucketSortPlacementDto,
+  ) {
+    return this.trackBucketSortService.checkPlacement(
+      itemId,
+      dto.sortItemId,
+      dto.bucketId,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Start another round of a finished bucket sort',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/bucket-sort/restart')
+  async restartBucketSort(@Param('itemId', ParseUUIDPipe) itemId: string) {
+    return this.trackBucketSortService.startNewRound(itemId);
   }
 
   @ApiOperation({

@@ -16,6 +16,7 @@ import { QuizContent } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { GameContent } from '../type/game.type';
 import { BranchingScenarioContent } from '../type/branching.type';
+import { BucketSortContent } from '../type/bucket-sort.type';
 
 export type TrackItemContent =
   | BranchingScenarioContent
@@ -24,12 +25,13 @@ export type TrackItemContent =
   | VideoContent
   | JournalContent
   | AnnotationContent
-  | GameContent;
+  | GameContent
+  | BucketSortContent;
 
 /**
  * Hybrid polymorphism: DB-backed content types keep a typed reference column
  * (scenarioId for ROLEPLAY, caseId for CASE); inline-authored content
- * (QUIZ/ARTICLE/VIDEO/JOURNAL/ANNOTATED_ARTIFACT/GAME) lives in the `content`
+ * (QUIZ/ARTICLE/VIDEO/JOURNAL/ANNOTATED_ARTIFACT/GAME/BUCKET_SORT) lives in the `content`
  * JSONB.
  * Item ids are stable across content edits — learner progress rows point here.
  */
