@@ -51,6 +51,11 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     getHandoffContext: jest.Mock;
   };
   let summariseCalls: number;
+  let readinessService: {
+    assess: jest.Mock;
+    plan: jest.Mock;
+    runReview: jest.Mock;
+  };
 
   beforeEach(() => {
     streams = [];
@@ -92,6 +97,13 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
         modelResult: { ok: true },
         summary: 'PRD updated',
       })),
+    };
+
+    const notReady = { score: 40, ready: false, blockers: [], sections: [] };
+    readinessService = {
+      assess: jest.fn().mockResolvedValue(notReady),
+      plan: jest.fn().mockResolvedValue({ readiness: notReady, review: null }),
+      runReview: jest.fn(),
     };
 
     service = new BuilderInterviewOrchestratorService(
@@ -136,6 +148,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
           return { text: 'They want archiving.' };
         }),
       } as any,
+      readinessService as any,
     );
 
     // `create` is the non-streaming call the cheap-model summariser uses;
@@ -351,6 +364,58 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     const final = calls[calls.length - 1][1];
     expect(final.metadata.streaming).toBe(false);
     expect(final.metadata.errored).toBe(true);
+  });
+
+  /**
+   * The turn's end is where the cold reviewer runs if the turn's own edits
+   * did not trigger it — a first review, a retry, or a recheck of open
+   * findings. The admin sees it running, and the readiness that reaches the
+   * client and the session status is the one after it.
+   */
+  it('runs the planned PRD review at the end of the turn, visibly', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+    const reviewed = {
+      score: 100,
+      ready: false,
+      sections: [],
+      blockers: ['1 review finding(s) to fix or dismiss.'],
+      review: {
+        status: 'done',
+        findings: [{ id: 'F1', status: 'open' }],
+      },
+    };
+    readinessService.plan.mockResolvedValue({
+      readiness: { score: 100, ready: false, sections: [], blockers: [] },
+      review: 'review',
+    });
+    readinessService.runReview.mockResolvedValue(reviewed);
+
+    const frames = await drain();
+    const names = frames.map((frame) => frame.event);
+
+    expect(readinessService.plan).toHaveBeenCalledWith(
+      'session-1',
+      expect.anything(),
+      'turn_end',
+    );
+    expect(frames).toEqual(
+      expect.arrayContaining([
+        { event: 'tool_call', data: { name: 'prd_review', input: {} } },
+        {
+          event: 'tool_result',
+          data: {
+            name: 'prd_review',
+            summary: 'PRD review: 1 finding(s) to fix or dismiss',
+          },
+        },
+        { event: 'readiness', data: reviewed },
+      ]),
+    );
+    expect(names.indexOf('readiness')).toBeLessThan(names.indexOf('done'));
+    expect(sessionService.syncReadinessStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      reviewed,
+    );
   });
 
   it('does not fail the turn when a checkpoint cannot be written', async () => {

@@ -153,6 +153,83 @@ describe('GeminiLlmProvider', () => {
   });
 });
 
+describe('GeminiLlmProvider with a system-only prompt', () => {
+  // The real SDK rejects a call with no `contents` ("contents are required").
+  // A system message is moved into `systemInstruction`, so a prompt made only
+  // of system messages (the keyed course-translation call) used to leave
+  // `contents` empty and failed every field.
+  const SDK_CONTENTS_RULE = (arg: { contents?: unknown[] }) => {
+    if (!arg.contents || arg.contents.length === 0) {
+      throw new Error('contents are required');
+    }
+  };
+  const SYSTEM_ONLY: LlmMessage[] = [
+    { role: 'system', content: 'Translate these fields to Hindi.' },
+    { role: 'system', content: 'Return JSON.' },
+  ];
+
+  beforeEach(() => {
+    mockGenerateContent.mockReset();
+    mockGenerateContentStream.mockReset();
+  });
+
+  it('sends the system text as the single user turn so contents is never empty', async () => {
+    mockGenerateContent.mockImplementation(async (arg) => {
+      SDK_CONTENTS_RULE(arg);
+      return { text: '{}' };
+    });
+    const provider = makeProvider('key');
+
+    await expect(
+      provider.getCompletion(SYSTEM_ONLY, {
+        model: 'gemini-2.5-flash',
+        responseFormat: 'json',
+      }),
+    ).resolves.toBe('{}');
+
+    const arg = mockGenerateContent.mock.calls[0][0];
+    expect(arg.contents).toEqual([
+      {
+        role: 'user',
+        parts: [{ text: 'Translate these fields to Hindi.\n\nReturn JSON.' }],
+      },
+    ]);
+    // Not sent twice: the text is the prompt, not also an instruction.
+    expect(arg.config.systemInstruction).toBeUndefined();
+  });
+
+  it('does the same for a streamed call', async () => {
+    mockGenerateContentStream.mockImplementation(async (arg) => {
+      SDK_CONTENTS_RULE(arg);
+      return (async function* () {
+        yield { text: 'hi' };
+      })();
+    });
+    const provider = makeProvider('key');
+
+    const chunks: string[] = [];
+    for await (const c of provider.streamCompletion(SYSTEM_ONLY, {
+      model: 'gemini-2.5-flash',
+    })) {
+      chunks.push(c.content);
+    }
+
+    expect(chunks).toContain('hi');
+    expect(mockGenerateContentStream.mock.calls[0][0].contents).toHaveLength(1);
+  });
+
+  it('still keeps system text out of the turns when there is a real conversation', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'ok' });
+    const provider = makeProvider('key');
+
+    await provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' });
+
+    const arg = mockGenerateContent.mock.calls[0][0];
+    expect(arg.config.systemInstruction).toBe('You are a coach.');
+    expect(arg.contents).toHaveLength(3);
+  });
+});
+
 describe('GeminiLlmProvider usage', () => {
   beforeEach(() => {
     mockGenerateContent.mockReset();

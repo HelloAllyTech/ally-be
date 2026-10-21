@@ -15,8 +15,10 @@ import {
 import { QuizContent } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { GameContent } from '../type/game.type';
+import { BranchingScenarioContent } from '../type/branching.type';
 
 export type TrackItemContent =
+  | BranchingScenarioContent
   | QuizContent
   | ArticleContent
   | VideoContent

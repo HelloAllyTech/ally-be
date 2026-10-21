@@ -29,6 +29,7 @@ import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
+import { BuilderReadinessService } from './builder-readiness.service';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
@@ -164,6 +165,7 @@ export class BuilderBuildService {
     private readonly epicService: BuilderEpicService,
     private readonly llmUsage: LlmUsageService,
     private readonly prdService: BuilderPrdService,
+    private readonly readiness: BuilderReadinessService,
   ) {}
 
   /**
@@ -406,7 +408,7 @@ export class BuilderBuildService {
       session.id,
       session.createdBy,
     );
-    if (!this.prdService.computeReadiness(doc.draft).ready) {
+    if (!(await this.readiness.assess(session.id, doc)).ready) {
       throw new BadRequestException(
         'The PRD is not ready yet — settle its open blockers before drafting the technical design.',
       );

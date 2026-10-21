@@ -1,0 +1,5 @@
+{
+  "name": "Skill Experiment Challenger Generator",
+  "description": "Generates a revised skill prompt based on user feedback (thumbs up/down and comments) to improve debrief quality.",
+  "availableVariables": ["championPrompt", "feedback", "rubric"]
+}

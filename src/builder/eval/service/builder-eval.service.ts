@@ -1,0 +1,569 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DataSource, In, LessThan, Repository } from 'typeorm';
+import { LoggerService } from 'src/logger/logger.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { PromptsService } from 'src/prompt/service/prompt.service';
+import { BuilderEvalSuite } from '../../entity/builder-eval-suite.entity';
+import { BuilderEvalRun } from '../../entity/builder-eval-run.entity';
+import { BuilderEvalFixture } from '../../entity/builder-eval-fixture.entity';
+import { isBuilderEvalGatedPrompt } from '../../constants/builder-eval-gate.constants';
+import {
+  BUILDER_EVAL_BASELINE_MAX_AGE_MS,
+  BUILDER_EVAL_CONCURRENCY,
+  BUILDER_EVAL_JUDGE_TOLERANCE,
+  BUILDER_EVAL_MAX_RUNNING_SUITES,
+  BUILDER_EVAL_STALL_MS,
+} from '../constants/builder-eval-prompts';
+import {
+  BuilderEvalOverrides,
+  BuilderEvalPromptCandidate,
+  BuilderEvalSuiteSummary,
+  BuilderEvalSuiteTrigger,
+  BuilderEvalVerdict,
+} from '../type/builder-eval.type';
+import { gateViolations } from '../util/builder-eval-scoring.util';
+import { BuilderEvalFixtureService } from './builder-eval-fixture.service';
+import { BuilderEvalRunnerService } from './builder-eval-runner.service';
+
+const DEFAULT_REPETITIONS = 3;
+
+/** Roll a suite's runs up per fixture and overall. Pure, for the gate and the page. */
+export function summariseSuite(
+  fixtures: BuilderEvalFixture[],
+  runs: BuilderEvalRun[],
+): BuilderEvalSuiteSummary {
+  const byFixture = fixtures.map((fixture) => {
+    const mine = runs.filter((run) => run.fixtureId === fixture.id);
+    const judged = mine
+      .map((run) => run.judge)
+      .filter((judge) => judge && judge.total > 0) as { score: number }[];
+    return {
+      fixtureId: fixture.id,
+      name: fixture.name,
+      kind: fixture.kind,
+      runs: mine.length,
+      passed: mine.filter((run) => run.status === 'passed').length,
+      gateViolations: mine.reduce(
+        (sum, run) => sum + gateViolations(run.gates),
+        0,
+      ),
+      corrections: mine.reduce(
+        (sum, run) => sum + (run.metrics?.corrections ?? 0),
+        0,
+      ),
+      judgeScore: judged.length
+        ? judged.reduce((sum, judge) => sum + judge.score, 0) / judged.length
+        : null,
+    };
+  });
+  const judgedRuns = runs.filter((run) => run.judge && run.judge.total > 0);
+  return {
+    fixtures: byFixture,
+    runs: runs.length,
+    passed: runs.filter((run) => run.status === 'passed').length,
+    errored: runs.filter((run) => run.status === 'errored').length,
+    gateViolations: byFixture.reduce((sum, row) => sum + row.gateViolations, 0),
+    corrections: byFixture.reduce((sum, row) => sum + row.corrections, 0),
+    judgeScore: judgedRuns.length
+      ? judgedRuns.reduce((sum, run) => sum + (run.judge?.score ?? 0), 0) /
+        judgedRuns.length
+      : null,
+    costUsd:
+      Math.round(
+        runs.reduce((sum, run) => sum + (run.metrics?.costUsd ?? 0), 0) * 100,
+      ) / 100,
+  };
+}
+
+/**
+ * Whether a candidate is no worse than the baseline on the same fixtures.
+ *
+ * Relative, not absolute, on purpose: today's interviewer fails these
+ * fixtures (that is what they were chosen for), so an absolute bar would
+ * refuse every prompt edit, including the ones that improve it. A candidate
+ * passes when it makes nothing measurably worse — gate violations and
+ * corrections may not rise, the judge's mean may not fall past a tolerance,
+ * the critic may not miss more seeded defects — and when every run finished,
+ * because a comparison with holes in it is not one.
+ */
+export function compareSuites(
+  candidate: BuilderEvalSuiteSummary,
+  baseline: BuilderEvalSuiteSummary,
+  baselineSuiteId: string,
+): BuilderEvalVerdict {
+  const ids = new Set(candidate.fixtures.map((row) => row.fixtureId));
+  const base = baseline.fixtures.filter((row) => ids.has(row.fixtureId));
+  const sum = (
+    rows: typeof base,
+    pick: (row: (typeof base)[number]) => number,
+  ) => rows.reduce((total, row) => total + pick(row), 0);
+  const reasons: string[] = [];
+  let pass = true;
+
+  if (candidate.errored > 0) {
+    pass = false;
+    reasons.push(
+      `${candidate.errored} run(s) errored, so the comparison would have holes in it.`,
+    );
+  }
+  const gatesNow = candidate.gateViolations;
+  const gatesBefore = sum(base, (row) => row.gateViolations);
+  if (gatesNow > gatesBefore) {
+    pass = false;
+    reasons.push(`Gate violations rose from ${gatesBefore} to ${gatesNow}.`);
+  } else {
+    reasons.push(`Gate violations ${gatesNow} (baseline ${gatesBefore}).`);
+  }
+  const correctionsNow = candidate.corrections;
+  const correctionsBefore = sum(base, (row) => row.corrections);
+  if (correctionsNow > correctionsBefore) {
+    pass = false;
+    reasons.push(
+      `Simulated admin corrections rose from ${correctionsBefore} to ${correctionsNow}.`,
+    );
+  } else {
+    reasons.push(
+      `Corrections ${correctionsNow} (baseline ${correctionsBefore}).`,
+    );
+  }
+  const judgedBase = base.filter((row) => row.judgeScore !== null);
+  const judgeBefore = judgedBase.length
+    ? sum(judgedBase, (row) => row.judgeScore ?? 0) / judgedBase.length
+    : null;
+  if (candidate.judgeScore !== null && judgeBefore !== null) {
+    if (candidate.judgeScore < judgeBefore - BUILDER_EVAL_JUDGE_TOLERANCE) {
+      pass = false;
+      reasons.push(
+        `Checklist score fell from ${judgeBefore.toFixed(2)} to ${candidate.judgeScore.toFixed(2)}.`,
+      );
+    } else {
+      reasons.push(
+        `Checklist score ${candidate.judgeScore.toFixed(2)} (baseline ${judgeBefore.toFixed(2)}).`,
+      );
+    }
+  }
+  const criticNow = sum(
+    candidate.fixtures.filter((row) => row.kind === 'prd_review'),
+    (row) => row.passed,
+  );
+  const criticBefore = sum(
+    base.filter((row) => row.kind === 'prd_review'),
+    (row) => row.passed,
+  );
+  if (criticNow < criticBefore) {
+    pass = false;
+    reasons.push(
+      `The critic got ${criticBefore - criticNow} fewer PRD checks right.`,
+    );
+  }
+  return { pass, reasons, baselineSuiteId };
+}
+
+/**
+ * Runs eval suites, and gates Builder prompt changes on them.
+ *
+ * A suite runs in the background of this process — a replay is a full
+ * interview and a suite is dozens of them — with a small worker pool. A
+ * restart cuts it off; the next read of the suite list marks one that has not
+ * moved in a while as errored rather than leaving it "running" forever.
+ *
+ * A prompt-gate suite plays the candidate prompt or model settings against
+ * the fixtures and compares it with a baseline on the live settings (reused if
+ * a recent one exists, run alongside otherwise). It publishes the change
+ * through the prompts service on a pass, and on a fail publishes nothing.
+ */
+@Injectable()
+export class BuilderEvalService {
+  private readonly logger = LoggerService.getInstance(BuilderEvalService.name);
+  private readonly suites: Repository<BuilderEvalSuite>;
+  private readonly runs: Repository<BuilderEvalRun>;
+  /** Suites this process is running, so a gate can wait on its baseline. */
+  private readonly inflight = new Map<string, Promise<void>>();
+
+  constructor(
+    dataSource: DataSource,
+    private readonly fixtureService: BuilderEvalFixtureService,
+    private readonly runner: BuilderEvalRunnerService,
+    private readonly promptsService: PromptsService,
+  ) {
+    this.suites = dataSource.getRepository(BuilderEvalSuite);
+    this.runs = dataSource.getRepository(BuilderEvalRun);
+  }
+
+  async startSuite(input: {
+    trigger: BuilderEvalSuiteTrigger;
+    fixtureIds?: string[];
+    repetitions?: number;
+    overrides?: BuilderEvalOverrides | null;
+    candidate?: BuilderEvalPromptCandidate | null;
+    userId: number;
+    /** A gate's own baseline: part of a suite already admitted, so not counted again. */
+    baselineFor?: string;
+  }): Promise<BuilderEvalSuite> {
+    await this.settleStalled();
+    const running = await this.suites.count({ where: { status: 'running' } });
+    if (!input.baselineFor && running >= BUILDER_EVAL_MAX_RUNNING_SUITES) {
+      throw new ConflictException(
+        `${running} eval suites are already running. Each one is dozens of full ` +
+          'interviews — wait for one to finish.',
+      );
+    }
+    const fixtures = input.fixtureIds?.length
+      ? await this.fixtureService.findMany(input.fixtureIds)
+      : await this.fixtureService.listActive();
+    if (!fixtures.length) {
+      throw new BadRequestException(
+        'No fixtures to run. Save a session as an eval fixture first.',
+      );
+    }
+    const repetitions = Math.min(
+      10,
+      Math.max(1, Math.round(input.repetitions ?? DEFAULT_REPETITIONS)),
+    );
+
+    const suite = await this.suites.save(
+      this.suites.create({
+        trigger: input.trigger,
+        status: 'running',
+        fixtureIds: fixtures.map((fixture) => fixture.id),
+        repetitions,
+        overrides: input.overrides ?? null,
+        candidate: input.candidate ?? null,
+        createdBy: input.userId,
+      }),
+    );
+    await this.runs.save(
+      fixtures.flatMap((fixture) =>
+        Array.from({ length: repetitions }, (_, index) =>
+          this.runs.create({
+            suiteId: suite.id,
+            fixtureId: fixture.id,
+            repetition: index + 1,
+            status: 'queued',
+          }),
+        ),
+      ),
+    );
+
+    const work = this.execute(suite.id, fixtures).finally(() =>
+      this.inflight.delete(suite.id),
+    );
+    this.inflight.set(suite.id, work);
+    void work;
+    return suite;
+  }
+
+  /**
+   * A proposed change to a gated Builder prompt: run it against the fixtures
+   * and publish it only if it is no worse than what is live.
+   */
+  async submitPromptCandidate(
+    candidate: BuilderEvalPromptCandidate,
+    userId: number,
+    options: { fixtureIds?: string[]; repetitions?: number } = {},
+  ): Promise<BuilderEvalSuite> {
+    if (!isBuilderEvalGatedPrompt(candidate.promptCode)) {
+      throw new BadRequestException(
+        `${candidate.promptCode} is not a gated Builder prompt; edit it in the prompt editor.`,
+      );
+    }
+    const content = candidate.content?.trim() || null;
+    const changesModel =
+      candidate.model !== undefined ||
+      candidate.provider !== undefined ||
+      candidate.temperature !== undefined;
+    if (!content && !changesModel) {
+      throw new BadRequestException(
+        'Nothing to try: give new text or model settings.',
+      );
+    }
+    const pendingSameCode = await this.suites
+      .createQueryBuilder('suite')
+      .where('suite.trigger = :trigger', { trigger: 'prompt_gate' })
+      .andWhere('suite.status = :status', { status: 'running' })
+      .andWhere(`suite.candidate ->> 'promptCode' = :code`, {
+        code: candidate.promptCode,
+      })
+      .getCount();
+    if (pendingSameCode) {
+      throw new ConflictException(
+        `A change to ${candidate.promptCode} is already being evaluated. Wait for its verdict.`,
+      );
+    }
+
+    const overrides: BuilderEvalOverrides = {
+      ...(content ? { prompts: { [candidate.promptCode]: content } } : {}),
+      ...(changesModel
+        ? {
+            llmConfig: {
+              [candidate.promptCode]: {
+                ...(candidate.provider !== undefined
+                  ? { provider: candidate.provider }
+                  : {}),
+                ...(candidate.model !== undefined
+                  ? { model: candidate.model }
+                  : {}),
+                ...(candidate.temperature !== undefined
+                  ? { temperature: candidate.temperature }
+                  : {}),
+              },
+            },
+          }
+        : {}),
+    };
+    return this.startSuite({
+      trigger: 'prompt_gate',
+      fixtureIds: options.fixtureIds,
+      repetitions: options.repetitions,
+      overrides,
+      candidate: { ...candidate, content },
+      userId,
+    });
+  }
+
+  async listSuites(limit = 30): Promise<BuilderEvalSuite[]> {
+    await this.settleStalled();
+    return this.suites.find({
+      order: { createdAt: 'DESC' },
+      take: Math.min(100, Math.max(1, limit)),
+    });
+  }
+
+  async getSuite(
+    id: string,
+  ): Promise<BuilderEvalSuite & { runs: BuilderEvalRun[] }> {
+    const suite = await this.suites.findOne({ where: { id } });
+    if (!suite) throw new NotFoundException('No such eval suite.');
+    const runs = await this.runs.find({
+      where: { suiteId: id },
+      order: { fixtureId: 'ASC', repetition: 'ASC' },
+    });
+    return { ...suite, runs };
+  }
+
+  async getRun(id: string): Promise<BuilderEvalRun> {
+    const run = await this.runs.findOne({ where: { id } });
+    if (!run) throw new NotFoundException('No such eval run.');
+    return run;
+  }
+
+  private async execute(
+    suiteId: string,
+    fixtures: BuilderEvalFixture[],
+  ): Promise<void> {
+    const suite = await this.suites.findOneOrFail({ where: { id: suiteId } });
+    try {
+      // The gate's baseline runs beside the candidate, not before it: the two
+      // take the same time, and waiting would double how long an admin waits
+      // for a verdict.
+      const baselinePromise =
+        suite.trigger === 'prompt_gate'
+          ? this.resolveBaseline(suite)
+          : Promise.resolve(null);
+      await this.runQueued(suite, fixtures);
+
+      const runs = await this.runs.find({ where: { suiteId } });
+      const summary = summariseSuite(fixtures, runs);
+      let verdict: BuilderEvalVerdict | null = null;
+      if (suite.trigger === 'prompt_gate') {
+        const baseline = await baselinePromise;
+        verdict = baseline?.summary
+          ? compareSuites(summary, baseline.summary, baseline.id)
+          : {
+              pass: false,
+              reasons: ['No baseline could be run to compare against.'],
+              baselineSuiteId: baseline?.id ?? null,
+            };
+      }
+      await this.suites.update(
+        { id: suiteId },
+        { status: 'completed', summary, verdict, completedAt: new Date() },
+      );
+      if (verdict?.pass && suite.candidate) {
+        await this.publish(suite);
+      }
+      this.logger.info(
+        `[BUILDER_EVAL] suite ${suiteId} (${suite.trigger}) done: ${summary.passed}/${summary.runs} ` +
+          `passed, ${summary.gateViolations} gate violation(s), ${summary.corrections} ` +
+          `correction(s), ~$${summary.costUsd}${verdict ? `, verdict ${verdict.pass ? 'PASS' : 'FAIL'}` : ''}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[BUILDER_EVAL] suite ${suiteId} errored: ${message}`);
+      await this.suites.update(
+        { id: suiteId },
+        {
+          status: 'errored',
+          error: message.slice(0, 2000),
+          completedAt: new Date(),
+        },
+      );
+    }
+  }
+
+  /** The queued runs, a few at a time, each saved as it lands. */
+  private async runQueued(
+    suite: BuilderEvalSuite,
+    fixtures: BuilderEvalFixture[],
+  ): Promise<void> {
+    const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+    const queue = await this.runs.find({
+      where: { suiteId: suite.id, status: 'queued' },
+      order: { repetition: 'ASC' },
+    });
+    const worker = async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        const fixture = byId.get(next.fixtureId);
+        if (!fixture) continue;
+        await this.runs.update(
+          { id: next.id },
+          { status: 'running', startedAt: new Date() },
+        );
+        const result = await this.runner.run(fixture, {
+          evalRunId: next.id,
+          userId: suite.createdBy ?? 0,
+          overrides: suite.overrides,
+        });
+        await this.runs.update(
+          { id: next.id },
+          { ...result, completedAt: new Date() },
+        );
+        // Touch the suite, which is what tells a stalled suite from a slow one.
+        await this.suites.update({ id: suite.id }, { status: 'running' });
+      }
+    };
+    await Promise.all(
+      Array.from({ length: BUILDER_EVAL_CONCURRENCY }, () => worker()),
+    );
+  }
+
+  /**
+   * A recent completed run of the same fixtures on the live settings, or a
+   * fresh one started now and awaited.
+   */
+  private async resolveBaseline(
+    suite: BuilderEvalSuite,
+  ): Promise<BuilderEvalSuite | null> {
+    const since = new Date(Date.now() - BUILDER_EVAL_BASELINE_MAX_AGE_MS);
+    const recent = await this.suites.find({
+      where: {
+        trigger: In(['baseline', 'manual']),
+        status: 'completed',
+        repetitions: suite.repetitions,
+      },
+      order: { completedAt: 'DESC' },
+      take: 20,
+    });
+    const reusable = recent.find(
+      (candidate) =>
+        (candidate.completedAt ?? new Date(0)) >= since &&
+        !candidate.overrides &&
+        !!candidate.summary &&
+        suite.fixtureIds.every((id) => candidate.fixtureIds.includes(id)),
+    );
+    if (reusable) return reusable;
+
+    const baseline = await this.startSuite({
+      trigger: 'baseline',
+      fixtureIds: suite.fixtureIds,
+      repetitions: suite.repetitions,
+      userId: suite.createdBy ?? 0,
+      baselineFor: suite.id,
+    }).catch((error: unknown) => {
+      this.logger.warn(
+        `[BUILDER_EVAL] baseline for ${suite.id} could not start: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    });
+    if (!baseline) return null;
+    await this.inflight.get(baseline.id);
+    return this.suites.findOne({ where: { id: baseline.id } });
+  }
+
+  /**
+   * Put a passed candidate live, through the same path an admin's edit takes —
+   * versioning, variable reconcile, translation — as the person who proposed it.
+   */
+  private async publish(suite: BuilderEvalSuite): Promise<void> {
+    const candidate = suite.candidate!;
+    try {
+      await ExecutionManager.runWithContext(
+        async () => {
+          ExecutionManager.setAuthContext(String(suite.createdBy ?? 0), '');
+          const promptId = await this.promptsService.findIdByCode(
+            candidate.promptCode,
+          );
+          if (!promptId)
+            throw new Error(`No prompt with code ${candidate.promptCode}.`);
+          await this.promptsService.updatePrompt(
+            promptId,
+            {
+              ...(candidate.content
+                ? { prompt: candidate.content, useDashboardOverride: true }
+                : {}),
+              ...(candidate.provider !== undefined
+                ? { provider: candidate.provider ?? '' }
+                : {}),
+              ...(candidate.model !== undefined
+                ? { model: candidate.model ?? '' }
+                : {}),
+              // null clears the row's override, as it does from the editor.
+              ...(candidate.temperature !== undefined
+                ? { temperature: candidate.temperature }
+                : {}),
+            } as any,
+            { evalApproved: true },
+          );
+        },
+        { path: '/builder/eval/publish' },
+      );
+      await this.suites.update({ id: suite.id }, { publishedAt: new Date() });
+      this.logger.info(
+        `[BUILDER_EVAL] published ${candidate.promptCode} from suite ${suite.id}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[BUILDER_EVAL] publishing suite ${suite.id} failed: ${message}`,
+      );
+      await this.suites.update(
+        { id: suite.id },
+        { error: `Passed, but publishing failed: ${message}`.slice(0, 2000) },
+      );
+    }
+  }
+
+  /**
+   * A suite this process is not running and that has not moved in a while was
+   * cut off by a restart. Say so, rather than leave it "running" and holding
+   * one of the two slots forever.
+   */
+  private async settleStalled(): Promise<void> {
+    const cutoff = new Date(Date.now() - BUILDER_EVAL_STALL_MS);
+    const stalled = await this.suites.find({
+      where: { status: 'running', updatedAt: LessThan(cutoff) },
+    });
+    for (const suite of stalled) {
+      if (this.inflight.has(suite.id)) continue;
+      await this.suites.update(
+        { id: suite.id },
+        {
+          status: 'errored',
+          error: 'Stopped making progress — most likely cut off by a restart.',
+          completedAt: new Date(),
+        },
+      );
+      await this.runs.update(
+        { suiteId: suite.id, status: In(['queued', 'running']) },
+        { status: 'errored', error: 'The suite was cut off.' },
+      );
+    }
+  }
+}

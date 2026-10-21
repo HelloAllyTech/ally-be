@@ -116,10 +116,14 @@ export class AuthorizationController {
   @Get('feature-toggles/registry')
   @UseGuards(JwtAuthGuard)
   getFeatureToggleRegistry() {
-    return FEATURE_TOGGLES.map(({ key, label, description }) => ({
-      key,
-      label,
-      description,
-    }));
+    return FEATURE_TOGGLES.map(
+      ({ key, label, description, platformOnly, orgScopedRoutesOnly }) => ({
+        key,
+        label,
+        description,
+        platformOnly: platformOnly === true,
+        orgScopedRoutesOnly: orgScopedRoutesOnly === true,
+      }),
+    );
   }
 }

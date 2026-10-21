@@ -1170,6 +1170,21 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: 'track_quiz_open_ended_grading_user',
   },
   {
+    id: 'skill-experiment-challenger-job',
+    task: LlmTask.SKILL_EXPERIMENT_CHALLENGER_JOB,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      'Scheduled: aggregated debrief feedback is analyzed to generate a challenger prompt',
+    detail:
+      'Weekly job that fuels the autonomous improvement loop for debriefs.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'skill_experiment_challenger_generator',
+  },
+  {
     id: 'glossary-lexeme-pairing',
     task: null,
     runtime: LlmRuntime.ALLY_BE,
@@ -1710,6 +1725,75 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     defaultModel: 'gemini-2.5-flash',
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
+  },
+  {
+    id: 'builder-prd-review',
+    task: LlmTask.BUILDER_PRD_REVIEW,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'A PRD first reads ready, then each time it changes with findings open',
+    detail:
+      'A cold reviewer over the PRD, the evidence log, the transcript and the reusable-systems ' +
+      'map. The first pass files contradictions, unsupported claims, unapplied corrections, ' +
+      'missed reuse and a missing success metric; later passes (usage metadata.mode=recheck) ' +
+      'only re-read the open findings against the current PRD and can close but never add ' +
+      'one. Findings block readiness until fixed or dismissed with a reason. On the platform ' +
+      'reasoning tier on purpose: a different model family from the Gemini interviewer it ' +
+      'checks, so the two do not share blind spots.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
+    id: 'builder-eval-admin',
+    task: LlmTask.BUILDER_EVAL,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A Builder replay eval needs the admin’s next message',
+    detail:
+      'The simulated admin in a replay: answers the sandboxed interviewer from the fixture’s ' +
+      'recorded admin words and ground-truth checklist, and corrects it wherever the truth ' +
+      'contradicts it. One call per replayed turn. The sandboxed interviewer and reviewer ' +
+      'passes of a replay are recorded under this task too (metadata.evalOf says which), so ' +
+      'eval spend never shows up as real interviews.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
+    id: 'builder-eval-judge',
+    task: LlmTask.BUILDER_EVAL,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A Builder replay finishes and its PRD is scored',
+    detail:
+      'Checks the replay’s final PRD against the fixture’s checklist, item by item. Scores ' +
+      'only: the deterministic gates decide whether a run passes.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
+    id: 'builder-correction-classify',
+    task: LlmTask.BUILDER_CORRECTION_CLASSIFY,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      'Daily, over the last three days of admin replies in Builder interviews',
+    detail:
+      'Decides whether an admin reply corrected Builder and of what kind (missing capability, ' +
+      'stale doc, platform scope, over-asking), and drafts what it should teach: a lesson ' +
+      'candidate, a reuse line, a doc fix and an eval checklist line. One call per free-text ' +
+      'reply that follows a Builder message; card picks and acknowledgements are skipped ' +
+      'without a call. Capped at 200 messages a scan.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
   },
   {
     id: 'builder-epic-decomposition',

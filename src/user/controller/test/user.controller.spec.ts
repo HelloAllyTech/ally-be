@@ -26,8 +26,15 @@ import {
   RemoveAdminTenantsDto,
 } from '../../dto/admin-tenant.dto';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import { PostHog } from 'posthog-node';
+
+const mockTenantScopeService = {
+  resolveScope: jest
+    .fn()
+    .mockResolvedValue({ tenantIds: null, restricted: false }),
+};
 
 describe('UserController', () => {
   let controller: UserController;
@@ -112,6 +119,7 @@ describe('UserController', () => {
         { provide: GroupService, useValue: mockGroupService },
         { provide: AdminTenantService, useValue: mockAdminTenantService },
         { provide: FeatureToggleService, useValue: mockFeatureToggleService },
+        { provide: TenantScopeService, useValue: mockTenantScopeService },
         {
           // FeatureToggleGuard's org-level branch — irrelevant to these routes.
           provide: TenantFeatureService,
@@ -167,7 +175,26 @@ describe('UserController', () => {
 
       expect(mockUserService.get).toHaveBeenCalledWith(1);
       expect(mockUserService.getMinimalUserInfo).toHaveBeenCalledWith(mockUser);
-      expect(result).toEqual(mockMinimalUserInfo);
+      expect(result).toEqual({
+        ...mockMinimalUserInfo,
+        restrictedTenantIds: null,
+      });
+    });
+
+    it('lists the organizations a restricted platform admin is held to', async () => {
+      mockUserService.get.mockResolvedValue(mockUser);
+      mockUserService.getMinimalUserInfo.mockReturnValue(mockMinimalUserInfo);
+      mockTenantScopeService.resolveScope.mockResolvedValueOnce({
+        tenantIds: ['tenant-a'],
+        restricted: true,
+      });
+
+      const result = await controller.getMe(mockTokenUser);
+
+      expect(result).toEqual({
+        ...mockMinimalUserInfo,
+        restrictedTenantIds: ['tenant-a'],
+      });
     });
   });
 

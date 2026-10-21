@@ -117,11 +117,16 @@ export class AdminTenantService {
   }
 
   /**
-   * Removes one or more tenant mappings from a MULTI_TENANT_ADMIN user.
-   * Super admin only.
+   * Removes one or more tenant mappings from an organization-restricted
+   * platform admin. Requires the allowlist-management toggle (controller).
+   *
+   * An empty allowlist means unrestricted, so removing the last mapping does
+   * not narrow the admin to nothing — it widens them to every organization.
+   * That has to be asked for in so many words (`liftRestriction`), never be
+   * the side effect of tidying up a list.
    */
   async removeTenants(dto: RemoveAdminTenantsDto): Promise<SuccessResponse> {
-    const { userId, tenantIds } = dto;
+    const { userId, tenantIds, liftRestriction } = dto;
 
     const mappings = await this.adminTenantRepository.findByUserIdAndTenantIds(
       userId,
@@ -131,6 +136,14 @@ export class AdminTenantService {
     if (mappings.length === 0) {
       throw new NotFoundException(
         `No active tenant mappings found for user ${userId} with the given tenant IDs`,
+      );
+    }
+
+    const remaining = await this.adminTenantRepository.findByUserId(userId);
+    if (remaining.length <= mappings.length && !liftRestriction) {
+      throw new BadRequestException(
+        'This is their last organization. Removing it lifts the restriction, ' +
+          'and they will see every organization — confirm with liftRestriction.',
       );
     }
 

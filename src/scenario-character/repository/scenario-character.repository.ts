@@ -12,7 +12,15 @@ export class ScenarioCharacterRepository extends Repository<ScenarioCharacter> {
   async getScenarioCharactersQuery(
     options: ScenarioCharacterGetOptions = {},
   ): Promise<{ characters: ScenarioCharacter[]; count: number }> {
-    const { search, limit, offset, sortBy, sortOrder, tenantId } = options;
+    const {
+      search,
+      limit,
+      offset,
+      sortBy,
+      sortOrder,
+      tenantId,
+      visibleTenantIds,
+    } = options;
 
     const query = this.createQueryBuilder('scenarioCharacter')
       .orderBy(`scenarioCharacter.${sortBy}`, sortOrder)
@@ -24,6 +32,14 @@ export class ScenarioCharacterRepository extends Repository<ScenarioCharacter> {
     // platform caller passes no tenantId and gets the unfiltered library.
     if (tenantId) {
       query.andWhere('scenarioCharacter.tenant_id = :tenantId', { tenantId });
+    }
+    if (visibleTenantIds) {
+      query.andWhere(
+        visibleTenantIds.length > 0
+          ? '(scenarioCharacter.tenant_id IS NULL OR scenarioCharacter.tenant_id IN (:...visibleTenantIds))'
+          : 'scenarioCharacter.tenant_id IS NULL',
+        { visibleTenantIds },
+      );
     }
 
     if (search?.trim()) {

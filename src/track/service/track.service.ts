@@ -1,6 +1,8 @@
+import { BranchingScenarioContent } from '../type/branching.type';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,8 +15,10 @@ import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { Competency } from 'src/learn/entity/competency.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { Track } from '../entity/track.entity';
+import { applyPromptHtml, storedPromptsOf } from '../util/prompt-html.util';
 import { TrackItem } from '../entity/track-item.entity';
 import { TrackSection } from '../entity/track-section.entity';
 import { TrackTenant } from '../entity/track-tenant.entity';
@@ -77,7 +81,85 @@ export class TrackService {
     private readonly caseSharedService: CaseSharedService,
     private readonly tenantService: TenantService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
+
+  /**
+   * A track is global content: the same row is served to every organization
+   * it is assigned to. A platform admin restricted to some organizations may
+   * therefore change only tracks they created — the rule roleplays already
+   * follow (ScenarioService) — and may not make one global, which assigns it
+   * to every organization at once. Everyone else is unaffected.
+   *
+   * Called by the admin controller ahead of every route that changes an
+   * existing track, its structure or its translations.
+   */
+  async assertCallerMayEdit(trackId: string): Promise<void> {
+    const userId = this.getUserId();
+    if (!(await this.tenantScopeService.isRestricted(userId))) {
+      return;
+    }
+    const track = await this.trackRepository.findOne({
+      where: { id: trackId },
+      select: ['id', 'createdBy'],
+    });
+    if (!track) {
+      throw new NotFoundException('Track not found');
+    }
+    if (track.createdBy !== userId) {
+      throw new ForbiddenException('You can only edit your own courses');
+    }
+  }
+
+  /**
+   * DELETE /tracks/media takes a bare file URL, so an organization-restricted
+   * admin could otherwise delete media from any course on the platform. Refuse
+   * a file that is still referenced by a course — its card, sections, items or
+   * translations — or a library template they did not create. An unreferenced
+   * upload (one they replaced or abandoned) stays theirs to clean up.
+   */
+  async assertCallerMayDeleteMedia(url: string): Promise<void> {
+    const userId = this.getUserId();
+    if (!(await this.tenantScopeService.isRestricted(userId))) {
+      return;
+    }
+    const owners: { createdBy: number | null }[] = await this.dataSource.query(
+      `SELECT t."createdBy" FROM tracks t
+         WHERE position($1 in row_to_json(t)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_sections s
+         JOIN tracks t ON t.id = s."trackId"
+         WHERE position($1 in row_to_json(s)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_items i
+         JOIN tracks t ON t.id = i."trackId"
+         WHERE position($1 in row_to_json(i)::text) > 0
+       UNION ALL
+       SELECT t."createdBy" FROM track_translations tr
+         JOIN tracks t ON t.id = tr."trackId"
+         WHERE position($1 in row_to_json(tr)::text) > 0
+       UNION ALL
+       SELECT c.created_by AS "createdBy" FROM track_component_templates c
+         WHERE position($1 in row_to_json(c)::text) > 0`,
+      [url],
+    );
+    if (owners.some((owner) => owner.createdBy !== userId)) {
+      throw new ForbiddenException(
+        'This file is still used by a course you cannot edit',
+      );
+    }
+  }
+
+  async assertCallerMayMakeGlobal(isGlobal?: boolean): Promise<void> {
+    if (isGlobal !== true) {
+      return;
+    }
+    if (await this.tenantScopeService.isRestricted(this.getUserId())) {
+      throw new ForbiddenException(
+        'Organization-restricted admins cannot make a course available to every organization',
+      );
+    }
+  }
 
   async getTracks(filters?: TrackFilterOptions) {
     if (filters?.tenantId) {
@@ -262,13 +344,15 @@ export class TrackService {
       throw new NotFoundException('Track not found');
     }
 
+    const existing = await this.trackSharedService.getTrackWithStructure(id);
+
     this.addMissingQuizOptionIds(dto.sections);
     this.sanitizeStructure(dto.sections);
+    this.applyPromptHtml(dto.sections, existing);
     validateTrackStructure(dto.sections);
     this.applyContentDefaults(dto.sections);
     await this.validateReferences(dto.sections);
 
-    const existing = await this.trackSharedService.getTrackWithStructure(id);
     const existingSectionIds = new Set(existing.sections.map((s) => s.id));
     const existingItemIds = new Set(
       existing.sections.flatMap((s) => s.items.map((i) => i.id)),
@@ -682,6 +766,32 @@ export class TrackService {
    * Fill in completion-criteria defaults and keep the graded components'
    * passScore mirrored onto completionCriteria.
    */
+  /**
+   * Sanitizes each prompt's rich text and keeps its plain `prompt` in step
+   * (see `applyPromptHtml`). Must run before validation, and needs what is
+   * stored so a plain-text-only edit is not reverted by stale HTML.
+   */
+  private applyPromptHtml(
+    sections: UpsertTrackSectionDto[],
+    existing: TrackWithStructure,
+  ): void {
+    const storedItems = new Map(
+      existing.sections.flatMap((s) => s.items.map((i) => [i.id, i] as const)),
+    );
+    for (const section of sections) {
+      for (const item of section.items) {
+        const before = item.id ? storedItems.get(item.id) : undefined;
+        applyPromptHtml(
+          item.type,
+          item.content,
+          before && before.type === item.type
+            ? storedPromptsOf(before.type, before.content)
+            : undefined,
+        );
+      }
+    }
+  }
+
   private applyContentDefaults(sections: UpsertTrackSectionDto[]): void {
     for (const section of sections) {
       for (const item of section.items) {
@@ -711,6 +821,14 @@ export class TrackService {
           item.completionCriteria = {
             ...item.completionCriteria,
             passScore: annotation.settings.passScore,
+          };
+        }
+        if (item.type === TrackItemType.BRANCHING_SCENARIO && item.content) {
+          const scenario = item.content as BranchingScenarioContent;
+          const passScore = scenario.settings?.passScore ?? 0;
+          item.completionCriteria = {
+            ...item.completionCriteria,
+            passScore: passScore || undefined,
           };
         }
         if (item.type === TrackItemType.VIDEO) {

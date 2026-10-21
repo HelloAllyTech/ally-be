@@ -180,12 +180,48 @@ describe('AdminTenantService', () => {
       mockAdminTenantRepository.findByUserIdAndTenantIds.mockResolvedValue(
         mappings,
       );
+      // Another organization stays, so the admin remains restricted.
+      mockAdminTenantRepository.findByUserId.mockResolvedValue([
+        ...mappings,
+        { userId: 1, tenantId: 'tenant-2' },
+      ]);
 
       const result = await service.removeTenants(dto);
 
       expect(result).toEqual({ success: true });
       expect(mockAdminTenantRepository.softRemove).toHaveBeenCalledWith(
         mappings,
+      );
+    });
+  });
+
+  describe('removeTenants — the last organization', () => {
+    const lastOrg = [{ userId: 1, tenantId: 'tenant-1' }];
+
+    beforeEach(() => {
+      mockAdminTenantRepository.findByUserIdAndTenantIds.mockResolvedValue(
+        lastOrg,
+      );
+      mockAdminTenantRepository.findByUserId.mockResolvedValue(lastOrg);
+    });
+
+    it('refuses to remove it without an explicit liftRestriction — that would widen them to every org', async () => {
+      await expect(
+        service.removeTenants({ userId: 1, tenantIds: ['tenant-1'] }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockAdminTenantRepository.softRemove).not.toHaveBeenCalled();
+    });
+
+    it('removes it when the caller asks to lift the restriction', async () => {
+      await expect(
+        service.removeTenants({
+          userId: 1,
+          tenantIds: ['tenant-1'],
+          liftRestriction: true,
+        }),
+      ).resolves.toEqual({ success: true });
+      expect(mockAdminTenantRepository.softRemove).toHaveBeenCalledWith(
+        lastOrg,
       );
     });
   });

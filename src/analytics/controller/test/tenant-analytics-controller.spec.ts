@@ -6,6 +6,7 @@ import { TenantAnalyticsService } from '../../service/tenant-analytics.service';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { UserService } from '../../../user/service/user.service';
 import { EnableAnalyticsDto } from '../../dto/enable-analytics.dto';
@@ -43,6 +44,16 @@ describe('TenantAnalyticsController', () => {
             get: jest.fn(),
             getAllAndOverride: jest.fn(),
             getAllAndMerge: jest.fn(),
+          },
+        },
+        {
+          // OwnTenantScopeGuard / PlatformWideGuard: an unrestricted caller.
+          provide: TenantScopeService,
+          useValue: {
+            isRestricted: jest.fn().mockResolvedValue(false),
+            resolveScope: jest
+              .fn()
+              .mockResolvedValue({ tenantIds: null, restricted: false }),
           },
         },
         {

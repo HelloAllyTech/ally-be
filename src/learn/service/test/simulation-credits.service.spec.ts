@@ -1,3 +1,4 @@
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SimulationCreditsService } from '../simulation-credits.service';
 import { SimulationCreditsRepository } from '../../repository/simulation-credits.repository';
@@ -10,6 +11,17 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PostHog } from 'posthog-node';
+
+// An unrestricted platform admin unless a test says otherwise; when
+// restricted, they hold 'allowed-tenant' only.
+const mockTenantScopeService = {
+  resolveScope: jest
+    .fn()
+    .mockResolvedValue({ tenantIds: null, restricted: false }),
+  assertTenantInScope: jest.fn(async (tenantId: string) => {
+    if (tenantId !== 'allowed-tenant') throw new Error('out of scope');
+  }),
+};
 
 describe('SimulationCreditsService', () => {
   let service: SimulationCreditsService;
@@ -63,6 +75,7 @@ describe('SimulationCreditsService', () => {
         { provide: PermissionValidator, useValue: mockPermissionValidator },
         { provide: UserService, useValue: mockUserService },
         { provide: AppConfigService, useValue: mockConfigService },
+        { provide: TenantScopeService, useValue: mockTenantScopeService },
       ],
     }).compile();
 
@@ -250,6 +263,61 @@ describe('SimulationCreditsService', () => {
       await expect(service.updateSimulationCredits(updateDto)).rejects.toThrow(
         'Failed to update simulation credits',
       );
+    });
+  });
+
+  describe('as a platform admin restricted to one organization', () => {
+    beforeEach(() => {
+      mockTenantScopeService.resolveScope.mockResolvedValue({
+        tenantIds: ['allowed-tenant'],
+        restricted: true,
+      });
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
+      mockUserService.isValidUser.mockResolvedValue(true);
+      mockSimulationCreditsRepository.findByUserId.mockResolvedValue(
+        mockCredits,
+      );
+      mockSimulationCreditsRepository.createOrUpdate.mockResolvedValue(
+        mockCredits,
+      );
+    });
+
+    afterEach(() => {
+      mockTenantScopeService.resolveScope.mockResolvedValue({
+        tenantIds: null,
+        restricted: false,
+      });
+    });
+
+    it('reads and sets the credits of a user in their organization', async () => {
+      mockUserService.get.mockResolvedValue({
+        id: 2,
+        tenantId: 'allowed-tenant',
+      });
+
+      await expect(service.getSimulationCredits(1, 2)).resolves.toMatchObject({
+        creditLimit: 100,
+      });
+      await expect(
+        service.updateSimulationCredits({ userId: 2, creditLimit: 150 }),
+      ).resolves.toEqual({ success: true });
+    });
+
+    it('answers like an unknown user for anyone in another organization', async () => {
+      mockUserService.get.mockResolvedValue({
+        id: 3,
+        tenantId: 'other-tenant',
+      });
+
+      await expect(service.getSimulationCredits(1, 3)).rejects.toThrow(
+        new BadRequestException('User not found'),
+      );
+      await expect(
+        service.updateSimulationCredits({ userId: 3, creditLimit: 150 }),
+      ).rejects.toThrow(new BadRequestException('User not found'));
+      expect(
+        mockSimulationCreditsRepository.createOrUpdate,
+      ).not.toHaveBeenCalled();
     });
   });
 

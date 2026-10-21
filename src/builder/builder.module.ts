@@ -53,6 +53,19 @@ import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderCatalogService } from './service/builder-catalog.service';
 import { BuilderEvidenceLogService } from './service/builder-evidence-log.service';
+import { BuilderPrdReviewService } from './service/builder-prd-review.service';
+import { BuilderEvalFixture } from './entity/builder-eval-fixture.entity';
+import { BuilderEvalSuite } from './entity/builder-eval-suite.entity';
+import { BuilderEvalRun } from './entity/builder-eval-run.entity';
+import { BuilderEvalSandboxFactory } from './eval/sandbox/builder-eval-sandbox.factory';
+import { BuilderEvalRunnerService } from './eval/service/builder-eval-runner.service';
+import { BuilderEvalFixtureService } from './eval/service/builder-eval-fixture.service';
+import { BuilderEvalService } from './eval/service/builder-eval.service';
+import { BuilderEvalController } from './eval/controller/builder-eval.controller';
+import { BuilderCorrection } from './entity/builder-correction.entity';
+import { BuilderCorrectionService } from './service/builder-correction.service';
+import { BuilderCorrectionsController } from './controller/builder-corrections.controller';
+import { BuilderReadinessService } from './service/builder-readiness.service';
 import { BuilderProductMapService } from './service/builder-product-map.service';
 import { BuilderPlatformContextService } from './service/builder-platform-context.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
@@ -115,6 +128,10 @@ import {
       BuilderNotification,
       BuilderRepoCatalog,
       BuilderEvidence,
+      BuilderEvalFixture,
+      BuilderEvalSuite,
+      BuilderEvalRun,
+      BuilderCorrection,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -147,6 +164,8 @@ import {
     BuilderSlackController,
     BuilderController,
     BuilderPipelineController,
+    BuilderEvalController,
+    BuilderCorrectionsController,
   ],
   providers: [
     BuilderSlackService,
@@ -171,6 +190,13 @@ import {
     BuilderResearchService,
     BuilderCatalogService,
     BuilderEvidenceLogService,
+    BuilderPrdReviewService,
+    BuilderReadinessService,
+    BuilderEvalSandboxFactory,
+    BuilderEvalRunnerService,
+    BuilderEvalFixtureService,
+    BuilderEvalService,
+    BuilderCorrectionService,
     BuilderProductMapService,
     BuilderPlatformContextService,
     BuilderNotificationService,

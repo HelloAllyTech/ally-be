@@ -33,6 +33,8 @@ import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto
 import { SubmitArticleQuestionAnswerDto } from '../dto/article-question-answer.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 import { GameResultDto } from '../dto/game-result.dto';
+import { BranchingResultDto } from '../dto/branching-result.dto';
+import { TrackBranchingService } from '../service/track-branching.service';
 import {
   EnrollTrackDto,
   SetTrackLanguageDto,
@@ -49,6 +51,7 @@ export class TrackLearnerController {
     private readonly trackJournalService: TrackJournalService,
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
+    private readonly trackBranchingService: TrackBranchingService,
     private readonly trackProgressDashboardService: TrackProgressDashboardService,
     private readonly trackResourceEmbedService: TrackResourceEmbedService,
   ) {}
@@ -314,6 +317,21 @@ export class TrackLearnerController {
     @Body() dto: GameResultDto,
   ) {
     return this.trackGameService.recordResult(itemId, dto.score);
+  }
+
+  @ApiOperation({
+    summary: 'Record a finished run of a branching scenario',
+    description:
+      'Takes the choices the learner made. The path is walked through the ' +
+      'authored scenario; reaching any ending completes the component.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/branching-result')
+  async recordBranchingResult(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: BranchingResultDto,
+  ) {
+    return this.trackBranchingService.recordResult(itemId, dto.path);
   }
 
   @ApiOperation({ summary: 'Autosave journal drafts' })

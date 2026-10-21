@@ -1,18 +1,32 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FeatureToggleGuard } from '../feature-toggle.guard';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PreferenceName } from 'src/common/constants/user.constants';
+import { FEATURE_TOGGLE_KEY } from '../../decorators/feature-toggle.decorator';
+import { ORG_SCOPED_ROUTE_KEY } from '../../decorators/org-scoped-route.decorator';
 
 describe('FeatureToggleGuard', () => {
   let guard: FeatureToggleGuard;
   let reflector: { getAllAndOverride: jest.Mock };
-  let featureToggleService: { hasToggle: jest.Mock };
+  let featureToggleService: {
+    hasToggle: jest.Mock;
+    isWithheld: jest.Mock;
+    isLimitedToOrgScopedRoutes: jest.Mock;
+  };
+  let tenantScopeService: { assertTenantInScope: jest.Mock };
   let tenantFeatureService: { isEnabledForTenant: jest.Mock };
 
-  const contextFor = (user: any): ExecutionContext =>
+  const contextFor = (
+    user: any,
+    query: Record<string, unknown> = {},
+  ): ExecutionContext =>
     ({
-      switchToHttp: () => ({ getRequest: () => ({ user }) }),
+      switchToHttp: () => ({ getRequest: () => ({ user, query }) }),
       getHandler: () => undefined,
       getClass: () => undefined,
     }) as unknown as ExecutionContext;
@@ -22,7 +36,18 @@ describe('FeatureToggleGuard', () => {
 
   beforeEach(() => {
     reflector = { getAllAndOverride: jest.fn() };
-    featureToggleService = { hasToggle: jest.fn().mockResolvedValue(false) };
+    featureToggleService = {
+      hasToggle: jest.fn().mockResolvedValue(false),
+      isWithheld: jest.fn().mockResolvedValue(false),
+      isLimitedToOrgScopedRoutes: jest.fn().mockResolvedValue(false),
+    };
+    tenantScopeService = {
+      assertTenantInScope: jest.fn(async (tenantId: string) => {
+        if (tenantId !== 'allowed-tenant') {
+          throw new ForbiddenException('out of scope');
+        }
+      }),
+    };
     tenantFeatureService = {
       isEnabledForTenant: jest.fn().mockResolvedValue(false),
     };
@@ -31,6 +56,7 @@ describe('FeatureToggleGuard', () => {
       reflector as unknown as Reflector,
       featureToggleService as any,
       tenantFeatureService as any,
+      tenantScopeService as any,
     );
   });
 
@@ -120,5 +146,134 @@ describe('FeatureToggleGuard', () => {
     await expect(guard.canActivate(contextFor(undefined))).rejects.toThrow(
       'Please sign in to continue.',
     );
+  });
+
+  describe('platform-only toggles (organization-restricted admins)', () => {
+    beforeEach(() => {
+      reflector.getAllAndOverride.mockReturnValue({
+        featureKey: FeatureToggleKey.ANALYTICS_AGENT,
+        tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+      });
+    });
+
+    it('refuses a restricted admin with a reason, even holding the toggle', async () => {
+      featureToggleService.isWithheld.mockResolvedValue(true);
+      featureToggleService.hasToggle.mockResolvedValue(true);
+      tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin)),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          message: expect.stringContaining('access to every organization'),
+          featureKey: FeatureToggleKey.ANALYTICS_AGENT,
+        }),
+      });
+      // Not even the org-level escape hatch is consulted.
+      expect(tenantFeatureService.isEnabledForTenant).not.toHaveBeenCalled();
+    });
+
+    it('grants an unrestricted admin holding the toggle', async () => {
+      featureToggleService.hasToggle.mockResolvedValue(true);
+
+      await expect(guard.canActivate(contextFor(platformAdmin))).resolves.toBe(
+        true,
+      );
+      expect(featureToggleService.isWithheld).toHaveBeenCalledWith(
+        platformAdmin.id,
+        FeatureToggleKey.ANALYTICS_AGENT,
+      );
+    });
+  });
+
+  describe('org-scoped routes only (Analytics, organization-restricted admins)', () => {
+    /** Route metadata by key, as the reflector would read it. */
+    const routeWith = (orgScoped?: { queryParam: string }) =>
+      reflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === FEATURE_TOGGLE_KEY) {
+          return { featureKey: FeatureToggleKey.ANALYTICS };
+        }
+        if (key === ORG_SCOPED_ROUTE_KEY) {
+          return orgScoped;
+        }
+        return undefined;
+      });
+
+    beforeEach(() => {
+      featureToggleService.hasToggle.mockResolvedValue(true);
+      featureToggleService.isLimitedToOrgScopedRoutes.mockResolvedValue(true);
+    });
+
+    it('passes a marked route naming an allowlisted organization', async () => {
+      routeWith({ queryParam: 'tenantId' });
+
+      await expect(
+        guard.canActivate(
+          contextFor(platformAdmin, { tenantId: 'allowed-tenant' }),
+        ),
+      ).resolves.toBe(true);
+      expect(tenantScopeService.assertTenantInScope).toHaveBeenCalledWith(
+        'allowed-tenant',
+        { userId: platformAdmin.id },
+      );
+    });
+
+    it('refuses a marked route naming another organization', async () => {
+      routeWith({ queryParam: 'tenantId' });
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin, { tenantId: 'other' })),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('refuses a marked route naming no organization — it would answer for all of them', async () => {
+      routeWith({ queryParam: 'tenantId' });
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin, {})),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        guard.canActivate(
+          contextFor(platformAdmin, { tenantId: ['allowed-tenant', 'other'] }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('reads the organization from the parameter the route names', async () => {
+      routeWith({ queryParam: 'orgId' });
+
+      await expect(
+        guard.canActivate(
+          contextFor(platformAdmin, {
+            tenantId: 'allowed-tenant',
+            orgId: 'other',
+          }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('refuses an unmarked route outright, whatever it names', async () => {
+      routeWith(undefined);
+
+      await expect(
+        guard.canActivate(
+          contextFor(platformAdmin, { tenantId: 'allowed-tenant' }),
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          message: expect.stringContaining('access to every organization'),
+        }),
+      });
+      expect(tenantScopeService.assertTenantInScope).not.toHaveBeenCalled();
+    });
+
+    it('leaves an unrestricted admin free on every route', async () => {
+      featureToggleService.isLimitedToOrgScopedRoutes.mockResolvedValue(false);
+      routeWith(undefined);
+
+      await expect(guard.canActivate(contextFor(platformAdmin))).resolves.toBe(
+        true,
+      );
+    });
   });
 });

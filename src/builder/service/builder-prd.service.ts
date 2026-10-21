@@ -19,13 +19,18 @@ import {
   BuilderPrdReadiness,
   BuilderPrdReadinessSection,
   BuilderPrdRepoPlan,
+  BuilderReadinessSignals,
   BuilderTechnicalDesign,
   createEmptyPrdDocument,
 } from '../type/builder-prd.type';
 import {
-  BuilderDesignReadiness,
-  computeDesignReadiness,
-} from '../util/builder-technical-design.util';
+  citedPathMatchesRead,
+  citedPaths,
+  mentionsId,
+  mentionsIdentifier,
+  reposATestPlanTouches,
+  reposOwningALine,
+} from '../util/builder-readiness-checks.util';
 import {
   createPrdNormaliseDiagnostics,
   normalisePrdDocument,
@@ -311,7 +316,10 @@ export class BuilderPrdService {
    * guess, and a guess discovered at PR-review time has already cost a full
    * build.
    */
-  computeReadiness(draft: BuilderPrdDocument): BuilderPrdReadiness {
+  computeReadiness(
+    draft: BuilderPrdDocument,
+    signals: BuilderReadinessSignals = {},
+  ): BuilderPrdReadiness {
     const sections: BuilderPrdReadinessSection[] = [];
 
     for (const { key, label, minLength } of PROSE_SECTIONS) {
@@ -488,13 +496,7 @@ export class BuilderPrdService {
     // that a repo is NOT involved ("nothing in ally-web renders them yet").
     // Naming a repo to rule it out is a normal, useful thing to write, and a
     // check that punishes it teaches people to stop writing it.
-    const spokenFor = String(draft.whereChangesBelong ?? '');
-    const ownsALine = (repo: string) =>
-      new RegExp(
-        `^[\\s>*\\-\\d.\`]*\\*{0,2}${repo}\\*{0,2}\`?\\s*[:\u2014-]`,
-        'im',
-      ).test(spokenFor);
-    const namedRepos = BUILDER_REPO_NAMES.filter(ownsALine);
+    const namedRepos = reposOwningALine(draft.whereChangesBelong ?? '');
     const plannedRepos = new Set(
       repoPlans
         .map((plan) =>
@@ -526,6 +528,15 @@ export class BuilderPrdService {
         : '',
     });
 
+    sections.push(
+      ...meaningChecks(
+        draft,
+        plannedRepos,
+        signals,
+        sections.every((section) => section.ok),
+      ),
+    );
+
     const scoredOkCount = sections
       .slice(0, scoringSectionCount)
       .filter((section) => section.ok).length;
@@ -547,23 +558,288 @@ export class BuilderPrdService {
         .map((section) =>
           [section.hint, section.detail].filter(Boolean).join(' '),
         ),
+      // Rides with readiness so every place that already receives it — the
+      // SSE frame, the PATCH response, the session detail — can show the
+      // findings and their dismissals without a second request.
+      ...(signals.review !== undefined ? { review: signals.review } : {}),
     };
+  }
+}
+
+const listOf = (items: string[], max = 6): string =>
+  items.length > max
+    ? `${items.slice(0, max).join(', ')} and ${items.length - max} more`
+    : items.join(', ');
+
+const quoteOf = (text: string, max = 160): string => {
+  const flat = String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+};
+
+/**
+ * The rubric rows that check what the PRD means rather than whether it is
+ * written — each one a defect a real PRD shipped to "ready" with.
+ *
+ * Every row only blocks: all of them pass vacuously on a blank document, the
+ * way assumptions and open questions do, so counting them in the score would
+ * put green ticks against work nobody has done.
+ *
+ * A check whose signal is missing (`undefined`) is left out entirely rather
+ * than passed with a tick, so the rubric never claims to have checked
+ * something it could not see.
+ */
+function meaningChecks(
+  draft: BuilderPrdDocument,
+  plannedRepos: Set<string>,
+  signals: BuilderReadinessSignals,
+  structuralRowsPass: boolean,
+): BuilderPrdReadinessSection[] {
+  const rows: BuilderPrdReadinessSection[] = [];
+  const isPlanned = (repo: string) => plannedRepos.has(repo.toLowerCase());
+  const requirements = draft.requirements ?? [];
+  const repoPlans = draft.technicalPlan?.repos ?? [];
+
+  // Session 2bc3a5cf's v8 carried an ally-ai test plan for a repo its
+  // technical plan never touched. A build clones only the planned repos, so
+  // those tests could never be written — and the PRD read as thorough.
+  // Passes while nothing is planned: the technical-plan row says that.
+  const testedRepos = [
+    ...new Set([
+      ...reposATestPlanTouches(draft.testPlanMd ?? ''),
+      ...reposATestPlanTouches(draft.e2ePlanMd ?? ''),
+    ]),
+  ];
+  const untestable = plannedRepos.size
+    ? testedRepos.filter((repo) => !isPlanned(repo))
+    : [];
+  rows.push({
+    key: 'testPlanRepos',
+    label: 'Tests stay inside the plan',
+    ok: untestable.length === 0,
+    hint: untestable.length
+      ? `The test plan puts tests in ${listOf(untestable)}, which the technical plan doesn't change.`
+      : '',
+    detail: untestable.length
+      ? `testPlanMd / e2ePlanMd give tests to ${listOf(untestable)}, and ` +
+        `/technicalPlan/repos has no entry for ${
+          untestable.length > 1 ? 'those repos' : 'it'
+        }. A build only clones the planned repos, so those tests would never ` +
+        'be written. Either plan the repo, with what changes there, or take ' +
+        'its tests out of the test plan.'
+      : '',
+  });
+
+  // Every requirement needs a repo that says it will build it. Matched by id,
+  // because the id is the one handle the plan, the milestones and the PR
+  // bodies all share. Passes while there are no requirements or no plan —
+  // their own rows say so.
+  const homeless =
+    requirements.length && repoPlans.length
+      ? requirements
+          .map((requirement, index) => ({ requirement, index }))
+          .filter(
+            ({ requirement }) =>
+              !String(requirement.id ?? '').trim() ||
+              !repoPlans.some((plan) =>
+                mentionsId(plan.changesMd ?? '', requirement.id),
+              ),
+          )
+      : [];
+  const labelOf = ({
+    requirement,
+    index,
+  }: {
+    requirement: { id?: string; title?: string };
+    index: number;
+  }) =>
+    String(requirement.id ?? '').trim() ||
+    `requirement ${index + 1}${requirement.title ? ` (${requirement.title})` : ''}`;
+  rows.push({
+    key: 'requirementHomes',
+    label: 'Every requirement has a repo',
+    ok: homeless.length === 0,
+    hint: homeless.length
+      ? `${homeless.length} requirement(s) no repo plans to build: ${listOf(
+          homeless.map(labelOf),
+        )}.`
+      : '',
+    detail: homeless.length
+      ? 'Name each requirement id in the changesMd of the repo(s) that build ' +
+        'it — e.g. "(R2) store the rating on the debrief". Not yet assigned: ' +
+        listOf(
+          homeless.map(
+            (entry) =>
+              `${labelOf(entry)} at /requirements/${entry.index}` +
+              (String(entry.requirement.id ?? '').trim() ? '' : ' (no id)'),
+          ),
+          12,
+        ) +
+        '. A requirement no repo plans for is one the build will not do. If it ' +
+        'needs no code (a setting, a decision), say so in the plan of the repo ' +
+        'it concerns.'
+      : '',
+  });
+
+  // A learner screen that exists on the web and in the app. Session 2bc3a5cf
+  // planned a debrief rating for the web's DebriefTab only; mobile has its
+  // own. Matched on component names the catalog found on both platforms.
+  if (signals.parityTwins !== undefined) {
+    const changeText = [
+      ...requirements.map((requirement) =>
+        [
+          requirement.title,
+          requirement.description,
+          ...(requirement.acceptanceCriteria ?? []),
+        ].join('\n'),
+      ),
+      ...repoPlans.map((plan) => plan.changesMd ?? ''),
+    ].join('\n');
+    const touched = signals.parityTwins.filter((twin) =>
+      mentionsIdentifier(changeText, twin.name),
+    );
+    const covered =
+      isPlanned('ally-mobile') || /\bmobile\b/i.test(draft.nonGoals ?? '');
+    const missing = covered ? [] : touched;
+    rows.push({
+      key: 'mobileTwins',
+      label: 'Mobile twins covered',
+      ok: missing.length === 0,
+      hint: missing.length
+        ? `${listOf(missing.map((twin) => twin.name))} also ${
+            missing.length > 1 ? 'exist' : 'exists'
+          } on mobile, and ally-mobile isn't planned.`
+        : '',
+      detail: missing.length
+        ? `The requirements or plan change ${listOf(
+            missing.map((twin) => twin.name),
+          )}, which the learner web app and ally-mobile both have (${listOf(
+            missing.map((twin) => `ally-mobile:${twin.mobile}`),
+            4,
+          )}). Plan ally-mobile with the matching change, or say in Non-goals ` +
+          'why mobile is left out — otherwise a learner on the app gets half ' +
+          'the feature.'
+        : '',
+    });
   }
 
-  /** PRD + its score, the shape every read endpoint and SSE frame carries. */
-  async getPrdWithReadiness(
-    sessionId: string,
-    userId: number,
-  ): Promise<{
-    doc: BuilderPrdDoc;
-    readiness: BuilderPrdReadiness;
-    designReadiness: BuilderDesignReadiness;
-  }> {
-    const doc = await this.getOrCreateDoc(sessionId, userId);
-    return {
-      doc,
-      readiness: this.computeReadiness(doc.draft),
-      designReadiness: computeDesignReadiness(doc.draft),
-    };
+  // "What already exists" must rest on something this session actually read.
+  // Session 2bc3a5cf described a module whose files had both returned 404.
+  // Skipped for a session with no evidence log (one from before the log),
+  // and while the section is empty — its own row says that.
+  const existing = String(draft.existingBehaviour ?? '').trim();
+  if (signals.evidence && signals.evidence.total > 0 && existing) {
+    const { readOk, readFailed } = signals.evidence;
+    const cited = citedPaths(existing);
+    const grounded = cited.filter((path) =>
+      readOk.some((read) => citedPathMatchesRead(path, read)),
+    );
+    const failedOnly = cited.filter(
+      (path) =>
+        !grounded.includes(path) &&
+        readFailed.some((read) => citedPathMatchesRead(path, read)),
+    );
+    const ok = grounded.length > 0 && failedOnly.length === 0;
+    rows.push({
+      key: 'existingGrounded',
+      label: 'What already exists was read',
+      ok,
+      hint: ok
+        ? ''
+        : failedOnly.length
+          ? `What already exists cites ${listOf(failedOnly)}, which couldn't be read.`
+          : 'What already exists cites no file this session read.',
+      detail: ok
+        ? ''
+        : failedOnly.length
+          ? `Every read of ${listOf(failedOnly)} failed (the evidence log has ` +
+            'the error), so what /existingBehaviour says about it is unverified. ' +
+            'Search first, read the path the search returned with ' +
+            'github_read_file, then correct the section — or take the claim out.'
+          : cited.length
+            ? `None of the paths /existingBehaviour cites (${listOf(cited)}) was ` +
+              'read this session. Read the files that show what exists with ' +
+              'github_read_file or wiki_read, and cite those paths.'
+            : '/existingBehaviour cites no file paths. Read the files that show ' +
+              'what exists (github_read_file / wiki_read) and cite them by path. ' +
+              'If nothing exists yet, cite the file you read that shows where ' +
+              'the change would go.',
+    });
   }
+
+  // The admin's latest words must have reached the document. In session
+  // 2bc3a5cf the final clarification's edit failed and the reply still said
+  // "revised"; the PRD stayed ready without it. The gatherer leaves out
+  // option picks and plain acknowledgements, so "ok, thanks" clears this.
+  if (signals.lastAdminMessage !== undefined) {
+    const message = signals.lastAdminMessage;
+    const applied =
+      !message ||
+      (signals.lastPrdEditAt instanceof Date &&
+        signals.lastPrdEditAt.getTime() >= message.at.getTime());
+    rows.push({
+      key: 'lastMessageApplied',
+      label: 'Your latest message is in the PRD',
+      ok: applied,
+      hint: applied ? '' : "Your latest message hasn't changed the PRD yet.",
+      detail:
+        applied || !message
+          ? ''
+          : `The admin's latest message ("${quoteOf(message.text)}") came ` +
+            'after the PRD last changed, and nothing has been written since. ' +
+            'Apply what it says with update_prd before saying anything is ' +
+            'revised. If it truly changes nothing in the PRD, say why and ask ' +
+            'the admin to confirm — their reply clears this.',
+    });
+  }
+
+  // The cold reviewer. It runs once everything else passes, so before then
+  // there is nothing to say; after it, each open finding blocks until it is
+  // fixed (a recheck reads the PRD again) or a person dismisses it.
+  if (signals.review !== undefined) {
+    const review = signals.review;
+    const othersPass = structuralRowsPass && rows.every((row) => row.ok);
+    const open =
+      review?.status === 'done'
+        ? (review.findings ?? []).filter((finding) => finding.status === 'open')
+        : [];
+    const notYetRun = review === null;
+    rows.push({
+      key: 'prdReview',
+      label: 'Cold review',
+      // A failed review does not block: a crashed reviewer says nothing about
+      // the PRD, and the next write retries it.
+      ok: notYetRun ? !othersPass : open.length === 0,
+      hint: notYetRun
+        ? othersPass
+          ? "The PRD review hasn't run yet."
+          : ''
+        : open.length
+          ? `${open.length} review finding(s) to fix or dismiss.`
+          : '',
+      detail: notYetRun
+        ? othersPass
+          ? 'A fresh reviewer reads the PRD, the evidence log and the ' +
+            'transcript the first time everything else passes; it runs on the ' +
+            'next PRD change or at the end of this turn.'
+          : ''
+        : open.length
+          ? 'Fix each open finding in the PRD: ' +
+            open
+              .map(
+                (finding) =>
+                  `${finding.id} [${finding.category}, ${finding.section}] ` +
+                  `${finding.detail} Fix: ${finding.fix}`,
+              )
+              .join(' | ') +
+            '. Open findings are rechecked against the PRD at the end of the ' +
+            'turn. If the admin says a finding is wrong, record that with ' +
+            'dismiss_review_finding, quoting their words — never dismiss one ' +
+            'on your own judgement.'
+          : '',
+    });
+  }
+
+  return rows;
 }

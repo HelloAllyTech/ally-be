@@ -29,6 +29,7 @@ import {
 import { SUMMARY_SECTIONS } from '../../settings/constants/summary-sections.constants';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { PermissionValidator } from '../../authorization/service/permission-validator.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { DEFAULT_FIELD_TEMPLATES } from '../constants/default-field-templates.constants';
 import { UserService } from '../../user/service/user.service';
@@ -72,6 +73,7 @@ export class CustomFieldsService {
     private readonly valueRepo: Repository<ChatCustomFieldValue>,
     private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   private resolveTenantId(override?: string): string {
@@ -80,8 +82,17 @@ export class CustomFieldsService {
     return tenantId;
   }
 
+  /**
+   * Which tenant's definitions a call acts on. Naming a tenant needs
+   * SYSTEM_ACCESS, and — because every platform admin holds it, allowlisted
+   * or not — the named tenant must also be inside the caller's organization
+   * scope. Naming none means the caller's own tenant, which a write checks
+   * too: an allowlisted admin's own organization is not on their allowlist
+   * unless it was put there.
+   */
   private async resolveTenantIdWithSystemCheck(
     override?: string,
+    { write }: { write: boolean } = { write: false },
   ): Promise<string> {
     if (override) {
       const userId = ExecutionManager.getUserId();
@@ -95,10 +106,14 @@ export class CustomFieldsService {
           'You do not have permission to access another tenant',
         );
       }
+      await this.tenantScopeService.assertTenantInScope(override);
       return override;
     }
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    if (write) {
+      await this.tenantScopeService.assertTenantInScope(tenantId);
+    }
     return tenantId;
   }
 
@@ -131,7 +146,9 @@ export class CustomFieldsService {
 
   async createDefinition(dto: CreateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId, {
+      write: true,
+    });
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -221,7 +238,9 @@ export class CustomFieldsService {
 
   async updateDefinition(id: string, dto: UpdateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId, {
+      write: true,
+    });
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -291,8 +310,12 @@ export class CustomFieldsService {
   }
 
   async deleteDefinition(id: string, overrideTenantId?: string) {
-    const tenantId =
-      await this.resolveTenantIdWithSystemCheck(overrideTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(
+      overrideTenantId,
+      {
+        write: true,
+      },
+    );
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 

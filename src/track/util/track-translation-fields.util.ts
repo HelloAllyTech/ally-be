@@ -1,4 +1,8 @@
 import { createHash } from 'crypto';
+import {
+  derivePlainTextFromHtml,
+  sanitizeDescriptionHtml,
+} from 'src/common/util/sanitize-html.util';
 import { Track } from '../entity/track.entity';
 import { TrackItem } from '../entity/track-item.entity';
 import { TrackSection } from '../entity/track-section.entity';
@@ -10,6 +14,7 @@ import {
 import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { GameContent, TrackGameKey } from '../type/game.type';
+import { BranchingScenarioContent } from '../type/branching.type';
 import {
   TranslatableField,
   TranslatableFieldKind,
@@ -38,7 +43,9 @@ import {
  * Returns the value to write in place of `field.value`, or `undefined` to
  * leave the source untouched (extraction always returns `undefined`).
  */
-type FieldVisitor = (field: TranslatableField) => string | undefined;
+type FieldVisitor = ((field: TranslatableField) => string | undefined) & {
+  isExtraction?: boolean;
+};
 
 /**
  * Fields that feed grading. Getting one of these wrong does not just read
@@ -137,23 +144,44 @@ function walkQuizQuestion(
   visit: FieldVisitor,
   base: string,
 ): void {
-  const prompt = question.prompt;
+  const promptText = question.prompt;
+  let promptHtmlUpdated = false;
   visitField(
     {
-      path: `${base}.prompt`,
-      kind: TranslatableFieldKind.PROSE,
-      get: () => question.prompt,
-      set: (value) => (question.prompt = value),
+      path: `${base}.promptHtml`,
+      kind: TranslatableFieldKind.HTML,
+      get: () => question.promptHtml,
+      set: (value) => {
+        question.promptHtml = sanitizeDescriptionHtml(value);
+        question.prompt = derivePlainTextFromHtml(value);
+        promptHtmlUpdated = true;
+      },
     },
     visit,
   );
+  if (!question.promptHtml || !visit.isExtraction) {
+    visitField(
+      {
+        path: `${base}.prompt`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => question.prompt,
+        set: (value) => {
+          if (!promptHtmlUpdated) {
+            question.prompt = value;
+            delete question.promptHtml;
+          }
+        },
+      },
+      visit,
+    );
+  }
   visitField(
     {
       path: `${base}.explanation`,
       kind: TranslatableFieldKind.PROSE,
       get: () => question.explanation,
       set: (value) => (question.explanation = value),
-      context: prompt,
+      context: promptText,
     },
     visit,
   );
@@ -171,7 +199,7 @@ function walkQuizQuestion(
       set: (value) => {
         if (question.media) question.media.alt = value;
       },
-      context: prompt,
+      context: promptText,
     },
     visit,
   );
@@ -188,7 +216,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.LABEL,
           get: () => option.text,
           set: (value) => (option.text = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -219,7 +247,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.BLANK_TEMPLATE,
           get: () => question.template,
           set: (value) => (question.template = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -231,7 +259,7 @@ function walkQuizQuestion(
               kind: TranslatableFieldKind.SHORT_ANSWER,
               get: () => blank.acceptedAnswers[index],
               set: (value) => (blank.acceptedAnswers[index] = value),
-              context: prompt,
+              context: promptText,
             },
             visit,
           );
@@ -247,7 +275,7 @@ function walkQuizQuestion(
           kind: TranslatableFieldKind.RUBRIC,
           get: () => question.rubric?.guidance,
           set: (value) => (question.rubric.guidance = value),
-          context: prompt,
+          context: promptText,
         },
         visit,
       );
@@ -258,7 +286,7 @@ function walkQuizQuestion(
             kind: TranslatableFieldKind.RUBRIC,
             get: () => criterion.name,
             set: (value) => (criterion.name = value),
-            context: prompt,
+            context: promptText,
           },
           visit,
         );
@@ -268,7 +296,7 @@ function walkQuizQuestion(
             kind: TranslatableFieldKind.RUBRIC,
             get: () => criterion.description,
             set: (value) => (criterion.description = value),
-            context: prompt,
+            context: promptText,
           },
           visit,
         );
@@ -374,15 +402,36 @@ function walkJournalContent(
 ): void {
   for (const prompt of content.prompts ?? []) {
     const promptText = prompt.prompt;
+    let promptHtmlUpdated = false;
     visitField(
       {
-        path: `content.prompts[${prompt.id}].prompt`,
-        kind: TranslatableFieldKind.PROSE,
-        get: () => prompt.prompt,
-        set: (value) => (prompt.prompt = value),
+        path: `content.prompts[${prompt.id}].promptHtml`,
+        kind: TranslatableFieldKind.HTML,
+        get: () => prompt.promptHtml,
+        set: (value) => {
+          prompt.promptHtml = sanitizeDescriptionHtml(value);
+          prompt.prompt = derivePlainTextFromHtml(value);
+          promptHtmlUpdated = true;
+        },
       },
       visit,
     );
+    if (!prompt.promptHtml || !visit.isExtraction) {
+      visitField(
+        {
+          path: `content.prompts[${prompt.id}].prompt`,
+          kind: TranslatableFieldKind.PROSE,
+          get: () => prompt.prompt,
+          set: (value) => {
+            if (!promptHtmlUpdated) {
+              prompt.prompt = value;
+              delete prompt.promptHtml;
+            }
+          },
+        },
+        visit,
+      );
+    }
     visitField(
       {
         path: `content.prompts[${prompt.id}].placeholder`,
@@ -483,10 +532,85 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
       }
       break;
 
+    case TrackItemType.BRANCHING_SCENARIO:
+      walkBranchingContent(item.content as BranchingScenarioContent, visit);
+      break;
+
     case TrackItemType.VIDEO:
     case TrackItemType.ROLEPLAY:
     case TrackItemType.CASE:
       break;
+  }
+}
+
+function walkBranchingContent(
+  content: BranchingScenarioContent,
+  visit: FieldVisitor,
+): void {
+  visitField(
+    {
+      path: 'content.intro',
+      kind: TranslatableFieldKind.PROSE,
+      get: () => content.intro,
+      set: (value) => (content.intro = value),
+    },
+    visit,
+  );
+  for (const node of content.nodes ?? []) {
+    const prefix = `content.nodes[${node.id}]`;
+    visitField(
+      {
+        path: `${prefix}.title`,
+        kind: TranslatableFieldKind.LABEL,
+        get: () => node.title,
+        set: (value) => (node.title = value),
+      },
+      visit,
+    );
+    visitField(
+      {
+        path: `${prefix}.text`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => node.text,
+        set: (value) => (node.text = value),
+      },
+      visit,
+    );
+    if (node.image) {
+      const image = node.image;
+      visitField(
+        {
+          path: `${prefix}.image.alt`,
+          kind: TranslatableFieldKind.LABEL,
+          get: () => image.alt,
+          set: (value) => (image.alt = value),
+          context: node.text,
+        },
+        visit,
+      );
+    }
+    for (const choice of node.choices ?? []) {
+      visitField(
+        {
+          path: `${prefix}.choices[${choice.id}].text`,
+          kind: TranslatableFieldKind.PROSE,
+          get: () => choice.text,
+          set: (value) => (choice.text = value),
+          context: node.text,
+        },
+        visit,
+      );
+    }
+    visitField(
+      {
+        path: `${prefix}.takeaway`,
+        kind: TranslatableFieldKind.PROSE,
+        get: () => node.takeaway,
+        set: (value) => (node.takeaway = value),
+        context: node.text,
+      },
+      visit,
+    );
   }
 }
 
@@ -496,10 +620,12 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
 
 function collect(walk: (visit: FieldVisitor) => void): TranslatableField[] {
   const fields: TranslatableField[] = [];
-  walk((field) => {
+  const visitor: FieldVisitor = (field) => {
     fields.push(field);
     return undefined;
-  });
+  };
+  visitor.isExtraction = true;
+  walk(visitor);
   return fields;
 }
 
@@ -533,7 +659,7 @@ function applier(
   fields: TranslatedFieldMap,
   sourceHashes: Map<string, string>,
 ): FieldVisitor {
-  return (field) => {
+  const visitor: FieldVisitor = (field) => {
     const translated = fields[field.path];
     if (!translated?.value) return undefined;
     const liveHash = hashSource(field.value);
@@ -541,6 +667,8 @@ function applier(
     if (translated.sourceHash !== liveHash) return undefined;
     return translated.value;
   };
+  visitor.isExtraction = false;
+  return visitor;
 }
 
 function cloneEntity<T>(entity: T): T {

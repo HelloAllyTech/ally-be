@@ -6,8 +6,11 @@ import { AdminFeatureToggleRepository } from '../repository/admin-feature-toggle
 import {
   FEATURE_TOGGLES,
   FeatureToggleKey,
+  isOrgScopedRoutesOnlyToggle,
+  isPlatformOnlyToggle,
   isValidFeatureToggleKey,
 } from '../constants/admin-feature-toggle.constants';
+import { TenantScopeService } from './tenant-scope.service';
 
 const CACHE_TTL_SECONDS = 1800; // 30 min — matches user:roles/user:groups/group:permissions,
 // so a toggle row written outside this service (e.g. the role-collapse
@@ -31,13 +34,58 @@ export class FeatureToggleService {
   constructor(
     private readonly toggleRepository: AdminFeatureToggleRepository,
     private readonly cache: RedisService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   private cacheKey(userId: number): string {
     return `admin:feature-toggles:${userId}`;
   }
 
+  /**
+   * The toggles this user may use right now: their enabled rows, minus any
+   * platform-only key while they are restricted to an organization allowlist.
+   * Filtered after the cache, so assigning or lifting a restriction applies
+   * on the next request rather than up to 30 minutes later.
+   */
   async getEnabledKeys(userId: number): Promise<string[]> {
+    const stored = await this.getStoredEnabledKeys(userId);
+    if (!stored.some(isPlatformOnlyToggle)) {
+      return stored;
+    }
+    if (!(await this.tenantScopeService.isRestricted(userId))) {
+      return stored;
+    }
+    return stored.filter((key) => !isPlatformOnlyToggle(key));
+  }
+
+  /**
+   * True when this key is held back from this user because it spans every
+   * organization and they are restricted to some — so a guard can say why,
+   * instead of reporting the toggle as simply off.
+   */
+  async isWithheld(userId: number, featureKey: string): Promise<boolean> {
+    return (
+      isPlatformOnlyToggle(featureKey) &&
+      (await this.tenantScopeService.isRestricted(userId))
+    );
+  }
+
+  /**
+   * True when this user may use this toggle's surface only through its
+   * org-scoped routes — the key is `orgScopedRoutesOnly` and they are
+   * restricted to an organization allowlist.
+   */
+  async isLimitedToOrgScopedRoutes(
+    userId: number,
+    featureKey: string,
+  ): Promise<boolean> {
+    return (
+      isOrgScopedRoutesOnlyToggle(featureKey) &&
+      (await this.tenantScopeService.isRestricted(userId))
+    );
+  }
+
+  private async getStoredEnabledKeys(userId: number): Promise<string[]> {
     const cached = await this.cache.get(this.cacheKey(userId));
     if (cached) {
       return JSON.parse(cached);
@@ -68,6 +116,8 @@ export class FeatureToggleService {
       label: string;
       description: string;
       enabled: boolean;
+      platformOnly: boolean;
+      orgScopedRoutesOnly: boolean;
     }[]
   > {
     const rows = await this.toggleRepository.findByUserId(userId);
@@ -80,6 +130,8 @@ export class FeatureToggleService {
       label: definition.label,
       description: definition.description,
       enabled: enabledByKey.get(definition.key) ?? false,
+      platformOnly: definition.platformOnly === true,
+      orgScopedRoutesOnly: definition.orgScopedRoutesOnly === true,
     }));
   }
 
@@ -120,10 +172,11 @@ export class FeatureToggleService {
       const currentHolders = await this.countEnabledHolders(
         FeatureToggleKey.ADMIN_USER_MANAGEMENT,
       );
-      const targetAlreadyHasIt = await this.hasToggle(
-        userId,
-        FeatureToggleKey.ADMIN_USER_MANAGEMENT,
-      );
+      // The stored row, not the effective grant: countEnabledHolders counts
+      // rows, so the two must agree.
+      const targetAlreadyHasIt = (
+        await this.getStoredEnabledKeys(userId)
+      ).includes(FeatureToggleKey.ADMIN_USER_MANAGEMENT);
       if (targetAlreadyHasIt && currentHolders <= 1) {
         throw new BadRequestException(
           'Cannot remove the last remaining Admin User Management holder',

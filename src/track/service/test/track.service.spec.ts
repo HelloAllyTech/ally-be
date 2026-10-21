@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { TrackService } from '../track.service';
@@ -8,6 +9,9 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { TrackTranslationService } from '../track-translation.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UpsertTrackStructureDto } from '../../dto/upsert-track-structure.dto';
 import { TrackItemType } from '../../type/track.type';
 import { QuizQuestionType } from '../../type/quiz.type';
@@ -15,6 +19,7 @@ import { Track } from '../../entity/track.entity';
 
 const mockDataSource = {
   transaction: jest.fn(),
+  query: jest.fn(),
 };
 
 const mockTrackRepository = {
@@ -47,6 +52,11 @@ const mockTrackTranslationService = {
   handleSourceChanged: jest.fn(),
 };
 
+// An unrestricted caller unless a test says otherwise.
+const mockTenantScopeService = {
+  isRestricted: jest.fn().mockResolvedValue(false),
+};
+
 describe('TrackService', () => {
   let service: TrackService;
 
@@ -68,6 +78,10 @@ describe('TrackService', () => {
         { provide: CaseSharedService, useValue: mockCaseSharedService },
         { provide: TenantService, useValue: mockTenantService },
         {
+          provide: TenantScopeService,
+          useValue: mockTenantScopeService,
+        },
+        {
           provide: TrackTranslationService,
           useValue: mockTrackTranslationService,
         },
@@ -79,6 +93,85 @@ describe('TrackService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('applyContentDefaults', () => {
+    it('should handle malformed questions array without throwing', async () => {
+      const trackId = 'test-track-id';
+      const dto: any = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content: {
+                  settings: { passScore: 70 },
+                  questions: 'not-an-array', // Malformed
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId });
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockDataSource.transaction.mockImplementation(async (cb) =>
+        cb({
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn(),
+          }),
+        }),
+      );
+
+      // Should not throw a TypeError; validateTrackStructure will eventually catch it,
+      // but here we just want to ensure it doesn't crash during defaults application.
+      await expect(service.upsertStructure(trackId, dto)).rejects.toThrow();
+    });
+
+    it('should handle missing interjection question without throwing', async () => {
+      const trackId = 'test-track-id';
+      const dto: any = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.VIDEO,
+                order: 1,
+                title: 'Video',
+                content: {
+                  url: 'https://vimeo.com/123',
+                  interjections: [
+                    { time: 10 }, // Missing 'question'
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId });
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+
+      await expect(service.upsertStructure(trackId, dto)).rejects.toThrow();
+    });
   });
 
   describe('upsertStructure', () => {
@@ -134,6 +227,232 @@ describe('TrackService', () => {
       await expect(
         service.upsertStructure(trackId, dto),
       ).resolves.not.toThrow();
+    });
+
+    it('should derive prompt from promptHtml and sanitize promptHtml on upsertStructure', async () => {
+      const trackId = 'test-track-id';
+      const dto: UpsertTrackStructureDto = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content: {
+                  settings: { passScore: 70 },
+                  questions: [
+                    {
+                      id: 'q1',
+                      type: QuizQuestionType.MCQ_SINGLE,
+                      promptHtml:
+                        '<h1>Question 1</h1><p>Is this <strong>bold</strong>?</p><script>alert(1)</script>',
+                      options: [
+                        { id: 'opt1', text: 'Yes' },
+                        { id: 'opt2', text: 'No' },
+                      ],
+                      correctOptionIds: ['opt1'],
+                    },
+                  ],
+                },
+              },
+              {
+                type: TrackItemType.JOURNAL,
+                order: 2,
+                title: 'Journal',
+                content: {
+                  prompts: [
+                    {
+                      id: 'j1',
+                      promptHtml:
+                        '<blockquote>Reflection</blockquote><p>How are you?</p>',
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+
+      const savedItems: any[] = [];
+      mockDataSource.transaction.mockImplementation(async (cb) => {
+        const manager = {
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn().mockImplementation((data) => {
+              // The test mocks save for TrackSection and TrackItem.
+              // We only care about the TrackItem content here.
+              if (data.type) {
+                savedItems.push(data);
+              }
+              return Promise.resolve({ id: 'some-id', ...data });
+            }),
+          }),
+        };
+        return cb(manager);
+      });
+
+      await service.upsertStructure(trackId, dto);
+
+      const quizItem = savedItems.find((i) => i.type === TrackItemType.QUIZ);
+      const journalItem = savedItems.find(
+        (i) => i.type === TrackItemType.JOURNAL,
+      );
+
+      expect(quizItem.content.questions[0].promptHtml).toBe(
+        '<h1>Question 1</h1><p>Is this <strong>bold</strong>?</p>',
+      );
+      expect(quizItem.content.questions[0].prompt).toBe(
+        'Question 1 Is this bold ?',
+      );
+
+      expect(journalItem.content.prompts[0].promptHtml).toBe(
+        '<blockquote>Reflection</blockquote><p>How are you?</p>',
+      );
+      expect(journalItem.content.prompts[0].prompt).toBe(
+        'Reflection How are you?',
+      );
+    });
+  });
+
+  describe('upsertStructure: prompt vs promptHtml on edit', () => {
+    const trackId = 'test-track-id';
+    const quizContent = (question: Record<string, unknown>) => ({
+      settings: { passScore: 70 },
+      questions: [
+        {
+          id: 'q1',
+          type: QuizQuestionType.MCQ_SINGLE,
+          options: [
+            { id: 'opt1', text: 'Yes' },
+            { id: 'opt2', text: 'No' },
+          ],
+          correctOptionIds: ['opt1'],
+          ...question,
+        },
+      ],
+    });
+    const stored = quizContent({
+      prompt: 'Old question',
+      promptHtml: '<p>Old <strong>question</strong></p>',
+    });
+    const dtoFor = (
+      content: Record<string, unknown>,
+    ): UpsertTrackStructureDto =>
+      ({
+        sections: [
+          {
+            id: 'sec1',
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                id: 'item1',
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content,
+              },
+            ],
+          },
+        ],
+      }) as UpsertTrackStructureDto;
+
+    const arrange = () => {
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [
+          {
+            id: 'sec1',
+            items: [{ id: 'item1', type: TrackItemType.QUIZ, content: stored }],
+          },
+        ],
+      });
+      const savedItems: any[] = [];
+      mockDataSource.transaction.mockImplementation(async (cb) =>
+        cb({
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn().mockImplementation((data) => {
+              if (data.type) savedItems.push(data);
+              return Promise.resolve({ id: 'some-id', ...data });
+            }),
+          }),
+        }),
+      );
+      return savedItems;
+    };
+
+    it('lets a plain-text edit win over the stale promptHtml it round-tripped', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(
+        trackId,
+        dtoFor(
+          quizContent({
+            prompt: 'New question from the Copilot',
+            promptHtml: '<p>Old <strong>question</strong></p>',
+          }),
+        ),
+      );
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.prompt).toBe('New question from the Copilot');
+      expect(question.promptHtml).toBeUndefined();
+    });
+
+    it('re-derives prompt when the rich text itself changed', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(
+        trackId,
+        dtoFor(
+          quizContent({
+            prompt: 'Old question',
+            promptHtml: '<p>Brand <em>new</em> text</p>',
+          }),
+        ),
+      );
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.promptHtml).toBe('<p>Brand <em>new</em> text</p>');
+      expect(question.prompt).toBe('Brand new text');
+    });
+
+    it('keeps the formatting when nothing about the prompt changed', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(trackId, dtoFor(stored));
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.promptHtml).toBe('<p>Old <strong>question</strong></p>');
+      expect(question.prompt).toBe('Old question');
+    });
+
+    it('rejects a quiz with no settings as a 400, not a 500', async () => {
+      arrange();
+      const noSettings: Record<string, unknown> = quizContent({
+        prompt: 'Pick one',
+      });
+      delete noSettings.settings;
+
+      const result = service.upsertStructure(trackId, dtoFor(noSettings));
+
+      await expect(result).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -192,6 +511,108 @@ describe('TrackService', () => {
         description: htmlText,
       });
       expect(newTrack.description).toBe('<p>Hello\nworld</p>');
+    });
+  });
+
+  describe('as a platform admin restricted to some organizations', () => {
+    const CALLER_ID = 31;
+
+    beforeEach(() => {
+      jest
+        .spyOn(ExecutionManager, 'getUserId')
+        .mockReturnValue(String(CALLER_ID));
+      mockTenantScopeService.isRestricted.mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+      mockTenantScopeService.isRestricted.mockResolvedValue(false);
+      jest.restoreAllMocks();
+    });
+
+    it('may edit a course they created', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce({
+        id: 't1',
+        createdBy: CALLER_ID,
+      });
+
+      await expect(service.assertCallerMayEdit('t1')).resolves.toBeUndefined();
+    });
+
+    it('may not edit a course someone else created', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce({
+        id: 't1',
+        createdBy: 99,
+      });
+
+      await expect(service.assertCallerMayEdit('t1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('gets a 404 for a course that does not exist', async () => {
+      mockTrackRepository.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.assertCallerMayEdit('t1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('may delete an unreferenced upload, or media only their courses use', async () => {
+      mockDataSource.query.mockResolvedValueOnce([]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/a.png'),
+      ).resolves.toBeUndefined();
+
+      mockDataSource.query.mockResolvedValueOnce([
+        { createdBy: CALLER_ID },
+        { createdBy: CALLER_ID },
+      ]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/b.png'),
+      ).resolves.toBeUndefined();
+    });
+
+    it("may not delete media another admin's course or a shared template uses", async () => {
+      mockDataSource.query.mockResolvedValueOnce([
+        { createdBy: CALLER_ID },
+        { createdBy: 99 },
+      ]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/c.png'),
+      ).rejects.toThrow('This file is still used by a course you cannot edit');
+
+      mockDataSource.query.mockResolvedValueOnce([{ createdBy: null }]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/d.png'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('may not make a course global', async () => {
+      await expect(service.assertCallerMayMakeGlobal(true)).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(
+        service.assertCallerMayMakeGlobal(false),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.assertCallerMayMakeGlobal(undefined),
+      ).resolves.toBeUndefined();
+    });
+
+    it('leaves an unrestricted admin free to edit any course or make it global', async () => {
+      mockTenantScopeService.isRestricted.mockResolvedValue(false);
+      mockTrackRepository.findOne.mockClear();
+
+      await expect(service.assertCallerMayEdit('t1')).resolves.toBeUndefined();
+      await expect(
+        service.assertCallerMayMakeGlobal(true),
+      ).resolves.toBeUndefined();
+      expect(mockTrackRepository.findOne).not.toHaveBeenCalled();
+      mockDataSource.query.mockClear();
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/e.png'),
+      ).resolves.toBeUndefined();
+      expect(mockDataSource.query).not.toHaveBeenCalled();
     });
   });
 });

@@ -88,6 +88,29 @@ describe('BuilderEvidenceLogService', () => {
     );
   });
 
+  /** Catalog hits carry the repo in their path; the excerpt used to print it twice. */
+  it('names a catalog hit once, as repo:path', async () => {
+    const { service, repository } = build();
+    service.recordToolResult(
+      'session-1',
+      'capability_lookup',
+      { query: 'debrief rating' },
+      {
+        ok: true,
+        results: [
+          { kind: 'capability', repo: 'ally-be', path: 'ally-be:src/learn' },
+          { kind: 'module', repo: 'ally-be', path: 'src/skill-experiment' },
+        ],
+      },
+    );
+    await flush();
+    expect(repository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        excerpt: 'ally-be:src/learn, ally-be:src/skill-experiment',
+      }),
+    );
+  });
+
   it('ignores tools that are not lookups', async () => {
     const { service, repository } = build();
     service.recordToolResult(

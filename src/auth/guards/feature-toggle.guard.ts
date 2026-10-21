@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
@@ -15,9 +16,17 @@ import {
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import {
+  PLATFORM_WIDE_ONLY_MESSAGE,
+  TenantScopeService,
+} from 'src/authorization/service/tenant-scope.service';
+import {
   FEATURE_TOGGLE_KEY,
   FeatureToggleOptions,
 } from '../decorators/feature-toggle.decorator';
+import {
+  ORG_SCOPED_ROUTE_KEY,
+  OrgScopedRouteOptions,
+} from '../decorators/org-scoped-route.decorator';
 
 /**
  * FeatureToggleGuard
@@ -41,6 +50,7 @@ export class FeatureToggleGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly featureToggleService: FeatureToggleService,
     private readonly tenantFeatureService: TenantFeatureService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -68,11 +78,34 @@ export class FeatureToggleGuard implements CanActivate {
       });
     }
 
+    // Ahead of the org-level branch below too: a platform-only surface spans
+    // every organization, so no tenant preference can open it to an admin
+    // restricted to some.
+    if (
+      await this.featureToggleService.isWithheld(user.id, options.featureKey)
+    ) {
+      throw new ForbiddenException({
+        message: PLATFORM_WIDE_ONLY_MESSAGE,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+        featureKey: options.featureKey,
+      });
+    }
+
     const hasToggle = await this.featureToggleService.hasToggle(
       user.id,
       options.featureKey,
     );
     if (hasToggle) {
+      if (
+        await this.featureToggleService.isLimitedToOrgScopedRoutes(
+          user.id,
+          options.featureKey,
+        )
+      ) {
+        await this.assertOrgScopedRoute(context, request, user.id);
+      }
       return true;
     }
 
@@ -103,6 +136,41 @@ export class FeatureToggleGuard implements CanActivate {
       statusCode: HttpStatus.FORBIDDEN,
       errorCode: ErrorCode.FEATURE_NOT_ENABLED,
       featureKey: options.featureKey,
+    });
+  }
+
+  /**
+   * An organization-restricted admin on an `orgScopedRoutesOnly` surface: the
+   * route must be marked @OrgScopedRoute, and must name one organization on
+   * their allowlist. Naming none is refused rather than defaulted — the route
+   * would answer for every organization, and Express 5 re-parses the query on
+   * each read, so a guard cannot fill the gap in for the handler.
+   */
+  private async assertOrgScopedRoute(
+    context: ExecutionContext,
+    request: { query?: Record<string, unknown> },
+    userId: number,
+  ): Promise<void> {
+    const route = this.reflector.getAllAndOverride<
+      Required<OrgScopedRouteOptions> | undefined
+    >(ORG_SCOPED_ROUTE_KEY, [context.getHandler(), context.getClass()]);
+    if (!route) {
+      throw new ForbiddenException({
+        message: PLATFORM_WIDE_ONLY_MESSAGE,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.PERMISSION_DENIED,
+      });
+    }
+
+    const named = request.query?.[route.queryParam];
+    if (typeof named !== 'string' || named.trim() === '') {
+      throw new BadRequestException(
+        'Choose one of your organizations to see this chart',
+      );
+    }
+    await this.tenantScopeService.assertTenantInScope(named.trim(), {
+      userId,
     });
   }
 }

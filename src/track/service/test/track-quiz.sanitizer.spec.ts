@@ -67,6 +67,12 @@ describe('sanitizeQuizQuestionForLearner - media', () => {
       (openEnded as unknown as Record<string, unknown>).rubric,
     ).toBeUndefined();
   });
+
+  it('carries promptHtml through to the learner', () => {
+    const promptHtml = '<p>What do you <strong>see</strong>?</p>';
+    const result = sanitizeQuizQuestionForLearner(mcq({ promptHtml }));
+    expect(result.promptHtml).toBe(promptHtml);
+  });
 });
 
 describe('sanitizeQuizForLearner - media', () => {

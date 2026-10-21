@@ -69,6 +69,7 @@ import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { FeatureToggleGuard } from '../../../auth/guards/feature-toggle.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
 import { FeatureToggleService } from '../../../authorization/service/feature-toggle.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { UserService } from '../../../user/service/user.service';
@@ -411,6 +412,16 @@ describe('AnalyticsController', () => {
           },
         },
         {
+          // OwnTenantScopeGuard / PlatformWideGuard: an unrestricted caller.
+          provide: TenantScopeService,
+          useValue: {
+            isRestricted: jest.fn().mockResolvedValue(false),
+            resolveScope: jest
+              .fn()
+              .mockResolvedValue({ tenantIds: null, restricted: false }),
+          },
+        },
+        {
           provide: PermissionsService,
           useValue: {
             getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
@@ -479,6 +490,46 @@ describe('AnalyticsController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getHighlights', () => {
+    const highlights = {
+      scoping: { tenantId: 'org-a', unscopedSections: ['topOrgs'] },
+      summary: { activeOrgs: 9, completedSimulations: 4, totalAiCostUsd: 12 },
+      previous: null,
+      topOrgs: [{ tenantId: 'org-z' }],
+      topOrgsBelowFloor: { orgs: 2, completedSimulations: 3 },
+      costPerSim: [],
+    } as any;
+
+    beforeEach(() => {
+      (
+        controller['highlightsAnalyticsService'].getHighlights as jest.Mock
+      ).mockResolvedValue(highlights);
+    });
+
+    it('returns the platform-wide sections to an unrestricted admin', async () => {
+      const result = await controller.getHighlights({
+        tenantId: 'org-a',
+      } as any);
+
+      expect(result).toBe(highlights);
+    });
+
+    it('withholds other orgs and platform spend from an org-restricted admin', async () => {
+      (
+        controller['tenantScopeService'].isRestricted as jest.Mock
+      ).mockResolvedValueOnce(true);
+
+      const result = (await controller.getHighlights({
+        tenantId: 'org-a',
+      } as any)) as any;
+
+      expect(result.topOrgs).toBeUndefined();
+      expect(result.summary).not.toHaveProperty('activeOrgs');
+      expect(result.summary).not.toHaveProperty('totalAiCostUsd');
+      expect(result.summary.completedSimulations).toBe(4);
+    });
   });
 
   describe('getDashboardUrl', () => {

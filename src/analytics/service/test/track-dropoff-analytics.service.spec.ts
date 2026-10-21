@@ -67,6 +67,7 @@ describe('TrackDropoffAnalyticsService', () => {
       TrackItemType.JOURNAL,
       TrackItemType.ANNOTATED_ARTIFACT,
       TrackItemType.GAME,
+      TrackItemType.BRANCHING_SCENARIO,
     ]);
     expect(result.minGroupSize).toBe(MIN_TRACK_GROUP_SIZE);
     expect(result.scoping).toEqual({ tenantId: null, unscopedSections: [] });

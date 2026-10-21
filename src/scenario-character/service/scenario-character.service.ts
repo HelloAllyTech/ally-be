@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
+import { DataSource, In, IsNull } from 'typeorm';
 import { ScenarioCharacter } from '../entity/scenario-character.entity';
 import { ScenarioCharacterRepository } from '../repository/scenario-character.repository';
 import {
@@ -130,6 +130,7 @@ export class ScenarioCharacterService {
         sortBy,
         sortOrder,
         tenantId: scope.tenantId,
+        visibleTenantIds: scope.restrictedToTenantIds,
       });
 
     if (!scope.isPlatform) {
@@ -226,10 +227,28 @@ export class ScenarioCharacterService {
    */
   private async assertInScope(character: ScenarioCharacter): Promise<void> {
     const scope = await this.accessService.resolveScope();
-    if (scope.isPlatform) return;
-    if (character.tenantId !== scope.tenantId) {
+    const visible = scope.restrictedToTenantIds
+      ? !character.tenantId ||
+        scope.restrictedToTenantIds.includes(character.tenantId)
+      : scope.isPlatform || character.tenantId === scope.tenantId;
+    if (!visible) {
       throw new ForbiddenException(
         'This character belongs to another organisation',
+      );
+    }
+  }
+
+  /**
+   * On top of assertInScope, for a change: an organization-restricted platform
+   * admin may change their organizations' characters, but a global one only if
+   * they created it — global characters serve every org.
+   */
+  private async assertEditable(character: ScenarioCharacter): Promise<void> {
+    const scope = await this.accessService.resolveScope();
+    if (!scope.restrictedToTenantIds || character.tenantId) return;
+    if (character.createdBy !== Number(ExecutionManager.getUserId())) {
+      throw new ForbiddenException(
+        'You can only edit global characters you created',
       );
     }
   }
@@ -241,7 +260,7 @@ export class ScenarioCharacterService {
     // Re-reads first so a cross-tenant id 403s before anything is written. The
     // route also requires EDIT_SCENARIO_CHARACTER, which tenant admins do not
     // hold — this is the second lock on the same door.
-    await this.getScenarioCharacterById(id);
+    await this.assertEditable(await this.getScenarioCharacterById(id));
     await this.validateCharacterVoices(dto.voices);
 
     await this.scenarioCharacterRepository.update(id, {
@@ -255,7 +274,7 @@ export class ScenarioCharacterService {
   }
 
   async deleteScenarioCharacter(id: string): Promise<{ success: boolean }> {
-    await this.getScenarioCharacterById(id);
+    await this.assertEditable(await this.getScenarioCharacterById(id));
     await this.scenarioCharacterRepository.delete(id);
     this.logger.info(`Scenario character deleted: ${id}`);
     return { success: true };
@@ -271,6 +290,31 @@ export class ScenarioCharacterService {
     }
 
     const scope = await this.accessService.resolveScope();
+
+    if (scope.restrictedToTenantIds) {
+      // Only the ids they may change: their orgs' characters, and global ones
+      // they created. Anything else in the request is skipped, as the tenant
+      // filter below skips it for a tenant admin.
+      const userId = Number(ExecutionManager.getUserId());
+      const editable = await this.scenarioCharacterRepository.find({
+        where: [
+          {
+            id: In(scenarioCharacterIds),
+            tenantId: In(scope.restrictedToTenantIds),
+          },
+          {
+            id: In(scenarioCharacterIds),
+            tenantId: IsNull(),
+            createdBy: userId,
+          },
+        ],
+        select: ['id'],
+      });
+      scenarioCharacterIds = editable.map((character) => character.id);
+      if (scenarioCharacterIds.length === 0) {
+        return false;
+      }
+    }
 
     const result = await this.scenarioCharacterRepository.delete({
       id: In(scenarioCharacterIds),

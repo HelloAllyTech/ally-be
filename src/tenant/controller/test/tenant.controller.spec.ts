@@ -11,6 +11,10 @@ import { GetAllTenantsResponseDto } from '../../dto/get-tenants.dto';
 import { TenantSortBy } from '../../enum/tenant.enum';
 import { SortOrder } from '../../../user/enum/user.enum';
 import { TenantResponseDto } from '../../dto/tenant-response.dto';
+import { ForbiddenException } from '@nestjs/common';
+import { TenantScopeService } from '../../../authorization/service/tenant-scope.service';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
+import { ExecutionManager } from '../../../common/execution/execution-manager';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -19,6 +23,11 @@ jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
 describe('TenantController', () => {
   let controller: TenantController;
   let tenantService: jest.Mocked<TenantService>;
+  let mockPermissionsService: {
+    isMultiTenantAdmin: jest.Mock;
+    getUserPermissions: jest.Mock;
+  };
+  const ALLOWED_TENANT_ID = 'allowed-tenant-id';
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -85,7 +94,31 @@ describe('TenantController', () => {
       updateMetadata: jest.fn(),
       getAllTenants: jest.fn(),
       updateTenant: jest.fn(),
+      findTenantIdsUsingLogo: jest.fn(),
+      deleteOrganizationLogo: jest.fn(),
     };
+
+    // The real resolver: an unrestricted platform admin unless a test makes
+    // them allowlisted, in which case they hold ALLOWED_TENANT_ID only.
+    mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+      getUserPermissions: jest
+        .fn()
+        .mockResolvedValue([PERMISSIONS.SYSTEM_ACCESS]),
+    };
+    const tenantScopeService = new TenantScopeService(
+      mockPermissionsService as any,
+      {
+        find: jest.fn().mockResolvedValue([{ tenantId: ALLOWED_TENANT_ID }]),
+      } as any,
+      {
+        find: jest.fn().mockResolvedValue([{ id: ALLOWED_TENANT_ID }]),
+        findOne: jest.fn(async ({ where }) =>
+          where.code === 'allowed-code' ? { id: ALLOWED_TENANT_ID } : null,
+        ),
+      } as any,
+    );
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TenantController],
@@ -93,6 +126,10 @@ describe('TenantController', () => {
         {
           provide: TenantService,
           useValue: mockTenantService,
+        },
+        {
+          provide: TenantScopeService,
+          useValue: tenantScopeService,
         },
       ],
     }).compile();
@@ -103,6 +140,105 @@ describe('TenantController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
+  });
+
+  describe('as a platform admin restricted to one organization', () => {
+    beforeEach(() => {
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+    });
+
+    it('refuses to create an organization', async () => {
+      await expect(controller.create(mockCreateTenantDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(tenantService.create).not.toHaveBeenCalled();
+    });
+
+    it('reads an allowlisted organization by id and by code', async () => {
+      tenantService.findById.mockResolvedValue(mockTenantResponse);
+      tenantService.findByCode.mockResolvedValue(mockTenantResponse);
+
+      await expect(controller.findById(ALLOWED_TENANT_ID)).resolves.toBe(
+        mockTenantResponse,
+      );
+      await expect(controller.findByCode('allowed-code')).resolves.toBe(
+        mockTenantResponse,
+      );
+    });
+
+    it('refuses to read another organization by id or by code', async () => {
+      await expect(controller.findById('other-tenant-id')).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(controller.findByCode('other-code')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(tenantService.findById).not.toHaveBeenCalled();
+      expect(tenantService.findByCode).not.toHaveBeenCalled();
+    });
+
+    it("refuses to delete another organization's logo", async () => {
+      tenantService.findTenantIdsUsingLogo.mockResolvedValue([
+        'other-tenant-id',
+      ]);
+
+      await expect(
+        controller.deleteOrganizationLogo({
+          logoUrl: 'https://b/org-logos/x.png',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(tenantService.deleteOrganizationLogo).not.toHaveBeenCalled();
+    });
+
+    it('deletes their own organization logo or an unreferenced upload', async () => {
+      tenantService.deleteOrganizationLogo.mockResolvedValue({ success: true });
+
+      tenantService.findTenantIdsUsingLogo.mockResolvedValueOnce([
+        ALLOWED_TENANT_ID,
+      ]);
+      await controller.deleteOrganizationLogo({
+        logoUrl: 'https://b/mine.png',
+      });
+
+      tenantService.findTenantIdsUsingLogo.mockResolvedValueOnce([]);
+      await controller.deleteOrganizationLogo({
+        logoUrl: 'https://b/orphan.png',
+      });
+
+      expect(tenantService.deleteOrganizationLogo).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      [
+        'updateStatus',
+        (id: string) =>
+          controller.updateStatus(id, { status: TenantStatus.SUSPENDED }),
+      ],
+      [
+        'updateSettings',
+        (id: string) => controller.updateSettings(id, { settings: {} }),
+      ],
+      [
+        'updateMetadata',
+        (id: string) => controller.updateMetadata(id, { metadata: {} }),
+      ],
+      [
+        'updateTenant',
+        (id: string) => controller.updateTenant(id, { name: 'Renamed' }),
+      ],
+    ] as const)(
+      '%s: allows an allowlisted organization and refuses any other',
+      async (method, call) => {
+        await expect(call('other-tenant-id')).rejects.toThrow(
+          ForbiddenException,
+        );
+        expect(tenantService[method]).not.toHaveBeenCalled();
+
+        await call(ALLOWED_TENANT_ID);
+        expect(tenantService[method]).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 
   describe('create', () => {

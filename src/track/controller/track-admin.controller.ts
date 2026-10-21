@@ -167,6 +167,7 @@ export class TrackAdminController {
   async deleteMedia(
     @Body() dto: DeleteTrackMediaDto,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayDeleteMedia(dto.url);
     return this.trackMediaService.deleteMedia(dto);
   }
 
@@ -186,6 +187,7 @@ export class TrackAdminController {
   async createTrack(
     @Body() createTrackDto: CreateTrackDto,
   ): Promise<TrackSummaryResponseDto> {
+    await this.trackService.assertCallerMayMakeGlobal(createTrackDto.isGlobal);
     return this.trackService.createTrack(createTrackDto);
   }
 
@@ -197,6 +199,8 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateTrackDto: UpdateTrackDto,
   ): Promise<TrackSummaryResponseDto> {
+    await this.trackService.assertCallerMayEdit(id);
+    await this.trackService.assertCallerMayMakeGlobal(updateTrackDto.isGlobal);
     return this.trackService.updateTrack(id, updateTrackDto);
   }
 
@@ -210,6 +214,7 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpsertTrackStructureDto,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackService.upsertStructure(id, dto);
   }
 
@@ -240,6 +245,7 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetTrackLanguagesDto,
   ) {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackTranslationService.setLanguages(id, dto.languageIds);
   }
 
@@ -253,6 +259,7 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: TranslateTrackDto,
   ) {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackTranslationService.translate(id, dto.languageIds);
   }
 
@@ -280,6 +287,7 @@ export class TrackAdminController {
     @Param('languageId', ParseIntPipe) languageId: number,
     @Body() dto: UpdateTrackTranslationFieldsDto,
   ) {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackTranslationService.updateFields(id, languageId, dto.edits);
   }
 
@@ -294,6 +302,7 @@ export class TrackAdminController {
     @Param('languageId', ParseIntPipe) languageId: number,
     @Body() dto: MarkTrackTranslationReviewedDto,
   ) {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackTranslationService.markReviewed(
       id,
       languageId,
@@ -312,6 +321,7 @@ export class TrackAdminController {
     @Param('languageId', ParseIntPipe) languageId: number,
     @Body() dto: SetTrackTranslationMediaDto,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayEdit(id);
     await this.trackTranslationService.setMediaUrl(
       id,
       languageId,
@@ -332,6 +342,7 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('languageId', ParseIntPipe) languageId: number,
   ) {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackTranslationService.publish(id, languageId);
   }
 
@@ -345,6 +356,7 @@ export class TrackAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('languageId', ParseIntPipe) languageId: number,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayEdit(id);
     await this.trackTranslationService.unpublish(id, languageId);
     return { success: true };
   }
@@ -355,6 +367,7 @@ export class TrackAdminController {
   async deleteTrack(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackService.deleteTrack(id);
   }
 
@@ -364,6 +377,7 @@ export class TrackAdminController {
   async duplicateTrack(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<TrackSummaryResponseDto> {
+    await this.trackService.assertCallerMayEdit(id);
     return this.trackService.duplicateTrack(id);
   }
 
