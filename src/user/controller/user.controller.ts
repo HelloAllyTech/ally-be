@@ -59,6 +59,7 @@ import {
   RemoveAdminTenantsDto,
 } from '../dto/admin-tenant.dto';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { SetFeatureTogglesDto } from 'src/authorization/dto/admin-feature-toggle.dto';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
@@ -85,6 +86,7 @@ export class UserController {
     private groupService: GroupService,
     private adminTenantService: AdminTenantService,
     private featureToggleService: FeatureToggleService,
+    private readonly tenantScopeService: TenantScopeService,
     private readonly posthog: PostHog,
   ) {}
 
@@ -95,7 +97,15 @@ export class UserController {
     if (!user) {
       return null;
     }
-    return this.userService.getMinimalUserInfo(user);
+    const scope = await this.tenantScopeService.resolveScope(Number(user.id));
+    return {
+      ...(await this.userService.getMinimalUserInfo(user)),
+      // The organizations a platform admin is restricted to; null when they
+      // are not (every other user is pinned to `tenantId` anyway). The admin
+      // console pins its org pickers to these, since the org-scoped routes
+      // they may call refuse a request naming no organization.
+      restrictedTenantIds: scope.restricted ? scope.tenantIds : null,
+    };
   }
 
   @ApiOperation({
