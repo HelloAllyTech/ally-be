@@ -109,9 +109,7 @@ describe('SkillExperimentChallengerJobService', () => {
       { rating: 'positive', comment: 'Good', createdAt: new Date() },
       { rating: 'negative', comment: 'Bad', createdAt: new Date() },
     ];
-    feedbackRepo
-      .createQueryBuilder()
-      .getMany.mockResolvedValue(mockFeedbacks);
+    feedbackRepo.createQueryBuilder().getMany.mockResolvedValue(mockFeedbacks);
     variantRepo.findOneBy.mockResolvedValue({
       id: 'v1',
       content: 'Old content',

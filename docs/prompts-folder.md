@@ -8,12 +8,12 @@ Prompt template files (`.txt`) in `src/prompts/` are synced to the database on s
 
 ### Rules
 
-| Rule | Example | Avoid |
-|------|---------|-------|
-| Use `snake_case` | `code_mixed_system.txt` | `system.txt` |
-| Filename must describe purpose | `general_text_translation.txt` | `text.txt` |
+| Rule                                   | Example                                           | Avoid                                                         |
+| -------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------- |
+| Use `snake_case`                       | `code_mixed_system.txt`                           | `system.txt`                                                  |
+| Filename must describe purpose         | `general_text_translation.txt`                    | `text.txt`                                                    |
 | Minimum: subdir + descriptive filename | `openai_translation/speech_reexpression_user.txt` | `openai_translation/user.txt` <!-- docs-path-lint: ignore --> |
-| Combine generic terms with context | `translation_system_prompt.txt` | `system.txt` |
+| Combine generic terms with context     | `translation_system_prompt.txt`                   | `system.txt`                                                  |
 
 ### Why
 
@@ -53,7 +53,7 @@ src/prompts/
 
 ### Agent system prompts
 
-A folder like `builder/` (or `character_interview/`, `course_copilot/`) holds the *system*
+A folder like `builder/` (or `character_interview/`, `course_copilot/`) holds the _system_
 prompt for a long-running agent rather than a one-shot generation. Two things differ:
 
 - It is read by code through `PromptSharedService.getPromptByCode('<folder>_<file>')`, not
@@ -111,7 +111,7 @@ that fires them all in parallel gets a weaker answer, not a broken one.
 Two constraints specific to this folder:
 
 - **`examples.txt` is a runtime cost, not just a generation.** What it writes is inlined into
-  a prompt ally-ai-learn rebuilds on *every learner turn*, batched across every classifier on
+  a prompt ally-ai-learn rebuilds on _every learner turn_, batched across every classifier on
   the simulation. `{{numExamples}}` is clamped server-side to `MAX_EXAMPLES_PER_POLARITY`;
   do not write a prompt that argues for more.
 - **Negatives must be near misses.** A negative example only calibrates the boundary if it is
@@ -138,7 +138,7 @@ per-language (`voices` / `languageCharacteristics` / `linguisticStyleSamples` ke
 it under the language its named voice implies. Rejecting it instead would strand an admin
 mid-interview over a contract change they cannot see or fix.
 
-The same reasoning applies to what a tool *returns*: `get_voices` reports each voice's
+The same reasoning applies to what a tool _returns_: `get_voices` reports each voice's
 `languageId` precisely so the prompt never has to infer the key it files a voice under.
 If a prompt has to derive an id, expect it to guess wrong.
 
@@ -166,7 +166,7 @@ One agent prompt and eleven one-shot specialist prompts, all under the "Course C
   from a fallback prompt would be quietly worse rather than visibly broken.
 - `landing_page_writer` is the one specialist that runs outside a session: the builder's Landing
   page tab calls it (`POST /v1/course-copilot/tracks/:trackId/landing-page-draft`) against the
-  *saved* course and the model's answer is never stored — the builder fills only empty fields.
+  _saved_ course and the model's answer is never stored — the builder fills only empty fields.
   Its output is `TrackLandingPage` minus `version`, `persona.imageUrl` and `persona.characterId`,
   and `normaliseLandingPageDraft` enforces the limits, the known section ids, the single hard
   call and the no-exclamation-marks rule in code. The prompt's writing rules (the hook opens on a
@@ -189,8 +189,8 @@ inert.
 As of 2026-09-25 this one is **override: true**, so the studio is what ships and
 editing its `.txt` here does not:
 
-| Prompt | File |
-|---|---|
+| Prompt                       | File                             |
+| ---------------------------- | -------------------------------- |
 | `builder_interviewer_system` | `builder/interviewer_system.txt` |
 
 (`builder_coder_guidance` and `builder_finalise_guidance` were switched at the same time.
@@ -200,7 +200,7 @@ rows for them are unused.)
 Turning the flag on is not a one-line change, because the two copies drift apart while it
 is off and nothing reconciles them. When these were switched, the stored version of
 `builder_interviewer_system` was a 5,960-character snapshot against a 11,320-character
-file, and `builder_coder_guidance` held *different* advice from its file rather than older
+file, and `builder_coder_guidance` held _different_ advice from its file rather than older
 advice — the file carrying Ally's traps (guarded paths, merged migrations), the stored
 version carrying general discipline (never invent a requirement, match the surrounding
 code). Flipping the flag without looking would have silently picked one and dropped the
@@ -224,7 +224,7 @@ eval works: [`docs/builder-eval.md`](builder-eval.md).
 obliges an `ok:false`, which is right for a validation failure and wrong for a retrieval that
 found nothing: it becomes a rephrase loop against a corpus that genuinely lacks the material.
 `search_corpus` returns `ok:true` with an empty list and an explicit note. It reserves
-`ok:false` for retrieval being *unreachable*, and says so in those words, because an agent that
+`ok:false` for retrieval being _unreachable_, and says so in those words, because an agent that
 cannot tell "the library has nothing" from "the library could not be read" will tell an admin
 their corpus is empty when it is not.
 
@@ -329,7 +329,7 @@ Five rules matter when writing one:
   examples in a different feature area from the one being discussed, so the model borrows
   the shape and not the content.
 
-Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
+Prompts that a _runner_ fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are
 assembled per run from live state rather than being static text.
 
