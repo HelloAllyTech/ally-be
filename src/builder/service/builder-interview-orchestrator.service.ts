@@ -147,11 +147,13 @@ const BUILDER_TRUNCATION_ERROR =
 @Injectable()
 export class BuilderInterviewOrchestratorService {
   /**
-   * Process-wide, not per-instance: the service is a singleton, but making the
-   * cache static also keeps it shared if that ever changes.
+   * Per instance, deliberately. The live service is a singleton, so this is
+   * one cache in practice — but the replay eval builds its own orchestrator
+   * around a candidate prompt, and a static cache would hand that candidate
+   * to every live interview for the next minute (or a live prompt to the
+   * candidate's replay, which would then test the wrong thing).
    */
-  private static systemPromptCache: { text: string; expiresAt: number } | null =
-    null;
+  private systemPromptCache: { text: string; expiresAt: number } | null = null;
 
   private readonly logger = LoggerService.getInstance(
     BuilderInterviewOrchestratorService.name,
@@ -999,11 +1001,8 @@ export class BuilderInterviewOrchestratorService {
     // edits a prompt in the admin UI — a minute of staleness there is nobody's
     // problem, and the turn is the latency a person is actually sitting through.
     const now = Date.now();
-    if (
-      BuilderInterviewOrchestratorService.systemPromptCache &&
-      BuilderInterviewOrchestratorService.systemPromptCache.expiresAt > now
-    ) {
-      return BuilderInterviewOrchestratorService.systemPromptCache.text;
+    if (this.systemPromptCache && this.systemPromptCache.expiresAt > now) {
+      return this.systemPromptCache.text;
     }
 
     try {
@@ -1011,7 +1010,7 @@ export class BuilderInterviewOrchestratorService {
         BUILDER_PROMPTS.INTERVIEWER_SYSTEM,
       );
       if (template) {
-        BuilderInterviewOrchestratorService.systemPromptCache = {
+        this.systemPromptCache = {
           text: template,
           expiresAt: now + BUILDER_SYSTEM_PROMPT_TTL_MS,
         };

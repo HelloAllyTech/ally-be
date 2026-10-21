@@ -896,3 +896,123 @@ describe('PromptsService.syncPrompts — sidecar default model', () => {
     expect(payload).not.toHaveProperty('provider');
   });
 });
+
+/**
+ * Builder's interviewer and platform rules go live only through the replay
+ * eval. Before the gate, a dashboard edit changed every interview the moment
+ * the editor autosaved, with no PR and nothing checking it.
+ */
+describe('PromptsService — Builder eval gate', () => {
+  const build = async (row: Record<string, any>) => {
+    const promptsRepository = {
+      findOne: jest.fn().mockResolvedValue(row),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+    const promptVersionRepository = {
+      getLatestPromptVersion: jest.fn().mockResolvedValue({ version: 3 }),
+      create: jest.fn((values) => values),
+      save: jest.fn(),
+      deleteVersionsBefore: jest.fn(),
+    };
+    const promptSharedService = {
+      getPromptByCode: jest.fn().mockResolvedValue('Live interviewer text.'),
+      getPromptsByOptions: jest.fn(),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PromptsService,
+        { provide: PromptsRepository, useValue: promptsRepository },
+        { provide: PromptVersionRepository, useValue: promptVersionRepository },
+        { provide: PromptSharedService, useValue: promptSharedService },
+        {
+          provide: PromptTranslationService,
+          useValue: { translatePrompt: jest.fn() },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn(async (work: any) => work()),
+            query: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+    return {
+      service: module.get(PromptsService),
+      promptsRepository,
+      promptVersionRepository,
+    };
+  };
+  const interviewer = {
+    id: 'p1',
+    promptCode: 'builder_interviewer_system',
+    useDashboardOverride: true,
+    model: 'gemini-2.5-pro',
+    provider: 'gemini',
+    temperature: undefined,
+  };
+
+  it.each([
+    ['new text', { prompt: 'A different interviewer.' }],
+    ['a model change', { model: 'gpt-5' }],
+    ['switching the override off', { useDashboardOverride: false }],
+  ])('refuses %s to a gated Builder prompt', async (_label, dto) => {
+    const { service, promptsRepository } = await build(interviewer);
+
+    await expect(service.updatePrompt('p1', dto as any)).rejects.toThrow(
+      /replay eval/,
+    );
+    expect(promptsRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('lets the editor save a description with the unchanged live text', async () => {
+    const { service, promptsRepository } = await build(interviewer);
+
+    await service.updatePrompt('p1', {
+      description: 'Interviews an admin into a PRD.',
+      prompt: '  Live interviewer text.  ',
+      model: 'gemini-2.5-pro',
+    } as any);
+
+    expect(promptsRepository.update).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        description: 'Interviews an admin into a PRD.',
+      }),
+    );
+  });
+
+  it('publishes a change the eval approved', async () => {
+    const { service, promptVersionRepository } = await build(interviewer);
+
+    await service.updatePrompt(
+      'p1',
+      { prompt: 'A better interviewer.' } as any,
+      { evalApproved: true },
+    );
+
+    expect(promptVersionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 4, prompt: 'A better interviewer.' }),
+    );
+  });
+
+  it('leaves every other prompt editable as before', async () => {
+    const { service, promptVersionRepository } = await build({
+      ...interviewer,
+      promptCode: 'debrief_chat',
+    });
+
+    await service.updatePrompt('p1', { prompt: 'New debrief chat.' } as any);
+
+    expect(promptVersionRepository.save).toHaveBeenCalled();
+  });
+
+  it('refuses a revert to the file for a gated prompt', async () => {
+    const { service } = await build({
+      ...interviewer,
+      defaultPrompt: 'File text.',
+    });
+
+    await expect(service.revertPrompt('p1')).rejects.toThrow(/replay eval/);
+  });
+});

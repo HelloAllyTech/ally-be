@@ -223,6 +223,11 @@ export enum LlmTask {
   // The cold PRD reviewer: one full review when a PRD first reads ready, then
   // rechecks of its open findings as the PRD changes (metadata.mode says which).
   BUILDER_PRD_REVIEW = 'builder_prd_review',
+  // Builder's replay eval: every model call a replay makes — the sandboxed
+  // interviewer and reviewer (relabelled so eval spend is not reported as real
+  // interviews; metadata.evalOf keeps the original task), the simulated admin
+  // and the checklist judge.
+  BUILDER_EVAL = 'builder_eval',
   // The roadmap's opportunity copilot: one pass of the guided interview's tool
   // loop (research, then a structured turn). Tagged with metadata.iteration so
   // a turn's passes can be summed.

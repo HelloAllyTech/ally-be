@@ -1732,6 +1732,37 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     configuredBy: 'LLM_REASONING_MODEL',
   },
   {
+    id: 'builder-eval-admin',
+    task: LlmTask.BUILDER_EVAL,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A Builder replay eval needs the admin’s next message',
+    detail:
+      'The simulated admin in a replay: answers the sandboxed interviewer from the fixture’s ' +
+      'recorded admin words and ground-truth checklist, and corrects it wherever the truth ' +
+      'contradicts it. One call per replayed turn. The sandboxed interviewer and reviewer ' +
+      'passes of a replay are recorded under this task too (metadata.evalOf says which), so ' +
+      'eval spend never shows up as real interviews.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
+    id: 'builder-eval-judge',
+    task: LlmTask.BUILDER_EVAL,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'A Builder replay finishes and its PRD is scored',
+    detail:
+      'Checks the replay’s final PRD against the fixture’s checklist, item by item. Scores ' +
+      'only: the deterministic gates decide whether a run passes.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    tier: LlmModelTier.REASONING,
+    configuredBy: 'LLM_REASONING_MODEL',
+  },
+  {
     id: 'builder-epic-decomposition',
     task: LlmTask.BUILDER_EPIC_DECOMPOSITION,
     runtime: LlmRuntime.ALLY_BE,
