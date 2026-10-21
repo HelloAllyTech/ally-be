@@ -7,6 +7,7 @@ import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 
 describe('TooltipController i18n', () => {
   let controller: TooltipController;
@@ -41,6 +42,11 @@ describe('TooltipController i18n', () => {
         {
           provide: TenantFeatureService,
           useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
+        },
+        {
+          // FeatureToggleGuard's org-scoped-route check — an unrestricted caller here.
+          provide: TenantScopeService,
+          useValue: { assertTenantInScope: jest.fn() },
         },
       ],
     }).compile();
