@@ -10,7 +10,9 @@
  *  - `prd_draft` — the full PRD after an update_prd patch lands, so the doc
  *    panel re-renders mid-turn rather than after it;
  *  - `readiness` — the recomputed rubric, ridden alongside prd_draft so the
- *    readiness ring and the "Start build" button never lag the document.
+ *    readiness ring and the "Start build" button never lag the document;
+ *  - `receipt` — once per turn, just before `done`: what the turn read,
+ *    searched, changed in the PRD and what failed (BuilderTurnReceipt).
  *
  * Both are emitted at tool-execution time, which is also when the patch is
  * persisted: an aborted turn keeps the work it already did.
@@ -22,6 +24,7 @@ export type BuilderSseEventName =
   | 'question'
   | 'prd_draft'
   | 'readiness'
+  | 'receipt'
   | 'error'
   | 'done'
   // Keep-alive written by the stream controller every ~15s; clients ignore it.
@@ -73,6 +76,32 @@ export interface BuilderQuestionEvent {
 export interface BuilderDoneEvent {
   messageSeq: number;
   sessionStatus: string;
+}
+
+/**
+ * What a turn did, built by the server from the tool results and the PRD
+ * diff — never from the model's account of itself.
+ *
+ * Every line is composed for display. Persisted on the assistant row as
+ * `metadata.receipt`, sent as the `receipt` frame, rendered under the reply,
+ * exported with the transcript, and replayed into the history summary so a
+ * failure cannot drop out of the record once the interview grows long.
+ */
+export interface BuilderTurnReceipt {
+  /** Files and pages read: "ally-be/src/builder/x.ts", "wiki/platform/architecture.md". */
+  read: string[];
+  /** Searches and lookups, with what came back: 'Code search "rating" — 4 matches'. */
+  searched: string[];
+  /** What changed in the PRD, by section, requirement id and repo name. */
+  changed: string[];
+  /** PRD version before and after the turn; equal when nothing changed. */
+  prdVersion: { from: number; to: number };
+  /** Lookups and edits that failed: what was attempted, and why. */
+  failed: string[];
+  /** What the reply was delivered with anyway, after the turn's retries ran out. */
+  warnings: string[];
+  /** Builder's stated reason the PRD did not move after the admin's own words. */
+  prdUnchangedBecause?: string | null;
 }
 
 /** What a tool execution hands back to the orchestrator loop. */

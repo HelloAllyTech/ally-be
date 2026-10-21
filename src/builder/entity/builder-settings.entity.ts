@@ -155,6 +155,16 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 80, nullable: true })
   verifierModel?: string | null;
 
+  /**
+   * Validated interview turns. On, a turn reaches the admin only through
+   * `ask_admin` / `finish_turn`, after every lookup in its batch was read and
+   * none failed, and a message claiming a PRD change or a ready PRD is checked
+   * against the document first. Off, the interview runs the loop it ran
+   * before this existed — the switch back, without a deploy.
+   */
+  @Column({ type: 'boolean', default: true })
+  validatedTurns!: boolean;
+
   @Column({ type: 'int', nullable: true })
   updatedBy?: number | null;
 }

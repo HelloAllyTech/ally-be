@@ -41,6 +41,7 @@ import {
   computeEvalGates,
   gateViolations,
 } from '../util/builder-eval-scoring.util';
+import { BUILDER_TERMINAL_TOOLS } from '../../util/builder-turn-receipt.util';
 
 const ADMIN_MAX_TOKENS = 4_000;
 const JUDGE_MAX_TOKENS = 8_000;
@@ -299,12 +300,23 @@ export class BuilderEvalRunnerService {
     const gates = computeEvalGates(sandbox.passes, messages, readiness);
     const judge = await this.judge(sandbox, payload.checklist ?? [], draft);
 
-    const toolResults = messages.flatMap((row) => row.toolResults ?? []);
+    // A turn-ending call the validated loop sent back is neither a question
+    // the admin saw nor a tool that failed — it is the loop doing its job.
+    const toolResults = messages
+      .flatMap((row) => row.toolResults ?? [])
+      .filter((result) => !BUILDER_TERMINAL_TOOLS.has(String(result?.name)));
     const metrics: BuilderEvalMetrics = {
       turns,
-      questions: messages
-        .flatMap((row) => row.toolCalls ?? [])
-        .filter((call) => call?.name === 'ask_admin').length,
+      // Questions delivered, not ask_admin calls made: the same count on the
+      // legacy loop, where every call was delivered.
+      questions: messages.reduce(
+        (sum, row) =>
+          sum +
+          (Array.isArray(row.metadata?.questions)
+            ? row.metadata.questions.length
+            : 0),
+        0,
+      ),
       corrections,
       correctedItems: [...correctedItems],
       readyReached: sandbox.session.status === BuilderSessionStatus.PRD_READY,

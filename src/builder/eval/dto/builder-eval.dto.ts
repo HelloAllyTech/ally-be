@@ -157,6 +157,15 @@ export class StartEvalSuiteDto {
   @Min(1)
   @Max(10)
   repetitions?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Replay with validated interview turns on or off; defaults to the live ' +
+      'builder_settings.validatedTurns. For comparing the two loops.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  validatedTurns?: boolean;
 }
 
 export class SubmitPromptCandidateDto extends StartEvalSuiteDto {

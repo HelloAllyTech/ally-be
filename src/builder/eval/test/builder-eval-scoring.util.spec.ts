@@ -64,6 +64,64 @@ describe('computeEvalGates', () => {
     expect(gates.askedBeforeReading).toBe(1);
   });
 
+  /**
+   * The validated loop sends a reply like that back instead of showing it.
+   * What its batch got wrong was hidden from nobody, so it is not counted —
+   * only the reply that went out is.
+   */
+  it('does not count a batch whose reply the validated loop sent back', () => {
+    const sentBack = {
+      role: BuilderMessageRole.ASSISTANT,
+      content: 'Auto-improve already covers it.',
+      toolResults: [
+        {
+          toolUseId: 'r1',
+          name: 'github_read_file',
+          result: { ok: false, message: 'Not Found' },
+        },
+        {
+          toolUseId: 'q1',
+          name: 'ask_admin',
+          result: { ok: false, delivered: false, error: 'not_delivered' },
+        },
+        {
+          toolUseId: 'q2',
+          name: 'finish_turn',
+          result: { ok: true, delivered: true },
+        },
+      ],
+    } as any;
+    const gates = computeEvalGates(
+      [
+        { content: [use('r1', 'github_read_file'), use('q1', 'ask_admin')] },
+        { content: [use('q2', 'finish_turn')] },
+      ],
+      [sentBack],
+      ready(),
+    );
+
+    expect(gates.unseenFailures).toBe(0);
+    expect(gates.askedBeforeReading).toBe(0);
+  });
+
+  it('counts finish_turn as ending the turn, and the edit-by-id tools as edits', () => {
+    const gates = computeEvalGates(
+      [{ content: [use('r1', 'capability_lookup'), use('f1', 'finish_turn')] }],
+      [
+        assistant("I've added R3 for mobile.", [
+          ['r1', 'capability_lookup', true],
+          ['e1', 'upsert_requirement', false],
+          ['f1', 'finish_turn', true],
+        ]),
+      ],
+      ready(),
+    );
+
+    expect(gates.askedBeforeReading).toBe(1);
+    expect(gates.unrepairedEditFailures).toBe(1);
+    expect(gates.falseUpdateClaims).toBe(1);
+  });
+
   it('leaves a question asked after the research came back alone', () => {
     const gates = computeEvalGates(
       [

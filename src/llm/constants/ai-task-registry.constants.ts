@@ -1691,9 +1691,14 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An admin talks to Builder about what to build',
     detail:
-      'Streamed PRD interview, tool loop capped at 16 round-trips. A session opened from a ' +
-      "roadmap opportunity also carries the opportunity's hand-off (description, copilot brief, " +
-      'filing interview) as a third cached system block on every turn.',
+      'PRD interview, tool loop capped at 16 round-trips. With builder_settings.validatedTurns ' +
+      '(default on) a turn ends only through ask_admin / finish_turn, checked before it is shown: ' +
+      'a reply batched with an unread lookup or a failed call, or claiming a PRD change or a ready ' +
+      'PRD that is not so, goes back to the model — so a turn can take a pass or two more than ' +
+      'before (at most two rejections, then a pass offered only edit and turn-ending tools). Off, ' +
+      'the prior streamed loop runs. A session opened from a roadmap opportunity also carries ' +
+      "the opportunity's hand-off (description, copilot brief, filing interview) as a third " +
+      'cached system block on every turn.',
     kind: AiTaskKind.COMPLETION,
     provider: 'gemini',
     defaultModel: 'gemini-2.5-pro',

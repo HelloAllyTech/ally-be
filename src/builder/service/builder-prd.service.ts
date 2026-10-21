@@ -1,11 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
-import {
-  applyJsonPatch,
-  JsonPatchError,
-  JsonPatchOp,
-} from 'src/common/util/json-patch.util';
+import { JsonPatchError, JsonPatchOp } from 'src/common/util/json-patch.util';
 import { BuilderPrdDoc } from '../entity/builder-prd-doc.entity';
 import { BuilderPrdVersion } from '../entity/builder-prd-version.entity';
 import { BuilderPrdDocRepository } from '../repository/builder-prd.repository';
@@ -36,6 +32,12 @@ import {
   normalisePrdDocument,
   PrdNormaliseDiagnostics,
 } from '../util/builder-prd-normalise.util';
+import {
+  applyPrdEdit,
+  applyTolerantPrdPatch,
+  PrdEdit,
+  PrdEditError,
+} from '../util/builder-prd-edits.util';
 
 /**
  * One persisted PRD mutation: the new doc, its immutable snapshot, and what
@@ -158,7 +160,7 @@ export class BuilderPrdService {
     // application happens inside persistDraftMutation against whatever draft
     // is current at write time.
     try {
-      applyJsonPatch(doc.draft, ops);
+      applyTolerantPrdPatch(doc.draft, ops);
     } catch (error) {
       if (error instanceof JsonPatchError) {
         throw new BadRequestException(
@@ -168,6 +170,47 @@ export class BuilderPrdService {
       throw error;
     }
     return this.persistDraftMutation(doc, ops, userId, author, changeSummary);
+  }
+
+  /**
+   * Apply one id-addressed edit (a requirement by id, a repo plan by repo
+   * name, a section by key) and persist it.
+   *
+   * Resolved against the draft read inside the write transaction, not the
+   * caller's copy — so an entry cannot have moved between the agent reading
+   * the document and its edit landing, which is the failure positions had.
+   * Fails the same way `applyPatch` does, as a BadRequestException the agent
+   * can repair from.
+   */
+  async applyEdit(
+    doc: BuilderPrdDoc,
+    edit: PrdEdit,
+    userId: number,
+    author: BuilderPrdVersionAuthor,
+    changeSummary?: string,
+  ): Promise<BuilderPrdMutationResult> {
+    const apply = (draft: BuilderPrdDocument): BuilderPrdDocument => {
+      try {
+        return applyPrdEdit(draft, edit);
+      } catch (error) {
+        if (error instanceof PrdEditError) {
+          throw new BadRequestException(error.message);
+        }
+        throw error;
+      }
+    };
+    // Fail fast on the loaded draft, as applyPatch does, before a transaction.
+    apply(doc.draft);
+    return this.persistMutation(
+      doc,
+      (current) => ({
+        ...apply(current),
+        technicalDesign: current.technicalDesign ?? null,
+      }),
+      userId,
+      author,
+      changeSummary,
+    );
   }
 
   /**
@@ -216,7 +259,7 @@ export class BuilderPrdService {
       (current) => {
         let next: BuilderPrdDocument;
         try {
-          next = applyJsonPatch(current, ops);
+          next = applyTolerantPrdPatch(current, ops);
         } catch (error) {
           if (error instanceof JsonPatchError) {
             throw new BadRequestException(
@@ -338,9 +381,10 @@ export class BuilderPrdService {
     }
 
     const requirements = draft.requirements ?? [];
-    // Carries the index because that is what the agent needs in order to
-    // patch: "requirement 1 has no criteria" is actionable, "a requirement has
-    // no criteria" sends it re-reading the whole array to find out which.
+    // Names the requirement by id first — the handle the edit-by-id tools take
+    // and the one that cannot shift — with the pointer after it for an
+    // update_prd patch. "A requirement has no criteria" would send the agent
+    // re-reading the whole array to find out which.
     const requirementsWithoutCriteria = requirements
       .map((requirement, index) => ({ requirement, index }))
       .filter(
@@ -361,14 +405,15 @@ export class BuilderPrdService {
           'sentences.'
         : requirementsWithoutCriteria.length
           ? 'Set "acceptanceCriteria" to a list of observable, testable ' +
-            'sentences at: ' +
+            'sentences on: ' +
             requirementsWithoutCriteria
-              .map(
-                ({ requirement, index }) =>
-                  `/requirements/${index}/acceptanceCriteria (${
-                    requirement.title || requirement.id || 'untitled'
-                  })`,
-              )
+              .map(({ requirement, index }) => {
+                const id = String(requirement.id ?? '').trim();
+                const title = String(requirement.title ?? '').trim();
+                return `${id || `requirement ${index + 1} (no id)`}${
+                  title ? ` "${title}"` : ''
+                } (/requirements/${index}/acceptanceCriteria)`;
+              })
               .join(', ') +
             '.'
           : '',
@@ -427,18 +472,28 @@ export class BuilderPrdService {
       detail: !repoPlans.length
         ? `${planShape} "repo" must be one of: ${repoChoices}.`
         : unnamedRepoPlans.length
-          ? `Set ${unnamedRepoPlans
-              .map(({ index }) => `/technicalPlan/repos/${index}/repo`)
-              .join(', ')} to one of: ${repoChoices}. ${planShape}`
+          ? `Name the repo of ${unnamedRepoPlans
+              .map(
+                ({ index }) =>
+                  `plan entry ${index + 1} (/technicalPlan/repos/${index}/repo)`,
+              )
+              .join(', ')}, one of: ${repoChoices} — or remove the entry if ` +
+            `which repo owns it is still open. ${planShape}`
           : unknownRepoPlans.length
             ? `Allowed values: ${repoChoices}. Fix ${unknownRepoPlans
-                .map(({ index }) => `/technicalPlan/repos/${index}/repo`)
+                .map(
+                  ({ plan, index }) =>
+                    `"${plan.repo}" (/technicalPlan/repos/${index}/repo)`,
+                )
                 .join(', ')}.`
             : emptyRepoPlans.length
               ? 'Write what changes in that repo, in enough detail to start ' +
-                'from, at: ' +
+                'from, for: ' +
                 emptyRepoPlans
-                  .map(({ index }) => `/technicalPlan/repos/${index}/changesMd`)
+                  .map(
+                    ({ plan, index }) =>
+                      `${plan.repo} (/technicalPlan/repos/${index}/changesMd)`,
+                  )
                   .join(', ') +
                 '.'
               : '',

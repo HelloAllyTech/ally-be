@@ -321,6 +321,16 @@ export class UpdateBuilderSettingsDto {
   @IsString()
   @MaxLength(80)
   verifierModel?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Validated interview turns: Builder's reply reaches the admin only after " +
+      'every lookup it ran was read and none failed, and a claimed PRD change ' +
+      'is checked against the document. Off falls back to the previous loop.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  validatedTurns?: boolean;
 }
 
 export class ListBuilderSessionsQueryDto {

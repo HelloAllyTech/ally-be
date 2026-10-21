@@ -3,18 +3,11 @@ import { BuilderMessageRole } from '../../enum/builder.enum';
 import { BuilderPrdReadiness } from '../../type/builder-prd.type';
 import { BUILDER_EVIDENCE_TOOLS } from '../../service/builder-evidence-log.service';
 import { BuilderEvalGates } from '../type/builder-eval.type';
-
-/** Tools that end the visible turn: whatever else is in their batch, the reply is already decided. */
-const TERMINAL_TOOLS = new Set(['ask_admin']);
-const EDIT_TOOLS = new Set(['update_prd']);
-
-/**
- * Prose that tells the admin the PRD moved. Deliberately narrow — "I'll
- * update" is a promise, not a claim, and is left alone; the failure being
- * counted is session 2bc3a5cf's "I've revised the PRD" over a failed edit.
- */
-const CLAIMS_AN_EDIT =
-  /\b(I'?ve|I have|I)\s+(just\s+)?(updated|revised|added|amended|rewritten|recorded|captured|incorporated|reflected|written)\b|\b(updated|revised)\s+the\s+PRD\b|\bPRD\s+(is|has been|now)\s+(updated|revised)\b/i;
+import { claimsPrdEdit } from '../../util/builder-turn-claims.util';
+import {
+  BUILDER_PRD_EDIT_TOOLS,
+  BUILDER_TERMINAL_TOOLS,
+} from '../../util/builder-turn-receipt.util';
 
 /** One model pass: the content blocks it returned, in order. */
 export interface ScoredPass {
@@ -24,6 +17,11 @@ export interface ScoredPass {
 interface ToolOutcome {
   name: string;
   ok: boolean;
+  /**
+   * False for a turn-ending call the validated loop sent back: that reply was
+   * never shown, so what its batch got wrong was not hidden from anyone.
+   */
+  delivered: boolean;
 }
 
 /** Tool results across the transcript, by the tool_use id they answer. */
@@ -35,6 +33,7 @@ function outcomesById(messages: BuilderMessage[]): Map<string, ToolOutcome> {
       outcomes.set(String(result.toolUseId), {
         name: String(result.name ?? ''),
         ok: result.result?.ok !== false,
+        delivered: result.result?.delivered !== false,
       });
     }
   }
@@ -62,11 +61,16 @@ export function computeEvalGates(
     const uses = (pass.content ?? []).filter(
       (block: any) => block?.type === 'tool_use',
     );
-    if (!uses.some((block: any) => TERMINAL_TOOLS.has(String(block.name)))) {
-      continue;
-    }
+    // Only a batch whose reply reached the admin: a reply the validated loop
+    // sent back was rewritten after the results were read.
+    const delivered = uses.some(
+      (block: any) =>
+        BUILDER_TERMINAL_TOOLS.has(String(block.name)) &&
+        outcomes.get(String(block.id))?.delivered !== false,
+    );
+    if (!delivered) continue;
     const others = uses.filter(
-      (block: any) => !TERMINAL_TOOLS.has(String(block.name)),
+      (block: any) => !BUILDER_TERMINAL_TOOLS.has(String(block.name)),
     );
     unseenFailures += others.filter(
       (block: any) => outcomes.get(String(block.id))?.ok === false,
@@ -85,7 +89,7 @@ export function computeEvalGates(
   for (const message of messages) {
     if (message.role !== BuilderMessageRole.ASSISTANT) continue;
     const edits = (message.toolResults ?? []).filter((result) =>
-      EDIT_TOOLS.has(String(result?.name)),
+      BUILDER_PRD_EDIT_TOOLS.has(String(result?.name)),
     );
     let pendingFailures = 0;
     let anySuccess = false;
@@ -100,7 +104,7 @@ export function computeEvalGates(
       }
     }
     unrepairedEditFailures += pendingFailures;
-    if (!anySuccess && CLAIMS_AN_EDIT.test(String(message.content ?? ''))) {
+    if (!anySuccess && claimsPrdEdit(message.content)) {
       falseUpdateClaims += 1;
     }
   }

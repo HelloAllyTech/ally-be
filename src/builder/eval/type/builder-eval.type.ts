@@ -80,6 +80,14 @@ export type BuilderEvalPayload =
  */
 export interface BuilderEvalOverrides {
   prompts?: Record<string, string>;
+  /**
+   * Which interview loop the replay runs: validated turns or the loop before
+   * them. Stamped on every suite when it starts (from the live setting unless
+   * given), so a suite records which loop it measured and a prompt-gate
+   * baseline is only ever one that ran the same loop. Absent on suites from
+   * before the setting existed, which all ran the legacy loop.
+   */
+  validatedTurns?: boolean;
   /** Model settings by prompt code, as the prompt row would hold them. */
   llmConfig?: Record<
     string,

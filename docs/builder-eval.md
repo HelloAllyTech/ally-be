@@ -53,10 +53,15 @@ The **gates** are deterministic counts of failures the interview has really ship
 
 | Gate | Counts |
 |---|---|
-| `unseenFailures` | tool calls that failed in the same batch as the question that ended the turn |
-| `askedBeforeReading` | batches that asked the admin while research results were unread |
-| `unrepairedEditFailures` | PRD edits that failed with no successful edit after them in the turn |
-| `falseUpdateClaims` | turns whose prose claims a PRD change while no edit succeeded |
+| `unseenFailures` | tool calls that failed in the same batch as the reply that ended the turn (`ask_admin` or `finish_turn`) |
+| `askedBeforeReading` | batches that ended the turn while research results were unread |
+| `unrepairedEditFailures` | PRD edits (`update_prd` or an edit-by-id tool) that failed with no successful edit after them in the turn |
+| `falseUpdateClaims` | turns whose reply claims a PRD change while no edit succeeded |
+
+Only a reply that reached the admin counts. With validated turns on, a reply batched with an
+unread lookup or a failed call is sent back to the model instead of shown (its result says
+`delivered: false`), so that batch hid nothing from anyone. `questions` counts questions
+delivered, not `ask_admin` calls made.
 | `consistent` | the final PRD's test-plan, requirement-home and mobile-twin readiness rows |
 | `evidenceCited` | What already exists rests on files the replay read |
 
@@ -72,7 +77,10 @@ The default is three runs per fixture, because the model is not deterministic.
 `POST /v1/builder/eval/suites` runs the active fixtures (or `fixtureIds`) on the live
 settings, in the background, two runs at a time. A suite survives a deploy: it heartbeats every minute, and one
 silent for 10 minutes is resumed by another process. Finished runs are kept, and a run cut off
-mid-way starts again. After three resumes it is marked errored. Read the results with
+mid-way starts again. After three resumes it is marked errored. Every suite records which
+interview loop it ran in `overrides.validatedTurns` — the live `builder_settings.validatedTurns`
+unless the request passes `validatedTurns` to compare the two loops. Suites from before the
+switch existed have no value and ran the legacy loop. Read the results with
 `GET /v1/builder/eval/suites/:id`. Each run carries its gates, metrics, judge, and a
 turn-by-turn transcript.
 
@@ -83,7 +91,9 @@ settings, or both. The flow:
 1. The fixtures are replayed with the candidate. The candidate is applied inside the sandbox
    only, so nothing live reads it.
 2. The result is compared with a baseline on the live settings. A baseline is reused if it
-   covers the same fixtures and is under 7 days old; otherwise one is run alongside.
+   covers the same fixtures, is under 7 days old, overrode no prompt or model, and ran the
+   same interview loop; otherwise one is run alongside on that loop. A baseline from the other
+   loop would credit or blame the prompt for what the loop did.
 3. The candidate passes when nothing got measurably worse:
    - gate violations and corrections did not rise;
    - the checklist score did not fall more than 0.05;
