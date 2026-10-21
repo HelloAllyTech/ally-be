@@ -71,6 +71,9 @@ export class BuilderEvidenceService {
         ok: true,
         outcome: answer.outcome,
         answer: answer.answer ?? null,
+        // Without this a FAILED/REJECTED/CLARIFY outcome reaches the model as a
+        // bare word, so it cannot tell a bad query from an empty table.
+        message: answer.message || null,
         // The SQL rides along so the agent can say how a number was derived.
         // A figure in a PRD that nobody can trace is worse than no figure.
         sql: answer.sql ?? null,

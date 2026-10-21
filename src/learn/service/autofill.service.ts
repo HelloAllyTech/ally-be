@@ -84,6 +84,11 @@ export class AutofillService {
    * unchanged; a caller that omits it is reported as a copilot call, which is
    * wrong but not silently so — the promptCode in the same row names the real
    * feature.
+   *
+   * `options.usageMetadata` lands on the `llm_usage` row as-is. Optional and
+   * trailing so every existing caller records exactly what it did before (no
+   * metadata); Course Copilot's server-side Agent Builder chain passes its
+   * `courseCopilotSessionId` here so a course's spend can be summed.
    */
   async generateContentFromPrompt(
     promptCode: string,
@@ -93,6 +98,7 @@ export class AutofillService {
     temperatureOverride?: number,
     providerOverride?: string,
     task: LlmTask = LlmTask.AUTOFILL_AGENT_FIELD,
+    options?: { usageMetadata?: Record<string, any> },
   ): Promise<string> {
     return this.run({
       taskId: task.replace(/_/g, '-'),
@@ -104,6 +110,7 @@ export class AutofillService {
       modelOverride,
       temperatureOverride,
       providerOverride,
+      usageMetadata: options?.usageMetadata,
     });
   }
 

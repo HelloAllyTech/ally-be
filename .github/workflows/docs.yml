@@ -121,3 +121,23 @@ jobs:
             --changed-files changed-files.txt \
             --pr-body pr-body.txt \
             --labels "$(cat pr-labels.txt)"
+
+  # Documentation that points at files which no longer exist. Kept apart from docs-guard on
+  # purpose: that job needs full history and the shared checker, this one is a single scan of
+  # tracked markdown, and a failure here should read "a path is broken", not "a doc is
+  # missing". Cross-repo paths (`ally-be/...`) are checked only where the sibling checkout
+  # exists, so this stays quiet in CI. Not a required check — fix the path, or mark a
+  # deliberate one `<!-- docs-path-lint: planned -->` (or `ignore`).
+  docs-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Check documented file paths
+        run: node scripts/docs-path-lint.mjs

@@ -23,6 +23,7 @@ import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
 import { AnalyticsSuggestionsModule } from './analytics-suggestions/analytics-suggestions.module';
 import { BugHunterModule } from './bug-hunter/bug-hunter.module';
 import { BuilderModule } from './builder/builder.module';
+import { CourseCopilotModule } from './course-copilot/course-copilot.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -72,6 +73,7 @@ import { LogsModule } from './logs/logs.module';
 import { PostHogModule } from './posthog/posthog.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { ProductUpdatesModule } from './product-updates/product-updates.module';
+import { PublicRoadmapModule } from './public-roadmap/public-roadmap.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { FoundationalSkillsModule } from './foundational-skills/foundational-skills.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
@@ -104,6 +106,7 @@ import { HelplineModule } from './helpline/helpline.module';
     AnalyticsSuggestionsModule,
     BugHunterModule,
     BuilderModule,
+    CourseCopilotModule,
     TenantModule,
     CommonModule,
     SettingsModule,
@@ -151,6 +154,7 @@ import { HelplineModule } from './helpline/helpline.module';
     LogsModule,
     ChangelogModule,
     ProductUpdatesModule,
+    PublicRoadmapModule,
     UxSignalsModule,
     FoundationalSkillsModule,
     MobileReleasesModule,

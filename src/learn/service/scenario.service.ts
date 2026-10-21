@@ -181,6 +181,7 @@ import {
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { LlmTask } from '../enum/llm-task.enum';
 import { ScenarioVoiceLanguage } from '../type/scenario-language-voice.type';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
@@ -1547,7 +1548,9 @@ export class ScenarioService {
 
         const scenarioRepository = entityManager.getRepository(Scenarios);
         const updated = await scenarioRepository.update(id, updateData);
-        if (scenario.status == ScenarioStatus.ACTIVE) {
+        // The status after this update: publishing a draft must translate it.
+        const statusAfterUpdate = updateScenarioDto.status ?? scenario.status;
+        if (statusAfterUpdate == ScenarioStatus.ACTIVE) {
           const translationConsiderableData: TranslationConsiderableData = {
             currentLocation: scenario.metadata?.currentLocation,
             profession: scenario.metadata?.profession,
@@ -2354,7 +2357,7 @@ export class ScenarioService {
    *
    * Without this the write succeeds and the breakage only shows up mid-call:
    * `create_tts_client()` catches the client's ValueError and falls back to a
-   * default Deepgram voice, so the scenario just plays in the wrong voice.
+   * default Google voice, so the scenario just plays in the wrong voice.
    */
   private assertValidVoiceConfig(
     provider: string | undefined,
@@ -2920,6 +2923,83 @@ export class ScenarioService {
   }
 
   /**
+   * Merge translated titles/descriptions into scenarios.translations (keyed by
+   * translationCode), which is what the learner catalog reads. Merged in SQL
+   * per language so concurrent jobs on the same scenario never overwrite each
+   * other from a stale read, and a field a run didn't translate is kept.
+   */
+  private async mergeServedScenarioTranslations(
+    scenarioId: number,
+    translatedMap: Record<string, Partial<MetadataShape>>,
+  ): Promise<void> {
+    for (const [code, metadata] of Object.entries(translatedMap)) {
+      const entry: Partial<ScenarioAppLangugeTranslations> = {};
+      if (metadata?.title) entry.title = metadata.title;
+      if (metadata?.description) entry.description = metadata.description;
+      if (!Object.keys(entry).length) continue;
+      await this.dataSource.query(
+        `UPDATE scenarios
+            SET translations = jsonb_set(
+              COALESCE(translations, '{}'::jsonb),
+              ARRAY[$1::text],
+              COALESCE(translations -> $1::text, '{}'::jsonb) || $2::jsonb
+            )
+          WHERE id = $3`,
+        [code, JSON.stringify(entry), scenarioId],
+      );
+    }
+  }
+
+  /**
+   * Translate every ACTIVE scenario into the languages it is still missing:
+   * its voice languages (full metadata) and the app-picker languages (title
+   * and description). Runs in the background, one scenario at a time; text
+   * that is already translated is not re-sent. Returns how many were queued.
+   */
+  async backfillMissingScenarioTranslations(): Promise<{ queued: number }> {
+    const scenarios = await this.dataSource.getRepository(Scenarios).find({
+      where: { status: ScenarioStatus.ACTIVE },
+    });
+
+    void (async () => {
+      for (const scenario of scenarios) {
+        await this.persistTranslationsForScenarios(
+          [scenario],
+          (s) =>
+            this.sanitizeMetadata({
+              title: s.title,
+              description: s.description,
+              context: s.metadata?.context,
+              sexualOrientation: s.metadata?.sexualOrientation,
+              genderIdentity: s.metadata?.genderIdentity,
+              customFields: s.metadata?.customFields,
+              // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
+              stateInstructions: s.metadata?.stateInstructions,
+              knowledgeSources: s.metadata?.knowledgeSources,
+              stateNames: s.metadata?.stateNames,
+            }),
+          {
+            currentLocation: scenario.metadata?.currentLocation,
+            profession: scenario.metadata?.profession,
+            context: scenario.metadata?.context,
+            age: scenario.metadata?.age,
+            gender: scenario.metadata?.gender,
+          },
+        );
+      }
+      this.logger.info(
+        `[backfillMissingScenarioTranslations] finished ${scenarios.length} scenarios`,
+      );
+    })().catch((err) =>
+      this.logger.error('[backfillMissingScenarioTranslations] failed', {
+        err,
+      }),
+    );
+
+    return { queued: scenarios.length };
+  }
+
+  /**
    * Persist translations for scenarios:
    * - creates new translations for new languageIds
    * - updates existing translations for existing languageIds
@@ -2999,19 +3079,9 @@ export class ScenarioService {
       try {
         const rawMetadata = metadataExtractor(scenario);
 
-        const sanitized = this.sanitizeMetadata(rawMetadata);
-
-        if (
-          !this.hasTranslatableFieldsChanged(
-            scenario,
-            sanitized as Partial<MetadataShape>,
-          )
-        ) {
-          this.logger?.debug?.(
-            `[persistTranslationsForScenarios] scenario ${scenario.id}: no translatable fields have changed, skipping translations`,
-          );
-          continue;
-        }
+        const sanitized = this.sanitizeMetadata(
+          rawMetadata,
+        ) as Partial<MetadataShape>;
 
         if (!sanitized || Object.keys(sanitized).length === 0) {
           this.logger?.debug?.(
@@ -3023,38 +3093,116 @@ export class ScenarioService {
         const languageVoices =
           resolveLanguageVoices?.(scenario) ??
           scenario.metadata?.languageVoices;
-        const languagesFiltered =
+        const voiceLanguages =
           await this.getTranslationTargetLanguagesFromLanguageVoices(
             languageVoices,
           );
-        if (!languagesFiltered.length) {
-          this.logger?.warn?.(
-            `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
+        const voiceCodes = new Set(
+          voiceLanguages.map((l) => l.translationCode),
+        );
+
+        // The app-language picker (hi/mr/ta/kn) shows every simulation card,
+        // so title and description are translated into each of those even
+        // when the scenario has no voice for it. Only the catalog JSONB gets
+        // these; scenario_translations stays reserved for voice languages.
+        const catalogLanguages = (
+          await this.sharedLanguageService.getEligibleAppLanguages()
+        )
+          .filter((l) => l.translationCode?.trim())
+          .filter((l) => !voiceCodes.has(l.translationCode.trim()));
+
+        const existingTranslations =
+          (await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+            scenario.id,
+          )) ?? [];
+        const existingLanguageIdSet = new Set(
+          existingTranslations.map((r) => Number(r.languageId)),
+        );
+        const hasServedEntry = (code: string) =>
+          !!scenario.translations?.[code]?.title;
+
+        // Unchanged text still gets translated for any language that has no
+        // stored entry yet (a voice added later, a backfill, a failed run).
+        const fieldsChanged = this.hasTranslatableFieldsChanged(
+          scenario,
+          sanitized,
+        );
+        const voiceTargets = fieldsChanged
+          ? voiceLanguages
+          : voiceLanguages.filter(
+              (l) =>
+                !existingLanguageIdSet.has(Number(l.language_id)) ||
+                !hasServedEntry(l.translationCode),
+            );
+
+        const catalogFields = this.sanitizeMetadata({
+          title: sanitized.title ?? scenario.title,
+          description: sanitized.description ?? scenario.description,
+        }) as Partial<MetadataShape>;
+        const catalogTextChanged =
+          (sanitized.title !== undefined &&
+            sanitized.title !== scenario.title) ||
+          (sanitized.description !== undefined &&
+            sanitized.description !== scenario.description);
+        const catalogTargets = Object.keys(catalogFields).length
+          ? catalogLanguages.filter(
+              (l) =>
+                catalogTextChanged || !hasServedEntry(l.translationCode.trim()),
+            )
+          : [];
+
+        if (!voiceTargets.length && !catalogTargets.length) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: every language is already translated and nothing changed, skipping`,
           );
           continue;
         }
 
-        const languageCodes = languagesFiltered.map((l) => l.translationCode);
+        const voiceTargetCodes = voiceTargets.map((l) => l.translationCode);
+        const catalogTargetCodes = catalogTargets.map((l) =>
+          l.translationCode.trim(),
+        );
+        const total = voiceTargetCodes.length + catalogTargetCodes.length;
 
         emitProgress?.(ScenarioTranslationStatus.STARTED, {
           completed: 0,
-          total: languageCodes.length,
+          total,
         });
 
+        // Two translation calls report their own counts; shift the second so
+        // the progress stream reads as one job.
+        const offsetProgress =
+          (offset: number): TranslationProgressCallback | undefined =>
+          (event) =>
+            onLanguageProgress?.({
+              ...event,
+              completed: event.completed + offset,
+              total,
+            });
+
         this.logger.info(
-          `[persistTranslationsForScenarios] invoking translation API for scenario ${scenario.id} → codes: ${languageCodes.join(', ')}`,
+          `[persistTranslationsForScenarios] invoking translation API for scenario ${scenario.id} → voice: ${voiceTargetCodes.join(', ') || '-'}; catalog: ${catalogTargetCodes.join(', ') || '-'}`,
         );
-        const translatedMap =
-          await this.buildTranslatedMetadataForLanguageCodes(
-            sanitized as Partial<MetadataShape>,
-            languageCodes,
-            translationConsiderableData as TranslationConsiderableData,
-            onLanguageProgress,
-          );
+        const translatedMap = voiceTargetCodes.length
+          ? await this.buildTranslatedMetadataForLanguageCodes(
+              sanitized,
+              voiceTargetCodes,
+              translationConsiderableData as TranslationConsiderableData,
+              onLanguageProgress && offsetProgress(0),
+            )
+          : {};
+        const catalogTranslatedMap = catalogTargetCodes.length
+          ? await this.buildTranslatedMetadataForLanguageCodes(
+              catalogFields,
+              catalogTargetCodes,
+              translationConsiderableData as TranslationConsiderableData,
+              onLanguageProgress && offsetProgress(voiceTargetCodes.length),
+            )
+          : {};
 
         // Build translatedList: map back to languageId
         const translatedList: Array<CreateScenarioTranslation> = [];
-        for (const language of languagesFiltered) {
+        for (const language of voiceTargets) {
           const code = language.translationCode.trim();
           const translatedData = translatedMap[code];
           if (!translatedData || Object.keys(translatedData).length === 0)
@@ -3066,28 +3214,11 @@ export class ScenarioService {
           });
         }
 
-        if (!translatedList.length) {
-          this.logger?.debug?.(
-            `[persistTranslationsForScenarios] scenario ${scenario.id}: no translations after mapping, skipping DB ops`,
-          );
-          continue;
-        }
-
-        // Fetch existing translations for this scenario to split create vs update
-        const existingTranslations =
-          await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
-            scenario.id,
-          );
-
-        const existingLanguageIdSet = new Set(
-          (existingTranslations ?? []).map((r) => Number(r.languageId)),
-        );
-
         const toCreate: Array<any> = [];
         const toUpdate: Array<any> = [];
 
         for (const t of translatedList) {
-          const existingRow = existingTranslations?.find(
+          const existingRow = existingTranslations.find(
             (r) => Number(r.languageId) === Number(t.languageId),
           );
           const mergedMetadata = {
@@ -3119,27 +3250,14 @@ export class ScenarioService {
           );
         }
 
-        const formattedResult: Record<string, ScenarioAppLangugeTranslations> =
-          {};
-        for (const [langCode, metadata] of Object.entries(translatedMap)) {
-          formattedResult[langCode] = {
-            title: metadata?.title,
-            description: metadata?.description,
-          };
-        }
-
-        const mergedTranslations = {
-          ...(scenario.translations || {}),
-          ...formattedResult,
-        };
-
-        this.dataSource
-          .getRepository(Scenarios)
-          .update(scenario.id, { translations: mergedTranslations });
+        await this.mergeServedScenarioTranslations(scenario.id, {
+          ...translatedMap,
+          ...catalogTranslatedMap,
+        });
 
         emitProgress?.(ScenarioTranslationStatus.COMPLETED, {
-          completed: languageCodes.length,
-          total: languageCodes.length,
+          completed: total,
+          total,
         });
       } catch (outerErr) {
         this.logger?.error?.(
@@ -3642,9 +3760,15 @@ export class ScenarioService {
    * spoken language from the catalog, against the brief and the persona the
    * wizard just generated, filling the mandatory Language-Voice mapping that
    * those languages are otherwise unreachable through at runtime.
+   *
+   * `options.usageMetadata` is for server-side callers (Course Copilot's
+   * AgentBuilderChainService): it is merged with `{ field }` onto the usage
+   * row so a course's spend can be summed per session. The HTTP route never
+   * passes it, and without it the call is made exactly as before.
    */
   async generateAgentBuilderField(
     dto: GenerateAgentBuilderFieldDto,
+    options?: { usageMetadata?: Record<string, any> },
   ): Promise<GenerateAgentBuilderFieldResponseDto> {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
 
@@ -3716,14 +3840,28 @@ export class ScenarioService {
 
     // The prompt row's own model/temperature is honoured inside the completion
     // layer (the wizard sends none); an explicit request override still wins.
-    const raw = await this.autofillService.generateContentFromPrompt(
-      promptCode,
-      variables,
-      expectJson,
-      model,
-      dto.temperature,
-      dto.provider,
-    );
+    // Two shapes on purpose: the wizard's call keeps its original arguments
+    // exactly, and only a caller with metadata to attribute adds the trailing
+    // task + options pair.
+    const raw = options?.usageMetadata
+      ? await this.autofillService.generateContentFromPrompt(
+          promptCode,
+          variables,
+          expectJson,
+          model,
+          dto.temperature,
+          dto.provider,
+          LlmTask.AUTOFILL_AGENT_FIELD,
+          { usageMetadata: { ...options.usageMetadata, field } },
+        )
+      : await this.autofillService.generateContentFromPrompt(
+          promptCode,
+          variables,
+          expectJson,
+          model,
+          dto.temperature,
+          dto.provider,
+        );
 
     if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
       return { field, value: this.parseSpokenLanguages(raw, catalog) };

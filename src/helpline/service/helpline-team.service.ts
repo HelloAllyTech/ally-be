@@ -15,7 +15,6 @@ interface TeamRow {
   email: string;
   isListener: boolean;
   isSupervisor: boolean;
-  isAdmin: boolean;
 }
 
 /** Outside the caller's tenant, or Ally staff: indistinguishable from absent. */
@@ -24,7 +23,8 @@ const userNotFound = () => new NotFoundException('User not found');
 /**
  * Helpline → Team (contract §5.3, `edit:helpline:team`): a tenant ADMIN grants
  * and revokes exactly two groups — LISTENER and HELPLINE_SUPERVISOR — for
- * users of their own tenant, and nothing else.
+ * users of their own tenant, and nothing else. Being an ADMIN confers neither:
+ * an admin is listed and switched like any other member.
  *
  * Writes go through GroupService.assignRole / removeRole, which bust the
  * caller's `user:groups:` / `user:roles:` caches, so a new listener can open
@@ -101,8 +101,7 @@ export class HelplineTeamService {
     const rows: TeamRow[] = await this.dataSource.query(
       `SELECT u.id, u.name, u.email,
               COALESCE(bool_or(g.name = 'LISTENER'), false) AS "isListener",
-              COALESCE(bool_or(g.name = 'HELPLINE_SUPERVISOR'), false) AS "isSupervisor",
-              COALESCE(bool_or(g.name = 'ADMIN'), false) AS "isAdmin"
+              COALESCE(bool_or(g.name = 'HELPLINE_SUPERVISOR'), false) AS "isSupervisor"
          FROM users u
          LEFT JOIN user_groups ug ON ug."userId" = u.id
          LEFT JOIN groups g ON g.id = ug."groupId"
@@ -126,6 +125,5 @@ function toDto(row: TeamRow): TeamMemberDto {
     email: row.email,
     isListener: row.isListener === true,
     isSupervisor: row.isSupervisor === true,
-    isAdmin: row.isAdmin === true,
   };
 }

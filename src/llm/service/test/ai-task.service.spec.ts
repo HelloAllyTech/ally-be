@@ -38,9 +38,12 @@ const configStub = {
     suggestionsModel: 'claude-sonnet-4-6',
   },
   characterInterview: { model: 'gpt-5-mini' },
+  courseCopilot: { model: 'gpt-5-mini' },
   llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
   promptTranslation: { defaultModel: 'gemini-2.5-pro' },
+  translation: { model: 'gemini-2.5-flash' },
   aiChat: { model: 'gpt-4o-mini' },
+  roadmapCopilot: { model: 'claude-sonnet-5-5', fallbackModel: 'gpt-5' },
   builder: {
     interviewModel: 'claude-sonnet-5',
     plannerModel: 'claude-opus-5',
@@ -196,8 +199,11 @@ describe('AiTaskService', () => {
       // say `anthropic` while running an OpenAI model.
       expect(quiz?.provider).toBe('openai');
 
+      // Reasoning tier since 2026-10: the page must show the model that now
+      // fills scribe notes, not the fast one it ran on before.
       const scribe = rows.find((task) => task.id === 'voice-note-extract');
-      expect(scribe?.effectiveModel).toBe('gpt-4o-mini');
+      expect(scribe?.effectiveModel).toBe('gpt-5-mini');
+      expect(scribe?.modelSource).toBe(AiTaskModelSource.DEPLOYMENT);
     });
 
     it('leaves no tiered row pointing at config nothing reads', () => {

@@ -64,6 +64,10 @@ import {
   normaliseTrackCompetencyIds,
   resolveTrackCompetencyIds,
 } from '../util/track-competency.util';
+import {
+  normaliseTrackLandingPage,
+  remapLandingPageSections,
+} from '../util/track-landing-page.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackTranslationService } from './track-translation.service';
 
@@ -139,6 +143,9 @@ export class TrackService {
       status,
       estimatedDurationMinutes: createTrackDto.estimatedDurationMinutes,
       competencyIds,
+      landingPage: createTrackDto.landingPage
+        ? normaliseTrackLandingPage(createTrackDto.landingPage)
+        : null,
       ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
     });
 
@@ -181,6 +188,8 @@ export class TrackService {
       await this.validateTrackForPublish(id, {
         ...track,
         ...updateTrackDto,
+        // The DTO's landing page is input-shaped, and publishing never reads it.
+        landingPage: track.landingPage,
       });
     }
 
@@ -214,6 +223,15 @@ export class TrackService {
         updateTrackDto.competencyIds,
         track.competencyIds,
       );
+    }
+
+    // Same rule for the landing page: an absent key leaves it alone (the list
+    // page's publish toggle must not wipe a story), null clears it, and an
+    // object is normalised to the full stored shape.
+    if (updateTrackDto.landingPage !== undefined) {
+      updatePayload.landingPage = updateTrackDto.landingPage
+        ? normaliseTrackLandingPage(updateTrackDto.landingPage)
+        : null;
     }
 
     await this.trackRepository.update(id, updatePayload);
@@ -447,6 +465,10 @@ export class TrackService {
         ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
       });
 
+      // Old section id -> the copy's, so the landing page's chapters and hard
+      // call can be re-pointed once every section exists.
+      const sectionIdMap = new Map<string, string>();
+
       for (const section of source.sections) {
         const newSection = await sectionRepo.save({
           trackId: newTrack.id,
@@ -455,6 +477,7 @@ export class TrackService {
           order: section.order,
           translations: section.translations,
         });
+        sectionIdMap.set(section.id, newSection.id);
         if (section.items.length > 0) {
           await itemRepo.save(
             section.items.map((item) => ({
@@ -473,6 +496,18 @@ export class TrackService {
             })),
           );
         }
+      }
+
+      // The copy keeps the story, pointed at its own sections. It stays private
+      // (isPublicView above), so the story is invisible until its author
+      // publishes the link.
+      if (source.landingPage) {
+        await trackRepo.update(newTrack.id, {
+          landingPage: remapLandingPageSections(
+            source.landingPage,
+            sectionIdMap,
+          ),
+        });
       }
 
       if (newTrack.isGlobal) {

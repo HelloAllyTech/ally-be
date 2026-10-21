@@ -12,7 +12,7 @@ Prompt template files (`.txt`) in `src/prompts/` are synced to the database on s
 |------|---------|-------|
 | Use `snake_case` | `code_mixed_system.txt` | `system.txt` |
 | Filename must describe purpose | `general_text_translation.txt` | `text.txt` |
-| Minimum: subdir + descriptive filename | `openai_translation/speech_reexpression_user.txt` | `openai_translation/user.txt` |
+| Minimum: subdir + descriptive filename | `openai_translation/speech_reexpression_user.txt` | `openai_translation/user.txt` <!-- docs-path-lint: ignore --> |
 | Combine generic terms with context | `translation_system_prompt.txt` | `system.txt` |
 
 ### Why
@@ -53,7 +53,7 @@ src/prompts/
 
 ### Agent system prompts
 
-A folder like `builder/` (or `character_interview/`, `roleplay_copilot/`) holds the *system*
+A folder like `builder/` (or `character_interview/`, `course_copilot/`) holds the *system*
 prompt for a long-running agent rather than a one-shot generation. Two things differ:
 
 - It is read by code through `PromptSharedService.getPromptByCode('<folder>_<file>')`, not
@@ -149,6 +149,35 @@ tool is inert, which is why this is safe; the reverse is not. Guidance that reac
 without the tool existing would produce calls to a tool that isn't there. **Add the tool first,
 then the guidance, and treat the dashboard override as the thing that actually ships.**
 
+### Course Copilot (`course_copilot/`)
+
+One agent prompt and eleven one-shot specialist prompts, all under the "Course Copilot" category
+(see [`course-copilot.md`](./course-copilot.md)):
+
+- `interviewer_system.txt` is the agent system prompt (above): read through
+  `getPromptByCode('course_copilot_interviewer_system')`, cached for a minute, with a hardcoded
+  fallback, and **set the interview model on this row** — its provider/model win over
+  `COURSE_COPILOT_MODEL`. The platform rules (limits, item types) are appended in code, not
+  written here, because the tools enforce them.
+- The specialists (`blueprint_planner`, `article_writer`, `quiz_writer`, `journal_writer`,
+  `annotation_writer`, `course_meta`, `course_reviewer`, `image_prompt`, `roleplay_brief`,
+  `history_summary`, `landing_page_writer`) are templates with `{{variables}}` rendered by `renderTemplate`, called in
+  JSON mode. Unlike the agent prompt they **throw** when the row is missing — a course built
+  from a fallback prompt would be quietly worse rather than visibly broken.
+- `landing_page_writer` is the one specialist that runs outside a session: the builder's Landing
+  page tab calls it (`POST /v1/course-copilot/tracks/:trackId/landing-page-draft`) against the
+  *saved* course and the model's answer is never stored — the builder fills only empty fields.
+  Its output is `TrackLandingPage` minus `version`, `persona.imageUrl` and `persona.characterId`,
+  and `normaliseLandingPageDraft` enforces the limits, the known section ids, the single hard
+  call and the no-exclamation-marks rule in code. The prompt's writing rules (the hook opens on a
+  person and an extraordinary moment; exactly three replies, each labelled for the learner's move
+  and never scoring the client's outcome; teasers that never reveal a roleplay's hidden events or
+  a quiz answer) are the product's design rules, so change them deliberately.
+- Like `character_interview/`, each specialist's output shape is **also validated in code**
+  (`src/course-copilot/service/specialists/*` normalise ids and shapes, then run the track
+  validator). The same rule applies: if a prompt may be dashboard-overridden, a changed output
+  shape needs the normaliser to accept the old one too.
+
 ### Which prompts the dashboard actually drives
 
 `useDashboardOverride` decides whether a row's `prompts_versions` content ships or the
@@ -157,17 +186,19 @@ silent in the studio rather than in the runtime: an admin edits a prompt, sees a
 version saved, and the next run uses the file. No error, no warning, and the edit is
 inert.
 
-As of 2026-09-25 these three are **override: true**, so the studio is what ships and
-editing their `.txt` here does not:
+As of 2026-09-25 this one is **override: true**, so the studio is what ships and
+editing its `.txt` here does not:
 
 | Prompt | File |
 |---|---|
 | `builder_interviewer_system` | `builder/interviewer_system.txt` |
-| `builder_coder_guidance` | `builder/coder_guidance.txt` |
-| `builder_finalise_guidance` | `builder/finalise_guidance.txt` |
+
+(`builder_coder_guidance` and `builder_finalise_guidance` were switched at the same time.
+Their files are gone with Builder's runner build, which was their only reader; any stored
+rows for them are unused.)
 
 Turning the flag on is not a one-line change, because the two copies drift apart while it
-is off and nothing reconciles them. When these three were switched, the stored version of
+is off and nothing reconciles them. When these were switched, the stored version of
 `builder_interviewer_system` was a 5,960-character snapshot against a 11,320-character
 file, and `builder_coder_guidance` held *different* advice from its file rather than older
 advice — the file carrying Ally's traps (guarded paths, merged migrations), the stored
@@ -228,7 +259,7 @@ over accepting whatever arrived.
 A third shape sits between the two: a folder like `analytics_suggestions/`, `ux_signals/`,
 `bug_hunter/` or `product_updates/` holds the system prompt for a **single** call that a feature
 makes on demand or on a schedule, read through `getPromptByCode` like an agent prompt but not
-driving a conversation. `bug_hunter/classify_repo.txt`, `bug_hunter/classify_miss.txt`, `bug_hunter/decide.txt` and `bug_hunter/review_study.txt` (a second model reads a fix session's study of the feature before any code changes) are the
+driving a conversation. `bug_hunter/classify_repo.txt`, `bug_hunter/classify_miss.txt`, `bug_hunter/decide.txt` and `bug_hunter/review_study.txt` (a second model reads a fix session's study of the feature, including who else reads the value it changes, before any code changes) are the
 plainest examples: one JSON answer each, and code validates the answer against a closed catalogue
 (dispatchable repos; miss reasons and senses; for `decide.txt`'s D1 the sense menu is per repo, so
 `locale_parity` is only offered where locale files exist; its D5–D7 answers for the orchestrator
@@ -256,22 +287,38 @@ output becomes, not whichever folder you copied.
 
 ### Stateless conversational prompts
 
-A fourth shape looks like an agent prompt but is read like a one-shot: `roadmap/opportunity_interview.txt`
-drives a multi-turn interview, yet each turn is an independent `getPromptByCode` call with the
-whole transcript rendered into the user message. There is no session table and no message rows,
-so nothing needs replaying and there are no `tool_use` blocks to keep paired — the trap
-`rebuildAnthropicHistory` (Builder) and `rebuildHistory` (Character) exist for.
+A fourth shape looks like an agent prompt but keeps no session: `roadmap/opportunity_copilot.txt`
+drives a multi-turn interview with research tools, yet each turn is independent, with the whole
+transcript (and the previous turn's working brief) rendered into one user message. Within a
+turn it is a real tool loop — research tool calls and their results are appended in order —
+but nothing survives the turn except what the client sends back, so there is no history to
+rebuild across turns and no `tool_use` blocks left unpaired — the trap `rebuildAnthropicHistory`
+(Builder) and `rebuildHistory` (Character) exist for.
 
-Two rules matter when writing one:
+Five rules matter when writing one:
 
 - **Speaker-label the transcript** you render in (`ADMIN:` / `YOU:`). Without it the model
   cannot tell its own previous questions from the answers and starts re-asking them.
 - **If the prompt grades anything that later gates a write, grade the write's own criteria** —
-  the same constant, the same ids. `opportunity_interview.txt` reports on
+  the same constant, the same ids. `opportunity_copilot.txt` reports on
   `ROADMAP_READINESS_CRITERIA` because its draft is filed with a signed readiness token, and a
   prompt marking its own private rubric would be a signature over a check nobody ran. If you
   edit the criteria, the interview follows automatically; if you edit the prompt to grade
   something else, you have broken the gate rather than the interview.
+- **Return the structured turn through a tool the prompt requires last** (`submit_turn`), not
+  through JSON mode. JSON mode on Anthropic is a forced `tool_choice`, which current Claude
+  models reject, and it cannot coexist with research tools in the same call.
+- **A research tool the model has no index for goes unused.** The copilot had GitHub tools for
+  a week and called none of them, because nothing told it what existed to look up. It started
+  using them once the service put a product map in the cached system prefix
+  (`BuilderProductMapService`: repos, admin surfaces, knowledge-pack heads, the wiki and
+  repo-docs index). Ship the index with the tool, and say in the tool description how its
+  search actually matches — GitHub code search ANDs every word, so the model's natural
+  eight-word queries all came back empty until the description said "one to three words".
+- **Keep worked examples away from the cases you test with.** A prompt example that resembles
+  the conversation gets copied nearly verbatim, finding and recommendation included. Set
+  examples in a different feature area from the one being discussed, so the model borrows
+  the shape and not the content.
 
 Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are
@@ -289,7 +336,7 @@ subdir/_meta/<stem>.meta.json
 
 **Schema:** JSON object with optional `name`, `description`, and `category` (strings). If a key is missing or empty, the sync falls back to the path-derived value (via `formatLabel`).
 
-**Example:** For `openai_translation/guardrail_translation.txt`, create `openai_translation/_meta/guardrail_translation.meta.json`:
+**Example:** For `openai_translation/guardrail_translation.txt`, create `openai_translation/_meta/guardrail_translation.meta.json`: <!-- docs-path-lint: ignore -->
 
 ```json
 {

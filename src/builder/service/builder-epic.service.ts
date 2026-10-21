@@ -181,6 +181,26 @@ export class BuilderEpicService {
     );
   }
 
+  /**
+   * A repo milestone that has not been built: still to start, failed, or left
+   * BUILDING by a start whose dispatch failed. ensureRepoMilestones puts any
+   * of these back to PENDING when a build starts, so each is a reason to
+   * allow one.
+   */
+  async unbuiltRepoMilestone(
+    sessionId: string,
+  ): Promise<BuilderMilestone | null> {
+    const milestones = await this.listBySession(sessionId);
+    return (
+      milestones.find(
+        (milestone) =>
+          milestone.repos?.length &&
+          milestone.status !== BuilderMilestoneStatus.COMPLETED &&
+          milestone.status !== BuilderMilestoneStatus.SKIPPED,
+      ) ?? null
+    );
+  }
+
   /** Milestones already built, for the next one's prompt to build on. */
   async completedBefore(
     sessionId: string,

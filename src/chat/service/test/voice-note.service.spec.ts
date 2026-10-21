@@ -8,6 +8,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
+import { LoggerService } from 'src/logger/logger.service';
 
 const mockTranscriptionsCreate = jest.fn();
 const mockMessagesCreate = jest.fn();
@@ -41,8 +42,17 @@ const llmCompletion = {
       model: 'gpt-test',
       source: 'tier',
       usage: { inputTokens: 0, outputTokens: 0 },
+      // Provider-shaped stop reason, mapped the way the adapters map it.
+      stopReason: response?.stop_reason ?? 'end_turn',
     };
   }),
+};
+
+const mockLogger = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
 };
 
 describe('VoiceNoteService', () => {
@@ -57,6 +67,7 @@ describe('VoiceNoteService', () => {
 
   beforeEach(async () => {
     settingsService = { getScribeVoiceNoteEnabled: jest.fn() };
+    jest.spyOn(LoggerService, 'getInstance').mockReturnValue(mockLogger as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -186,6 +197,62 @@ describe('VoiceNoteService', () => {
       expect(result.values).toEqual([
         { id: 'sessionSummary', value: 'Trouble sleeping.' },
       ]);
+    });
+
+    it('asks for the long-dictation output budget', async () => {
+      mockMessagesCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"sessionSummary":"ok"}' }],
+      });
+
+      await service.generateFromAudio(audio, fields);
+
+      // On gpt-5 models reasoning tokens count against this cap. 4096 capped
+      // gpt-5-mini on a 25-minute dictation and the note came back empty; the
+      // largest observed spend on the current prompt is ~2,300 tokens.
+      expect(llmCompletion.complete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'voice-note-extract',
+          maxTokens: 16384,
+        }),
+      );
+    });
+
+    it('logs why the model stopped on the extracted line', async () => {
+      mockMessagesCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"sessionSummary":"ok"}' }],
+        stop_reason: 'end_turn',
+      });
+
+      await service.generateFromAudio(audio, fields);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[VOICE_NOTE\] extracted model=gpt-test stopReason=end_turn requested=1 filled=1/,
+        ),
+      );
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('warns when the output was cut by the token cap', async () => {
+      // A capped reply is half a JSON object: it parses to nothing and the note
+      // comes back empty, which without this line reads as "nothing to
+      // extract" rather than "the budget was too small".
+      mockMessagesCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"sessionSummary":"The caller' }],
+        stop_reason: 'max_tokens',
+      });
+
+      const result = await service.generateFromAudio(audio, fields);
+
+      expect(result.values).toEqual([]);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[VOICE_NOTE\] extracted model=gpt-test stopReason=max_tokens .*truncated at maxTokens=16384/,
+        ),
+      );
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringMatching(/\[VOICE_NOTE\] extracted/),
+      );
     });
 
     it('carries FEATURE_NOT_ENABLED on the disabled-tenant 403', async () => {

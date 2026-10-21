@@ -1,0 +1,458 @@
+# Builder's code review, run where the code is: in the target repo's own
+# Actions, with the pull request checked out and its dependencies installed.
+#
+# Called from a small `builder-review.yml` stub in each repo Builder builds in.
+# Four focused passes run in parallel — spec, compatibility, safety, tests —
+# each an opencode agent that may run anything (probe scripts, focused tests
+# against the real code, type checks) to prove what it reports. A final pass
+# re-checks every candidate, reproduces what it can, merges duplicates and
+# drops what it cannot confirm, and gives the verdict.
+#
+# It cannot change the pull request: every job runs with a read-only
+# GITHUB_TOKEN and no other GitHub credential.
+#
+# The spec is fetched privately from Builder (the build run's spec), as a build
+# issue's is: ally-be, ally-web and ally-ai are public. With `review_run_id`
+# and `builder_pr_id` set, the verdict is filed to Builder; without them the
+# run is a dry run whose result is the job summary and the `review` artifact.
+#
+# Prompts live in ally-be at scripts/builder/review/, read from master.
+#
+# Secrets: GEMINI_API_KEY, ALLY_BE_API_KEY (org). Variables: ALLY_BE_API_URL,
+# BUILDER_REVIEW_MODEL (default google/gemini-3.1-pro-preview).
+name: Builder review (opencode)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        type: string
+        required: true
+      spec_run_id:
+        description: The Builder build run whose spec this pull request was built from.
+        type: string
+        required: true
+      review_run_id:
+        description: Builder review run to file the verdict to. Empty for a dry run.
+        type: string
+        default: ''
+      builder_pr_id:
+        description: Builder's id for this pull request. Needed to file findings.
+        type: string
+        default: ''
+      runtime:
+        type: string
+        default: node
+      node-version:
+        type: string
+        default: '24'
+      python-version:
+        type: string
+        default: '3.12'
+      install-command:
+        type: string
+        default: ''
+      node-options:
+        type: string
+        default: ''
+    secrets:
+      GEMINI_API_KEY:
+        required: true
+      ALLY_BE_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CI: 'true'
+  NX_NO_CLOUD: 'true'
+  NX_DAEMON: 'false'
+  HUSKY: '0'
+  MODEL: ${{ vars.BUILDER_REVIEW_MODEL || 'google/gemini-3.1-pro-preview' }}
+  # Used when the main model writes nothing in its budget (a stall, a quota).
+  FALLBACK_MODEL: ${{ vars.BUILDER_REVIEW_FALLBACK_MODEL || 'google/gemini-3.5-flash' }}
+  API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+
+jobs:
+  pass:
+    name: review (${{ matrix.pass }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # Two at a time: twelve concurrent passes (three reviews) exhausted the
+      # model's quota and every pass hung on silent retries.
+      max-parallel: 2
+      matrix:
+        pass: [spec, compat, safety, tests]
+    env:
+      NODE_OPTIONS: ${{ inputs.node-options }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ inputs.pr_number }}/head
+          fetch-depth: 0
+
+      # The prompts, moved out of the workspace so they are not part of what is
+      # reviewed.
+      - uses: actions/checkout@v4
+        with:
+          repository: HelloAllyTech/ally-be
+          ref: master
+          path: .builder-review-prompts
+          sparse-checkout: |
+            scripts/builder/review
+            scripts/builder/opencode-usage.py
+      - name: Set the prompts aside
+        run: |
+          mv .builder-review-prompts/scripts/builder/review "${RUNNER_TEMP}/prompts"
+          mv .builder-review-prompts/scripts/builder/opencode-usage.py "${RUNNER_TEMP}/opencode-usage.py"
+          rm -rf .builder-review-prompts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - uses: actions/setup-python@v5
+        if: inputs.runtime == 'python'
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Install Poetry
+        if: inputs.runtime == 'python'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Install dependencies
+        env:
+          INSTALL: ${{ inputs.install-command || (inputs.runtime == 'python' && 'poetry install --no-interaction --with dev' || 'npm ci') }}
+        run: eval "$INSTALL"
+      - name: Put the virtualenv on PATH
+        if: inputs.runtime == 'python'
+        run: echo "${GITHUB_WORKSPACE}/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install opencode
+        run: npm install -g opencode-ai@1.18.32
+
+      - name: Fetch the spec and the diff
+        env:
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          SPEC_RUN_ID: ${{ inputs.spec_run_id }}
+        run: |
+          set -euo pipefail
+          curl -fsS "${API}/api/v1/builder/pipeline/runs/${SPEC_RUN_ID}/spec" \
+            -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/spec.md"
+          base="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
+          git fetch -q origin "$base"
+          git diff "origin/${base}...HEAD" > "${RUNNER_TEMP}/pr.diff"
+          echo "BASE=origin/${base}" >> "$GITHUB_ENV"
+          mkdir -p "${RUNNER_TEMP}/scratch"
+          echo "spec $(wc -c < "${RUNNER_TEMP}/spec.md") bytes, diff $(wc -l < "${RUNNER_TEMP}/pr.diff") lines"
+
+      - name: Review
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PASS: ${{ matrix.pass }}
+          PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/findings-${PASS}.json"
+          python3 - "$out" > "${RUNNER_TEMP}/prompt.md" <<'PY'
+          import os, sys
+          t = os.environ["RUNNER_TEMP"]
+          focus = open(f"{t}/prompts/pass-{os.environ['PASS']}.md").read().strip()
+          body = open(f"{t}/prompts/common.md").read()
+          for k, v in {
+              "PR": os.environ["PR"], "REPO": os.environ["GITHUB_REPOSITORY"],
+              "SPEC": f"{t}/spec.md", "DIFF": f"{t}/pr.diff", "BASE": os.environ["BASE"],
+              "SCRATCH": f"{t}/scratch", "FOCUS": focus, "PASS": os.environ["PASS"],
+              "OUT": sys.argv[1],
+          }.items():
+              body = body.replace("{{" + k + "}}", v)
+          print(body)
+          PY
+          # --auto: the runner is disposable and holds no credential that can
+          # write to GitHub; the agent needs to run probes without prompts.
+          # A hard budget: probing can go on indefinitely, and a pass that hits
+          # the job timeout leaves nothing behind.
+          # A hard budget: probing can go on indefinitely, and a pass that hits
+          # the job timeout leaves nothing behind. Warnings go to the
+          # transcript, so a quota stall says so instead of going silent.
+          timeout 24m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+            > "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
+          # No file: the model stalled or stopped early. Run the pass afresh on
+          # the fallback model rather than resuming a stalled session.
+          # Finished means "final": true. An early write is a placeholder, and
+          # a placeholder with no findings yet is not "found nothing".
+          done_ok() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('final') is True and isinstance(d.get('findings'), list) else 1)" "$1" 2>/dev/null; }
+          if ! done_ok "$out"; then
+            echo "::warning::The ${PASS} pass did not finish on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+            echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-${PASS}.txt"
+            timeout 12m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
+              >> "${RUNNER_TEMP}/transcript-${PASS}.txt" 2>&1 || true
+          fi
+          if ! done_ok "$out"; then
+            echo "::warning::The ${PASS} pass did not finish."
+            echo "{\"pass\": \"${PASS}\", \"findings\": [], \"error\": \"did not finish\"}" > "$out"
+          fi
+          python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(f\"{len(d.get('findings', []))} candidate finding(s)\")" "$out"
+
+      - name: Measure this pass's usage
+        if: always()
+        env:
+          PASS: ${{ matrix.pass }}
+        run: python3 "${RUNNER_TEMP}/opencode-usage.py" > "${RUNNER_TEMP}/usage-${PASS}.json" || echo '{}' > "${RUNNER_TEMP}/usage-${PASS}.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pass-${{ matrix.pass }}
+          path: |
+            ${{ runner.temp }}/findings-${{ matrix.pass }}.json
+            ${{ runner.temp }}/transcript-${{ matrix.pass }}.txt
+            ${{ runner.temp }}/usage-${{ matrix.pass }}.json
+          if-no-files-found: warn
+
+  verify:
+    name: review (verify)
+    needs: pass
+    # Not always(): that keeps verify running through a cancellation.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_OPTIONS: ${{ inputs.node-options }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ inputs.pr_number }}/head
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: HelloAllyTech/ally-be
+          ref: master
+          path: .builder-review-prompts
+          sparse-checkout: |
+            scripts/builder/review
+            scripts/builder/opencode-usage.py
+      - name: Set the prompts aside
+        run: |
+          mv .builder-review-prompts/scripts/builder/review "${RUNNER_TEMP}/prompts"
+          mv .builder-review-prompts/scripts/builder/opencode-usage.py "${RUNNER_TEMP}/opencode-usage.py"
+          rm -rf .builder-review-prompts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - uses: actions/setup-python@v5
+        if: inputs.runtime == 'python'
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Install Poetry
+        if: inputs.runtime == 'python'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Install dependencies
+        env:
+          INSTALL: ${{ inputs.install-command || (inputs.runtime == 'python' && 'poetry install --no-interaction --with dev' || 'npm ci') }}
+        run: eval "$INSTALL"
+      - name: Put the virtualenv on PATH
+        if: inputs.runtime == 'python'
+        run: echo "${GITHUB_WORKSPACE}/.venv/bin" >> "$GITHUB_PATH"
+      - name: Install opencode
+        run: npm install -g opencode-ai@1.18.32
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pass-*
+          path: ${{ runner.temp }}/passes
+          merge-multiple: true
+
+      - name: Fetch the spec and the diff, and pool the candidates
+        env:
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          SPEC_RUN_ID: ${{ inputs.spec_run_id }}
+        run: |
+          set -euo pipefail
+          curl -fsS "${API}/api/v1/builder/pipeline/runs/${SPEC_RUN_ID}/spec" \
+            -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/spec.md"
+          base="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
+          git fetch -q origin "$base"
+          git diff "origin/${base}...HEAD" > "${RUNNER_TEMP}/pr.diff"
+          echo "BASE=origin/${base}" >> "$GITHUB_ENV"
+          mkdir -p "${RUNNER_TEMP}/scratch"
+          python3 - <<'PY'
+          import glob, json, os
+          t = os.environ["RUNNER_TEMP"]
+          pooled, complete = [], 0
+          for path in sorted(glob.glob(f"{t}/passes/findings-*.json")):
+              try:
+                  data = json.load(open(path))
+              except Exception:
+                  continue
+              if not data.get("error"):
+                  complete += 1
+              for finding in data.get("findings", []):
+                  finding["pass"] = data.get("pass")
+                  pooled.append(finding)
+          json.dump({"candidates": pooled}, open(f"{t}/candidates.json", "w"), indent=1)
+          print(f"{len(pooled)} candidate finding(s) from {complete} complete pass(es)")
+          # A pass that timed out or crashed reviewed nothing. Four empty-handed
+          # passes are not a clean pull request, so an incomplete review files
+          # no verdict at all; Builder then retries it.
+          if complete < 4:
+              json.dump({"verdict": "incomplete", "summary": f"Only {complete} of 4 review passes finished; no verdict.", "findings": [], "dropped": []}, open(f"{t}/review.json", "w"))
+              with open(os.environ["GITHUB_ENV"], "a") as env:
+                  env.write("REVIEW_INCOMPLETE=1\n")
+          PY
+
+      - name: Verify
+        if: env.REVIEW_INCOMPLETE != '1'
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/review.json"
+          python3 - "$out" > "${RUNNER_TEMP}/prompt.md" <<'PY'
+          import os, sys
+          t = os.environ["RUNNER_TEMP"]
+          body = open(f"{t}/prompts/verify.md").read()
+          for k, v in {
+              "PR": os.environ["PR"], "REPO": os.environ["GITHUB_REPOSITORY"],
+              "SPEC": f"{t}/spec.md", "DIFF": f"{t}/pr.diff", "BASE": os.environ["BASE"],
+              "SCRATCH": f"{t}/scratch", "CANDIDATES": f"{t}/candidates.json", "OUT": sys.argv[1],
+          }.items():
+              body = body.replace("{{" + k + "}}", v)
+          print(body)
+          PY
+          timeout 24m opencode run --auto --print-logs --log-level WARN --model "$MODEL" --variant high "$(cat "${RUNNER_TEMP}/prompt.md")" \
+            > "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
+          # A verdict counts only when it is final and agrees with its findings:
+          # approve with no serious finding, request_changes with at least one.
+          # The first verify run wrote an early placeholder (request_changes,
+          # no findings), timed out, and was filed as a clean review.
+          verdict_ok() { python3 -c "
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          serious = [f for f in d.get('findings', []) if f.get('severity') in ('high', 'medium')]
+          ok = d.get('final') is True and (
+              (d.get('verdict') == 'approve' and not serious)
+              or (d.get('verdict') == 'request_changes' and serious))
+          sys.exit(0 if ok else 1)" "$1" 2>/dev/null; }
+          if ! verdict_ok "$out"; then
+            echo "::warning::Verify gave no final verdict on ${MODEL}; retrying on ${FALLBACK_MODEL}."
+            echo "=== retry on ${FALLBACK_MODEL} ===" >> "${RUNNER_TEMP}/transcript-verify.txt"
+            timeout 12m opencode run --auto --print-logs --log-level WARN --model "$FALLBACK_MODEL" "$(cat "${RUNNER_TEMP}/prompt.md")" \
+              >> "${RUNNER_TEMP}/transcript-verify.txt" 2>&1 || true
+          fi
+          if ! verdict_ok "$out"; then
+            echo "::error::Verify gave no final, consistent verdict; nothing will be filed."
+            mv "$out" "${RUNNER_TEMP}/review-unfinished.json" 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Summarise
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          t = os.environ["RUNNER_TEMP"]
+          try:
+              r = json.load(open(f"{t}/review.json"))
+          except Exception:
+              print("## Builder review\n\nNo verdict: the verify pass did not finish.")
+              raise SystemExit
+          print(f"## Builder review: {r.get('verdict')}\n\n{r.get('summary', '')}\n")
+          for f in r.get("findings", []):
+              print(f"### [{f.get('severity')}] {f.get('title')}\n`{f.get('path')}:{f.get('line')}` — found by {', '.join(f.get('passes', []) or [])}\n")
+              print(f"**Scenario:** {f.get('scenario')}\n\n**Evidence:** {f.get('evidence')}\n\n**Fix:** {f.get('fix')}\n")
+          dropped = r.get("dropped", [])
+          if dropped:
+              print(f"<details><summary>{len(dropped)} candidate(s) dropped</summary>\n")
+              for d in dropped:
+                  print(f"- `{d.get('key')}`: {d.get('reason')}")
+              print("\n</details>")
+          PY
+
+      - name: File the verdict with Builder
+        if: success() && inputs.review_run_id != '' && inputs.builder_pr_id != '' && env.REVIEW_INCOMPLETE != '1'
+        env:
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          RUN_ID: ${{ inputs.review_run_id }}
+          BUILDER_PR_ID: ${{ inputs.builder_pr_id }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse --short HEAD)"
+          export HEAD_SHA
+          python3 - > "${RUNNER_TEMP}/filed.json" <<'PY'
+          import json, os
+          r = json.load(open(f"{os.environ['RUNNER_TEMP']}/review.json"))
+          # Keyed by the commit reviewed: Builder ignores a finding it has
+          # already recorded, so a problem that survives a fix round must come
+          # back as new, not be swallowed as a duplicate of the old one.
+          findings = [
+              {
+                  "key": f"{os.environ['HEAD_SHA']}:{f.get('key')}",
+                  "path": f.get("path"),
+                  "line": f.get("line") if isinstance(f.get("line"), int) else None,
+                  "body": f"[{f.get('severity')}] {f.get('title')}\n\n{f.get('scenario')}\n\nFix: {f.get('fix')}",
+              }
+              for f in r.get("findings", [])
+              if f.get("severity") in ("high", "medium")
+          ]
+          print(json.dumps({"pullRequestId": os.environ["BUILDER_PR_ID"], "findings": findings}))
+          PY
+          curl -fsS -X POST "${API}/api/v1/builder/pipeline/runs/${RUN_ID}/review" \
+            -H "x-api-key: ${API_KEY}" -H 'Content-Type: application/json' \
+            -d @"${RUNNER_TEMP}/filed.json"
+
+      # The whole review's spend — every pass and the verify — so Builder can
+      # count it against the pull request's automation budget. Best-effort.
+      - name: Report usage to Builder
+        if: always() && inputs.builder_pr_id != ''
+        continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          RUN_ID: ${{ inputs.review_run_id }}
+          PR: ${{ inputs.pr_number }}
+        run: |
+          python3 "${RUNNER_TEMP}/opencode-usage.py" > "${RUNNER_TEMP}/usage-verify.json" || echo '{}' > "${RUNNER_TEMP}/usage-verify.json"
+          python3 - > "${RUNNER_TEMP}/usage-post.json" <<'PY'
+          import glob, json, os
+          t = os.environ["RUNNER_TEMP"]
+          total = {"costUsd": 0.0, "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "models": {}}
+          for path in glob.glob(f"{t}/passes/usage-*.json") + [f"{t}/usage-verify.json"]:
+              try:
+                  u = json.load(open(path))
+              except Exception:
+                  continue
+              for k in ("costUsd", "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"):
+                  total[k] += u.get(k) or 0
+              for m, c in (u.get("models") or {}).items():
+                  total["models"][m] = total["models"].get(m, 0) + c
+          total.update({
+              "kind": "review",
+              "repo": os.environ["GITHUB_REPOSITORY"].split("/")[-1],
+              "prNumber": int(os.environ["PR"]),
+              "runId": os.environ.get("RUN_ID") or None,
+          })
+          print(json.dumps(total))
+          PY
+          cat "${RUNNER_TEMP}/usage-post.json"; echo
+          curl -fsS -X POST "${API}/api/v1/builder/pipeline/usage" \
+            -H "x-api-key: ${API_KEY}" -H 'Content-Type: application/json' \
+            -d @"${RUNNER_TEMP}/usage-post.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review
+          path: |
+            ${{ runner.temp }}/review.json
+            ${{ runner.temp }}/candidates.json
+            ${{ runner.temp }}/transcript-verify.txt
+          if-no-files-found: warn

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import {
   AgentLlmProviderFactory,
@@ -31,6 +31,7 @@ import { BuilderMessageRole } from '../enum/builder.enum';
 import { BuilderSessionService } from './builder-session.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
+import { BuilderPlatformContextService } from './builder-platform-context.service';
 import {
   BuilderInterviewToolsService,
   BuilderToolExecutionContext,
@@ -167,6 +168,9 @@ export class BuilderInterviewOrchestratorService {
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly agentLlmFactory: AgentLlmProviderFactory,
     private readonly llmCompletion: LlmCompletionService,
+    /** The platform map block. Optional so a fixture without one still runs a turn. */
+    @Optional()
+    private readonly platformContext?: BuilderPlatformContextService,
   ) {}
 
   /**
@@ -366,6 +370,7 @@ export class BuilderInterviewOrchestratorService {
     const system = await this.buildSystemBlocks(
       session.repos ?? undefined,
       exemplars,
+      await this.sessionService.getHandoffContext(sessionId),
     );
     const messages: any[] = [
       ...(await this.replayHistory(session, history)),
@@ -844,12 +849,15 @@ export class BuilderInterviewOrchestratorService {
   private async buildSystemBlocks(
     repos?: string[],
     exemplars: string[] = [],
+    handoffContext: string | null = null,
   ): Promise<AgentSystemBlock[]> {
-    const [instructions, context, platformRules] = await Promise.all([
-      this.buildSystemPrompt(),
-      this.knowledgeService.buildContextBlock(repos, exemplars),
-      this.knowledgeService.platformRules(),
-    ]);
+    const [instructions, context, platformRules, platformMap] =
+      await Promise.all([
+        this.buildSystemPrompt(),
+        this.knowledgeService.buildContextBlock(repos, exemplars),
+        this.knowledgeService.platformRules(),
+        this.platformContext?.render() ?? Promise.resolve(''),
+      ]);
     // Typed, not `any[]`. These used to be Anthropic's own shape
     // (`cache_control: ephemeral`) written straight into the request; the
     // provider-neutral layer takes `cache` instead and each adapter honours it
@@ -861,10 +869,60 @@ export class BuilderInterviewOrchestratorService {
     // the technical plan is written knowing them. The plan that renamed a
     // persisted key in session 880e73e6 was written by this agent, which had
     // never been told released clients lag the backend.
-    return [
+    const blocks: AgentSystemBlock[] = [
       { text: `${instructions}\n\n${platformRules}`, cache: true },
       { text: context, cache: true },
     ];
+    // The reusable systems and the docs index: what already exists, read before any question.
+    // Its own block because it refreshes on its own schedule; shared by every session, so it
+    // stays inside the common prefix. Session 2bc3a5cf proposed rebuilding Auto-improve
+    // because nothing in its context said Auto-improve existed.
+    if (platformMap.trim()) {
+      blocks.push({ text: platformMap, cache: true });
+    }
+    // Last, so the two blocks above stay a prefix shared with every other session. Frozen
+    // per session, so it caches as well as they do.
+    if (handoffContext) {
+      blocks.push({ text: this.renderHandoff(handoffContext), cache: true });
+    }
+    return blocks;
+  }
+
+  /**
+   * What the work before this session settled, with how to use it.
+   *
+   * The instructions live here, beside the block, rather than in the interviewer prompt: the
+   * block only exists for sessions something else started, and a rule in the prompt about a
+   * block most sessions never see is one more thing every other interview reads past. Written
+   * after a live session opened from a roadmap opportunity spent its first questions on what
+   * the filing interview had already decided — debrief-specific feedback alongside the
+   * session rating, and the rating's shape, were both in the copilot's brief it was never
+   * shown.
+   *
+   * "Reference what was said rather than asking from scratch" is Stacks, "Sequencing
+   * clarification questions to avoid user overwhelm".
+   */
+  private renderHandoff(handoffContext: string): string {
+    return [
+      '# Hand-off — what was settled before this session started',
+      '',
+      'This session was opened from earlier work, and what follows is its record. The admin ' +
+        'has already answered these questions once. So:',
+      '',
+      '- Treat every decision in it as settled. Write what it settles into the PRD with ' +
+        '`update_prd` on your first turn, before you ask anything.',
+      '- Ask only about what it leaves open — usually how it gets built, not whether or for ' +
+        'whom. Never re-ask something it answers, including as a "just to confirm" question.',
+      '- Reuse its research. Where it cites a file, a query or a board item, start from that ' +
+        'reference rather than searching again from nothing.',
+      '- When the code contradicts it, or two parts of it disagree, quote what was said and ask ' +
+        'which should give — that is a contradiction to resolve, not a fresh question.',
+      '- Alternatives it records as dropped stay dropped unless the admin reopens them.',
+      '',
+      '<handoff>',
+      handoffContext,
+      '</handoff>',
+    ].join('\n');
   }
 
   /**

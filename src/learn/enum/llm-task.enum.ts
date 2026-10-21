@@ -220,11 +220,19 @@ export enum LlmTask {
   BUILDER_RESEARCH = 'builder_research',
   // Bounding interview context growth by summarising older turns.
   BUILDER_INTERVIEW_SUMMARY = 'builder_interview_summary',
+  // The roadmap's opportunity copilot: one pass of the guided interview's tool
+  // loop (research, then a structured turn). Tagged with metadata.iteration so
+  // a turn's passes can be summed.
+  ROADMAP_OPPORTUNITY_COPILOT = 'roadmap_opportunity_copilot',
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
   // Admin-dashboard scenario cover-image generation (Simulation Studio).
   GENERATE_COVER_IMAGE = 'generate_cover_image',
+  // Course editor (Track settings): a trainer generates the course cover from
+  // a prompt they wrote. Not the scenario template above, and not filed into
+  // the roleplay cover library.
+  GENERATE_COURSE_COVER_IMAGE = 'generate_course_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
   // Scribe voice note: turning one dictation transcript into note fields.
@@ -268,6 +276,26 @@ export enum LlmTask {
   // llm_usage query.
   SKILL_EXPERIMENT_JUDGE = 'skill_experiment_judge',
   SKILL_EXPERIMENT_DESIGNER = 'skill_experiment_designer',
+
+  // Course Copilot: the admin agent that interviews a trainer, plans a course
+  // blueprint and generates every component into a DRAFT course. One label per
+  // call site so a build's spend reads by stage; every row also carries
+  // metadata.courseCopilotSessionId, which is what the session budget sums.
+  COURSE_COPILOT_INTERVIEW = 'course_copilot_interview',
+  COURSE_COPILOT_BLUEPRINT = 'course_copilot_blueprint',
+  COURSE_COPILOT_ARTICLE = 'course_copilot_article',
+  COURSE_COPILOT_QUIZ = 'course_copilot_quiz',
+  COURSE_COPILOT_JOURNAL = 'course_copilot_journal',
+  COURSE_COPILOT_ANNOTATION = 'course_copilot_annotation',
+  COURSE_COPILOT_META = 'course_copilot_meta',
+  COURSE_COPILOT_REVIEW = 'course_copilot_review',
+  COURSE_COPILOT_SUMMARY = 'course_copilot_summary',
+  COURSE_COPILOT_ROLEPLAY_BRIEF = 'course_copilot_roleplay_brief',
+  COURSE_COPILOT_IMAGE_PROMPT = 'course_copilot_image_prompt',
+  COURSE_COPILOT_IMAGE = 'course_copilot_image',
+  // The one Course Copilot call made outside a session: an admin's click on the
+  // builder's Landing page tab. Tagged with metadata.trackId, not a session id.
+  COURSE_COPILOT_LANDING_PAGE = 'course_copilot_landing_page',
 
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',

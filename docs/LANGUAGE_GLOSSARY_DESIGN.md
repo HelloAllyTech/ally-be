@@ -364,9 +364,9 @@ recorded in `provenance`.
   session's tenant, its section OVERRIDES the global counterpart of the same
   `sectionCode`.
 - **ally-ai-learn:** parse `languageGlossary` into `PromptData`
-  (`app/core/scenario/base.py`, `_build_prompt_data` — alongside
+  (`ally-ai-learn/app/core/scenario/base.py`, `_build_prompt_data` — alongside
   `language_dialogue_samples` at `:647-650`); add a `{language_glossary}` placeholder to
-  `app/prompts/system/main_agent_prompt.txt` and `branching_agent_prompt.txt`; populate it
+  `ally-ai-learn/app/prompts/system/main_agent_prompt.txt` and `branching_agent_prompt.txt`; populate it
   in `_build_behavior_prompt` `template_kwargs` (`prompt.py:436-524`) and
   `_build_branching_prompt` (`prompt.py:271-289`).
 - **Composition with translated templates is free:** translated bodies preserve `{...}`

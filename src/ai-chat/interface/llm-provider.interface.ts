@@ -24,6 +24,12 @@ export interface LlmProviderConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** 'json' asks the provider for a single JSON object (OpenAI JSON mode,
+   * Gemini `application/json`). Omitted = free text. */
+  responseFormat?: 'json';
+  /** Gemini 2.5 only: thinking-token budget (0 = off). Omitted = model default.
+   * Ignored by providers without a thinking budget. */
+  thinkingBudget?: number;
 }
 
 export interface LlmMessage {

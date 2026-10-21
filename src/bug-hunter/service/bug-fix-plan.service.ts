@@ -69,8 +69,9 @@ export class BugFixPlanService {
         BUG_HUNTER_FIX_MODEL_MENU[0];
 
       const rule = (): D6Pick => {
-        // A rebase is not a harder problem; it stays on whatever ran last.
-        if (!retry || retry.kind === 'conflict') {
+        // A rebase or a red lint/typecheck is not a harder problem; it stays
+        // on whatever ran last.
+        if (!retry || retry.kind === 'conflict' || retry.kind === 'ci_failed') {
           const last = previous ?? platformDefault;
           return { engine: last.engine, model: last.model, approach: null };
         }

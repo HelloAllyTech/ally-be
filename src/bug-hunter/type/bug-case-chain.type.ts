@@ -87,6 +87,8 @@ export interface ChainInput {
   file?: string | null;
   status: string;
   prUrl?: string | null;
+  /** Set on a step of a cross-repo plan, whose other halves are sibling steps. */
+  parentFindingId?: string | null;
   metadata?: Record<string, any> | null;
 }
 
@@ -196,11 +198,20 @@ export function buildCaseChain(f: ChainInput): BugCaseChain {
             status: 'broken',
             evidence: `the fault is in ${fault!.layer} and the change is in ${study.valueLivesIn}`,
           }
-        : {
-            link: 'changed',
-            status: 'present',
-            evidence: `${study.filesToChange.length} file${study.filesToChange.length === 1 ? '' : 's'} in the ${study.valueLivesIn} the study traced`,
-          };
+        : study.otherRepos.length && !f.parentFindingId
+          ? {
+              // The study itself says a complete fix needs other repos, and
+              // this PR is the only change: one side of a contract (2026-10-16,
+              // a backend-only OTP length change the clients still cap at 4).
+              link: 'changed',
+              status: 'broken',
+              evidence: `a half-fix: the study says ${study.otherRepos.join(', ')} must change too, and there is no cross-repo plan`,
+            }
+          : {
+              link: 'changed',
+              status: 'present',
+              evidence: `${study.filesToChange.length} file${study.filesToChange.length === 1 ? '' : 's'} in the ${study.valueLivesIn} the study traced`,
+            };
 
   // 5. resolved — the reporter's symptom gone at the PR head, not only a test.
   const symptom = fixVerdict?.checks.find((c) => c.name === 'symptom_resolved');

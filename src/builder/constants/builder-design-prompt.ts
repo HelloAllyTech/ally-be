@@ -37,6 +37,12 @@ export interface DesignPromptContext {
   repos: BuilderRepoDefinition[];
   /** Repo knowledge packs, when generated — a map, not a substitute for grep. */
   repoPacks?: string;
+  /**
+   * What the interview looked up and what came back (BuilderEvidenceLogService),
+   * so the design starts from what was already found — and knows which reads
+   * failed — instead of searching from nothing.
+   */
+  interviewEvidence?: string;
 }
 
 export interface DesignReviewPromptContext {
@@ -186,6 +192,18 @@ ${context.repoPacks.trim()}
 `.trim()
     : '';
 
+  const evidenceBlock = context.interviewEvidence?.trim()
+    ? `
+## What the interview looked up
+
+Every lookup the PRD interview made, in order; \`[FAILED]\` marks one that came
+back with an error. Reuse its paths where the code confirms them, and do not
+treat anything the interview only searched for as something it read.
+
+${context.interviewEvidence.trim()}
+`.trim()
+    : '';
+
   // A redraft: the last draft and what its reviewer found. Rendered through
   // the same function the build prompts use, so it reads like the design it
   // will become.
@@ -229,6 +247,7 @@ ${renderTechnicalDesign({ ...(context.prd.technicalDesign as BuilderTechnicalDes
     protocol,
     redraftBlock,
     packsBlock,
+    evidenceBlock,
     renderPrd(context.prd),
   ]
     .filter(Boolean)

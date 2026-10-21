@@ -1,0 +1,6 @@
+{
+  "name": "Course Copilot — Landing Page Writer",
+  "description": "Drafts a course's story-led landing page from the saved course: hook, question, one persona, a first move with three labelled replies, one beat and teaser per section (one hard call), three outcomes and the cast. Never scores the client's outcome or reveals a quiz answer. Called when an admin clicks Draft with Copilot on the builder's Landing page tab; nothing is saved server-side. JSON mode.",
+  "category": "Course Copilot",
+  "runtimes": ["ally-be"]
+}

@@ -6,7 +6,7 @@
 #
 # Each case gets its own temp dir and its own marker paths, so nothing leaks
 # between cases. The suite is standalone rather than a scenario inside
-# loop-dryrun.sh because that harness drives run-engine.sh, which never runs this
+# design-dryrun.sh because that harness drives run-engine.sh, which never runs this
 # step — and because shared marker files across scenarios are exactly the sort of
 # cross-talk that makes a suite pass alone and fail in sequence.
 set -uo pipefail

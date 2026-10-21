@@ -3,6 +3,8 @@ import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { BuilderRepoMap } from '../entity/builder-repo-map.entity';
 import { BuilderLesson } from '../entity/builder-lesson.entity';
 import { BuilderExemplar } from '../entity/builder-exemplar.entity';
+import { BuilderRepoCatalog } from '../entity/builder-repo-catalog.entity';
+import { BuilderEvidence } from '../entity/builder-evidence.entity';
 import {
   BuilderExemplarOutcome,
   BuilderLessonStatus,
@@ -73,22 +75,9 @@ export class BuilderLessonRepository extends Repository<BuilderLesson> {
   }
 
   /**
-   * Count a lesson as having been used, or as having failed to prevent the
-   * thing it warns about. This is what makes the curator's retirement
-   * decisions evidence rather than taste.
+   * Count a lesson as having failed to prevent the thing it warns about —
+   * evidence for the curator's retirement decisions.
    */
-  async recordApplied(ids: string[]): Promise<void> {
-    if (!ids.length) return;
-    await this.createQueryBuilder()
-      .update()
-      .set({
-        timesApplied: () => '"timesApplied" + 1',
-        lastAppliedAt: new Date(),
-      })
-      .whereInIds(ids)
-      .execute();
-  }
-
   async recordContradicted(ids: string[]): Promise<void> {
     if (!ids.length) return;
     await this.createQueryBuilder()
@@ -172,5 +161,31 @@ export class BuilderExemplarRepository extends Repository<BuilderExemplar> {
       ],
       order: { createdAt: 'ASC' },
     });
+  }
+}
+
+@Injectable()
+export class BuilderRepoCatalogRepository extends Repository<BuilderRepoCatalog> {
+  constructor(dataSource: DataSource) {
+    super(BuilderRepoCatalog, dataSource.createEntityManager());
+  }
+
+  findByRepo(repo: string): Promise<BuilderRepoCatalog | null> {
+    return this.findOne({ where: { repo } });
+  }
+
+  listAll(): Promise<BuilderRepoCatalog[]> {
+    return this.find({ order: { repo: 'ASC' } });
+  }
+}
+
+@Injectable()
+export class BuilderEvidenceRepository extends Repository<BuilderEvidence> {
+  constructor(dataSource: DataSource) {
+    super(BuilderEvidence, dataSource.createEntityManager());
+  }
+
+  listBySession(sessionId: string): Promise<BuilderEvidence[]> {
+    return this.find({ where: { sessionId }, order: { createdAt: 'ASC' } });
   }
 }

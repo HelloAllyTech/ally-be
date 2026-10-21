@@ -189,18 +189,95 @@ describe('GithubActionsService.getCheckRollup', () => {
     });
   });
 
+  const refused = (status: number) =>
+    Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+
+  /** Answers by URL, since the fallback's calls interleave with the others. */
+  const byUrl = (routes: Record<string, () => Promise<unknown>>) =>
+    mockedAxios.get.mockImplementation((url: string) => {
+      const key = Object.keys(routes).find((path) => url.endsWith(path));
+      return key ? (routes[key]() as any) : Promise.reject(refused(500));
+    });
+
   it('says nothing rather than "none" when the checks cannot be read', async () => {
-    mockedAxios.get
-      .mockRejectedValueOnce(
-        Object.assign(new Error('Not Found'), {
-          response: { status: 404 },
-        }),
-      )
-      .mockResolvedValueOnce(statuses([]));
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(404)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () => Promise.reject(refused(403)),
+    });
 
     // Null, not { state: 'none' }: callers treat null as "could not read" and
     // refuse to act, which is the only safe reading of an unanswered question.
     expect(await service.getCheckRollup('ally-mobile', 'sha')).toBeNull();
+  });
+
+  it('reads the Actions jobs when a fine-grained token is refused the checks API', async () => {
+    // ally-mobile#114: four green checks, a private repo, and a token that
+    // cannot be granted Checks.
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(403)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () =>
+        Promise.resolve({ data: { workflow_runs: [{ id: 1 }, { id: 2 }] } }),
+      '/actions/runs/1/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'Jest', status: 'completed', conclusion: 'success' },
+              { name: 'Typecheck', status: 'completed', conclusion: 'success' },
+            ],
+          },
+        }),
+      '/actions/runs/2/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'docs-guard', status: 'in_progress', conclusion: null },
+            ],
+          },
+        }),
+    });
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toEqual({
+      state: 'pending',
+      failed: [],
+      total: 3,
+    });
+  });
+
+  it('names a failed Actions job read through the fallback', async () => {
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(403)),
+      '/status': () => Promise.resolve(statuses([])),
+      '/actions/runs': () =>
+        Promise.resolve({ data: { workflow_runs: [{ id: 1 }] } }),
+      '/actions/runs/1/jobs': () =>
+        Promise.resolve({
+          data: {
+            jobs: [
+              { name: 'Jest', status: 'completed', conclusion: 'failure' },
+            ],
+          },
+        }),
+    });
+
+    const rollup = await service.getCheckRollup('ally-mobile', 'sha');
+
+    expect(rollup?.state).toBe('failure');
+    expect(rollup?.failed).toEqual(['Jest']);
+  });
+
+  it('does not fall back on errors other than a refusal', async () => {
+    byUrl({
+      '/check-runs': () => Promise.reject(refused(502)),
+      '/status': () => Promise.resolve(statuses([])),
+    });
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toBeNull();
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      expect.stringMatching(/actions\/runs$/),
+      expect.anything(),
+    );
   });
 
   it('still reports a genuinely unchecked commit as none', async () => {
@@ -228,6 +305,83 @@ describe('GithubActionsService.getCheckRollup', () => {
 
     expect(rollup?.state).toBe('failure');
     expect(rollup?.failed).toEqual(['Jest']);
+  });
+});
+
+describe('GithubActionsService.findRunSince', () => {
+  let service: GithubActionsService;
+  const configService = {
+    githubToken: 'gh-token',
+    githubOrg: 'helloallytech',
+  } as unknown as AppConfigService;
+  const since = new Date('2026-10-14T08:54:00Z');
+  const run = (id: number, createdAt: string, conclusion: string | null) => ({
+    id,
+    html_url: `https://github.com/r/${id}`,
+    status: conclusion ? 'completed' : 'in_progress',
+    conclusion,
+    created_at: createdAt,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new GithubActionsService(configService);
+  });
+
+  it('finds a builder.yml run started by an issue, not only by a dispatch', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { workflow_runs: [run(7, '2026-10-14T08:54:09Z', null)] },
+    } as any);
+
+    const found = await service.findRunSince({
+      repo: 'ally-mobile',
+      workflow: 'builder.yml',
+      since,
+      event: 'issues',
+    });
+
+    expect(found?.id).toBe('7');
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('actions/workflows/builder.yml/runs'),
+      expect.objectContaining({
+        params: expect.objectContaining({ event: 'issues' }),
+      }),
+    );
+  });
+
+  it('passes over runs whose job was skipped (every other comment and label)', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        workflow_runs: [
+          run(5, '2026-10-14T08:54:05Z', 'skipped'),
+          run(6, '2026-10-14T08:55:00Z', null),
+        ],
+      },
+    } as any);
+
+    const found = await service.findRunSince({
+      repo: 'ally-mobile',
+      workflow: 'builder.yml',
+      since,
+      event: 'issue_comment',
+    });
+
+    expect(found?.id).toBe('6');
+  });
+
+  it('still defaults to dispatched runs', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { workflow_runs: [] },
+    } as any);
+
+    await service.findRunSince({ repo: 'ally-be', workflow: 'x.yml', since });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        params: expect.objectContaining({ event: 'workflow_dispatch' }),
+      }),
+    );
   });
 });
 

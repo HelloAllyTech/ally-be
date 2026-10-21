@@ -4,39 +4,27 @@ import * as request from 'supertest';
 import { v4 as uuidv4 } from 'uuid';
 import { BuilderPipelineController } from './builder-pipeline.controller';
 import { BuilderBuildService } from '../service/builder-build.service';
-import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
 import { AppConfigService } from 'src/config/config.service';
-import { LoggerService } from 'src/logger/logger.service';
-import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { BuilderEventService } from '../service/builder-event.service';
-import { BuilderSteerService } from '../service/builder-steer.service';
 import { BuilderRunMode, BuilderStage } from '../enum/builder.enum';
-import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
-import { BuilderReportService } from '../service/builder-report.service';
-import { BuilderSettingsService } from '../service/builder-settings.service';
-import { BuilderExemplarService } from '../service/builder-exemplar.service';
-import { BuilderEpicService } from '../service/builder-epic.service';
 import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderPrdService } from '../service/builder-prd.service';
 import { BuilderSessionService } from '../service/builder-session.service';
-import {
-  BuilderBuildRunRepository,
-  BuilderQuestionRepository,
-} from '../repository/builder-build.repository';
+import { BuilderCatalogService } from '../service/builder-catalog.service';
+import { BuilderEvidenceLogService } from '../service/builder-evidence-log.service';
 import { createDraftingDesign } from '../util/builder-technical-design.util';
 
 describe('BuilderPipelineController', () => {
   let app: INestApplication;
   let mockBuilderBuildService: Partial<BuilderBuildService>;
+  let mockCatalogService: any;
 
   let mockBuilderSessionService: { getSession: jest.Mock };
   let mockPrdService: Record<string, jest.Mock>;
   let mockKnowledgeService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
-    // Defaults to a stage a run may legitimately finish from, so the
-    // completion tests that are not about staging stay unaffected.
     mockBuilderSessionService = {
       getSession: jest.fn().mockResolvedValue({
         id: 'session-1',
@@ -53,6 +41,13 @@ describe('BuilderPipelineController', () => {
         .mockResolvedValue('## Platform rules\n\nBe additive.'),
       renderRepoPacks: jest.fn().mockResolvedValue(''),
     };
+    mockCatalogService = {
+      upsert: jest.fn(async (params: any) => ({
+        repo: params.repo,
+        entries: params.entries,
+        generatedAt: new Date('2026-10-21T00:00:00Z'),
+      })),
+    };
     mockBuilderBuildService = {
       getRunOrFail: jest.fn().mockResolvedValue({
         id: uuidv4(),
@@ -60,9 +55,6 @@ describe('BuilderPipelineController', () => {
         engine: null,
         model: null,
       }),
-      recordRunModel: jest.fn().mockResolvedValue(undefined),
-      touchedNoFiles: jest.fn().mockResolvedValue(false),
-      hasPassingGate: jest.fn().mockResolvedValue(false),
       settleRun: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -70,36 +62,18 @@ describe('BuilderPipelineController', () => {
       controllers: [BuilderPipelineController],
       providers: [
         { provide: BuilderBuildService, useValue: mockBuilderBuildService },
+        // The ApiAuthGuard reads the key from config.
         { provide: AppConfigService, useValue: { apiKey: 'test-api-key' } },
-        {
-          provide: LoggerService,
-          useValue: {
-            getInstance: () => ({
-              warn: jest.fn(),
-              error: jest.fn(),
-              info: jest.fn(),
-            }),
-          },
-        },
-        { provide: PromptSharedService, useValue: {} },
         { provide: BuilderEventService, useValue: {} },
-        { provide: BuilderSteerService, useValue: {} },
-        { provide: BuilderQuestionService, useValue: {} },
         { provide: BuilderPullRequestService, useValue: {} },
-        {
-          provide: BuilderReportService,
-          useValue: {
-            composeSessionReport: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-        { provide: BuilderSettingsService, useValue: {} },
-        { provide: BuilderExemplarService, useValue: {} },
-        { provide: BuilderEpicService, useValue: {} },
         { provide: BuilderKnowledgeService, useValue: mockKnowledgeService },
         { provide: BuilderPrdService, useValue: mockPrdService },
         { provide: BuilderSessionService, useValue: mockBuilderSessionService },
-        { provide: BuilderBuildRunRepository, useValue: {} },
-        { provide: BuilderQuestionRepository, useValue: {} },
+        { provide: BuilderCatalogService, useValue: mockCatalogService },
+        {
+          provide: BuilderEvidenceLogService,
+          useValue: { renderForPrompt: jest.fn().mockResolvedValue('') },
+        },
       ],
     }).compile();
 
@@ -114,15 +88,11 @@ describe('BuilderPipelineController', () => {
   });
 
   /**
-   * A `done` the gate cannot corroborate is refused — and the run is left
-   * alone. It used to be settled FAILED, on the assumption that such a claim
-   * came from an agent about to exit; it also arrives from one that completed
-   * too early, mid-pipeline, before the gate it was claiming had run. The run
-   * then carried on to a real pull request behind a session already painted
-   * red. Anything that does go on to quit is caught by outcome-gate.sh, which
-   * settles whatever is still RUNNING when the engine exits.
+   * Builder's runner only drafts designs now. Any other run reaching
+   * `complete` is the outcome gate settling a run whose engine exited, so a
+   * failure always lands and a `done` has nothing to be checked against.
    */
-  it('refuses a done with no passing gate without ending the run', async () => {
+  it('refuses a done from a run that is not a design run', async () => {
     const runId = uuidv4();
 
     await request(app.getHttpServer())
@@ -134,102 +104,6 @@ describe('BuilderPipelineController', () => {
     expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
   });
 
-  it('settles a done the gate corroborates', async () => {
-    (mockBuilderBuildService.hasPassingGate as jest.Mock).mockResolvedValue(
-      true,
-    );
-    const runId = uuidv4();
-
-    await request(app.getHttpServer())
-      .post(`/builder/pipeline/runs/${runId}/complete`)
-      .set('x-api-key', 'test-api-key')
-      .send({ outcome: 'done' })
-      .expect(201);
-
-    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
-  });
-
-  /**
-   * A plan is not an outcome.
-   *
-   * On 2026-09-24 a build's PLANNING agent finished its plan and called
-   * `complete_run done`. It was accepted — a planner edits no files, so the
-   * `changedNothing` exemption waved the gate requirement through — and the
-   * run was settled before the coder had started. Thirty-four minutes later
-   * the workflow failed with no pull request.
-   */
-  it('refuses a build that reports done from PLANNING', async () => {
-    (mockBuilderSessionService.getSession as jest.Mock).mockResolvedValue({
-      id: 'session-1',
-      currentStage: BuilderStage.PLANNING,
-    });
-    const runId = uuidv4();
-
-    await request(app.getHttpServer())
-      .post(`/builder/pipeline/runs/${runId}/complete`)
-      .set('x-api-key', 'test-api-key')
-      .send({ outcome: 'done' })
-      .expect(409);
-
-    expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
-    // Not even asked: the stage settles it before the file check can excuse it.
-    expect(mockBuilderBuildService.touchedNoFiles).not.toHaveBeenCalled();
-  });
-
-  /**
-   * A failure from an early stage is still a failure. The runner reports these
-   * from evidence after the agent has gone, and losing one strands the run.
-   */
-  it('still records a failure reported from PLANNING', async () => {
-    (mockBuilderSessionService.getSession as jest.Mock).mockResolvedValue({
-      id: 'session-1',
-      currentStage: BuilderStage.PLANNING,
-    });
-    const runId = uuidv4();
-
-    await request(app.getHttpServer())
-      .post(`/builder/pipeline/runs/${runId}/complete`)
-      .set('x-api-key', 'test-api-key')
-      .send({ outcome: 'failed', error: 'the planner could not read the PRD' })
-      .expect(201);
-
-    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
-  });
-
-  /**
-   * A REVIEW run has no gate to pass, so requiring one made a correct review
-   * impossible to complete.
-   *
-   * On 2026-09-23 a review of ally-web#694 reported zero findings, approved
-   * the pull request, and was then refused its own completion twice and failed
-   * by outcome-gate.sh — recorded as a failed run for doing exactly its job,
-   * and announced to Slack as one, because BUILD_FAILED is an announced kind.
-   */
-  it('settles a review that has no gate to pass', async () => {
-    (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
-      id: uuidv4(),
-      sessionId: uuidv4(),
-      engine: null,
-      model: null,
-      mode: BuilderRunMode.REVIEW,
-    });
-    const runId = uuidv4();
-
-    await request(app.getHttpServer())
-      .post(`/builder/pipeline/runs/${runId}/complete`)
-      .set('x-api-key', 'test-api-key')
-      .send({ outcome: 'done' })
-      .expect(201);
-
-    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
-    // The gate is not merely tolerated when absent — it is never asked for.
-    expect(mockBuilderBuildService.hasPassingGate).not.toHaveBeenCalled();
-  });
-
-  /**
-   * A failure needs no gate behind it — the runner reports these from evidence
-   * after the agent has finished, and they must always land.
-   */
   it('always records a failure', async () => {
     const runId = uuidv4();
 
@@ -239,38 +113,71 @@ describe('BuilderPipelineController', () => {
       .send({ outcome: 'failed', error: 'no pull request was opened' })
       .expect(201);
 
-    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
-  });
-
-  it('should record the model for a run', async () => {
-    const runId = uuidv4();
-    const model = 'test-model';
-    // Non-null asserted: the mock is a Partial<BuilderBuildService>, so every
-    // member is optional to the type checker even though this one is always
-    // provided in beforeEach. Without it the Docker build fails on a strict
-    // type error that ts-jest does not raise.
-    const mockRun = await mockBuilderBuildService.getRunOrFail!(runId);
-
-    const dto: RecordBuilderRunModelDto = { model };
-
-    await request(app.getHttpServer())
-      .post(`/builder/pipeline/runs/${runId}/model`)
-      .set('x-api-key', 'test-api-key') // Add API key for authentication
-      .send(dto)
-      .expect(201)
-      .expect({ ok: true });
-
-    expect(mockBuilderBuildService.getRunOrFail).toHaveBeenCalledWith(runId);
-    expect(mockBuilderBuildService.recordRunModel).toHaveBeenCalledWith(
-      mockRun,
-      dto,
+    expect(mockBuilderBuildService.settleRun).toHaveBeenCalledWith(
+      expect.anything(),
+      'FAILED',
+      'no pull request was opened',
     );
   });
 
   /**
+   * The catalog is posted by the context-refresh workflow. The endpoint keeps only the declared
+   * keys of each entry and drops entries without a kind and a name — anything holding the
+   * pipeline key can reach it.
+   */
+  it('stores a repo catalog, keeping only the declared keys', async () => {
+    await request(app.getHttpServer())
+      .post('/builder/pipeline/repo-catalogs')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        repo: 'ally-be',
+        commitSha: 'abc123',
+        entries: [
+          {
+            kind: 'module',
+            name: 'skill-experiment',
+            path: 'src/skill-experiment',
+            extra: 'x',
+          },
+          { kind: 'table', path: 'no-name.ts' },
+          { name: 'no-kind' },
+        ],
+        stats: { files: 10 },
+      })
+      .expect(201)
+      .expect((res) =>
+        expect(res.body).toMatchObject({
+          ok: true,
+          repo: 'ally-be',
+          entries: 1,
+        }),
+      );
+
+    expect(mockCatalogService.upsert).toHaveBeenCalledWith({
+      repo: 'ally-be',
+      commitSha: 'abc123',
+      entries: [
+        {
+          kind: 'module',
+          name: 'skill-experiment',
+          path: 'src/skill-experiment',
+        },
+      ],
+      stats: { files: 10 },
+    });
+  });
+
+  it('refuses a catalog without the pipeline key', async () => {
+    await request(app.getHttpServer())
+      .post('/builder/pipeline/repo-catalogs')
+      .send({ repo: 'ally-be', entries: [] })
+      .expect(401);
+  });
+
+  /**
    * The technical design's runner half. The designer submits through the
-   * `design` tool, the critic through `design_review`, and builds read the
-   * approved scope back for their scope gate.
+   * `design` tool, the critic through `design_review`, and an issue build
+   * reads the approved design back in its spec.
    */
   describe('technical design', () => {
     const designRunId = uuidv4();
@@ -476,7 +383,7 @@ describe('BuilderPipelineController', () => {
       expect(failed.review.verdict).toBe('concerns');
     });
 
-    it('serves a Ralph build its spec: rules and the PRD with the approved design, no protocol', async () => {
+    it('serves an issue build its spec: rules and the PRD with the approved design, no protocol', async () => {
       mockPrdService.getOrCreateDoc.mockResolvedValue(
         withDesign({ ...submission, status: 'approved' }),
       );
@@ -488,41 +395,6 @@ describe('BuilderPipelineController', () => {
 
       expect(response.text).toContain('Technical design (approved)');
       expect(response.text).not.toContain('## Tools');
-    });
-
-    it('serves the approved scope per repo', async () => {
-      mockPrdService.getOrCreateDoc.mockResolvedValue(
-        withDesign({
-          ...submission,
-          status: 'approved',
-          scope: [
-            { repo: 'ally-be', files: ['src/a.ts'] },
-            { repo: 'ally-web', files: ['src/b.tsx'] },
-          ],
-        }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .get(`/builder/pipeline/runs/${designRunId}/design-scope`)
-        .set('x-api-key', 'test-api-key')
-        .expect(200);
-
-      expect(response.body).toEqual({
-        repos: { 'ally-be': ['src/a.ts'], 'ally-web': ['src/b.tsx'] },
-      });
-    });
-
-    it('serves no scope for a design nobody approved', async () => {
-      mockPrdService.getOrCreateDoc.mockResolvedValue(
-        withDesign({ ...submission, status: 'review' }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .get(`/builder/pipeline/runs/${designRunId}/design-scope`)
-        .set('x-api-key', 'test-api-key')
-        .expect(200);
-
-      expect(response.body).toEqual({ repos: {} });
     });
 
     it('renders the design prompt with the rules, the PRD and the tool contract', async () => {
@@ -561,7 +433,6 @@ describe('BuilderPipelineController', () => {
         .expect(201);
 
       expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
-      expect(mockBuilderBuildService.hasPassingGate).not.toHaveBeenCalled();
     });
 
     it('refuses done from a design run that never submitted a design', async () => {
@@ -572,6 +443,48 @@ describe('BuilderPipelineController', () => {
         .expect(409);
 
       expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
+    });
+  });
+  describe('an in-repo review filing its verdict', () => {
+    const filing = { pullRequestId: 'pr-114', findings: [] };
+    let controller: BuilderPipelineController;
+
+    beforeEach(() => {
+      controller = app.get(BuilderPipelineController);
+      (controller as any).pullRequestService = {
+        recordReviewFindings: jest.fn().mockResolvedValue(0),
+      };
+      mockBuilderBuildService.settleRepoReview = jest.fn();
+    });
+
+    it('settles the review run: its verdict is its end', async () => {
+      const run = { id: 'review-1', sessionId: 'session-1' };
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue(
+        run,
+      );
+      mockBuilderBuildService.isRepoReview = jest.fn().mockReturnValue(true);
+
+      await expect(
+        controller.recordReviewFindings('review-1', filing as any),
+      ).resolves.toEqual({ ok: true, recorded: 0 });
+
+      expect(mockBuilderBuildService.settleRepoReview).toHaveBeenCalledWith(
+        run,
+        'SUCCEEDED',
+        null,
+      );
+    });
+
+    it('leaves a run that is not an in-repo review unsettled', async () => {
+      (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
+        id: 'review-2',
+        sessionId: 'session-1',
+      });
+      mockBuilderBuildService.isRepoReview = jest.fn().mockReturnValue(false);
+
+      await controller.recordReviewFindings('review-2', filing as any);
+
+      expect(mockBuilderBuildService.settleRepoReview).not.toHaveBeenCalled();
     });
   });
 });

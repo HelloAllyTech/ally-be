@@ -1,0 +1,8 @@
+{
+  "name": "Course Copilot — Course Title and Description",
+  "description": "Polishes a built course's title (at most 80 characters, says what the learner will be able to do) and its catalogue description (two short plain-text paragraphs). JSON mode.",
+  "category": "Course Copilot",
+  "runtimes": [
+    "ally-be"
+  ]
+}

@@ -151,7 +151,7 @@ anticipate: **model deprecation**, rather than a new provider.
 - Served by `GET /api/v1/llm/models` (`src/llm/controller/llm.controller.ts`), optionally
   filtered by runtime.
 - `ally-web` consumes it via `useGetLlmModelsQuery`. The old hand-maintained lists
-  (`PROMPT_LLM_MODEL_OPTIONS`, `FALLBACK_AUTOFILL_MODEL_OPTIONS` in `constants/models.ts`)
+  (`PROMPT_LLM_MODEL_OPTIONS`, `FALLBACK_AUTOFILL_MODEL_OPTIONS` in `ally-web/apps/ally-admin-dashboard/src/constants/models.ts`)
   survive **only as degraded-mode fallbacks** — `llmModels?.length ? … : FALLBACK`.
 
 **Phase 2 — explicit provider (largely done).**
@@ -178,7 +178,7 @@ Resolution is now: language `llmConfigId` → legacy jsonb → platform default.
 |---|---|---|
 | `provider` + `model` + `label` | Pure data. Adding `gpt-5.1-mini` under OpenAI needs **no code change** — the client is constructed from a provider and a model string | **DB** |
 | `supportsTemperature` | Not a code capability: a prefix guess over the model name (`o1`/`o3`/`o4`/`gpt-5`) in `modelSupportsTemperature`. A fact about the model that we infer, badly | **DB**, seeded from the heuristic |
-| `runtimes[]` | A genuine property of deployed code — ai-learn's `app/llms/factory.py` has OpenAI/Gemini/Ollama/vLLM branches and no Anthropic; `PromptSidePanel.tsx` hardcodes `PROVIDER_ORDER` to OpenAI + Gemini | **Code** |
+| `runtimes[]` | A genuine property of deployed code — ai-learn's `ally-ai-learn/app/llms/factory.py` has OpenAI/Gemini/Ollama/vLLM branches and no Anthropic; `PromptSidePanel.tsx` hardcodes `PROVIDER_ORDER` to OpenAI + Gemini | **Code** |
 
 **Refinement:** `runtimes` should not be stored per model at all — it is a property of the
 *provider*. Every OpenAI model runs wherever the OpenAI client is wired. Keep a small
@@ -193,7 +193,7 @@ value when false, and ai-learn drops a temperature the model rejects rather than
 A human correcting a bad guess without a deploy is strictly better than the heuristic.
 
 **The objection that survives** applies only to provider→runtime. In
-`app/llms/factory.py` (~L99):
+`ally-ai-learn/app/llms/factory.py` (~L99):
 
 ```python
 if "model" not in config_dict and not is_local_provider:
@@ -377,18 +377,18 @@ back and the model continues) — the pass that breaks, because it is where the 
 providers' tool-result shapes differ. Unit fakes cannot produce a rejected tool schema.
 
 ## Appendix — touch points for future phases
-- ally-be: `prompt.entity.ts`, `create/update-prompt.dto.ts`, `prompt-response.type.ts`,
+- ally-be: `prompt.entity.ts`, `src/prompt/dto/create-prompt.dto.ts`, `src/prompt/dto/update-prompt.dto.ts`, `prompt-response.type.ts`,
   `prompt-shared.service.ts` (`getPromptsByOptions`), `ai.service.ts` (`getPromptOverrides`),
   `scenario-shared.service.ts` (`getPromptsForScenarioSession`), `ai.request.dto.ts`
-  (`PromptOverride`), `learn/constants/autofill-models.constants.ts`.
-- ally-ai-learn: `app/llms/factory.py` (`create_llm_client`, `infer_provider_from_model`),
-  `app/core/agent/factory.py` (`build_llm_client_for_prompt`, `configure_llm_client`,
-  `resolve_call_site_llm_client`), `app/core/scenario/base.py` (`PromptData`).
-- ally-ai: `app/prompts/resolver.py` (`get_backend_llm_overrides`),
-  `app/core/text_generations/openai_text_generation_client.py` (`get_or_create_client`,
+  (`PromptOverride`), `src/llm/constants/llm-model-registry.constants.ts` (the model registry that replaced the former `autofill-models.constants.ts` list).
+- ally-ai-learn: `ally-ai-learn/app/llms/factory.py` (`create_llm_client`, `infer_provider_from_model`),
+  `ally-ai-learn/app/core/agent/factory.py` (`build_llm_client_for_prompt`, `configure_llm_client`,
+  `resolve_call_site_llm_client`), `ally-ai-learn/app/core/scenario/base.py` (`PromptData`).
+- ally-ai: `ally-ai/app/prompts/resolver.py` (`get_backend_llm_overrides`),
+  `ally-ai/app/core/text_generations/openai_text_generation_client.py` (`get_or_create_client`,
   `_is_openai_model`), `openai_text_generation_service.py` (`_client_for`, `_invoke_llm`).
-- ally-web: `constants/models.ts` (`PROMPT_LLM_MODEL_OPTIONS`),
-  `components/prompt-side-panel/PromptSidePanel.tsx`.
+- ally-web: `ally-web/apps/ally-admin-dashboard/src/constants/models.ts` (`PROMPT_LLM_MODEL_OPTIONS`),
+  `ally-web/apps/ally-admin-dashboard/src/components/prompt-side-panel/PromptSidePanel.tsx`.
 
 ### Appendix — touch points added 2026-08-01
 
@@ -404,7 +404,7 @@ providers' tool-result shapes differ. Unit fakes cannot produce a rejected tool 
   (`scheduled-task.registry.ts`, `scheduled-task-runner.service.ts` — interval buckets
   and the multi-replica advisory lock).
 - ally-web pickers to keep in sync: `components/autofill-model-select/`,
-  `components/enhance-button/`, `pages/AILab/AutoEvalDrawer.tsx` (all fall back to
+  `components/enhance-button/`, `ally-web/apps/ally-admin-dashboard/src/pages/AILab/AutoEvalDrawer.tsx` (all fall back to
   `FALLBACK_AUTOFILL_MODEL_OPTIONS` when the registry call returns nothing).
 
 ### Appendix — touch points added 2026-09-05
@@ -420,6 +420,6 @@ providers' tool-result shapes differ. Unit fakes cannot produce a rejected tool 
   `analytics-suggestions/service/analytics-suggestions-ai.service.ts`,
   `track/service/track-quiz-llm-grader.service.ts`, `track/service/track-memory.service.ts`,
   `lab/service/lab-run.service.ts`, `chat/service/voice-note.service.ts`,
-  `learn/service/anthropic-autofill.service.ts`,
+  `learn/service/autofill.service.ts`,
   `mobile-releases/mobile-release-whats-new-ai.service.ts`, and the five
   `builder/service/builder-*.service.ts` helpers.

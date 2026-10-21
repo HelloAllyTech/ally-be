@@ -200,11 +200,18 @@ export enum BuilderEventType {
   PLAN = 'plan',
   VERIFICATION = 'verification',
   /**
-   * A machine-run test-gate result, posted by run-test-gate.sh rather than
-   * asserted by the agent — the UI renders it as verified, not self-reported,
-   * and /complete refuses a `done` for a run that never passed one.
+   * A machine-run test-gate result, posted by the runner's run-test-gate.sh
+   * (removed; the runner is design-only now) rather than asserted by the
+   * agent — the UI renders it as verified, not self-reported, and /complete
+   * refuses a `done` for a run that never passed one.
    */
   GATE_RESULT = 'gate_result',
+  /**
+   * The target repo's own CI verdict on an issue build's pull request head
+   * (payload: repo, prNumber, prUrl, sha, state, failed). Like GATE_RESULT,
+   * read from GitHub rather than reported by the agent.
+   */
+  CI_RESULT = 'ci_result',
   /** Per-phase cost increment (plan/code/verify/finalise invocations). */
   PHASE_COST = 'phase_cost',
   /**
@@ -233,39 +240,6 @@ export enum BuilderEventType {
   COST = 'cost',
   ERROR = 'error',
   DONE = 'done',
-}
-
-export enum BuilderQuestionStatus {
-  PENDING = 'pending',
-  ANSWERED = 'answered',
-  /** The run was cancelled or restarted before this was answered. */
-  SUPERSEDED = 'superseded',
-}
-
-/**
- * A steering note's life.
- *
- * DELIVERED means a run read it and appended it to a phase prompt — not that
- * the agent acted on it. Nothing here can promise the second, and a status
- * that implied it would be lying to the admin who sent the note.
- *
- * SUPERSEDED is the withdrawal path, and the end state for anything still
- * pending when a session finishes: a note nobody will ever read must not sit
- * at PENDING forever, and it must not read as delivered either.
- */
-export enum BuilderSteerStatus {
-  PENDING = 'pending',
-  DELIVERED = 'delivered',
-  SUPERSEDED = 'superseded',
-}
-
-export enum BuilderReportType {
-  /** Written by the agent at the end of a run. */
-  RUN_REPORT = 'run_report',
-  /** Composed by ally-be across a session's runs. */
-  SESSION_REPORT = 'session_report',
-  /** The agent's own "what would I do differently" — feeds builder_lessons. */
-  RETROSPECTIVE = 'retrospective',
 }
 
 export enum BuilderNotificationKind {
@@ -305,6 +279,11 @@ export enum BuilderNotificationKind {
    * nobody told would be the loudest silence in this module.
    */
   PR_MERGED_AUTOMATICALLY = 'pr_merged_automatically',
+  /**
+   * Automation stopped on a pull request and handed it to a person: it ran out
+   * of fix rounds, or stopped getting better. Says why, in plain words.
+   */
+  PR_NEEDS_HUMAN = 'pr_needs_human',
 }
 
 /**

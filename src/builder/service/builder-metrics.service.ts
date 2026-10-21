@@ -65,14 +65,13 @@ export class BuilderMetricsService {
    */
   async pipelineHealth(windowDays = 30): Promise<BuilderPipelineHealth> {
     const days = Math.min(365, Math.max(7, Math.floor(windowDays) || 30));
-    const [phases, gates, outcomes, loop, attempts] = await Promise.all([
+    const [phases, gates, outcomes, loop] = await Promise.all([
       this.phaseTimings(days),
       this.gatePassRates(days),
       this.runOutcomes(days),
       this.loopShape(days),
-      this.attemptOutcomes(days),
     ]);
-    return { windowDays: days, phases, gates, outcomes, loop, attempts };
+    return { windowDays: days, phases, gates, outcomes, loop };
   }
 
   /**
@@ -187,86 +186,6 @@ export class BuilderMetricsService {
         // ran: passing eventually only says remediation works.
         firstAttemptPassRate:
           firstAttempts > 0 ? firstAttemptsPassed / firstAttempts : null,
-      };
-    });
-  }
-
-  /**
-   * What each coder tier actually bought.
-   *
-   * `builder_attempts` was written and never read: it records the arm and the
-   * reward on every coding attempt, and nothing queried it, so the dataset
-   * that exists to answer "is the cheap tier good enough" could not answer
-   * anything. This is that query.
-   *
-   * Grouped by the decision features frozen on the run, because a tier's pass
-   * rate is only meaningful against the kind of work it was given — a model
-   * that clears every small build and no large one is not "72% good".
-   *
-   * `passRate` at attempt 1 is the number that decides whether to start
-   * cheaper: escalation pays only when the cheap tier clears the gate often
-   * enough to cover the failed attempts it causes. `trustedPassRate` is the
-   * same number with captured passes removed — a pass on a run that edited
-   * its own test configuration is not evidence, and a tier that reached its
-   * rate that way would look cheapest precisely because it was cheating.
-   */
-  private async attemptOutcomes(
-    days: number,
-  ): Promise<BuilderAttemptOutcome[]> {
-    const rows = await this.dataSource.query(
-      `
-      SELECT run.size                                     AS "size",
-             a.model                                      AS "model",
-             a.attempt                                    AS "attempt",
-             COUNT(*)::int                                AS "attempts",
-             COUNT(*) FILTER (WHERE a."gatePassed")::int  AS "passed",
-             COUNT(*) FILTER (
-               WHERE a."gatePassed" AND a."gateTrusted"
-             )::int                                       AS "trustedPasses",
-             COUNT(*) FILTER (WHERE a.escalated)::int     AS "escalations",
-             ROUND(SUM(a."costUsd"), 4)                   AS "totalCostUsd",
-             PERCENTILE_CONT(0.5) WITHIN GROUP (
-               ORDER BY a."durationMs"
-             )                                            AS "medianMs",
-             -- Turns, because cost per attempt is mostly turns x cached
-             -- context, not the per-token rate. Without this a stronger model
-             -- that costs LESS looks like a measurement error rather than a
-             -- model that needed fewer tool calls to get there — which is the
-             -- only reading that would change how work is routed.
-             PERCENTILE_CONT(0.5) WITHIN GROUP (
-               ORDER BY a."numTurns"
-             )                                            AS "medianTurns"
-        FROM builder_attempts a
-        JOIN builder_build_runs run ON run.id = a."runId"
-       WHERE a."createdAt" >= NOW() - ($1 || ' days')::interval
-         AND a.phase = 'code'
-       GROUP BY run.size, a.model, a.attempt
-       ORDER BY run.size, a.model, a.attempt
-      `,
-      [String(days)],
-    );
-
-    return rows.map((row: Record<string, any>) => {
-      const attempts = Number(row.attempts ?? 0);
-      return {
-        size: row.size ?? null,
-        model: String(row.model),
-        attempt: Number(row.attempt ?? 0),
-        attempts,
-        medianTurns:
-          row.medianTurns === null || row.medianTurns === undefined
-            ? null
-            : Number(row.medianTurns),
-        passed: Number(row.passed ?? 0),
-        // Null rather than 0 on an empty cell: "no attempts yet" and "never
-        // passed" are different answers, and a routing decision must not read
-        // the first as the second.
-        passRate: attempts === 0 ? null : Number(row.passed ?? 0) / attempts,
-        trustedPassRate:
-          attempts === 0 ? null : Number(row.trustedPasses ?? 0) / attempts,
-        escalations: Number(row.escalations ?? 0),
-        totalCostUsd: this.numberOrNull(row.totalCostUsd),
-        medianMs: this.numberOrNull(row.medianMs),
       };
     });
   }
@@ -561,119 +480,6 @@ export class BuilderMetricsService {
     };
   }
 
-  /**
-   * Model routing: does a small build succeed on the cheap tier?
-   *
-   * `builder_attempts` has recorded an arm and a reward on every coding attempt
-   * since 2026-09-15 and **nothing has ever read it**. The table exists to
-   * settle one question — whether a build can start cheaper — and until there
-   * is a query it cannot answer anything, which is why the escalation ladder
-   * still only ever escalates and never starts lower.
-   *
-   * Four things this counts carefully, because each one is a way to get the
-   * answer backwards:
-   *
-   *  - **Only the first attempt.** Later attempts are conditioned on an
-   *    earlier failure and on a prompt carrying the gate's complaint, so a
-   *    tier's second-attempt pass rate says nothing about whether it could
-   *    have started the work. `firstAttempt*` is the comparable number; the
-   *    rest is context.
-   *  - **A null `gatePassed` is not a failure.** It means the gate was never
-   *    reached — the run paused, held on budget or died — so it leaves the
-   *    denominator rather than counting against the arm.
-   *  - **An untrusted pass is reported separately, never folded in.** A pass
-   *    is untrusted when the change edited the gate's own configuration, and
-   *    the entity says why that matters here specifically: cheaper models
-   *    reward-hack more, so an uncritical pass signal degrades in exactly the
-   *    direction a cost optimisation pushes. `trustedPassRate` is the one to
-   *    route on; a wide gap between it and `passRate` is the finding.
-   *  - **Shipping is credited to one attempt.** `producedFinalDiff` marks the
-   *    diff that actually went out, so a cheap tier that failed twice is not
-   *    paid for what the expensive tier finished.
-   *
-   * Grouped by size as well as model because that is the decision being made:
-   * `BUILDER_SIZE_PROFILES` picks a ladder per size, so "cheap enough for a
-   * small build" and "cheap enough" are different claims.
-   */
-  async modelRouting(windowDays = 30): Promise<BuilderModelRouting> {
-    const days = Math.min(365, Math.max(7, Math.floor(windowDays) || 30));
-
-    const rows = await this.dataSource.query(
-      `SELECT
-         a.model                                                   AS model,
-         a.engine                                                  AS engine,
-         COALESCE(r.size, 'unknown')                               AS size,
-         COUNT(*)::int                                             AS attempts,
-         COUNT(*) FILTER (WHERE a.attempt = 1)::int                AS "firstAttempts",
-         -- Denominators exclude a gate that never ran: null is "no verdict",
-         -- not "failed".
-         COUNT(*) FILTER (
-           WHERE a.attempt = 1 AND a."gatePassed" IS NOT NULL
-         )::int                                                    AS "firstJudged",
-         COUNT(*) FILTER (
-           WHERE a.attempt = 1 AND a."gatePassed" IS TRUE
-         )::int                                                    AS "firstPassed",
-         COUNT(*) FILTER (
-           WHERE a.attempt = 1 AND a."gatePassed" IS TRUE AND a."gateTrusted" IS TRUE
-         )::int                                                    AS "firstPassedTrusted",
-         COUNT(*) FILTER (WHERE a.escalated)::int                  AS escalated,
-         COUNT(*) FILTER (WHERE a."producedFinalDiff")::int        AS shipped,
-         COALESCE(SUM(a."costUsd"), 0)                             AS "costUsd",
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY a."costUsd")  AS "medianCostUsd",
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY a."durationMs") AS "medianDurationMs",
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY a."numTurns")  AS "medianTurns"
-       FROM builder_attempts a
-       LEFT JOIN builder_build_runs r ON r.id = a."runId"
-       WHERE a."createdAt" >= now() - ($1 || ' days')::interval
-       GROUP BY a.model, a.engine, COALESCE(r.size, 'unknown')
-       ORDER BY attempts DESC`,
-      [String(days)],
-    );
-
-    const arms: BuilderModelArm[] = rows.map((row: any) => {
-      const judged = Number(row.firstJudged ?? 0);
-      const passed = Number(row.firstPassed ?? 0);
-      const trusted = Number(row.firstPassedTrusted ?? 0);
-      const attempts = Number(row.attempts ?? 0);
-      const rate = (n: number, d: number) =>
-        d ? Number((n / d).toFixed(3)) : null;
-
-      return {
-        model: row.model,
-        engine: row.engine ?? null,
-        size: row.size,
-        attempts,
-        firstAttempts: Number(row.firstAttempts ?? 0),
-        // Null rather than 0 when nothing was judged: "no evidence" and "never
-        // passed" are the two answers a routing decision must not confuse.
-        firstAttemptJudged: judged,
-        firstAttemptPassRate: rate(passed, judged),
-        firstAttemptTrustedPassRate: rate(trusted, judged),
-        escalatedRate: rate(Number(row.escalated ?? 0), attempts),
-        shippedRate: rate(Number(row.shipped ?? 0), attempts),
-        costUsd: Number(row.costUsd ?? 0),
-        medianCostUsd:
-          row.medianCostUsd == null ? null : Number(row.medianCostUsd),
-        medianDurationMs:
-          row.medianDurationMs == null ? null : Number(row.medianDurationMs),
-        medianTurns: row.medianTurns == null ? null : Number(row.medianTurns),
-      };
-    });
-
-    return {
-      windowDays: days,
-      arms,
-      // Said plainly rather than left for a reader to infer from an empty
-      // table: an endpoint that returns `[]` looks identical whether the
-      // feature is broken or simply has no data yet, and this one will return
-      // `[]` for a while.
-      note: arms.length
-        ? null
-        : 'No coding attempts recorded in this window. Rows are written per ' +
-          'coding attempt, so this fills as builds run.',
-    };
-  }
-
   /** Where the losses come from, so effort has a target. */
   private async failureTagCounts(
     days: number,
@@ -783,29 +589,6 @@ export interface BuilderPipelineOutcome {
 }
 
 /** One (size x model x attempt) cell of the model-selection dataset. */
-export interface BuilderAttemptOutcome {
-  size: string | null;
-  model: string;
-  attempt: number;
-  attempts: number;
-  passed: number;
-  /** Null when the cell is empty — not the same as never passing. */
-  passRate: number | null;
-  /** Pass rate counting only gates the change did not also edit. */
-  trustedPassRate: number | null;
-  escalations: number;
-  totalCostUsd: number | null;
-  medianMs: number | null;
-  /**
-   * Turns, which is where an attempt's cost actually comes from: turns times a
-   * growing cached context, not the per-token rate. Without it a stronger model
-   * costing LESS reads as a measurement error rather than as a model that
-   * needed fewer tool calls — and that is the only reading that would change
-   * how work is routed.
-   */
-  medianTurns: number | null;
-}
-
 export interface BuilderPipelineLoop {
   runs: number;
   medianCodeIterations: number | null;
@@ -820,34 +603,4 @@ export interface BuilderPipelineHealth {
   gates: BuilderPipelineGate[];
   outcomes: BuilderPipelineOutcome[];
   loop: BuilderPipelineLoop;
-  attempts: BuilderAttemptOutcome[];
-}
-
-export interface BuilderModelArm {
-  /** The arm: the model this attempt ran on. */
-  model: string;
-  engine: string | null;
-  /** The build size the run was classified as, which picks the ladder. */
-  size: string;
-  attempts: number;
-  firstAttempts: number;
-  /** First attempts the gate actually reached a verdict on. */
-  firstAttemptJudged: number;
-  /** Null when nothing was judged — not zero, which reads as "never passed". */
-  firstAttemptPassRate: number | null;
-  /** The one to route on. See modelRouting for why. */
-  firstAttemptTrustedPassRate: number | null;
-  escalatedRate: number | null;
-  shippedRate: number | null;
-  costUsd: number;
-  medianCostUsd: number | null;
-  medianDurationMs: number | null;
-  medianTurns: number | null;
-}
-
-export interface BuilderModelRouting {
-  windowDays: number;
-  arms: BuilderModelArm[];
-  /** Why the list is empty, when it is. */
-  note: string | null;
 }

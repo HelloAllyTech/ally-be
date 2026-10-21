@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsIn,
@@ -9,8 +10,8 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -47,78 +48,6 @@ export class IngestBuilderEventsDto {
   @ValidateNested({ each: true })
   @Type(() => BuilderEventDto)
   events!: BuilderEventDto[];
-}
-
-export class RecordBuilderQuestionsDto {
-  @ApiProperty({
-    type: [Object],
-    description: 'Questions in the shape the interview widget renders',
-  })
-  @IsArray()
-  @ArrayNotEmpty()
-  questions!: Record<string, any>[];
-
-  @ApiPropertyOptional({
-    type: Object,
-    description:
-      'Branches holding the work in progress, as { repo: branch }. Without these a resume has nowhere to pick up from.',
-  })
-  @IsOptional()
-  @IsObject()
-  branches?: Record<string, string>;
-}
-
-export class BuilderPullRequestDto {
-  @ApiProperty()
-  @IsString()
-  repo!: string;
-
-  @ApiProperty()
-  @IsString()
-  branch!: string;
-
-  @ApiProperty()
-  @IsNumber()
-  prNumber!: number;
-
-  @ApiProperty()
-  @IsString()
-  prUrl!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  title?: string;
-}
-
-export class RecordBuilderPrsDto {
-  @ApiProperty({ type: [BuilderPullRequestDto] })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => BuilderPullRequestDto)
-  pullRequests!: BuilderPullRequestDto[];
-}
-
-export class RecordBuilderReportDto {
-  @ApiPropertyOptional({ enum: ['run_report', 'retrospective'] })
-  @IsOptional()
-  @IsString()
-  type?: string;
-
-  @ApiProperty({ description: 'Markdown; rendered in the session Reports tab' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100_000)
-  contentMd!: string;
-
-  @ApiPropertyOptional({
-    type: Object,
-    description:
-      'Files changed, tests added, stage durations — and a `retrospective` array whose bullets become builder_lessons.',
-  })
-  @IsOptional()
-  @IsObject()
-  metrics?: Record<string, any>;
 }
 
 export class RecordBuilderRunCostDto {
@@ -171,36 +100,6 @@ export class RecordBuilderRunCostDto {
   @IsOptional()
   @IsNumber()
   numTurns?: number;
-}
-
-export class BuilderFeedbackOutcomeDto {
-  @ApiProperty({ description: 'The builder_pr_feedback row this is about' })
-  @IsString()
-  @IsNotEmpty()
-  feedbackId!: string;
-
-  @ApiPropertyOptional({
-    enum: ['addressed', 'dismissed'],
-    description:
-      'addressed = changed the code; dismissed = replied explaining why not. Anything else is treated as addressed.',
-  })
-  @IsOptional()
-  @IsString()
-  status?: string;
-
-  @ApiPropertyOptional({ description: 'Where Builder replied on the PR' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  replyUrl?: string;
-}
-
-export class RecordBuilderFeedbackOutcomesDto {
-  @ApiProperty({ type: [BuilderFeedbackOutcomeDto] })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => BuilderFeedbackOutcomeDto)
-  outcomes!: BuilderFeedbackOutcomeDto[];
 }
 
 export class BuilderReviewFindingDto {
@@ -290,46 +189,33 @@ export class UpsertBuilderRepoMapDto {
   stats?: Record<string, any>;
 }
 
-/**
- * The runner saying it has put these notes into a phase prompt.
- *
- * Acknowledged after the append, never before: a crash between fetching and
- * appending must leave the notes pending so the next boundary delivers them.
- * A person's correction going silently missing is the one failure this whole
- * surface exists to prevent.
- */
-export class RecordBuilderRunModelDto {
-  @ApiPropertyOptional({ description: 'The model that ran this run' })
-  @IsOptional()
+export class UpsertBuilderRepoCatalogDto {
+  @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
-  model?: string;
-}
+  repo!: string;
 
-/**
- * The runner saying it has put these notes into a phase prompt.
- *
- * Acknowledged after the append, never before: a crash between fetching and
- * appending must leave the notes pending so the next boundary delivers them.
- * A person's correction going silently missing is the one failure this whole
- * surface exists to prevent.
- */
-export class AckBuilderSteersDto {
-  @ApiProperty({
-    type: [String],
-    description: 'Steering note ids that reached the prompt',
-  })
-  @IsArray()
-  @IsUUID('4', { each: true })
-  ids!: string[];
-
-  @ApiPropertyOptional({
-    description: 'The phase the run was entering, for the audit trail',
-  })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(32)
-  phase?: string;
+  @MaxLength(60)
+  commitSha?: string;
+
+  /**
+   * Loose on each entry's shape, like the event DTOs: the extractor is ours,
+   * and the service keeps only the declared keys. Bounded on count, so a
+   * runaway extraction cannot write an unbounded row.
+   */
+  @ApiProperty({ type: [Object] })
+  @IsArray()
+  @ArrayMaxSize(20_000)
+  entries!: Record<string, any>[];
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  stats?: Record<string, any>;
 }
 
 /* ── Technical design ───────────────────────────────────────────────────── */
@@ -473,4 +359,49 @@ export class SubmitBuilderDesignReviewDto {
   @IsString({ each: true })
   @MaxLength(4_000, { each: true })
   suggestions?: string[];
+}
+
+/**
+ * What an opencode run or a review spent, reported by the Builder workflows
+ * after it finishes (scripts/builder/opencode-usage.py). Attributed to a run
+ * by `runId`, or to a pull request by `repo` + `prNumber`.
+ */
+export class RecordBuilderUsageDto {
+  @IsIn(['build', 'fix', 'review'])
+  kind!: 'build' | 'fix' | 'review';
+
+  @IsString()
+  repo!: string;
+
+  @IsOptional()
+  @IsNumber()
+  prNumber?: number | null;
+
+  @IsOptional()
+  @IsString()
+  runId?: string | null;
+
+  @IsNumber()
+  @Min(0)
+  costUsd!: number;
+
+  @IsOptional()
+  @IsNumber()
+  inputTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  outputTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  cacheReadTokens?: number;
+
+  @IsOptional()
+  @IsNumber()
+  cacheWriteTokens?: number;
+
+  @IsOptional()
+  @IsObject()
+  models?: Record<string, number>;
 }

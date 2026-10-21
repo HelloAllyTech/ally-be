@@ -62,6 +62,17 @@ export const BUG_REPORT_RATE_LIMIT = {
  */
 export const BUILDER_SEED_TITLE_MAX = 80;
 
+/**
+ * How much of the filing interview the Builder hand-off carries, in characters.
+ *
+ * Bounded here, by the side that knows the transcript's shape, so that an over-long one loses
+ * its middle — the hand-off keeps the opening ask and the most recent turns, where the
+ * decisions landed. Left to Builder's own cap (BUILDER_HANDOFF_CONTEXT_MAX, which is larger),
+ * it would be cut from the end, which is exactly the part worth keeping. A ten-minute interview
+ * is around 10–15k characters; this is for an unusually long one.
+ */
+export const BUILDER_HANDOFF_TRANSCRIPT_MAX = 80_000;
+
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,
   PRD_MAX: 20000,
@@ -72,12 +83,13 @@ export const ROADMAP_LIMITS = {
   /** Cap on transcript text handed to the LLM for summarisation. */
   INTERVIEW_TRANSCRIPT_MAX: 50000,
   /**
-   * One turn of the opportunity interview. The transcript rides on every request because the
-   * interview is deliberately stateless (no session table for an experimental surface), so
-   * these two caps are what stop a long conversation turning into an unbounded prompt.
+   * One turn of the opportunity copilot. The transcript rides on every request because the
+   * interview is deliberately stateless (no session table), so these two caps are what stop a
+   * long conversation turning into an unbounded prompt.
    *
-   * 60 messages is ~30 exchanges — far past the ~8 questions the five criteria need, so hitting
-   * it means something is wrong rather than that someone was thorough.
+   * 60 messages is ~30 exchanges — past even a copilot that keeps pushing after the five
+   * criteria are met, so hitting it means something is wrong rather than that someone was
+   * thorough.
    */
   OPPORTUNITY_INTERVIEW_MESSAGE_MAX: 60,
   OPPORTUNITY_INTERVIEW_CONTENT_MAX: 4000,
@@ -99,6 +111,71 @@ export const ROADMAP_LIMITS = {
   REFERENCE_IMAGES_MAX: 6,
   /** Caption length. A label under a thumbnail — "current state", not a paragraph. */
   REFERENCE_IMAGE_CAPTION_MAX: 200,
+} as const;
+
+/**
+ * The opportunity copilot: the guided interview, given research tools and the strategy page.
+ *
+ * Bounds, not tuning knobs. Every number here exists to stop one turn becoming unbounded in a
+ * different dimension — tool round-trips, wall-clock, or the size of what a filed row carries.
+ */
+export const ROADMAP_COPILOT = {
+  /**
+   * Research round-trips in one turn before the copilot is made to answer with what it has.
+   * Eight is two or three lookups per lens on a first turn; later turns need far fewer because
+   * what was found rides back in the brief. Hitting the cap is not an error — the last pass
+   * runs with only `submit_turn` available, so the admin still gets a turn.
+   */
+  MAX_TOOL_ITERATIONS: 8,
+  /** Per model pass. A pass that has not answered in this long is not going to. */
+  PASS_TIMEOUT_MS: 120_000,
+  /**
+   * Thinking and the `submit_turn` call share this. The brief alone can run to ~2k tokens at
+   * its caps, and an adaptive-thinking model spends from the same allowance before it writes.
+   */
+  MAX_TOKENS: 16_000,
+  /** Keep-alive on the SSE stream; a turn that researches for 40s otherwise emits nothing. */
+  SSE_PING_MS: 15_000,
+  /** One tool result handed back to the model — a whole file is never what it needs. */
+  TOOL_RESULT_MAX_CHARS: 12_000,
+  /** How many board rows the always-loaded context lists, highest-ranked first. */
+  BOARD_SNAPSHOT_ROWS: 25,
+} as const;
+
+/**
+ * Caps on the copilot's brief. Applied by `normaliseOpportunityBrief` to whatever the model
+ * wrote AND to whatever a client sends back, because the brief rides on every turn and is
+ * stored on the filed row — an uncapped list is an unbounded jsonb column nobody asked for.
+ */
+export const ROADMAP_BRIEF_LIMITS = {
+  TEXT_MAX: 600,
+  SHORT_TEXT_MAX: 200,
+  STRATEGIC_FIT_MAX: 4,
+  EVIDENCE_MAX: 10,
+  ASSUMPTIONS_MAX: 5,
+  ALTERNATIVES_MAX: 5,
+  RECOMMENDATIONS_MAX: 5,
+} as const;
+
+/**
+ * The `global_settings` row holding the roadmap's Vision & strategy page.
+ *
+ * A settings row rather than a table: it is one document, edited by a handful of people a few
+ * times a quarter, and global_settings is already where single platform-wide documents live
+ * (legal pages, the WhatsApp bot). Its shape is RoadmapStrategyContext.
+ */
+export const ROADMAP_STRATEGY_CONTEXT_SETTING = 'roadmap_strategy_context';
+
+/**
+ * Per-field caps on the Vision & strategy page. Generous for a document a person writes, and
+ * still small enough that the whole page fits comfortably in every copilot turn's cached prefix.
+ */
+export const ROADMAP_STRATEGY_CONTEXT_LIMITS = {
+  VISION_MAX: 3000,
+  AUDIENCE_MAX: 3000,
+  BETS_MAX: 5000,
+  NON_GOALS_MAX: 3000,
+  METRICS_MAX: 3000,
 } as const;
 
 /**
@@ -223,12 +300,16 @@ export const ROADMAP_PROMPT_CODES = {
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
   /**
-   * The interviewer that walks an admin to a fileable draft one question at a time. Grades the
+   * The copilot that walks an admin to a fileable, strategically grounded draft. Grades the
    * SAME ROADMAP_READINESS_CRITERIA the filing gate grades — see the prompt file for why that
    * matters: an interview with its own private rubric can hand over a draft the gate then
    * rejects, which is the one failure this surface exists to prevent.
+   *
+   * A NEW code rather than an edit to `roadmap_opportunity_interview`, which it replaces: that
+   * row may carry a Prompt Management override and a gpt-5-mini model pin written for a
+   * single-shot JSON call, and either would silently win over a tool-using prompt.
    */
-  OPPORTUNITY_INTERVIEW: 'roadmap_opportunity_interview',
+  OPPORTUNITY_COPILOT: 'roadmap_opportunity_copilot',
 } as const;
 
 /**
@@ -244,7 +325,7 @@ export const ROADMAP_PROMPT_CODES = {
  * persisted against a filed row.)
  *
  * These five apply the team's discovery guidance at the point of filing (Stacks: "Filter
- * opportunities by specificity and validation criteria"), with two deliberate departures from
+ * opportunities by specificity and validation criteria"), with three deliberate departures from
  * the strict reading of it:
  *
  * 1. A GAIN COUNTS, not only a pain. Stacks: "Frame customer needs as opportunities, not just
@@ -256,15 +337,28 @@ export const ROADMAP_PROMPT_CODES = {
  *    actually matters is the ORDER: strike the proposed build and there must still be a stated
  *    goal underneath. `goal_before_solution` grades that, and nothing grades solution-mention
  *    on its own.
+ * 3. BROAD IS ALLOWED; VAGUE IS NOT. Stacks' specificity rule ("Frame Opportunities with
+ *    Specificity, Not Themes") rules out themes, design guidelines and feelings — and counts a
+ *    broad need ("finding a show to watch should be easier") among its good examples. The
+ *    `specific` gate this replaced (2026-10-20) read it as NARROW — "one situation at one
+ *    moment" — and, with the old S/M size cap, forced every broad but well-defined opportunity
+ *    down to one slice before it could be filed. `clear_why` grades what the rule is for: the
+ *    entry is sharp about why it matters. Whether that why serves Ally's goals stays advice —
+ *    see STRATEGIC FIT below.
  *
  * What is deliberately NOT here:
- * - SIZE. Graded from the effort the same call already proposes — see ROADMAP_FILEABLE_EFFORTS
- *   — so that the model cannot pass "small enough" while sizing the same draft XL.
+ * - SIZE. Not capped — see ROADMAP_FILEABLE_EFFORTS — but a draft has to carry one, graded from
+ *   the effort the same call proposes, not as a criterion of its own.
  * - EVIDENCE ("more than one person said this"). It is a validation test, not a clarity test,
- *   and it failed real gaps spotted internally or derived from a bug report.
+ *   and it failed real gaps spotted internally or derived from a bug report. The copilot
+ *   still pushes for it — it researches analytics, interview notes and findings, and records
+ *   what it found in the brief — but as advice the filer can act on, never as a gate. Same
+ *   for STRATEGIC FIT: the copilot judges which goal or bet the why serves, records it in the
+ *   brief, and keeps recommending until the case is strong, and the admin can file whenever
+ *   the five below are met.
  * - USER-STORY FORMAT. Carried by the interview's drafting, never gated: a
- *   clear plain-English opportunity must not be blocked over its shape, and criteria 3-5
- *   already grade the content the format would carry.
+ *   clear plain-English opportunity must not be blocked over its shape, and `pain_or_gain`,
+ *   `who_it_affects` and `outcome` already grade the content the format would carry.
  */
 export const ROADMAP_READINESS_CRITERIA = [
   {
@@ -278,9 +372,9 @@ export const ROADMAP_READINESS_CRITERIA = [
     hint: 'Naming a possible solution is fine. Strike it, and the entry must still say what we are trying to achieve.',
   },
   {
-    id: 'specific',
-    label: 'Narrow enough to act on',
-    hint: 'One situation at one moment — not a theme like "onboarding is confusing" or "the interface is hard to use".',
+    id: 'clear_why',
+    label: 'Clear about why it matters',
+    hint: 'Says why this is worth doing — what it costs to leave it, or what it unlocks — sharply enough to weigh against the rest of the board. Broad is fine; a theme or a feeling ("make it easier to use", "improve onboarding") with no stated reason is not.',
   },
   {
     id: 'who_it_affects',
@@ -295,16 +389,21 @@ export const ROADMAP_READINESS_CRITERIA = [
 ] as const;
 
 /**
- * The sizes an opportunity may be filed at. Anything larger is not one opportunity — it is a
- * set of them, and Stacks ("Select leaf-node opportunities for iterative value delivery") is
- * explicit that value lands by solving a series of smaller ones in succession rather than
- * taking a whole set at once. So L and up BLOCK filing: the interview withholds the draft and
- * asks which single shippable slice to keep, and `POST /opportunities` refuses the rest.
+ * The sizes an opportunity may be filed at: all of them. An opportunity does not have to be
+ * narrow to be well defined, so size is information for voters and for the board's ranking
+ * (which already scores L and up lower), not a gate. Until 2026-10-20 only S and M could be
+ * filed (after Stacks' "Select leaf-node opportunities for iterative value delivery"), which
+ * meant the interview withheld every broad idea and asked which single slice to keep; slicing
+ * is now the team's call when they pick it up, not a precondition for putting it on the board.
  *
- * Served alongside the criteria so the threshold lives in one place. Applied to the effort
- * being FILED, not the one in the token, so it holds whatever a client sends.
+ * What still blocks is UNSIZED: a draft nobody can put any size on is not yet well defined
+ * enough to vote on. The interview withholds it and asks what is in and out of scope, and
+ * `POST /opportunities` refuses a filing with no effort.
+ *
+ * Served alongside the criteria so the rule lives in one place. Applied to the effort being
+ * FILED, not the one in the token, so it holds whatever a client sends.
  */
-export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
+export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm', 'l', 'xl', 'xxl'] as const;
 
 /**
  * Sentinel the effort FILTER accepts alongside the real RoadmapOpportunityEffort values, to mean

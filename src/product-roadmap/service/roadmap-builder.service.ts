@@ -15,6 +15,12 @@ import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { OpenBuilderSessionResponseDto } from '../dto/roadmap-response.dto';
 import { BUILDER_SEED_TITLE_MAX } from '../constants/product-roadmap.constants';
+import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
+import {
+  BuilderHandoffSource,
+  describeBuilderHandoff,
+  renderBuilderHandoff,
+} from '../util/roadmap-builder-handoff.util';
 
 /**
  * "Open in Builder Agent" — hands an opportunity to the Builder agent as the opening brief of a
@@ -30,6 +36,14 @@ import { BUILDER_SEED_TITLE_MAX } from '../constants/product-roadmap.constants';
  * (SSE) call the browser has to own — it renders tokens as they arrive — so this creates the
  * session, stores the link and reports whether it was newly created. The client sends the seed
  * on `created: true` and only then. See the drawer for the other half.
+ *
+ * THE SEED IS NOT THE WHOLE HAND-OFF. The seed is one visible message; what the opportunity
+ * actually carries — the copilot's brief and the filing interview — goes to the session as its
+ * hand-off context (BuilderSession.handoffContext), which Builder renders into the interview's
+ * cached system prefix on every turn. Not into the seed: Builder summarises the oldest turns of
+ * a long interview, and a hand-off inside the first message would be summarised away with
+ * them; and a transcript pasted into the admin's opening message is a wall of text in a feed
+ * they have to read.
  */
 @Injectable()
 export class RoadmapBuilderService {
@@ -63,7 +77,16 @@ export class RoadmapBuilderService {
       throw new NotFoundException(`Opportunity ${opportunityId} not found`);
     }
 
+    // Builder's own gate. The route now carries the same check, so this is the backstop for any
+    // future caller that is not behind it: calling BuilderSessionService straight from roadmap
+    // code must never start a build for someone without Builder access. Before the resume
+    // short-circuit too, now that a resume can write to the session (below).
+    await this.assertBuilderAccess(userId);
+
+    const handoff = await this.handoffSource(opportunity);
+
     if (opportunity.builderSessionId) {
+      await this.backfillHandoff(opportunity.builderSessionId, handoff);
       return {
         sessionId: opportunity.builderSessionId,
         created: false,
@@ -71,13 +94,9 @@ export class RoadmapBuilderService {
       };
     }
 
-    // Builder's own gate. The route now carries the same check, so this is the backstop for any
-    // future caller that is not behind it: calling BuilderSessionService straight from roadmap
-    // code must never start a build for someone without Builder access.
-    await this.assertBuilderAccess(userId);
-
     const session = await this.builderSessionService.createSession(userId, {
       title: this.seedTitle(opportunity.description),
+      handoffContext: this.handoffText(handoff),
     });
 
     // A concurrent press may have won: claim the column only while it is still null, and if we
@@ -132,11 +151,72 @@ export class RoadmapBuilderService {
     return {
       sessionId: session.id,
       created: true,
-      seedMessage: this.seedMessage(
-        opportunity.description,
-        opportunity.prd ?? null,
-      ),
+      seedMessage: this.seedMessage(handoff),
     };
+  }
+
+  /**
+   * The opportunity as Builder is handed it. The transcript is a read of its own because the
+   * column is `select: false` — the board reads every card and has no use for it.
+   */
+  private async handoffSource(
+    opportunity: RoadmapOpportunity,
+  ): Promise<BuilderHandoffSource> {
+    const withTranscript = await this.opportunityRepository.findOne({
+      where: { id: opportunity.id },
+      select: { id: true, interviewTranscript: true },
+    });
+    return {
+      code: opportunity.code ?? null,
+      description: opportunity.description,
+      prd: opportunity.prd ?? null,
+      brief: opportunity.brief ?? null,
+      interviewTranscript: withTranscript?.interviewTranscript ?? null,
+    };
+  }
+
+  /**
+   * The rendered hand-off, or null when the opportunity carries nothing beyond its description
+   * and PRD notes — a quick-add or a bug report. Those are already the seed, and Builder frames
+   * a hand-off as "the admin has answered these once", which nothing here would be true of.
+   */
+  private handoffText(handoff: BuilderHandoffSource): string | null {
+    const { hasBrief, interviewMessages } = describeBuilderHandoff(handoff);
+    return hasBrief || interviewMessages ? renderBuilderHandoff(handoff) : null;
+  }
+
+  /**
+   * Give a session opened before the hand-off existed the one it would have been created with.
+   *
+   * So pressing the button again on an opportunity whose interview is already under way gets
+   * that interview the brief from its next turn — the transcript only exists for opportunities
+   * filed since, so an older one gets the brief alone. Never replaces a hand-off already there
+   * (it is frozen once written), and best-effort: the press is a request to OPEN the session,
+   * and a failed write must not stand in the way of that.
+   */
+  private async backfillHandoff(
+    sessionId: string,
+    handoff: BuilderHandoffSource,
+  ): Promise<void> {
+    const text = this.handoffText(handoff);
+    if (!text) return;
+    try {
+      const attached = await this.builderSessionService.attachHandoffContext(
+        sessionId,
+        text,
+      );
+      if (attached) {
+        this.logger.info(
+          `[ROADMAP] Attached the opportunity hand-off to existing Builder session ${sessionId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[ROADMAP] Could not attach the opportunity hand-off to Builder session ${sessionId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**
@@ -146,13 +226,33 @@ export class RoadmapBuilderService {
    * one-line ask apart from the detail already written down, and an unlabelled blob makes it
    * guess. The PRD heading is omitted entirely when there is no PRD — an empty "## PRD" reads to
    * the agent as "there is a PRD and it is empty", which is a different fact.
+   *
+   * It names what else came over and says it is settled, in the admin's voice since it is sent
+   * as their message: the hand-off itself is invisible in the feed, so this line is how the admin
+   * can see that the work they did filing it was passed on.
    */
-  private seedMessage(description: string, prd: string | null): string {
+  private seedMessage(handoff: BuilderHandoffSource): string {
     const parts = [
       'This is a product opportunity from the Ally roadmap. Interview me into a PRD for it.',
-      `## Opportunity\n${description.trim()}`,
+      `## Opportunity\n${handoff.description.trim()}`,
     ];
-    if (prd?.trim()) parts.push(`## Existing PRD notes\n${prd.trim()}`);
+    if (handoff.prd?.trim()) {
+      parts.push(`## Existing PRD notes\n${handoff.prd.trim()}`);
+    }
+    const { hasBrief, interviewMessages } = describeBuilderHandoff(handoff);
+    const carried = [
+      hasBrief ? "the opportunity copilot's brief" : null,
+      interviewMessages
+        ? `our ${interviewMessages}-message filing interview`
+        : null,
+    ].filter(Boolean);
+    if (carried.length) {
+      parts.push(
+        `I filed this through the opportunity copilot, and ${carried.join(' and ')} ` +
+          `${carried.length > 1 ? 'are' : 'is'} in your context under "Hand-off". What I ` +
+          'decided there is settled — pick up from what it leaves open.',
+      );
+    }
     return parts.join('\n\n');
   }
 

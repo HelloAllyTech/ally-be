@@ -138,6 +138,17 @@ export const BUILDER_MAX_SESSIONS_PER_TENANT_PER_MONTH = 50;
 export const BUILDER_TITLE_MAX_LENGTH = 200;
 export const BUILDER_SLUG_MAX_LENGTH = 80;
 
+/**
+ * Upper bound on `builder_sessions.handoffContext` — what another module hands a session
+ * when it starts one (today: a roadmap opportunity's brief and filing interview).
+ *
+ * It rides in the cached system prefix on every interview turn, so it is paid for once per
+ * cache window rather than per turn, but it is still prefix the model has to read. A
+ * ten-minute filing interview renders to roughly 10–15k characters; this is headroom for a
+ * long one, not a target. The column's CHECK holds the same number.
+ */
+export const BUILDER_HANDOFF_CONTEXT_MAX = 120_000;
+
 /* ── Build dispatch ─────────────────────────────────────────────────────── */
 
 /** The workflow file, hosted in ally-be — one copy, so it cannot drift. */
@@ -176,7 +187,33 @@ export const BUILDER_OWN_ACTORS = [
   'ally-builder',
 ] as const;
 
-export const BUILDER_MAX_REVIEW_RUNS_PER_PR = 2;
+/**
+ * The code review for an opencode pull request runs in the target repo's own
+ * Actions (`builder-review.yml`, calling ally-be's builder-review-opencode.yml),
+ * with the code checked out so it can prove what it reports.
+ *
+ * It reviews every head CI turns green: a finding goes to opencode as `/oc`,
+ * opencode pushes, and the fix is reviewed in turn — one more review than the
+ * per-PR fix ceiling allows.
+ */
+export const BUILDER_REPO_REVIEW_WORKFLOW = 'builder-review.yml';
+export const BUILDER_MAX_REPO_REVIEWS_PER_PR = 4;
+/** Four parallel passes and a verify pass; anything past this has hung. */
+export const BUILDER_REPO_REVIEW_TIMEOUT_MS = 90 * 60_000;
+/**
+ * How long review-and-fix may run on one pull request, from its first review,
+ * before it goes to a person whatever rounds are left. 90 minutes: a round is
+ * ~40 minutes of review plus opencode, so this is two rounds. A loop that is still
+ * churning after this is not going to converge on its own.
+ */
+export const BUILDER_PR_AUTOMATION_TIMEBOX_MS = 90 * 60_000;
+/** How long after a release lands before its health is checked. */
+export const BUILDER_RELEASE_SETTLE_MS = 5 * 60_000;
+export const BUILDER_HEALTH_RETRY_MS = 30_000;
+/** How long a failed post-release health check holds automatic merges and releases. */
+export const BUILDER_UNHEALTHY_HOLD_MS = 24 * 60 * 60_000;
+/** How many recent opencode PRs the track record reads. */
+export const BUILDER_TRACK_RECORD_WINDOW = 10;
 
 /**
  * How long a dispatched release may run before it is called failed.
@@ -214,14 +251,6 @@ export const BUILDER_EVENT_BATCH_MAX = 100;
 
 /** Page size for the event feed. */
 export const BUILDER_EVENT_PAGE_SIZE = 500;
-
-/**
- * How much of the previous run's history the resume prompt reconstructs.
- * Condensed state, never a transcript replay: replaying two hundred tool
- * calls would cost more tokens than the work they represent.
- */
-export const BUILDER_RESUME_FILES_MAX = 60;
-export const BUILDER_RESUME_TEST_OUTPUT_MAX = 4_000;
 
 /** Redis prefix for the per-session dispatch lock. */
 export const BUILDER_DISPATCH_LOCK_PREFIX = 'builder-dispatch';
@@ -293,21 +322,6 @@ export const BUILDER_PROMPT_DIR = 'builder';
 export const BUILDER_PROMPTS = {
   INTERVIEWER_SYSTEM: 'builder_interviewer_system',
   /**
-   * Per-phase guidance blocks, editable from prompt management.
-   *
-   * Only the JUDGEMENT half of a phase prompt lives here — what a good PR body
-   * owes its reviewer, when to pause, how much scope is too much. The protocol
-   * (stage names, the note/ask/complete curl contract, "do not push") stays
-   * compiled in, because it is a contract with run-engine.sh and a bad edit
-   * there breaks the run rather than degrading it.
-   *
-   * Every one of these has a compiled-in default at its call site. A lookup
-   * that returns null must fall back to that default and never to an empty
-   * string: a silently shorter prompt is the failure nobody notices.
-   */
-  CODER_GUIDANCE: 'builder_coder_guidance',
-  FINALISE_GUIDANCE: 'builder_finalise_guidance',
-  /**
    * Standing rules every Builder agent gets, ahead of its own instructions.
    * Compiled default: DEFAULT_PLATFORM_RULES in builder-platform-rules.ts.
    */
@@ -324,15 +338,12 @@ export const BUILDER_PROMPTS = {
  * announcing those too is how a channel gets muted. A muted channel is worse
  * than no channel: it still looks like coverage.
  *
- * What is in: a paused question and a spend ceiling both have a person waiting
- * on the other side, a failure ends the work, and a fix run means Builder is
- * about to push to a pull request somebody may be reviewing right now.
+ * What is in: a spend ceiling has a person waiting on the other side, and a
+ * failure ends the work.
  */
 export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
-  BuilderNotificationKind.QUESTION_PENDING,
   BuilderNotificationKind.BUILD_FAILED,
   BuilderNotificationKind.BUDGET_REACHED,
-  BuilderNotificationKind.FIX_RUN_STARTED,
   // Merged but not deployed. The strongest case in this list by the rule
   // above: master has moved on, the pull request reads as done, and everyone
   // assumes the change is live — so nobody goes back to look. Auto-release was
@@ -403,8 +414,8 @@ export const BUILDER_EVIDENCE_ERROR_WINDOW_HOURS = 24;
 export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
 
 /**
- * The only coding engine. Still written to build_runs.engine and
- * builder_attempts.engine as a historical record of which CLI ran.
+ * The only coding engine. Still written to build_runs.engine as a historical
+ * record of which CLI ran.
  */
 export const BUILDER_ENGINE = 'opencode';
 
@@ -441,54 +452,8 @@ export const BUILDER_MODEL_DEFAULTS = {
   mechanical: 'gemini-2.5-flash',
 } as const;
 
-/* ── The in-run loop (run-engine.sh mirrors these) ─────────────────────── */
-
 /**
- * Most coder invocations per run: the first CODE pass plus remediation
- * rounds fixing gate failures or verifier objections. Past this the run
- * fails with the standing objections as its error — an agent that cannot
- * satisfy the gate and the verifier in four attempts needs a person, not a
- * fifth attempt.
- */
-export const BUILDER_MAX_CODE_ITERATIONS = 4;
-
-/** Most fresh-context verifier invocations per run. */
-export const BUILDER_MAX_VERIFY_ROUNDS = 3;
-
-/* ── Mid-run budget hold ────────────────────────────────────────────────── */
-
-/**
- * How long a run that has hit its ceiling waits at a phase boundary for
- * somebody to raise the budget before it gives up.
- *
- * Waiting is cheaper than aborting, which is the whole reason this exists.
- * Nothing a run writes is pushed before FINALISE, so a budget abort throws
- * away the entire working tree — an hour of coding and every dollar that
- * bought it — and the retry starts from the PRD again. Holding a runner idle
- * costs GitHub minutes and no tokens at all, so twenty minutes of waiting is
- * a rounding error against re-running the phase that just burned $16.
- *
- * Twenty minutes rather than sixty: it has to be long enough for the
- * notification to reach whoever is watching, and short enough that an
- * abandoned build releases its runner well inside the workflow's own
- * `timeout-minutes: 120`.
- */
-export const BUILDER_BUDGET_HOLD_SECONDS = 20 * 60;
-
-/**
- * How often a held run re-reads the ceiling. Fifteen seconds so a raise feels
- * immediate to the person who just made it — the poll is one indexed read and
- * the runner is otherwise doing nothing.
- */
-export const BUILDER_BUDGET_HOLD_POLL_SECONDS = 15;
-
-/**
- * How big a build is, which decides what it is worth spending on planning it.
- *
- * The planner was a fixed Opus pass with 60 turns and no output ceiling
- * regardless of what it was planning. On the first real build — two routes and
- * a checkbox — it spent $7.85 and 19 minutes producing a 29 KB plan, then that
- * plan rode in the coder's prompt and was re-read on all 148 of its turns.
+ * How big a build is, recorded with each run (and read by the metrics).
  *
  * Sized from the PRD rather than guessed at, because the PRD is the only
  * statement of scope that exists before the work starts.
@@ -500,117 +465,20 @@ export enum BuilderBuildSize {
 }
 
 /**
- * Per-size planning budget.
+ * What a run of each size is recorded with.
  *
- * `planWords` is advisory and goes in the prompt; `maxTurns` and `maxBudgetUsd`
- * are enforced by the runner, so a planner that ignores the advice still cannot
- * run away with the session.
+ * Builds used to run on Builder's own runner with a planner tier, a coder
+ * escalation ladder, turn caps and phase budgets per size. A build is now an
+ * issue in its repo, worked by opencode on that repo's own model, so all that
+ * is left is the effort label recorded with the run beside its size.
  */
-/**
- * Which tier a coding attempt runs on, by attempt number.
- *
- * ## Why a ladder at all
- *
- * The loop retried a failed attempt on the model that had just failed, up to
- * four times. Every published account of cost-aware routing describes the same
- * shape — attempt cheap, verify, escalate on failure — and names the same
- * blocker: a model's self-reported confidence is badly calibrated, so the
- * "verify" step is the hard part. Builder does not have that problem. Its
- * verify step is `run-test-gate.sh`: real jest and eslint on a clean tree,
- * diffed against a baseline taken from pristine `origin/master`. A gate
- * failure is a fact, not a probability, which makes escalation safe to trigger
- * automatically here in a way it usually is not.
- *
- * ## What this version deliberately does NOT do
- *
- * It does not start cheaper. Every size begins exactly where it began before,
- * so no build gets worse on its first attempt. Lowering the *starting* tier is
- * the larger saving and the riskier one: it pays off only when the cheap tier
- * clears the gate first time often enough to cover the failed attempts it
- * causes, and the break-even input for that is `firstAttemptPassRate` in
- * BuilderMetricsService, read per size and per coder model — which is data we
- * began collecting only with `builder_build_runs.size`. Guessing that ratio
- * before it exists is how a cost optimisation becomes a cost increase.
- *
- * Escalating upward has no such trade. The alternative to a fourth attempt on
- * a tier that has failed three times is a failed run, and a failed run is 100%
- * waste — every dollar spent and the whole working tree, since nothing is
- * pushed before FINALISE. Converting one of those into a success is a larger
- * saving than any per-token decision.
- *
- * ## Why larger builds escalate sooner
- *
- * A second cheap attempt is a bet that the failure was shallow and that the
- * test output is enough to fix it. On a small build that bet is usually right
- * and cheap to lose. On a large cross-repo build a failure is more likely to
- * be structural, and another failed attempt costs more — so the bet is worth
- * taking once, not twice.
- *
- * No entry is required to be distinct: repeating a tier is how "retry with the
- * gate output before escalating" is expressed. Length is independent of
- * BUILDER_MAX_CODE_ITERATIONS; the runner clamps to the last entry.
- */
-export type BuilderCoderTier = 'mechanical' | 'coder' | 'planner';
-
 export const BUILDER_SIZE_PROFILES: Record<
   BuilderBuildSize,
-  {
-    plannerTier: 'mechanical' | 'coder' | 'planner';
-    effort: 'low' | 'medium' | 'high';
-    maxTurns: number;
-    planWords: number;
-    /** Coder tier per attempt, index 0 being the first CODE pass. */
-    coderLadder: BuilderCoderTier[];
-    maxBudgetUsd: {
-      plan: number;
-      code: number;
-      verify: number;
-      finalise: number;
-    };
-  }
+  { effort: 'low' | 'medium' | 'high' }
 > = {
-  // A small build does not need an Opus plan; it needs the coder to start.
-  [BuilderBuildSize.SMALL]: {
-    /**
-     * Planning was 25% of everything Builder spent — $4.89 median against a
-     * $7.56 median coding attempt — on builds this same classifier had already
-     * judged to be a handful of requirements in one repo. The plan phase also
-     * produced ~23k output tokens for an 800-word plan, which is not planning,
-     * it is the planner re-deriving the codebase the coder is about to read
-     * again anyway.
-     *
-     * The mechanical tier still writes a plan, so remediation and verify keep
-     * the artifact they read. It just stops paying a coding-tier model to
-     * produce it for two routes and a checkbox.
-     */
-    plannerTier: 'mechanical',
-    effort: 'low',
-    maxTurns: 20,
-    planWords: 800,
-    // Two attempts on the coder tier: a small build that fails the gate has
-    // usually tripped on something the test output names outright.
-    coderLadder: ['coder', 'coder', 'planner', 'planner'],
-    maxBudgetUsd: { plan: 1, code: 8, verify: 3, finalise: 3 },
-  },
-  [BuilderBuildSize.MEDIUM]: {
-    plannerTier: 'planner',
-    effort: 'medium',
-    maxTurns: 40,
-    planWords: 1500,
-    coderLadder: ['coder', 'coder', 'planner', 'planner'],
-    maxBudgetUsd: { plan: 5, code: 12, verify: 4, finalise: 4 },
-  },
-  // Unchanged from the behaviour every run used to get.
-  [BuilderBuildSize.LARGE]: {
-    plannerTier: 'planner',
-    effort: 'high',
-    maxTurns: 60,
-    planWords: 3000,
-    // One retry, then the stronger tier. A large build's second failure is
-    // rarely the kind a third cheap attempt fixes.
-    coderLadder: ['coder', 'planner', 'planner', 'planner'],
-    maxBudgetUsd: { plan: 10, code: 20, verify: 6, finalise: 5 },
-  },
+  [BuilderBuildSize.SMALL]: { effort: 'low' },
+  [BuilderBuildSize.MEDIUM]: { effort: 'medium' },
+  [BuilderBuildSize.LARGE]: { effort: 'high' },
 };
 
 /**
@@ -668,15 +536,27 @@ export function classifyBuildSize(input: {
 }
 
 /**
- * How many undelivered steering notes one session can hold.
- *
- * A ceiling rather than a queue depth that matters: steers are typed by a
- * person watching a build, so a hundred of them means something has gone
- * wrong — a stuck client retrying, or a build nobody should have started.
- * Capping the read keeps one bad session from pasting an unbounded amount of
- * text into a phase prompt, which is the failure that would actually hurt.
+ * The platform product map (`BuilderProductMapService`): what Ally is as built, in the cached
+ * system prefix of the opportunity copilot and the Builder interview. Sized so the whole map stays around 10k tokens — paid in full once per
+ * refresh and at the cached rate on every pass after that.
  */
-export const BUILDER_STEER_MAX_PENDING = 20;
-
-/** Longest single steering note. Roughly a paragraph — this is a correction, not a new PRD. */
-export const BUILDER_STEER_MAX_LENGTH = 2000;
+export const BUILDER_PRODUCT_MAP = {
+  /**
+   * How long one render is reused. The sources change on the order of a day (knowledge packs
+   * are regenerated by a scheduled workflow; docs change with merges), and a stable text is
+   * what lets it sit in the prompt cache across an interview's turns.
+   */
+  TTL_MS: 30 * 60_000,
+  /** Reuse of a render in which a source could not be read — short, so a blip heals. */
+  RETRY_TTL_MS: 2 * 60_000,
+  /**
+   * Per repo. A pack opens with what the repo is and its module inventory, which is what a
+   * product conversation uses; its conventions and commands come after and are cut.
+   */
+  PACK_MAX_CHARS: 6_000,
+  /** Below this a pack is a failed generation, not a map (prod held a 54-char one). */
+  MIN_USABLE_PACK_CHARS: 500,
+  WIKI_INDEX_MAX_CHARS: 8_000,
+  /** Doc paths listed per repo; the rest are reachable through docs_search. */
+  DOCS_PER_REPO: 40,
+} as const;

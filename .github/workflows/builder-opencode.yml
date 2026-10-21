@@ -1,7 +1,9 @@
 # Builder, GitHub-native: opencode works a Builder issue into a pull request.
 #
 # Called from a small `builder.yml` stub in each repo Builder builds in
-# (ally-be, ally-web, ally-mobile, ...), so the logic lives here once.
+# (ally-be, ally-web, ally-mobile, ally-ai, ally-ai-learn), so the logic lives
+# here once. `runtime: python` sets the repo up with Poetry instead of npm;
+# opencode itself is a Node CLI, so Node is installed either way.
 #
 # Flow: Builder raises an issue in the repo, labelled `builder`, whose body
 # carries only the run id (`<!-- builder-run: <uuid> -->`). ally-be, ally-web
@@ -14,24 +16,35 @@
 # opencode again on the PR's branch. Builder follows the issue to the PR from
 # its own reconcile tick and reports progress on its build page.
 #
-# Pushes and the PR are made with BUILDER_GH_TOKEN, not GITHUB_TOKEN: GitHub
-# does not start workflows (CI included) from events made with GITHUB_TOKEN.
+# Pushes, the PR and its comments are made as the Ally Builder GitHub App
+# (ally-builder[bot]), with a token minted per run from the app's key. Not
+# GITHUB_TOKEN: GitHub does not start workflows (CI included) from events made
+# with GITHUB_TOKEN. Not a person's PAT: the work would show as that person.
 #
-# Secrets (org-level, or set on each repo): GEMINI_API_KEY, BUILDER_GH_TOKEN,
-# ALLY_BE_API_KEY. Variable: ALLY_BE_API_URL (defaults to production).
+# Org-level: variable BUILDER_APP_ID, secrets BUILDER_APP_PRIVATE_KEY,
+# GEMINI_API_KEY, ALLY_BE_API_KEY. Variable ALLY_BE_API_URL (defaults to
+# production).
 name: Builder (opencode)
 
 on:
   workflow_call:
     inputs:
+      runtime:
+        description: node or python — what the repo builds with.
+        type: string
+        default: node
       node-version:
-        description: Node version the repo builds on.
+        description: Node version the repo builds on (and opencode runs on).
         type: string
         default: '24'
-      install-command:
-        description: How the repo installs its dependencies.
+      python-version:
+        description: Python version, for runtime python.
         type: string
-        default: npm ci
+        default: '3.12'
+      install-command:
+        description: How the repo installs its dependencies. Defaults per runtime.
+        type: string
+        default: ''
       node-options:
         description: NODE_OPTIONS for the run (heap size for large builds and lints).
         type: string
@@ -39,7 +52,7 @@ on:
     secrets:
       GEMINI_API_KEY:
         required: true
-      BUILDER_GH_TOKEN:
+      BUILDER_APP_PRIVATE_KEY:
         required: true
       ALLY_BE_API_KEY:
         required: true
@@ -47,7 +60,7 @@ on:
 jobs:
   opencode:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -59,23 +72,62 @@ jobs:
       HUSKY: '0'
       NODE_OPTIONS: ${{ inputs.node-options }}
     steps:
+      # Scoped to this repository. It expires after an hour, so a run must
+      # push within that: the job timeout below matches it, as does Builder's
+      # own (ISSUE_BUILD_TIMEOUT_MS).
+      - name: Builder app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILDER_APP_ID }}
+          private-key: ${{ secrets.BUILDER_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.BUILDER_GH_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: npm
+          cache: ${{ inputs.runtime == 'node' && 'npm' || '' }}
+
+      # The same setup as the Python repos' own CI (test.yml), so what opencode
+      # runs here is what the pull request's checks will run.
+      - uses: actions/setup-python@v5
+        if: inputs.runtime == 'python'
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        if: inputs.runtime == 'python'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
 
       - name: Install dependencies
-        run: ${{ inputs.install-command }}
+        env:
+          INSTALL: ${{ inputs.install-command || (inputs.runtime == 'python' && 'poetry install --no-interaction --with dev' || 'npm ci') }}
+        run: eval "$INSTALL"
 
+      # The project's virtualenv first on PATH, so `pytest`, `flake8` and
+      # `python` are the repo's own whether or not opencode says `poetry run`.
+      # .venv is gitignored in both Python repos, so it is never committed.
+      - name: Put the virtualenv on PATH
+        if: inputs.runtime == 'python'
+        run: echo "${GITHUB_WORKSPACE}/.venv/bin" >> "$GITHUB_PATH"
+
+      # The app's bot user, with its noreply address, so commits show the bot
+      # and its avatar rather than an unlinked name.
       - name: Git identity
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
-          git config user.name "ally-builder[bot]"
-          git config user.email "builder@helloally.ai"
+          bot_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
       # Pinned: an agent whose behaviour changes between one build and the
       # next is not something you can debug. (The published opencode action
@@ -97,6 +149,7 @@ jobs:
             echo "::error::No builder-run marker in the issue body; nothing to build."
             exit 1
           fi
+          echo "BUILDER_RUN_ID=${run_id}" >> "$GITHUB_ENV"
           curl -fsS "${API}/api/v1/builder/pipeline/runs/${run_id}/spec" \
             -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-spec.md"
           # The prompt goes to a file the next step reads, not to GITHUB_ENV: a
@@ -117,17 +170,129 @@ jobs:
           } > "${RUNNER_TEMP}/builder-prompt.md"
           echo "Fetched the spec for run ${run_id} ($(wc -c < "${RUNNER_TEMP}/builder-spec.md") bytes)."
 
+      # Builder's own `/oc` requests on review feedback carry only a marker, for
+      # the same reason the issue does: the findings read against a private
+      # design. A person's `/oc` comment has no marker and is its own prompt.
+      - name: Fetch Builder's fix request
+        if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'builder-feedback:')
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          pr_id="$(printf '%s' "$COMMENT_BODY" | grep -oE 'builder-feedback: [0-9a-f-]{36}' | head -1 | cut -d' ' -f2 || true)"
+          if [ -z "$pr_id" ]; then
+            echo "::error::Malformed builder-feedback marker; nothing to fix."
+            exit 1
+          fi
+          curl -fsS "${API}/api/v1/builder/pipeline/pull-requests/${pr_id}/fix-request" \
+            -H "x-api-key: ${API_KEY}" -o "${RUNNER_TEMP}/builder-prompt.md"
+          echo "Fetched the fix request for ${pr_id} ($(wc -c < "${RUNNER_TEMP}/builder-prompt.md") bytes)."
+
       - name: Run opencode
         run: |
-          # A builder issue carries its prompt in the file fetched above; a /oc
-          # comment carries its own instructions and has none.
+          # A builder issue, or Builder's own /oc fix request, carries its prompt
+          # in the file fetched above; a person's /oc comment is its own prompt.
           if [ -f "${RUNNER_TEMP}/builder-prompt.md" ]; then
             PROMPT="$(cat "${RUNNER_TEMP}/builder-prompt.md")"
-            export PROMPT
+          else
+            PROMPT="$COMMENT_BODY"
           fi
+          # Standing rules for every run. opencode github pushes the working
+          # tree to the right branch when the agent finishes; an agent that
+          # switches branches itself makes it skip the push ("Agent managed its
+          # own branch"), and the work is lost while the reply says it is done
+          # (ally-mobile#114).
+          PROMPT="${PROMPT}
+
+          Rules for this run: stay on the branch you are on. Do not create, switch or check out branches, do not commit, and do not push: your changes in the working tree are committed and pushed for you when you finish. If you made no change, say so plainly."
+          export PROMPT
           opencode github run
         env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
           MODEL: ${{ vars.BUILDER_MODEL || 'google/gemini-3-flash-preview' }}
+          # Never share. opencode defaults to sharing the session on opencode.ai
+          # for public repos, and the session holds the private spec: the first
+          # production run (ally-be#629) published one.
+          SHARE: 'false'
           USE_GITHUB_TOKEN: 'true'
-          GITHUB_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      # Formatting is a tool's job, not the model's: ally-be#630 failed lint on
+      # Prettier spacing in a spec opencode had edited. Format only the files
+      # this branch changed against the default branch (never the rest of the
+      # repo) and push that as its own commit, which re-runs CI on the PR.
+      # Best-effort: a repo without Prettier or ESLint installed is skipped,
+      # and a failure here never fails the run.
+      - name: Format what this branch changed
+        if: success() && inputs.runtime == 'node'
+        continue-on-error: true
+        env:
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          case "$branch" in opencode/*) ;; *) echo "On ${branch}; nothing of opencode's to format."; exit 0 ;; esac
+          git fetch --quiet origin "$BASE" "$branch" || true
+          git merge --ff-only --quiet "origin/${branch}" 2>/dev/null || true
+          files=()
+          while IFS= read -r file; do [ -f "$file" ] && files+=("$file"); done \
+            < <(git diff --name-only --diff-filter=d "origin/${BASE}...HEAD")
+          if [ "${#files[@]}" -eq 0 ]; then echo "No changed files."; exit 0; fi
+          if [ -x node_modules/.bin/prettier ]; then
+            node_modules/.bin/prettier --write --ignore-unknown "${files[@]}" > /dev/null || true
+          fi
+          scripts=()
+          for file in "${files[@]}"; do
+            case "$file" in *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs) scripts+=("$file") ;; esac
+          done
+          if [ -x node_modules/.bin/eslint ] && [ "${#scripts[@]}" -gt 0 ]; then
+            node_modules/.bin/eslint --fix --no-warn-ignored "${scripts[@]}" > /dev/null 2>&1 \
+              || node_modules/.bin/eslint --fix "${scripts[@]}" > /dev/null 2>&1 || true
+          fi
+          if git diff --quiet -- "${files[@]}"; then echo "Already formatted."; exit 0; fi
+          git add -- "${files[@]}"
+          git commit --quiet -m "style: format the files this pull request changed"
+          git push --quiet origin "HEAD:${branch}"
+          echo "Pushed formatting for $(git diff --name-only HEAD~1 HEAD | wc -l | tr -d ' ') file(s)."
+
+      # What this run spent, so Builder can show it and stop a pull request
+      # whose automation has cost too much (maxPrAutomationUsd). Best-effort:
+      # a failure here never fails the build.
+      - name: Fetch the usage summariser
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          repository: HelloAllyTech/ally-be
+          ref: master
+          path: .builder-usage
+          sparse-checkout: scripts/builder/opencode-usage.py
+          sparse-checkout-cone-mode: false
+      - name: Report usage to Builder
+        if: always()
+        continue-on-error: true
+        env:
+          API: ${{ vars.ALLY_BE_API_URL || 'https://api.helloally.ai' }}
+          API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          PR_NUMBER: ${{ github.event.issue.pull_request && github.event.issue.number || '' }}
+          KIND: ${{ github.event_name == 'issues' && 'build' || 'fix' }}
+        run: |
+          python3 .builder-usage/scripts/builder/opencode-usage.py > "${RUNNER_TEMP}/usage.json" || echo '{}' > "${RUNNER_TEMP}/usage.json"
+          rm -rf .builder-usage
+          cat "${RUNNER_TEMP}/usage.json"; echo
+          python3 - > "${RUNNER_TEMP}/usage-post.json" <<'PY'
+          import json, os
+          u = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "usage.json")))
+          u.update({
+              "kind": os.environ["KIND"],
+              "repo": os.environ["GITHUB_REPOSITORY"].split("/")[-1],
+              "prNumber": int(os.environ["PR_NUMBER"]) if os.environ.get("PR_NUMBER") else None,
+              "runId": os.environ.get("BUILDER_RUN_ID") or None,
+          })
+          print(json.dumps(u))
+          PY
+          curl -fsS -X POST "${API}/api/v1/builder/pipeline/usage" \
+            -H "x-api-key: ${API_KEY}" -H 'Content-Type: application/json' \
+            -d @"${RUNNER_TEMP}/usage-post.json"

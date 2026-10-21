@@ -36,10 +36,10 @@ describe('BuilderNotificationService announcements', () => {
     return { service, repository, slack };
   };
 
-  it('announces a pending question with a link back to the session', async () => {
+  it('announces a failed build with a link back to the session', async () => {
     const { service, slack } = build();
 
-    await service.questionPending(session, 2);
+    await service.buildFailed(session, 'the build failed');
 
     expect(slack.sendMessage).toHaveBeenCalledTimes(1);
     const [text, channel] = slack.sendMessage.mock.calls[0];
@@ -74,7 +74,7 @@ describe('BuilderNotificationService announcements', () => {
     const { service, repository, slack } = build();
     slack.sendMessage.mockRejectedValue(new Error('slack 500'));
 
-    await expect(service.questionPending(session, 1)).resolves.not.toThrow();
+    await expect(service.buildFailed(session, 'x')).resolves.not.toThrow();
     expect(repository.save).toHaveBeenCalled();
   });
 
@@ -121,10 +121,6 @@ describe('BuilderNotificationService announcements', () => {
     const announced: BuilderNotificationKind[] = [];
     for (const [kind, call] of [
       [
-        BuilderNotificationKind.QUESTION_PENDING,
-        (s: any) => s.questionPending(session, 1),
-      ],
-      [
         BuilderNotificationKind.BUILD_COMPLETED,
         (s: any) => s.buildCompleted(session),
       ],
@@ -138,10 +134,7 @@ describe('BuilderNotificationService announcements', () => {
       if (slack.sendMessage.mock.calls.length) announced.push(kind);
     }
 
-    expect(announced).toEqual([
-      BuilderNotificationKind.QUESTION_PENDING,
-      BuilderNotificationKind.BUILD_FAILED,
-    ]);
+    expect(announced).toEqual([BuilderNotificationKind.BUILD_FAILED]);
   });
 });
 

@@ -5,6 +5,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
 import { ROADMAP_READINESS_TOKEN_TTL_MS } from '../../constants/product-roadmap.constants';
 import { RoadmapOpportunityEffort } from '../../enum/roadmap-opportunity.enum';
+import { normaliseOpportunityBrief } from '../../util/roadmap-brief.util';
 
 /**
  * The signed readiness verdict, which is what turned the checklist from a discipline the admin
@@ -52,14 +53,14 @@ describe('RoadmapReadinessTokenService', () => {
     const token = service.issue({
       description: DRAFT,
       productGoal: GOAL,
-      failedCriteria: ['specific', 'who_it_affects'],
+      failedCriteria: ['clear_why', 'who_it_affects'],
       proposedEffort: null,
     });
 
     expect(
       service.verify(token, { description: DRAFT, productGoal: GOAL })
         .failedCriteria,
-    ).toEqual(['specific', 'who_it_affects']);
+    ).toEqual(['clear_why', 'who_it_affects']);
   });
 
   /** Trailing whitespace alone must not cost a re-run — the drawer compares trimmed too. */
@@ -213,5 +214,85 @@ describe('RoadmapReadinessTokenService', () => {
         proposedEffort: null,
       }),
     ).toThrow(/JWT_ACCESS_SECRET/);
+  });
+
+  describe("the copilot's brief", () => {
+    const BRIEF = normaliseOpportunityBrief({
+      strategicFit: [{ goal: 'Cut time-to-first-value', why: 'Fewer clicks.' }],
+      evidence: [{ source: 'analytics', claim: '40 a week.', ref: 'q1' }],
+      assessment: {
+        rating: 'promising',
+        summary: 'Clear, needs a metric.',
+        openRecommendations: ['Name a metric.'],
+      },
+    })!;
+
+    const issueWithBrief = () =>
+      service.issue({
+        description: DRAFT,
+        productGoal: GOAL,
+        failedCriteria: [],
+        proposedEffort: RoadmapOpportunityEffort.S,
+        brief: BRIEF,
+      });
+
+    it('accepts the brief it was minted over, whatever order its keys arrive in', () => {
+      // The brief round-trips through the browser and class-transformer; key order is not
+      // something either promises to keep.
+      const reordered = JSON.parse(
+        JSON.stringify({
+          assessment: BRIEF.assessment,
+          alternativesDropped: BRIEF.alternativesDropped,
+          evidence: BRIEF.evidence,
+          strategicFit: BRIEF.strategicFit,
+          successMetric: BRIEF.successMetric,
+          reach: BRIEF.reach,
+          assumptions: BRIEF.assumptions,
+        }),
+      );
+
+      expect(() =>
+        service.verify(issueWithBrief(), {
+          description: DRAFT,
+          productGoal: GOAL,
+          brief: reordered,
+        }),
+      ).not.toThrow();
+    });
+
+    /** The point of signing it: voters read this rating as the copilot's, not the filer's. */
+    it('refuses a brief whose assessment was edited on the way in', () => {
+      const promoted = {
+        ...BRIEF,
+        assessment: { ...BRIEF.assessment, rating: 'strong' },
+      };
+
+      expect(() =>
+        service.verify(issueWithBrief(), {
+          description: DRAFT,
+          productGoal: GOAL,
+          brief: promoted,
+        }),
+      ).toThrow(/brief has changed/);
+    });
+
+    it('refuses a brief presented with a token minted without one', () => {
+      expect(() =>
+        service.verify(issuePassing(), {
+          description: DRAFT,
+          productGoal: GOAL,
+          brief: BRIEF,
+        }),
+      ).toThrow(BadRequestException);
+    });
+
+    it('still accepts filing the draft alone, without its brief', () => {
+      expect(() =>
+        service.verify(issueWithBrief(), {
+          description: DRAFT,
+          productGoal: GOAL,
+        }),
+      ).not.toThrow();
+    });
   });
 });

@@ -133,6 +133,24 @@ describe('BugHunterPolicyService', () => {
   });
 
   describe('fixing', () => {
+    it.each([
+      BugFindingStatus.PR_OPENED,
+      BugFindingStatus.MERGED,
+      BugFindingStatus.RELEASED,
+      BugFindingStatus.COORDINATING,
+    ])(
+      'never fixes again a bug whose fix is already %s (2026-10-15: three OTP PRs)',
+      async (status) => {
+        bugFindingService.getOne.mockResolvedValue(
+          finding({
+            status,
+            prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/643',
+          }),
+        );
+        await expect(fixing()).rejects.toThrow(/already has a fix/);
+      },
+    );
+
     it('refuses an unproven finding the independent verifier has not confirmed (OPP-0780)', async () => {
       bugFindingService.getOne.mockResolvedValue(
         finding({ metadata: { confidence: 0.9 } }),

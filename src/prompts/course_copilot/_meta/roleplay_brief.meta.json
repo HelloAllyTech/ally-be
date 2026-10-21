@@ -1,0 +1,6 @@
+{
+  "name": "Course Copilot — Roleplay Brief",
+  "description": "Turns one roleplay slot of an approved Course Copilot blueprint into the actor brief the Agent Builder field chain takes: one fictional client written the way a trainer fills in \"Describe roleplay actor\", encoding the slot's task class (cooperative → ambivalent → distressed; one concern → several), the audience and the behaviours being practised, plus agent test cases, a title, persona gender/age and a difficulty. JSON mode.",
+  "category": "Course Copilot",
+  "runtimes": ["ally-be"]
+}

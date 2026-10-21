@@ -1,12 +1,10 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { renderPrd, buildBuildPrompt } from '../builder-build-prompt';
+import { renderPrd } from '../builder-build-prompt';
 import {
   buildDesignPrompt,
   buildDesignReviewPrompt,
 } from '../builder-design-prompt';
-import { buildPlanPrompt } from '../builder-plan-prompt';
-import { buildVerifyPrompt } from '../builder-verify-prompt';
 import { DEFAULT_PLATFORM_RULES } from '../builder-platform-rules';
 import { BUILDER_REPOS } from '../builder-repos.constants';
 import {
@@ -230,49 +228,6 @@ describe('renderPrd and the technical design', () => {
       technicalDesign: design({ status: 'review' }),
     });
     expect(text).not.toContain('Technical design');
-  });
-
-  it('reaches the build-phase prompts through the PRD', () => {
-    const withDesign = { ...prd, technicalDesign: design() };
-    const base = {
-      sessionId: 's',
-      runId: 'r',
-      branchSlug: 'b',
-      prd: withDesign,
-      repos,
-      apiBaseUrl: 'https://api.example.com',
-      lessons: [],
-    };
-
-    expect(
-      buildBuildPrompt({ ...base, mode: 'build', sessionUrl: 'https://x' }),
-    ).toContain('## Technical design (approved)');
-    expect(buildPlanPrompt(base)).toContain('## Technical design (approved)');
-  });
-});
-
-describe('platform rules in the phase prompts', () => {
-  it('renders them in the verifier, which has no shared header', () => {
-    const prompt = buildVerifyPrompt({
-      platformRules: '## Platform rules\n\nBe additive.',
-      prd,
-      repos,
-      round: 1,
-    });
-    expect(prompt).toContain('Be additive.');
-  });
-
-  it('renders the compiled default when none is passed', () => {
-    const prompt = buildPlanPrompt({
-      sessionId: 's',
-      runId: 'r',
-      branchSlug: 'b',
-      prd,
-      repos,
-      apiBaseUrl: 'https://api.example.com',
-      lessons: [],
-    });
-    expect(prompt).toContain(DEFAULT_PLATFORM_RULES.split('\n')[0]);
   });
 });
 

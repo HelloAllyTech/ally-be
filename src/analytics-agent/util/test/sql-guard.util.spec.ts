@@ -2,6 +2,7 @@ import {
   extractCteNames,
   extractTableReferences,
   guardSelectQuery,
+  quoteMixedCaseColumns,
   stripStringLiterals,
   wrapWithRowCap,
 } from '../sql-guard.util';
@@ -322,5 +323,37 @@ describe('wrapWithRowCap', () => {
 
   it('floors a non-integer limit rather than emitting invalid SQL', () => {
     expect(wrapWithRowCap('SELECT 1', 10.7)).toContain('LIMIT 11');
+  });
+});
+
+describe('quoteMixedCaseColumns', () => {
+  const cols = ['id', 'counselorId', 'endedAt', 'status'];
+
+  it('quotes bare camelCase columns, qualified or not', () => {
+    expect(
+      quoteMixedCaseColumns(
+        'SELECT COUNT(DISTINCT s.counselorId) FROM t s WHERE endedAt > now()',
+        cols,
+      ),
+    ).toBe(
+      'SELECT COUNT(DISTINCT s."counselorId") FROM t s WHERE "endedAt" > now()',
+    );
+  });
+
+  it('leaves quoted identifiers and string literals alone', () => {
+    const sql = `SELECT "counselorId" FROM t WHERE note = 'endedAt, counselorId'`;
+    expect(quoteMixedCaseColumns(sql, cols)).toBe(sql);
+  });
+
+  it('restores canonical case when the planner got the case wrong', () => {
+    expect(quoteMixedCaseColumns('SELECT counselorid FROM t', cols)).toBe(
+      'SELECT "counselorId" FROM t',
+    );
+  });
+
+  it('does nothing when no camelCase columns exist', () => {
+    expect(quoteMixedCaseColumns('SELECT id FROM t', ['id'])).toBe(
+      'SELECT id FROM t',
+    );
   });
 });

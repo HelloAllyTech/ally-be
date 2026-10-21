@@ -1,4 +1,5 @@
 import {
+  claudeModelAcceptsForcedToolChoice,
   isOpenAiModel,
   isGeminiModel,
   modelSupportsTemperature,
@@ -17,6 +18,41 @@ describe('llm-model.util', () => {
       [undefined, false],
     ])('isOpenAiModel(%s) = %s', (model, expected) => {
       expect(isOpenAiModel(model as string | undefined)).toBe(expected);
+    });
+  });
+
+  describe('claudeModelAcceptsForcedToolChoice', () => {
+    it.each([
+      // Known to accept a forced tool_choice.
+      ['claude-3-haiku-20240307', true],
+      ['claude-3-5-sonnet-20241022', true],
+      ['claude-opus-4-20250514', true],
+      ['claude-opus-4-1', true],
+      ['claude-sonnet-4-5-20250929', true],
+      ['claude-sonnet-4-6', true],
+      ['claude-haiku-4-5', true],
+      ['claude-opus-4-8', true],
+      ['claude-opus-5', true],
+      ['claude-sonnet-5', true],
+      ['claude-fable-5', true],
+      ['claude-mythos-5', true],
+      ['claude-haiku-5-5', true],
+      ['  Claude-Sonnet-4-6 ', true],
+      // Reject one with a 400.
+      ['claude-opus-5-5', false],
+      ['claude-sonnet-5-5', false],
+      ['claude-fable-5-1', false],
+      ['claude-mythos-5-1', false],
+      // Unrecognised: not known to accept, so treated as rejecting.
+      ['claude-opus-6', false],
+      ['claude-mythos-preview', false],
+      ['gpt-4o', false],
+      ['', false],
+      [undefined, false],
+    ])('claudeModelAcceptsForcedToolChoice(%s) = %s', (model, expected) => {
+      expect(
+        claudeModelAcceptsForcedToolChoice(model as string | undefined),
+      ).toBe(expected);
     });
   });
 
@@ -39,6 +75,52 @@ describe('llm-model.util', () => {
       expect(modelSupportsTemperature(model as string | undefined)).toBe(
         expected,
       );
+    });
+
+    describe('Claude: an allowlist of the models that accept one', () => {
+      it.each([
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-7-sonnet-latest',
+        'claude-3-opus-20240229',
+        'claude-opus-4-20250514',
+        'claude-sonnet-4-20250514',
+        'claude-opus-4-0',
+        'claude-opus-4-1',
+        'claude-opus-4-1-20250805',
+        'claude-sonnet-4-5',
+        'claude-sonnet-4-5-20250929',
+        'claude-opus-4-5-20251101',
+        'claude-opus-4-6',
+        'claude-sonnet-4-6',
+        'claude-haiku-4-5',
+        'claude-haiku-4-5-20251001',
+        '  Claude-Sonnet-4-6 ',
+      ])('%s accepts a temperature', (model) => {
+        expect(modelSupportsTemperature(model)).toBe(true);
+      });
+
+      it.each([
+        // Removed outright: any temperature is a 400.
+        'claude-opus-4-7',
+        'claude-opus-4-8',
+        'claude-opus-5',
+        'claude-opus-5-5',
+        'claude-sonnet-5',
+        'claude-fable-5',
+        'claude-fable-5-1',
+        'claude-mythos-5-1',
+        // Only the default is accepted, so a custom value is a 400.
+        'claude-sonnet-5-5',
+        'claude-haiku-5-5',
+        // Unrecognised — including whatever ships next — takes the safe side.
+        'claude-opus-6',
+        'claude-haiku-4-6',
+        'claude-sonnet-4-6-preview',
+        'claude-2.1',
+      ])('%s rejects one', (model) => {
+        expect(modelSupportsTemperature(model)).toBe(false);
+      });
     });
   });
 
@@ -103,6 +185,9 @@ describe('llm-model.util', () => {
     });
     it('omitted (undefined) when the model rejects a custom temperature', () => {
       expect(resolveTemperature('gpt-5', 0.7, 0.4, 0.9)).toBeUndefined();
+      expect(
+        resolveTemperature('claude-sonnet-5-5', 0, undefined, undefined),
+      ).toBeUndefined();
     });
   });
 });

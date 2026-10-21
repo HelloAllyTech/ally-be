@@ -4,15 +4,10 @@ import {
 } from '@nestjs/common';
 import { BuilderBuildService } from '../builder-build.service';
 import {
-  BuilderEventType,
   BuilderRunMode,
   BuilderRunStatus,
   BuilderSessionStatus,
 } from '../../enum/builder.enum';
-import {
-  BUILDER_BUDGET_HOLD_POLL_SECONDS,
-  BUILDER_BUDGET_HOLD_SECONDS,
-} from '../../constants/builder.constants';
 import { createDraftingDesign } from '../../util/builder-technical-design.util';
 
 /**
@@ -56,6 +51,9 @@ describe('BuilderBuildService', () => {
     findRunSince: jest.Mock;
     cancelRun: jest.Mock;
     getRun: jest.Mock;
+    createIssue: jest.Mock;
+    addIssueLabels: jest.Mock;
+    closeIssue: jest.Mock;
   };
   let sessionRepository: {
     update: jest.Mock;
@@ -78,7 +76,6 @@ describe('BuilderBuildService', () => {
   };
   let eventRepository: {
     listByRun: jest.Mock;
-    listByRunOfTypes: jest.Mock;
     latestOfType: jest.Mock;
   };
   let pullRequestRepository: {
@@ -87,21 +84,19 @@ describe('BuilderBuildService', () => {
     count: jest.Mock;
     update: jest.Mock;
   };
-  let questionRepository: { isGroupComplete: jest.Mock; update: jest.Mock };
   let settingsService: { get: jest.Mock };
   let notificationService: {
     buildCompleted: jest.Mock;
     buildFailed: jest.Mock;
     budgetReached: jest.Mock;
-    budgetHold: jest.Mock;
     automationPaused: jest.Mock;
-    fixRunStarted: jest.Mock;
   };
   let eventService: { record: jest.Mock };
   let redisService: { acquireLock: jest.Mock; releaseLock: jest.Mock };
   let exemplarService: { archiveSession: jest.Mock };
   let epicService: {
     nextPending: jest.Mock;
+    unbuiltRepoMilestone: jest.Mock;
     markStatus: jest.Mock;
     listBySession: jest.Mock;
     ensureRepoMilestones: jest.Mock;
@@ -121,6 +116,15 @@ describe('BuilderBuildService', () => {
       findRunSince: jest.fn().mockResolvedValue(null),
       cancelRun: jest.fn().mockResolvedValue(undefined),
       getRun: jest.fn().mockResolvedValue(null),
+      // A build is an issue in its repo; labelled on the first try unless a
+      // test says otherwise.
+      createIssue: jest.fn().mockResolvedValue({
+        number: 41,
+        htmlUrl: 'https://github.com/o/ally-be/issues/41',
+        labels: ['builder'],
+      }),
+      addIssueLabels: jest.fn().mockResolvedValue(['builder']),
+      closeIssue: jest.fn().mockResolvedValue(undefined),
     };
     sessionRepository = {
       update: jest.fn(),
@@ -137,25 +141,19 @@ describe('BuilderBuildService', () => {
       nextSequence: jest.fn().mockResolvedValue(1),
       count: jest.fn().mockResolvedValue(0),
       listRecent: jest.fn().mockResolvedValue([]),
-      // Nothing in flight by default. A parked run stops blocking once its
-      // resume exists, so this is a query rather than a status filter.
+      // Nothing in flight by default.
       countBlockingRuns: jest.fn().mockResolvedValue(0),
       findLatest: jest.fn().mockResolvedValue(null),
       isLatestForSession: jest.fn().mockResolvedValue(false),
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
-      listByRunOfTypes: jest.fn().mockResolvedValue([]),
       latestOfType: jest.fn().mockResolvedValue(null),
     };
     pullRequestRepository = {
       increment: jest.fn(),
       findOne: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
-      update: jest.fn(),
-    };
-    questionRepository = {
-      isGroupComplete: jest.fn().mockResolvedValue(true),
       update: jest.fn(),
     };
     settingsService = {
@@ -167,13 +165,11 @@ describe('BuilderBuildService', () => {
       buildCompleted: jest.fn(),
       buildFailed: jest.fn(),
       budgetReached: jest.fn(),
-      budgetHold: jest.fn(),
       automationPaused: jest.fn(),
-      fixRunStarted: jest.fn(),
     };
-    // Annotations the service writes onto a run's own log (a budget raise, a
-    // hold). Recorded through the event service so they also push over the
-    // socket, which is why this is stubbed rather than the repository.
+    // Annotations the service writes onto a run's own log (an issue build's
+    // milestones). Recorded through the event service so they also push over
+    // the socket, which is why this is stubbed rather than the repository.
     eventService = { record: jest.fn() };
     // The dispatch mutex: granted by default, so only the test that cares
     // about a double dispatch has to think about it.
@@ -188,14 +184,15 @@ describe('BuilderBuildService', () => {
     // an ordinary single-milestone build.
     epicService = {
       nextPending: jest.fn().mockResolvedValue(null),
+      unbuiltRepoMilestone: jest.fn().mockResolvedValue(null),
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
       ensureRepoMilestones: jest.fn().mockResolvedValue(undefined),
     };
     // Build-half spend goes to the unified usage store as well as the run row.
     llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
-    // Sizing reads the PRD to decide what planning is worth. A small default,
-    // so a test that does not care gets the cheap planner and says nothing.
+    // The model catalog. Empty means "nothing is marked retired", which is
+    // the state every other test in this file assumes.
     llmModelsRepository = { find: jest.fn().mockResolvedValue([]) };
     prdService = {
       getOrCreateDoc: jest
@@ -219,16 +216,6 @@ describe('BuilderBuildService', () => {
       sessionRepository as any,
       runRepository as any,
       eventRepository as any,
-      questionRepository as any,
-      // Steering notes get superseded when a run is cancelled; nothing else in
-      // these tests touches them.
-      { supersedePending: jest.fn().mockResolvedValue(0) } as any,
-      // The model-selection dataset is written as a byproduct and must never
-      // decide whether a build succeeds — these tests assert the build, not
-      // the telemetry.
-      { recordArm: jest.fn(), recordGate: jest.fn() } as any,
-      // The model catalog. Empty means "nothing is marked retired", which is
-      // the state every other test in this file assumes.
       llmModelsRepository as any,
       pullRequestRepository as any,
       settingsService as any,
@@ -250,12 +237,7 @@ describe('BuilderBuildService', () => {
   });
 
   describe('issue dispatch', () => {
-    it('raises an issue for a build switched to it, carrying no PRD or design', async () => {
-      (github as any).createIssue = jest.fn().mockResolvedValue({
-        number: 41,
-        htmlUrl: 'https://github.com/o/ally-be/issues/41',
-        labels: ['builder'],
-      });
+    it('raises an issue for a build, carrying no PRD or design', async () => {
       prdService.getOrCreateDoc.mockResolvedValue({
         draft: {
           summary: 'A confidential product plan nobody outside may read.',
@@ -268,12 +250,11 @@ describe('BuilderBuildService', () => {
       const run = await service.startBuild(
         readySession({ repos: ['ally-be'] }) as any,
         1,
-        { dispatch: 'issue' },
       );
 
-      // The per-build switch wins over the default (Builder's own runner).
+      // A build never goes to Builder's own runner.
       expect(github.dispatchWorkflow).not.toHaveBeenCalled();
-      const [repo, issue] = (github as any).createIssue.mock.calls[0];
+      const [repo, issue] = github.createIssue.mock.calls[0];
       expect(repo).toBe('ally-be');
       expect(issue.labels).toEqual(['builder']);
       // ally-be is a public repo: the issue names the run, nothing more.
@@ -287,9 +268,55 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('issue dispatch — what does not apply to it', () => {
+    it("ignores Builder's model catalog, runner-minute ceiling and spend ceiling", async () => {
+      // opencode uses the repo's BUILDER_MODEL on the repo's own Actions.
+      llmModelsRepository.find.mockResolvedValue([
+        { model: 'claude-sonnet-5', active: false },
+      ]);
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        maxRunnerMinutes: 60,
+      });
+
+      await expect(
+        service.startBuild(
+          readySession({
+            runnerMinutes: 500,
+            budgetUsd: '10',
+            totalCostUsd: '12',
+          }) as any,
+          1,
+        ),
+      ).resolves.toBeDefined();
+      expect(github.createIssue).toHaveBeenCalled();
+    });
+
+    it('builds a one-repo design in the repo it names, whatever else the session lists', async () => {
+      prdService.getOrCreateDoc.mockImplementation(async () => {
+        const draft = { requirements: [], technicalPlan: '' } as any;
+        draft.technicalDesign = {
+          ...createDraftingDesign(draft, 'design-run'),
+          status: 'approved',
+          scope: [{ repo: 'ally-web', files: ['src/a.tsx'] }],
+        };
+        return { draft, versionNumber: 2 };
+      });
+
+      const run = await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+      );
+
+      expect(github.createIssue.mock.calls[0][0]).toBe('ally-web');
+      expect(run.repos).toEqual(['ally-web']);
+    });
+  });
+
   describe('issue dispatch — the label', () => {
     beforeEach(() => {
-      (github as any).createIssue = jest.fn().mockResolvedValue({
+      github.createIssue.mockResolvedValue({
         number: 41,
         htmlUrl: 'https://github.com/o/ally-be/issues/41',
         // What GitHub returns when the token may open issues but not label them.
@@ -298,17 +325,11 @@ describe('BuilderBuildService', () => {
     });
 
     it('adds the label GitHub dropped', async () => {
-      (github as any).addIssueLabels = jest.fn().mockResolvedValue(['builder']);
+      await service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1);
 
-      await service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
-        dispatch: 'issue',
-      });
-
-      expect((github as any).addIssueLabels).toHaveBeenCalledWith(
-        'ally-be',
-        41,
-        ['builder'],
-      );
+      expect(github.addIssueLabels).toHaveBeenCalledWith('ally-be', 41, [
+        'builder',
+      ]);
       expect(runRepository.update).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ issueNumber: 41, status: 'RUNNING' }),
@@ -316,20 +337,151 @@ describe('BuilderBuildService', () => {
     });
 
     it('fails the build, naming the permission, when the label cannot be added', async () => {
-      (github as any).addIssueLabels = jest.fn().mockResolvedValue([]);
+      github.addIssueLabels.mockResolvedValue([]);
 
       await expect(
-        service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1, {
-          dispatch: 'issue',
-        }),
+        service.startBuild(readySession({ repos: ['ally-be'] }) as any, 1),
       ).rejects.toThrow(
         /could not label it `builder`.*permission to label issues/,
       );
     });
   });
 
+  describe('a one-repo-per-build chain that stops before its last repo', () => {
+    it('fails the session with the reason, rather than calling it complete', async () => {
+      const run = {
+        id: 'run-11',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+        milestoneId: 'm2',
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        status: BuilderSessionStatus.BUILDING,
+        repos: ['ally-be', 'ally-web', 'ally-mobile'],
+      });
+      runRepository.isLatestForSession.mockResolvedValue(true);
+      epicService.nextPending.mockResolvedValue({
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      });
+      github.createIssue.mockRejectedValue(
+        new Error('Request failed with status code 403'),
+      );
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(epicService.markStatus).toHaveBeenCalledWith(
+        'm3',
+        'PENDING',
+        expect.stringMatching(/403/),
+      );
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          status: BuilderSessionStatus.FAILED,
+          error: expect.stringMatching(/Could not start ally-mobile: .*403/),
+        }),
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.COMPLETED }),
+      );
+    });
+
+    it('lets a session marked complete restart while a repo is still to build', async () => {
+      const mobile = {
+        id: 'm3',
+        position: 3,
+        title: 'ally-mobile',
+        repos: ['ally-mobile'],
+        branchSlug: 'rich-text',
+      };
+      epicService.unbuiltRepoMilestone.mockResolvedValue(mobile);
+      epicService.nextPending.mockResolvedValue(mobile);
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+
+      const run = await service.startBuild(
+        readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+        1,
+      );
+
+      expect(run).toEqual(
+        expect.objectContaining({ milestoneId: 'm3', repos: ['ally-mobile'] }),
+      );
+    });
+  });
+
+  describe('a start whose dispatch fails', () => {
+    const mobile = {
+      id: 'm3',
+      position: 3,
+      title: 'ally-mobile',
+      repos: ['ally-mobile'],
+      branchSlug: 'rich-text',
+    };
+
+    it('puts the milestone back to build rather than leaving it BUILDING', async () => {
+      epicService.nextPending.mockResolvedValue(mobile);
+      github.createIssue.mockRejectedValue(
+        new Error('Request failed with status code 403'),
+      );
+
+      await expect(
+        service.startBuild(readySession() as any, 1),
+      ).rejects.toThrow(/403/);
+
+      expect(epicService.markStatus).toHaveBeenCalledWith('m3', 'BUILDING');
+      expect(epicService.markStatus).toHaveBeenLastCalledWith(
+        'm3',
+        'PENDING',
+        expect.stringMatching(/403/),
+      );
+    });
+
+    it('can be restarted when an earlier failed start left the milestone BUILDING', async () => {
+      // 10-14: the session read COMPLETED, ally-mobile read BUILDING, nothing ran.
+      epicService.unbuiltRepoMilestone.mockResolvedValue({
+        ...mobile,
+        status: 'BUILDING',
+      });
+      // ensureRepoMilestones puts it back to PENDING before the lookup.
+      epicService.nextPending.mockResolvedValue(mobile);
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+
+      await expect(
+        service.startBuild(
+          readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+          1,
+        ),
+      ).resolves.toEqual(expect.objectContaining({ milestoneId: 'm3' }));
+      expect(epicService.ensureRepoMilestones).toHaveBeenCalled();
+    });
+
+    it('refuses while a run for the session is still in flight', async () => {
+      epicService.unbuiltRepoMilestone.mockResolvedValue({
+        ...mobile,
+        status: 'BUILDING',
+      });
+      pullRequestRepository.count = jest.fn().mockResolvedValue(2);
+      runRepository.count.mockResolvedValue(1);
+
+      await expect(
+        service.startBuild(
+          readySession({ status: BuilderSessionStatus.COMPLETED }) as any,
+          1,
+        ),
+      ).rejects.toThrow(/can only start from a ready PRD/);
+    });
+  });
+
   describe('one repo per build', () => {
-    it('dispatches the first repo milestone with its repo only, and keeps the loop for the chain', async () => {
+    it('raises the first repo milestone in its repo only, and keeps the model for the chain', async () => {
       epicService.nextPending.mockResolvedValue({
         id: 'm1',
         position: 1,
@@ -340,39 +492,37 @@ describe('BuilderBuildService', () => {
       const run = await service.startBuild(
         readySession({ repos: ['ally-be', 'ally-web'] }) as any,
         1,
-        { loop: 'ralph', model: 'gemini-3-flash-preview' },
+        { model: 'gemini-3-flash-preview' },
       );
 
       expect(epicService.ensureRepoMilestones).toHaveBeenCalled();
       expect(epicService.markStatus).toHaveBeenCalledWith('m1', 'BUILDING');
-      const inputs = github.dispatchWorkflow.mock.calls[0][0].inputs;
-      expect(JSON.parse(inputs.repos)).toEqual(['ally-be']);
-      expect(inputs.branch_slug).toBe('rich-text');
+      expect(github.createIssue.mock.calls[0][0]).toBe('ally-be');
       expect(run).toEqual(
-        expect.objectContaining({ repos: ['ally-be'], milestoneId: 'm1' }),
+        expect.objectContaining({
+          repos: ['ally-be'],
+          milestoneId: 'm1',
+          branchSlug: 'rich-text',
+        }),
       );
       // advanceEpic has no request to read overrides from; the session does.
       expect(sessionRepository.update).toHaveBeenCalledWith(
         { id: 'session-1' },
         expect.objectContaining({
           metadata: expect.objectContaining({
-            buildOverrides: expect.objectContaining({
-              loop: 'ralph',
-              model: 'gemini-3-flash-preview',
-            }),
+            buildOverrides: { model: 'gemini-3-flash-preview' },
           }),
         }),
       );
     });
   });
 
+  /**
+   * The size is recorded with every run, frozen at dispatch: the PRD keeps
+   * changing, and the metrics read outcomes per size.
+   */
   describe('sizing a build', () => {
-    const dispatchedModels = () =>
-      JSON.parse(
-        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
-      );
-
-    it('plans a small PRD on the coder tier, not Opus', async () => {
+    it('records the size and effort the PRD was classified as', async () => {
       prdService.getOrCreateDoc.mockResolvedValue({
         draft: {
           requirements: [{ id: 'R1' }, { id: 'R2' }],
@@ -382,145 +532,16 @@ describe('BuilderBuildService', () => {
 
       await service.startBuild(readySession() as any, 1);
 
-      const models = dispatchedModels();
-      // The first real build was exactly this shape and paid $7.85 for an Opus
-      // plan of a two-route change. Dropping to the coder tier took that to a
-      // $4.89 median and it was still 25% of everything Builder spent, so a
-      // small build now plans on the cheapest tier there is.
-      expect(models.planner).toBe('claude-haiku-4-5');
-      expect(models.size).toBe('small');
-      expect(models.effort).toBe('low');
-      expect(models.plannerMaxTurns).toBe(20);
-      expect(models.budgets.plan).toBe(1);
-    });
-
-    /**
-     * The profile's per-phase ceilings are absolute and they add up — LARGE is
-     * $10 + $20 + $6 + $5, one pass each, with up to four coding attempts
-     * allowed. A session with a $10 ceiling was dispatched with permission to
-     * spend all of it before anything asked it to stop, and a run did exactly
-     * that: $41.92 against a $10.00 ceiling, and the banner said so only once
-     * the money was gone. The boundary check cannot catch it, because the
-     * overshoot happens inside a phase and the check runs between them.
-     */
-    it('never hands a phase more than the session has left', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: {
-          requirements: Array.from({ length: 14 }, (_, i) => ({ id: `R${i}` })),
-          technicalPlan: {
-            repos: [
-              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
-              { repo: 'ally-web', changesMd: 'x'.repeat(2000) },
-            ],
-          },
-        },
-      });
-
-      await service.startBuild(
-        readySession({
-          repos: ['ally-be', 'ally-web'],
-          budgetUsd: '10',
-          totalCostUsd: '2.5',
-        }) as any,
-        1,
+      expect(runRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          size: 'small',
+          effort: 'low',
+          requirementCount: 2,
+        }),
       );
-
-      const models = dispatchedModels();
-      expect(models.size).toBe('large');
-      // $7.50 left, so every phase is capped there — not divided four ways.
-      // The phases are sequential and most runs never reach the last one, so
-      // splitting the headroom would starve CODE on money that could have
-      // covered it.
-      expect(models.budgets).toEqual({
-        plan: 7.5,
-        code: 7.5,
-        verify: 6,
-        finalise: 5,
-      });
     });
 
-    /** Zero has meant "uncapped" everywhere since the column was added. */
-    it('leaves the profile alone when the session has no ceiling', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: {
-          requirements: [{ id: 'R1' }, { id: 'R2' }],
-          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
-        },
-      });
-
-      await service.startBuild(
-        readySession({ budgetUsd: null, totalCostUsd: '99' }) as any,
-        1,
-      );
-
-      expect(dispatchedModels().budgets).toEqual({
-        plan: 1,
-        code: 8,
-        verify: 3,
-        finalise: 3,
-      });
-    });
-
-    /**
-     * An unconfigured mechanical model must not hand the runner an empty
-     * `--model`: a cost optimisation that can fail the build is not one.
-     */
-    it('falls back to the coder tier when no mechanical model is configured', async () => {
-      (service as any).configService = {
-        publicApiBaseUrl: 'http://be',
-        builder: {
-          coderModel: 'claude-sonnet-5',
-          plannerModel: 'claude-opus-5',
-          verifierModel: 'claude-opus-5',
-        },
-      };
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: {
-          requirements: [{ id: 'R1' }, { id: 'R2' }],
-          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
-        },
-      });
-
-      await service.startBuild(readySession() as any, 1);
-
-      expect(dispatchedModels().planner).toBe('claude-sonnet-5');
-    });
-
-    it('keeps Opus for a cross-repo build', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: {
-          requirements: Array.from({ length: 6 }, (_, i) => ({ id: `R${i}` })),
-          technicalPlan: {
-            repos: [
-              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
-              { repo: 'ally-web', changesMd: 'y'.repeat(2000) },
-            ],
-          },
-        },
-      });
-
-      await service.startBuild(
-        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
-        1,
-      );
-
-      expect(dispatchedModels().planner).toBe('claude-opus-5');
-    });
-
-    it('lets an explicit planner override win over sizing', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: { requirements: [{ id: 'R1' }], technicalPlan: null },
-      });
-
-      await service.startBuild(readySession() as any, 1, {
-        plannerModel: 'claude-opus-5',
-      });
-
-      // An admin who picked a planner meant it.
-      expect(dispatchedModels().planner).toBe('claude-opus-5');
-    });
-
-    it('plans at the default tier when the PRD cannot be read', async () => {
+    it('sizes at the default when the PRD cannot be read', async () => {
       // The design gate reads it first and finds an approved design; the
       // sizing read after it is the one that fails.
       prdService.getOrCreateDoc
@@ -529,39 +550,27 @@ describe('BuilderBuildService', () => {
 
       await service.startBuild(readySession() as any, 1);
 
-      // An unreadable PRD is a reason to spend the default, not to refuse.
-      expect(dispatchedModels().size).toBe('medium');
-      expect(github.dispatchWorkflow).toHaveBeenCalled();
+      // An unreadable PRD is a reason to record the default, not to refuse.
+      expect(runRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ size: 'medium' }),
+      );
+      expect(github.createIssue).toHaveBeenCalled();
     });
   });
 
   /**
-   * The escalation ladder.
-   *
-   * The loop used to re-run the model that had just failed the gate, four
-   * times, so a run that exhausted its attempts failed without ever trying
-   * anything stronger. Two properties keep the fix from making anything worse:
-   * the first attempt is never weakened, and the ladder always has somewhere
-   * to go.
-   */
-  /**
-   * A build refused before it costs anything, rather than one that burns its
-   * attempts on a model that no longer answers.
-   *
-   * The failure this replaces is silent: run-engine.sh has no `set -e`, so a
-   * dead model id lets the script carry on, gate an unchanged tree, block, and
-   * retry — and on a small build's ladder that is two of four attempts gone
-   * before it reaches a different tier, with a test-gate error as the only
-   * visible symptom.
+   * A design run refused before it costs anything, rather than one that
+   * runs on a model that no longer answers. (A build runs on its repo's own
+   * opencode model, so the catalog is not consulted for it.)
    */
   describe('model preflight', () => {
-    it('refuses a build whose coder tier is marked retired', async () => {
+    it('refuses a design run whose coder tier is marked retired', async () => {
       llmModelsRepository.find.mockResolvedValue([
         { model: 'claude-sonnet-5', active: false },
       ]);
 
       await expect(
-        service.startBuild(readySession() as any, 1),
+        service.startDesign(readySession() as any, 1),
       ).rejects.toThrow(/retired/i);
       expect(github.dispatchWorkflow).not.toHaveBeenCalled();
     });
@@ -572,38 +581,56 @@ describe('BuilderBuildService', () => {
       ]);
 
       await expect(
-        service.startBuild(readySession() as any, 1),
+        service.startDesign(readySession() as any, 1),
       ).rejects.toThrow(/claude-opus-5/);
     });
 
     /**
      * The catalog is admin-maintained and lags reality in both directions.
-     * Refusing a build because nobody has added a row yet would be a worse
+     * Refusing a run because nobody has added a row yet would be a worse
      * failure than the one this prevents, so only an explicit retirement
      * blocks.
      */
     it('allows a model the catalog has never heard of', async () => {
       llmModelsRepository.find.mockResolvedValue([]);
 
-      await service.startBuild(readySession() as any, 1);
+      await service.startDesign(readySession() as any, 1);
 
       expect(github.dispatchWorkflow).toHaveBeenCalled();
     });
 
-    it('allows the build when the catalog itself cannot be read', async () => {
+    it('dispatches the design run from master by default', async () => {
+      await service.startDesign(readySession() as any, 1);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: 'master' }),
+      );
+    });
+
+    it('dispatches from the configured ref, to prove a runner change on dev', async () => {
+      (service as any).configService.builder.designWorkflowRef =
+        'builder/design-only-engine';
+
+      await service.startDesign(readySession() as any, 1);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: 'builder/design-only-engine' }),
+      );
+    });
+
+    it('allows the run when the catalog itself cannot be read', async () => {
       llmModelsRepository.find.mockRejectedValue(new Error('db down'));
 
-      await service.startBuild(readySession() as any, 1);
+      await service.startDesign(readySession() as any, 1);
 
       // A database hiccup is not evidence a model is gone.
       expect(github.dispatchWorkflow).toHaveBeenCalled();
     });
 
-    /** Escalation rungs are models too — a retired one is found at attempt 3. */
-    it('checks the ladder, not just the three named tiers', async () => {
+    it('checks the planner and verifier, not just the coder', async () => {
       llmModelsRepository.find.mockResolvedValue([]);
 
-      await service.startBuild(readySession() as any, 1);
+      await service.startDesign(readySession() as any, 1);
 
       const asked = llmModelsRepository.find.mock.calls[0][0].where.model;
       const wanted = (asked as { _value: string[] })._value ?? asked;
@@ -611,106 +638,21 @@ describe('BuilderBuildService', () => {
     });
   });
 
-  describe('the coder escalation ladder', () => {
-    const dispatchedModels = () =>
-      JSON.parse(
-        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
-      );
-
-    const smallPrd = {
-      draft: {
-        requirements: [{ id: 'R1' }, { id: 'R2' }],
-        technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
-      },
-    };
-
-    /**
-     * The load-bearing guarantee. This ships as escalation only: if entry 0
-     * ever drifted below the coder tier, every build would get worse on its
-     * first attempt to buy a saving nobody has measured yet.
-     */
-    it('never weakens the first attempt', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
-
-      await service.startBuild(readySession() as any, 1);
-
-      const models = dispatchedModels();
-      expect(models.coderLadder[0]).toBe(models.coder);
-    });
-
-    it('escalates to a stronger tier once the gate keeps refusing', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
-
-      await service.startBuild(readySession() as any, 1);
-
-      const ladder = dispatchedModels().coderLadder;
-      expect(ladder).toEqual([
-        'claude-sonnet-5',
-        'claude-sonnet-5',
-        'claude-opus-5',
-        'claude-opus-5',
-      ]);
-    });
-
-    /**
-     * A large build's second failure is rarely the kind a third cheap attempt
-     * fixes, and another failed attempt costs more.
-     */
-    it('escalates a large build sooner than a small one', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue({
-        draft: {
-          requirements: Array.from({ length: 12 }, (_, i) => ({
-            id: `R${i}`,
-          })),
-          technicalPlan: {
-            repos: [
-              { repo: 'ally-be', changesMd: 'x'.repeat(4000) },
-              { repo: 'ally-web', changesMd: 'y'.repeat(4000) },
-            ],
-          },
-        },
-      });
-
-      await service.startBuild(readySession() as any, 1);
-
-      const models = dispatchedModels();
-      expect(models.size).toBe('large');
-      expect(models.coderLadder[1]).toBe('claude-opus-5');
-    });
-
-    it('carries the ladder on the dispatch input the runner reads', async () => {
-      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
-
-      await service.startBuild(readySession() as any, 1);
-
-      const ladder = dispatchedModels().coderLadder;
-      expect(Array.isArray(ladder)).toBe(true);
-      expect(ladder.length).toBeGreaterThan(1);
-      // Every rung has to name a real model — an empty string would make the
-      // runner fall back silently and the escalation would simply not happen.
-      for (const rung of ladder) expect(rung).toBeTruthy();
-    });
-  });
-
   describe('startBuild', () => {
-    it('dispatches with the run id, so the runner can call back from its first step', async () => {
+    it('raises the issue with the run id, so its workflow can fetch the spec', async () => {
       const run = await service.startBuild(readySession() as any, 1);
 
       expect(run.id).toBe('run-1');
-      // The row must exist BEFORE the dispatch: workflow_dispatch answers 204
-      // with no run id, so the runner is handed ours as an input.
+      // The row must exist BEFORE the issue: the issue names the run, and its
+      // workflow fetches the spec with that id.
       const saveOrder = runRepository.save.mock.invocationCallOrder[0];
-      const dispatchOrder = github.dispatchWorkflow.mock.invocationCallOrder[0];
-      expect(saveOrder).toBeLessThan(dispatchOrder);
+      const issueOrder = github.createIssue.mock.invocationCallOrder[0];
+      expect(saveOrder).toBeLessThan(issueOrder);
 
-      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+      expect(github.createIssue).toHaveBeenCalledWith(
+        'ally-be',
         expect.objectContaining({
-          inputs: expect.objectContaining({
-            run_id: 'run-1',
-            session_id: 'session-1',
-            mode: 'build',
-            repos: '["ally-be"]',
-          }),
+          body: expect.stringContaining('<!-- builder-run: run-1 -->'),
         }),
       );
     });
@@ -732,7 +674,7 @@ describe('BuilderBuildService', () => {
       await expect(
         service.startBuild(readySession() as any, 1),
       ).rejects.toThrow(/switched off/i);
-      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      expect(github.createIssue).not.toHaveBeenCalled();
     });
 
     it('refuses when GitHub is not configured', async () => {
@@ -744,22 +686,13 @@ describe('BuilderBuildService', () => {
     });
 
     it('refuses at the concurrency ceiling', async () => {
-      // Counted on runs holding a runner, not sessions: a session parked on a
-      // question occupies no runner, and one session can hold several runs.
+      // Counted on runs in flight, not sessions: one session can hold
+      // several runs.
       runRepository.count.mockResolvedValue(3);
 
       await expect(
         service.startBuild(readySession() as any, 1),
       ).rejects.toThrow(/already running/i);
-    });
-
-    it('refuses once the session has spent its budget', async () => {
-      await expect(
-        service.startBuild(
-          readySession({ budgetUsd: '10', totalCostUsd: '10.5' }) as any,
-          1,
-        ),
-      ).rejects.toThrow(/budget/i);
     });
 
     it('refuses from a PRD that is not ready', async () => {
@@ -771,8 +704,8 @@ describe('BuilderBuildService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('fails the run and the session when the dispatch itself throws', async () => {
-      github.dispatchWorkflow.mockRejectedValue(new Error('GitHub is down'));
+    it('fails the run and the session when the issue cannot be raised', async () => {
+      github.createIssue.mockRejectedValue(new Error('GitHub is down'));
 
       await expect(
         service.startBuild(readySession() as any, 1),
@@ -786,24 +719,6 @@ describe('BuilderBuildService', () => {
     });
   });
 
-  describe('loop', () => {
-    it('sends the Ralph loop to the runner inside the models input', async () => {
-      await service.startBuild(readySession() as any, 1, { loop: 'ralph' });
-      const models = JSON.parse(
-        github.dispatchWorkflow.mock.calls[0][0].inputs.models,
-      );
-      expect(models.loop).toBe('ralph');
-    });
-
-    it('sends no loop for an ordinary build, so the runner keeps the pipeline', async () => {
-      await service.startBuild(readySession() as any, 1);
-      const models = JSON.parse(
-        github.dispatchWorkflow.mock.calls[0][0].inputs.models,
-      );
-      expect(models.loop).toBeUndefined();
-    });
-  });
-
   describe('branch for a new build', () => {
     // A previous build/resume run on this session, as branchSlugForBuild
     // looks it up; every other findOne keeps the default.
@@ -812,7 +727,7 @@ describe('BuilderBuildService', () => {
         query?.where?.mode ? run : undefined,
       );
     const dispatchedSlug = () =>
-      github.dispatchWorkflow.mock.calls[0][0].inputs.branch_slug;
+      runRepository.create.mock.calls[0][0].branchSlug;
 
     beforeEach(() => {
       prdService.getOrCreateDoc.mockResolvedValue({
@@ -872,8 +787,8 @@ describe('BuilderBuildService', () => {
   });
 
   describe('engine', () => {
-    it('records opencode on the run and no longer sends an engine input', async () => {
-      await service.startBuild(readySession() as any, 1);
+    it('records opencode on the run and sends no engine input to a design run', async () => {
+      await service.startDesign(readySession() as any, 1);
 
       expect(runRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ engine: 'opencode' }),
@@ -1083,18 +998,17 @@ describe('BuilderBuildService', () => {
 
   describe('spend and concurrency guards', () => {
     it('refuses a dispatch while another is already starting for the session', async () => {
-      // Two admins answering the last question of a group at once, or one
-      // double-click, used to send two runners at the same branches.
+      // A double-click used to send two runs at the same branches.
       redisService.acquireLock.mockResolvedValue(false);
 
       await expect(
         service.startBuild(readySession() as any, 1),
       ).rejects.toThrow(/already being started/i);
-      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      expect(github.createIssue).not.toHaveBeenCalled();
     });
 
     it('releases the dispatch lock even when the dispatch throws', async () => {
-      github.dispatchWorkflow.mockRejectedValue(new Error('GitHub is down'));
+      github.createIssue.mockRejectedValue(new Error('GitHub is down'));
 
       await expect(
         service.startBuild(readySession() as any, 1),
@@ -1103,7 +1017,16 @@ describe('BuilderBuildService', () => {
       expect(redisService.releaseLock).toHaveBeenCalled();
     });
 
-    it('refuses once the session has used its runner minutes', async () => {
+    it('refuses a design run once the session has spent its budget', async () => {
+      await expect(
+        service.startDesign(
+          readySession({ budgetUsd: '10', totalCostUsd: '10.5' }) as any,
+          1,
+        ),
+      ).rejects.toThrow(/budget/i);
+    });
+
+    it('refuses a design run once the session has used its runner minutes', async () => {
       // A separate ceiling from dollars on purpose: a run can be cheap in
       // tokens and still hold a runner for two hours.
       settingsService.get.mockResolvedValue({
@@ -1113,11 +1036,11 @@ describe('BuilderBuildService', () => {
       });
 
       await expect(
-        service.startBuild(readySession({ runnerMinutes: 640 }) as any, 1),
+        service.startDesign(readySession({ runnerMinutes: 640 }) as any, 1),
       ).rejects.toThrow(/runner minutes/i);
     });
 
-    it('allows a dispatch when minutes are under the ceiling', async () => {
+    it('allows a design run when minutes are under the ceiling', async () => {
       settingsService.get.mockResolvedValue({
         enabled: true,
         maxConcurrentBuilds: 3,
@@ -1125,7 +1048,7 @@ describe('BuilderBuildService', () => {
       });
 
       await expect(
-        service.startBuild(readySession({ runnerMinutes: 120 }) as any, 1),
+        service.startDesign(readySession({ runnerMinutes: 120 }) as any, 1),
       ).resolves.toBeTruthy();
     });
   });
@@ -1143,42 +1066,189 @@ describe('BuilderBuildService', () => {
     });
   });
 
-  describe('resumeFromQuestions', () => {
-    const pausedRun = {
-      id: 'run-1',
+  describe('in-repo review of an opencode pull request', () => {
+    const ocPr = {
+      id: 'pr-114',
       sessionId: 'session-1',
-      branches: { 'ally-be': 'builder/add-a-thing' },
+      repo: 'ally-mobile',
+      branch: 'opencode/issue113-20261014085905',
+      prNumber: 114,
+      runId: 'build-run-15',
     };
-
-    it('waits for the whole question group before dispatching', async () => {
-      questionRepository.isGroupComplete.mockResolvedValue(false);
-
-      const result = await service.resumeFromQuestions(
-        readySession({ status: BuilderSessionStatus.WAITING_FOR_INPUT }) as any,
-        pausedRun as any,
-        'group-1',
-        1,
-      );
-
-      expect(result).toBeNull();
-      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    const reviewRun = (overrides: Record<string, any> = {}) => ({
+      id: 'review-1',
+      sessionId: 'session-1',
+      mode: BuilderRunMode.REVIEW,
+      status: BuilderRunStatus.RUNNING,
+      repos: ['ally-mobile'],
+      pullRequestId: 'pr-114',
+      dispatchedAt: new Date(Date.now() - 10 * 60_000),
+      cost: { reviewWorkflow: 'repo', reviewedSha: 'abc1234' },
+      ...overrides,
     });
 
-    it('carries the paused branches through, so the resume continues rather than restarts', async () => {
-      await service.resumeFromQuestions(
-        readySession({ status: BuilderSessionStatus.WAITING_FOR_INPUT }) as any,
-        pausedRun as any,
-        'group-1',
-        1,
+    it("starts builder-review.yml in the PR's own repo, not ally-be's runner", async () => {
+      const run = await service.dispatchReviewRun(ocPr as never, 'abc1234def');
+
+      expect(github.dispatchWorkflow).toHaveBeenCalledTimes(1);
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith({
+        repo: 'ally-mobile',
+        workflow: 'builder-review.yml',
+        ref: 'master',
+        inputs: {
+          pr_number: '114',
+          spec_run_id: 'build-run-15',
+          review_run_id: run!.id,
+          builder_pr_id: 'pr-114',
+        },
+      });
+      expect(runRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: BuilderRunMode.REVIEW,
+          repos: ['ally-mobile'],
+          pullRequestId: 'pr-114',
+          cost: expect.objectContaining({ reviewWorkflow: 'repo' }),
+        }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: run!.id },
+        expect.objectContaining({ status: BuilderRunStatus.RUNNING }),
+      );
+      expect(pullRequestRepository.update).toHaveBeenCalledWith(
+        { id: 'pr-114' },
+        { reviewedSha: 'abc1234def' },
+      );
+    });
+
+    it('settles only the run and its review claim, never the session', async () => {
+      await service.settleRepoReview(
+        reviewRun() as any,
+        BuilderRunStatus.FAILED,
+        'boom',
       );
 
-      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'review-1' },
+        expect.objectContaining({ status: BuilderRunStatus.FAILED }),
+      );
+      // The claim is released so the next tick can review this head again.
+      expect(pullRequestRepository.update).toHaveBeenCalledWith(
+        { id: 'pr-114' },
+        { reviewedSha: null },
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('fails a review whose workflow ended without filing a verdict', async () => {
+      runRepository.listActive.mockResolvedValue([reviewRun()]);
+      runRepository.findOne.mockResolvedValue(reviewRun());
+      github.findRunSince.mockResolvedValue({
+        id: '77',
+        status: 'completed',
+        conclusion: 'failure',
+        htmlUrl: 'https://github.com/o/ally-mobile/actions/runs/77',
+      });
+
+      await service.reconcile();
+
+      expect(github.findRunSince).toHaveBeenCalledWith(
         expect.objectContaining({
-          inputs: expect.objectContaining({
-            mode: BuilderRunMode.RESUME,
-            branches: '{"ally-be":"builder/add-a-thing"}',
-          }),
+          repo: 'ally-mobile',
+          workflow: 'builder-review.yml',
         }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'review-1' },
+        expect.objectContaining({
+          status: BuilderRunStatus.FAILED,
+          error: expect.stringMatching(/without filing a verdict/),
+        }),
+      );
+      expect(github.getRun).not.toHaveBeenCalled();
+    });
+
+    it('cancels the review where it runs', async () => {
+      github.findRunSince.mockResolvedValue({
+        id: '78',
+        status: 'in_progress',
+      });
+
+      await service.cancelRun(reviewRun({ githubRunId: null }) as any, 7);
+
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-mobile', '78');
+      expect(github.cancelRun).not.toHaveBeenCalledWith(
+        'ally-be',
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('issue builds — bookkeeping', () => {
+    it('does not count an issue build against the runner-minute ceiling', async () => {
+      sessionRepository.findOne.mockResolvedValue(readySession());
+      const run = {
+        id: 'run-15',
+        sessionId: 'session-1',
+        mode: BuilderRunMode.BUILD,
+        issueNumber: 113,
+        dispatchedAt: new Date(Date.now() - 40 * 60_000),
+        startedAt: new Date(Date.now() - 40 * 60_000),
+      };
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-15' },
+        expect.objectContaining({ runnerMinutes: null }),
+      );
+      expect(sessionRepository.increment).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'runnerMinutes',
+        expect.anything(),
+      );
+    });
+
+    it('keeps the Actions log link and records the CI verdict as its own event', async () => {
+      const run = { id: 'run-15', sessionId: 'session-1', cost: null };
+      runRepository.findOne.mockResolvedValue(run);
+      const ci = {
+        repo: 'ally-mobile',
+        prNumber: 114,
+        prUrl: 'https://github.com/o/ally-mobile/pull/114',
+        sha: 'abc',
+        state: 'failure' as const,
+        failed: ['Jest'],
+      };
+
+      await service.recordIssueMilestone(
+        run as any,
+        'working:9',
+        'opencode is working',
+        undefined,
+        { workflowRunUrl: 'https://github.com/o/ally-mobile/actions/runs/9' },
+      );
+      await service.recordIssueMilestone(
+        run as any,
+        'ci-fail:abc',
+        'CI failed',
+        undefined,
+        { ci },
+      );
+
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-15' },
+        {
+          cost: expect.objectContaining({
+            issueWorkflowRunUrl:
+              'https://github.com/o/ally-mobile/actions/runs/9',
+          }),
+        },
+      );
+      expect(eventService.record).toHaveBeenCalledWith(
+        run,
+        'ci_result',
+        ci,
+        null,
       );
     });
   });
@@ -1205,21 +1275,48 @@ describe('BuilderBuildService', () => {
       );
     });
 
-    it('supersedes pending questions, so a late answer cannot resume a cancelled build', async () => {
-      await service.cancelRun(run as any, 7);
-
-      expect(questionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ runId: 'run-1' }),
-        expect.objectContaining({ status: 'superseded' }),
-      );
-    });
-
     it('looks the run up inline when it was never correlated', async () => {
       github.findRunSince.mockResolvedValue({ id: '123' });
 
       await service.cancelRun({ ...run, githubRunId: null } as any, 7);
 
       expect(github.cancelRun).toHaveBeenCalledWith('ally-be', '123');
+    });
+
+    it("stops an issue build in its own repo, and never touches ally-be's runner", async () => {
+      // Looking for ally-be's runner here found another session's review run.
+      (github as any).closeIssue = jest.fn().mockResolvedValue(undefined);
+      github.findRunSince.mockResolvedValue({
+        id: '555',
+        status: 'in_progress',
+      });
+
+      await service.cancelRun(
+        {
+          ...run,
+          githubRunId: null,
+          issueNumber: 113,
+          repos: ['ally-mobile'],
+        } as any,
+        7,
+      );
+
+      expect(github.findRunSince).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repo: 'ally-mobile',
+          workflow: 'builder.yml',
+          event: 'issues',
+        }),
+      );
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-mobile', '555');
+      expect(github.cancelRun).not.toHaveBeenCalledWith(
+        'ally-be',
+        expect.anything(),
+      );
+      expect((github as any).closeIssue).toHaveBeenCalledWith(
+        'ally-mobile',
+        113,
+      );
     });
   });
 
@@ -1559,226 +1656,15 @@ describe('BuilderBuildService', () => {
     });
   });
 
-  describe('hasPassingGate', () => {
-    const gateEvent = (repo: string, kind: string, passed: boolean) => ({
-      type: BuilderEventType.GATE_RESULT,
-      payload: { repo, kind, passed },
-    });
-    const roundEvent = (
-      round: string,
-      repo: string,
-      kind: string,
-      passed: boolean,
-    ) => ({
-      type: BuilderEventType.GATE_RESULT,
-      payload: { round, repo, kind, passed },
-    });
-
-    it('is false when a run recorded no gate at all', async () => {
-      // The case that mattered: testing used to be prompt-instructed, so a run
-      // that never ran a suite could still self-report success.
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        { type: BuilderEventType.TEXT, payload: { text: 'all tests pass!' } },
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(false);
-    });
-
-    it('is true when every check the gate ran passed', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        gateEvent('ally-be', 'test', true),
-        gateEvent('ally-be', 'lint', true),
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(true);
-    });
-
-    it('is false when any check failed', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        gateEvent('ally-be', 'test', true),
-        gateEvent('ally-be', 'lint', false),
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(false);
-    });
-
-    it('reads the newest verdict per check, so a remediated failure counts as fixed', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        gateEvent('ally-be', 'test', false),
-        gateEvent('ally-be', 'test', true),
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(true);
-    });
-
-    /**
-     * A `gate-config` failure is only posted while config is touched, so
-     * reverting the edit never produced the pass that would replace it — and
-     * the run could never complete, however clean its tree. Each gate run is
-     * a round, and only the newest round describes the tree.
-     */
-    it('reads only the newest gate round, so a check that stopped running cannot hold it', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        roundEvent('r1', 'ally-be', 'gate-config', false),
-        roundEvent('r1', 'ally-be', 'test', false),
-        roundEvent('r1', 'ally-web', 'lint', false),
-        roundEvent('r2', 'ally-be', 'test', true),
-        roundEvent('r2', 'ally-be', 'lint', true),
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(true);
-    });
-
-    it('fails on a failure in the newest round', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        roundEvent('r1', 'ally-be', 'test', true),
-        roundEvent('r2', 'ally-be', 'test', false),
-      ]);
-
-      await expect(service.hasPassingGate('run-1')).resolves.toBe(false);
-    });
-
-    it('asks only for gate results, from the whole run', async () => {
-      await service.hasPassingGate('run-1');
-
-      expect(eventRepository.listByRunOfTypes).toHaveBeenCalledWith('run-1', [
-        BuilderEventType.GATE_RESULT,
-      ]);
-    });
-  });
-
-  describe('getRunPhaseContext', () => {
-    it('hands the remediation prompt the failures and objections to fix', async () => {
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        {
-          type: BuilderEventType.PLAN,
-          payload: { text: '## Approach\nDo it.' },
-        },
-        {
-          type: BuilderEventType.GATE_RESULT,
-          payload: {
-            repo: 'ally-be',
-            kind: 'test',
-            command: 'npm test',
-            passed: false,
-            newFailures: ['src/foo.spec.ts'],
-            preExistingFailures: ['src/legacy.spec.ts'],
-            outputTail: 'boom',
-          },
-        },
-        {
-          type: BuilderEventType.VERIFICATION,
-          payload: {
-            round: 1,
-            verdict: 'fail',
-            objections: [{ severity: 'blocking', summary: 'R2 has no test' }],
-            notes: 'Otherwise clean.',
-          },
-        },
-      ]);
-
-      const context = await service.getRunPhaseContext('run-1');
-
-      expect(context.planMd).toContain('## Approach');
-      expect(context.gateFailures).toEqual([
-        expect.objectContaining({
-          repo: 'ally-be',
-          kind: 'test',
-          newFailures: ['src/foo.spec.ts'],
-          preExistingFailures: ['src/legacy.spec.ts'],
-        }),
-      ]);
-      expect(context.objections).toEqual([
-        { severity: 'blocking', summary: 'R2 has no test' },
-      ]);
-      expect(context.verifierNotes).toBe('Otherwise clean.');
-    });
-
-    it('keeps only the newest verdict per check and round', async () => {
-      // A remediation round re-runs both, and an older verdict describes code
-      // that no longer exists — feeding it back would have the coder chasing
-      // failures it already fixed.
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        {
-          type: BuilderEventType.GATE_RESULT,
-          payload: {
-            repo: 'ally-be',
-            kind: 'test',
-            passed: false,
-            newFailures: ['old'],
-          },
-        },
-        {
-          type: BuilderEventType.GATE_RESULT,
-          payload: { repo: 'ally-be', kind: 'test', passed: true },
-        },
-        {
-          type: BuilderEventType.VERIFICATION,
-          payload: { round: 1, objections: [{ summary: 'first' }] },
-        },
-        {
-          type: BuilderEventType.VERIFICATION,
-          payload: { round: 2, objections: [{ summary: 'second' }] },
-        },
-      ]);
-
-      const context = await service.getRunPhaseContext('run-1');
-
-      expect(context.gateFailures).toEqual([]);
-      expect(context.objections).toEqual([{ summary: 'second' }]);
-      expect(context.lastVerifyRound).toBe(2);
-    });
-
-    it("drops an older round's failures for a repo the newest round did not gate", async () => {
-      // The repo went back to unchanged, so the newest gate skipped it. Its
-      // old failure describes a tree that no longer exists.
-      eventRepository.listByRunOfTypes.mockResolvedValue([
-        {
-          type: BuilderEventType.GATE_RESULT,
-          payload: {
-            round: 'r1',
-            repo: 'ally-web',
-            kind: 'lint',
-            passed: false,
-          },
-        },
-        {
-          type: BuilderEventType.GATE_RESULT,
-          payload: {
-            round: 'r2',
-            repo: 'ally-be',
-            kind: 'test',
-            passed: false,
-            newFailures: ['now'],
-          },
-        },
-      ]);
-
-      const context = await service.getRunPhaseContext('run-1');
-
-      expect(context.gateFailures).toEqual([
-        expect.objectContaining({
-          repo: 'ally-be',
-          kind: 'test',
-          newFailures: ['now'],
-        }),
-      ]);
-      expect(context.gateSummary).not.toContain('ally-web');
-    });
-  });
-
-  describe('getBudgetState', () => {
+  describe('getSessionBudget', () => {
     it('reports no ceiling when the session has none', async () => {
       sessionRepository.findOne.mockResolvedValue(
         readySession({ totalCostUsd: '3', budgetUsd: null }),
       );
 
-      const state = await service.getBudgetState({
-        id: 'run-1',
-        sessionId: 'session-1',
-      } as any);
+      const state = await service.getSessionBudget('session-1');
 
-      expect(state).toMatchObject({
+      expect(state).toEqual({
         budgetUsd: null,
         spentUsd: 3,
         remainingUsd: null,
@@ -1786,29 +1672,12 @@ describe('BuilderBuildService', () => {
       });
     });
 
-    it('serves the hold window, so run-engine.sh need not hard-code it', async () => {
+    it('flags a session that has spent its ceiling', async () => {
       sessionRepository.findOne.mockResolvedValue(
         readySession({ totalCostUsd: '25.5', budgetUsd: '25' }),
       );
 
-      const state = await service.getBudgetState({
-        id: 'run-1',
-        sessionId: 'session-1',
-      } as any);
-
-      expect(state.holdSeconds).toBe(BUILDER_BUDGET_HOLD_SECONDS);
-      expect(state.pollSeconds).toBe(BUILDER_BUDGET_HOLD_POLL_SECONDS);
-    });
-
-    it('flags a session that has spent its ceiling mid-run', async () => {
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '25.5', budgetUsd: '25' }),
-      );
-
-      const state = await service.getBudgetState({
-        id: 'run-1',
-        sessionId: 'session-1',
-      } as any);
+      const state = await service.getSessionBudget('session-1');
 
       expect(state.exceeded).toBe(true);
       expect(state.remainingUsd).toBe(0);
@@ -1816,25 +1685,12 @@ describe('BuilderBuildService', () => {
   });
 
   describe('raiseBudget', () => {
-    const heldRun = {
-      id: 'run-9',
-      sessionId: 'session-1',
-      status: BuilderRunStatus.RUNNING,
-    };
-
-    it('releases a run holding on the ceiling rather than making it retry', async () => {
+    it('raises the ceiling and answers with the state it leaves', async () => {
       const session = readySession({
         status: BuilderSessionStatus.BUILDING,
         totalCostUsd: '16.77',
         budgetUsd: '15',
       });
-      runRepository.findOne.mockResolvedValue(heldRun);
-      eventRepository.latestOfType.mockResolvedValue({
-        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
-        createdAt: new Date('2026-08-28T10:00:00.000Z'),
-      });
-      // The raise itself is what the next poll reads, so the session has to
-      // come back over the line before `released` can mean anything.
       sessionRepository.findOne.mockResolvedValue(
         readySession({ totalCostUsd: '16.77', budgetUsd: '30' }),
       );
@@ -1845,15 +1701,8 @@ describe('BuilderBuildService', () => {
         { id: 'session-1' },
         { budgetUsd: '30', updatedBy: 7 },
       );
-      expect(result.released).toBe(true);
       expect(result.exceeded).toBe(false);
-      // On the run's own log, where the hold is — not just a banner that
-      // quietly changes.
-      expect(eventService.record).toHaveBeenCalledWith(
-        heldRun,
-        BuilderEventType.BUDGET_HOLD,
-        expect.objectContaining({ state: 'raised', budgetUsd: 30 }),
-      );
+      expect(result.budgetUsd).toBe(30);
     });
 
     it('refuses a ceiling at or below what is already spent, which would stop it again at once', async () => {
@@ -1862,7 +1711,6 @@ describe('BuilderBuildService', () => {
         totalCostUsd: '16.77',
         budgetUsd: '15',
       });
-      runRepository.findOne.mockResolvedValue(heldRun);
 
       await expect(service.raiseBudget(session as any, 7, 16)).rejects.toThrow(
         BadRequestException,
@@ -1876,7 +1724,6 @@ describe('BuilderBuildService', () => {
         totalCostUsd: '16.77',
         budgetUsd: '15',
       });
-      runRepository.findOne.mockResolvedValue(heldRun);
       sessionRepository.findOne.mockResolvedValue(
         readySession({ totalCostUsd: '16.77', budgetUsd: '0' }),
       );
@@ -1885,152 +1732,6 @@ describe('BuilderBuildService', () => {
 
       expect(result.budgetUsd).toBeNull();
       expect(result.exceeded).toBe(false);
-    });
-
-    it('works with no run in flight — raising it between runs is the same action', async () => {
-      const session = readySession({
-        status: BuilderSessionStatus.FAILED,
-        totalCostUsd: '16.77',
-        budgetUsd: '15',
-      });
-      runRepository.findOne.mockResolvedValue(null);
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '16.77', budgetUsd: '40' }),
-      );
-
-      const result = await service.raiseBudget(session as any, 7, 40);
-
-      expect(result.hold).toBeNull();
-      expect(result.released).toBe(false);
-      expect(eventService.record).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('recordBudgetHold', () => {
-    it('marks the feed and tells the admin what the deadline is', async () => {
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '16.77', budgetUsd: '15' }),
-      );
-
-      const result = await service.recordBudgetHold({
-        id: 'run-9',
-        sessionId: 'session-1',
-      } as any);
-
-      expect(result.holdSeconds).toBe(BUILDER_BUDGET_HOLD_SECONDS);
-      expect(eventService.record).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'run-9' }),
-        BuilderEventType.BUDGET_HOLD,
-        expect.objectContaining({ state: 'held', spentUsd: 16.77 }),
-      );
-      expect(notificationService.budgetHold).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'session-1' }),
-        16.77,
-        BUILDER_BUDGET_HOLD_SECONDS / 60,
-      );
-    });
-  });
-
-  describe('getSessionBudget', () => {
-    it('reports the hold the page needs to offer a raise', async () => {
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '16.77', budgetUsd: '15' }),
-      );
-      runRepository.findOne.mockResolvedValue({
-        id: 'run-9',
-        sessionId: 'session-1',
-        status: BuilderRunStatus.RUNNING,
-      });
-      eventRepository.latestOfType.mockResolvedValue({
-        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
-        createdAt: new Date('2026-08-28T10:00:00.000Z'),
-      });
-
-      const state = await service.getSessionBudget('session-1');
-
-      expect(state.exceeded).toBe(true);
-      expect(state.hold).toEqual({
-        runId: 'run-9',
-        heldAt: '2026-08-28T10:00:00.000Z',
-        holdUntil: '2026-08-28T10:20:00.000Z',
-      });
-    });
-
-    it('clears the hold when the ceiling moved without a raise event, e.g. a retry override', async () => {
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '16.77', budgetUsd: '50' }),
-      );
-      runRepository.findOne.mockResolvedValue({
-        id: 'run-9',
-        sessionId: 'session-1',
-        status: BuilderRunStatus.RUNNING,
-      });
-      // Still the last budget_hold event on the run — nothing wrote over it.
-      eventRepository.latestOfType.mockResolvedValue({
-        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
-        createdAt: new Date('2026-08-28T10:00:00.000Z'),
-      });
-
-      const state = await service.getSessionBudget('session-1');
-
-      expect(state.exceeded).toBe(false);
-      expect(state.hold).toBeNull();
-    });
-
-    it('reports no hold once a raise has been recorded over it', async () => {
-      sessionRepository.findOne.mockResolvedValue(
-        readySession({ totalCostUsd: '16.77', budgetUsd: '30' }),
-      );
-      runRepository.findOne.mockResolvedValue({
-        id: 'run-9',
-        sessionId: 'session-1',
-        status: BuilderRunStatus.RUNNING,
-      });
-      eventRepository.latestOfType.mockResolvedValue({
-        payload: { state: 'raised', budgetUsd: 30 },
-        createdAt: new Date('2026-08-28T10:05:00.000Z'),
-      });
-
-      const state = await service.getSessionBudget('session-1');
-
-      expect(state.hold).toBeNull();
-    });
-  });
-
-  describe('buildResumeContext', () => {
-    it('condenses the previous run rather than replaying its transcript', async () => {
-      eventRepository.listByRun.mockResolvedValue([
-        { type: BuilderEventType.STAGE_CHANGE, payload: { stage: 'PLANNING' } },
-        {
-          type: BuilderEventType.PLAN,
-          payload: { text: 'Touch three files.' },
-        },
-        { type: BuilderEventType.STAGE_CHANGE, payload: { stage: 'CODING' } },
-        { type: BuilderEventType.FILE_EDIT, payload: { path: 'src/a.ts' } },
-        { type: BuilderEventType.FILE_EDIT, payload: { path: 'src/b.ts' } },
-        // Duplicated on purpose — the same file edited twice is one file.
-        { type: BuilderEventType.FILE_EDIT, payload: { path: 'src/a.ts' } },
-        {
-          type: BuilderEventType.TODO,
-          payload: { items: [{ text: 'Write the endpoint', status: 'done' }] },
-        },
-        { type: BuilderEventType.TEST_OUTPUT, payload: { text: '3 passing' } },
-      ]);
-
-      const context = await service.buildResumeContext('run-1');
-
-      expect(context).toContain('PLANNING → CODING');
-      expect(context).toContain('Touch three files.');
-      expect(context).toContain('src/a.ts');
-      expect(context).toContain('Write the endpoint');
-      expect(context).toContain('3 passing');
-      // Two distinct files, not three edits.
-      expect(context).toContain('(2)');
-    });
-
-    it('returns empty for a run with no events rather than inventing a handover', async () => {
-      eventRepository.listByRun.mockResolvedValue([]);
-      await expect(service.buildResumeContext('run-1')).resolves.toBe('');
     });
   });
 
@@ -2042,16 +1743,16 @@ describe('BuilderBuildService', () => {
    * eight runs inside those ceilings while nothing succeeded after the build: a
    * review that died on a database error, a fix run sent at feedback that was
    * Builder's own approval, then more of both. Every ceiling was respected and
-   * none of them noticed.
+   * none of them noticed. Reviews are the automatic runs left.
    */
   describe('pausing automatic runs after repeated failures', () => {
     const pr = {
       id: 'pr-1',
       sessionId: 'session-1',
       repo: 'ally-be',
-      branch: 'builder/x',
+      branch: 'opencode/issue41',
       prNumber: 42,
-      fixRunCount: 0,
+      runId: 'build-run-1',
     };
 
     const failed = (n: number) =>
@@ -2065,27 +1766,18 @@ describe('BuilderBuildService', () => {
       });
     });
 
-    it('refuses a fix run once two in a row have failed', async () => {
-      runRepository.listRecent.mockResolvedValue(failed(2));
-
-      const run = await service.dispatchFixRun(pr as never);
-
-      expect(run).toBeNull();
-      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
-      expect(notificationService.automationPaused).toHaveBeenCalled();
-    });
-
-    it('refuses a review run on the same evidence', async () => {
+    it('refuses a review run once two in a row have failed', async () => {
       runRepository.listRecent.mockResolvedValue(failed(2));
 
       expect(await service.dispatchReviewRun(pr as never, 'abc123')).toBeNull();
       expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      expect(notificationService.automationPaused).toHaveBeenCalled();
     });
 
     it('still dispatches after a single failure', async () => {
       runRepository.listRecent.mockResolvedValue(failed(1));
 
-      await service.dispatchFixRun(pr as never);
+      await service.dispatchReviewRun(pr as never, 'abc123');
 
       expect(github.dispatchWorkflow).toHaveBeenCalled();
       expect(notificationService.automationPaused).not.toHaveBeenCalled();
@@ -2099,7 +1791,7 @@ describe('BuilderBuildService', () => {
         { status: BuilderRunStatus.FAILED },
       ]);
 
-      await service.dispatchFixRun(pr as never);
+      await service.dispatchReviewRun(pr as never, 'abc123');
 
       expect(github.dispatchWorkflow).toHaveBeenCalled();
     });
@@ -2115,7 +1807,7 @@ describe('BuilderBuildService', () => {
         { status: BuilderRunStatus.FAILED },
       ]);
 
-      expect(await service.dispatchFixRun(pr as never)).toBeNull();
+      expect(await service.dispatchReviewRun(pr as never, 'abc123')).toBeNull();
     });
   });
 
@@ -2172,7 +1864,7 @@ describe('BuilderBuildService', () => {
         await expect(
           service.startBuild(readySession() as any, 1),
         ).rejects.toThrow(/Approve the technical design before building/);
-        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+        expect(github.createIssue).not.toHaveBeenCalled();
         expect(sessionRepository.update).not.toHaveBeenCalled();
       });
 
@@ -2194,7 +1886,7 @@ describe('BuilderBuildService', () => {
         ).rejects.toThrow(
           /PRD changed after the technical design was approved/,
         );
-        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+        expect(github.createIssue).not.toHaveBeenCalled();
       });
 
       it('builds from an approved, current design', async () => {
@@ -2204,7 +1896,7 @@ describe('BuilderBuildService', () => {
 
         await service.startBuild(readySession() as any, 1);
 
-        expect(github.dispatchWorkflow).toHaveBeenCalled();
+        expect(github.createIssue).toHaveBeenCalled();
       });
     });
 
@@ -2258,6 +1950,32 @@ describe('BuilderBuildService', () => {
         await service.startDesign(readySession() as any, 7);
 
         expect(sessionRepository.update).not.toHaveBeenCalled();
+      });
+
+      // The start dialog saves repos only on a build, and a build waits on an
+      // approved design — so a never-built session reaches here with none.
+      it("reads the PRD's planned repos when the session has none, and saves them", async () => {
+        const session = readySession({ repos: [] });
+
+        await service.startDesign(session as any, 7);
+
+        expect(sessionRepository.update).toHaveBeenCalledWith(
+          { id: session.id },
+          { repos: ['ally-be'] },
+        );
+        expect(github.dispatchWorkflow).toHaveBeenCalled();
+      });
+
+      it('still refuses when neither the session nor the PRD names a repo', async () => {
+        prdService.getOrCreateDoc.mockResolvedValue({
+          id: 'doc-1',
+          draft: { requirements: [], technicalPlan: { repos: [] } },
+        });
+
+        await expect(
+          service.startDesign(readySession({ repos: [] }) as any, 7),
+        ).rejects.toThrow(/No repos chosen/);
+        expect(github.dispatchWorkflow).not.toHaveBeenCalled();
       });
 
       it('fails the design, not the session, when the dispatch throws', async () => {

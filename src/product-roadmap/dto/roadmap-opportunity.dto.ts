@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -390,6 +390,52 @@ export class CreateOpportunityDto {
   readinessToken?: string;
 
   /**
+   * The opportunity copilot's brief for this draft, verbatim from the same turn as
+   * `readinessToken`.
+   *
+   * Accepted only alongside a token that was minted over it — the token binds the brief's hash,
+   * so a filer cannot edit the copilot's assessment on the way in. Loosely typed here on
+   * purpose: its shape is normalised server-side (normaliseOpportunityBrief) after the hash is
+   * checked, and validating it field-by-field here would reject a brief over something the
+   * normaliser would simply have capped.
+   */
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The `brief` from the same copilot turn as `readinessToken`. Refused unless that token was minted over it.',
+  })
+  @IsOptional()
+  @IsObject()
+  brief?: Record<string, any>;
+
+  /**
+   * The copilot conversation this draft came out of — the same `{role, content}` messages the
+   * interview route takes, plus the copilot's answer to the last of them.
+   *
+   * Kept so the Builder session started from this opportunity begins where the conversation
+   * ended. Stored only alongside the copilot's readiness token and ignored otherwise. Loosely
+   * validated on purpose: it is normalised server-side (normaliseFilingInterview), which drops a
+   * malformed message rather than refusing the filing — a 400 here would lose the very
+   * conversation this exists to keep.
+   */
+  @ApiPropertyOptional({
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', enum: ['admin', 'agent'] },
+        content: { type: 'string' },
+      },
+    },
+    description:
+      'The copilot interview that produced this draft. Kept for the Builder hand-off; ignored without `readinessToken`.',
+  })
+  @IsOptional()
+  @IsArray()
+  interviewTranscript?: Record<string, any>[];
+
+  /**
    * Reference images, attached at filing time.
    *
    * On the CREATE path deliberately, not edit-only: the moment somebody has the screenshot is the
@@ -411,6 +457,23 @@ export class CreateOpportunityDto {
   @Type(() => RoadmapReferenceImageDto)
   referenceImages?: RoadmapReferenceImageDto[];
 }
+
+/**
+ * The quick-add body: `CreateOpportunityDto` minus the fields that only the guided interview can
+ * produce.
+ *
+ * Built by omission rather than written out so the two filing paths cannot drift: a field added
+ * to the full DTO (a new attachment, say) reaches the quick form for free, and the only thing the
+ * quick form can never send is a readiness verdict, a copilot brief or the copilot conversation
+ * behind them — the server would refuse an unsigned brief on this path anyway (see create()'s
+ * brief rule), so leaving the fields off the contract is clearer than accepting and rejecting
+ * them.
+ */
+export class QuickAddOpportunityDto extends OmitType(CreateOpportunityDto, [
+  'readinessToken',
+  'brief',
+  'interviewTranscript',
+] as const) {}
 
 /**
  * Auto-captured client context for a consumer bug report, sent verbatim by the app —

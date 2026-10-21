@@ -17,6 +17,7 @@ describe('LlmCompletionService', () => {
   const streamOf = (
     text: string,
     usage = { inputTokens: 7, outputTokens: 3 },
+    stopReason = 'end_turn',
   ) =>
     async function* () {
       yield { type: 'text_delta', text };
@@ -24,7 +25,7 @@ describe('LlmCompletionService', () => {
         type: 'final',
         message: {
           content: [{ type: 'text', text }],
-          stopReason: 'end_turn',
+          stopReason,
           usage,
         },
       };
@@ -33,7 +34,10 @@ describe('LlmCompletionService', () => {
   const build = (opts: {
     target?: Partial<Record<string, any>>;
     /** Provider name -> behaviour. Throwing simulates a dead credential. */
-    providers?: Record<string, { fail?: any; text?: string }>;
+    providers?: Record<
+      string,
+      { fail?: any; text?: string; stopReason?: string }
+    >;
     openaiConfigured?: boolean;
   }) => {
     const target = {
@@ -54,7 +58,11 @@ describe('LlmCompletionService', () => {
           streamCalls.push({ provider, model, request });
           const behaviour = opts.providers?.[provider] ?? {};
           if (behaviour.fail) throw behaviour.fail;
-          return streamOf(behaviour.text ?? 'ok')();
+          return streamOf(
+            behaviour.text ?? 'ok',
+            undefined,
+            behaviour.stopReason ?? 'end_turn',
+          )();
         },
       })),
       isConfigured: jest.fn(
@@ -124,6 +132,32 @@ describe('LlmCompletionService', () => {
       expect(llmUsage.record).toHaveBeenCalledWith(
         expect.objectContaining({ task: 'unknown' }),
       );
+    });
+
+    it('reports why the model stopped', async () => {
+      const { service } = build({});
+
+      expect((await service.complete(request)).stopReason).toBe('end_turn');
+    });
+
+    it('surfaces a token-cap cut instead of returning the stub as a clean answer', async () => {
+      const { service } = build({
+        providers: {
+          anthropic: {
+            text: '{"sessionSummary":"The caller',
+            stopReason: 'max_tokens',
+          },
+        },
+      });
+
+      const result = await service.complete(request);
+
+      // Before this was returned, a capped JSON reply parsed as `{}` downstream
+      // and read as "nothing to extract". On gpt-5 models reasoning tokens
+      // count against maxTokens, so the cut can land well inside a budget that
+      // looked generous for the visible output.
+      expect(result.stopReason).toBe('max_tokens');
+      expect(result.text).toBe('{"sessionSummary":"The caller');
     });
 
     it('passes the deadline to the provider instead of racing it', async () => {
@@ -280,10 +314,25 @@ describe('LlmCompletionService', () => {
     it('takes the tier from the row rather than the caller', async () => {
       const { service, resolved } = capturingService();
 
-      // voice-note-extract is the FAST tier; a caller cannot override it.
-      await service.complete({ ...request, taskId: 'voice-note-extract' });
+      // mobile-release-whats-new is the FAST tier; the request above says
+      // REASONING, and a caller cannot override the row.
+      await service.complete({
+        ...request,
+        taskId: 'mobile-release-whats-new',
+      });
 
       expect(resolved[0].tier).toBe('fast');
+    });
+
+    it('runs voice-note extraction on the reasoning tier', async () => {
+      const { service, resolved } = capturingService();
+
+      // The FAST model kept 48% of a 25-minute dictation's facts; the
+      // reasoning tier keeps 93% on the same prompt. If this flips back to
+      // `fast`, long scribe notes lose half of what the counsellor said.
+      await service.complete({ ...request, taskId: 'voice-note-extract' });
+
+      expect(resolved[0].tier).toBe('reasoning');
     });
   });
 

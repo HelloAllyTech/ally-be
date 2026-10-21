@@ -1,7 +1,17 @@
+import * as crypto from 'crypto';
 import { AuthUtil } from '../auth.util';
+
+jest.mock('crypto', () => {
+  const actual = jest.requireActual('crypto');
+  return { ...actual, randomInt: jest.fn(actual.randomInt) };
+});
 
 describe('AuthUtil', () => {
   describe('generateOtp', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('should generate a 4-digit OTP', () => {
       const otp = AuthUtil.generateOtp();
 
@@ -36,29 +46,14 @@ describe('AuthUtil', () => {
       expect(otps.size).toBeGreaterThan(1);
     });
 
-    it('should generate OTP with correct minimum value', () => {
-      // Mock Math.random to return 0 to test minimum boundary
-      jest.spyOn(Math, 'random').mockReturnValue(0);
+    it('draws from the CSPRNG over every 4-digit code, never Math.random', () => {
+      const mathRandom = jest.spyOn(Math, 'random');
 
-      const otp = AuthUtil.generateOtp();
-      const otpNumber = parseInt(otp, 10);
+      AuthUtil.generateOtp();
 
-      expect(otpNumber).toBe(1000);
-
-      jest.restoreAllMocks();
-    });
-
-    it('should generate OTP with correct maximum value', () => {
-      // Mock Math.random to return close to 1 to test maximum boundary
-      jest.spyOn(Math, 'random').mockReturnValue(0.9999);
-
-      const otp = AuthUtil.generateOtp();
-      const otpNumber = parseInt(otp, 10);
-
-      expect(otpNumber).toBeLessThanOrEqual(9999);
-      expect(otpNumber).toBeGreaterThanOrEqual(1000);
-
-      jest.restoreAllMocks();
+      // randomInt's upper bound is exclusive: 1000..9999 inclusive.
+      expect(crypto.randomInt).toHaveBeenCalledWith(1000, 10000);
+      expect(mathRandom).not.toHaveBeenCalled();
     });
   });
 });

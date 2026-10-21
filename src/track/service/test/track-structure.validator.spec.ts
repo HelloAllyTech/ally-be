@@ -294,6 +294,49 @@ describe('computeStructuralSignature', () => {
       computeStructuralSignature(before),
     );
   });
+
+  it('changes when the breathing exercise configuration changes', () => {
+    const before: UpsertTrackSectionDto[] = [
+      {
+        id: 's1',
+        title: 'S',
+        order: 1,
+        items: [
+          {
+            type: TrackItemType.GAME,
+            id: 'i1',
+            order: 1,
+            title: 'B',
+            content: {
+              gameKey: 'BREATHING_EXERCISE',
+              breathingExercise: {
+                inhale: 4,
+                holdIn: 4,
+                exhale: 4,
+                holdOut: 4,
+                cycles: 4,
+                inhaleText: 'In',
+                holdInText: 'Hold',
+                exhaleText: 'Out',
+                holdOutText: 'Hold',
+              },
+            },
+          },
+        ],
+      },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.breathingExercise.cycles = 5;
+    expect(computeStructuralSignature(after)).not.toEqual(
+      computeStructuralSignature(before),
+    );
+
+    const after2 = JSON.parse(JSON.stringify(before));
+    after2[0].items[0].content.breathingExercise.inhale = 5;
+    expect(computeStructuralSignature(after2)).not.toEqual(
+      computeStructuralSignature(before),
+    );
+  });
 });
 
 describe('validateTrackStructure - game', () => {
@@ -301,8 +344,77 @@ describe('validateTrackStructure - game', () => {
     { title: 'S', order: 1, items: [item] },
   ];
 
+  const breathingExerciseItem = (content: Record<string, any> = {}) => ({
+    type: TrackItemType.GAME,
+    order: 1,
+    title: 'Breathing',
+    content: {
+      gameKey: 'BREATHING_EXERCISE',
+      breathingExercise: {
+        inhale: 4,
+        holdIn: 4,
+        exhale: 4,
+        holdOut: 4,
+        cycles: 4,
+        inhaleText: 'Inhale',
+        holdInText: 'Hold',
+        exhaleText: 'Exhale',
+        holdOutText: 'Hold',
+        ...content,
+      },
+    },
+  });
+
   it('accepts a game with a known key', () => {
     expect(() => validateTrackStructure(wrap(gameItem()))).not.toThrow();
+  });
+
+  it('accepts a valid breathing exercise', () => {
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem())),
+    ).not.toThrow();
+  });
+
+  it('rejects a breathing exercise missing its configuration', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap({
+          type: TrackItemType.GAME,
+          order: 1,
+          title: 'G',
+          content: { gameKey: 'BREATHING_EXERCISE' },
+        }),
+      ),
+    ).toThrow(/missing the breathing exercise configuration/);
+  });
+
+  it('rejects non-positive durations in a breathing exercise', () => {
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem({ inhale: 0 }))),
+    ).toThrow(/inhale duration must be a positive number/);
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem({ holdIn: -1 }))),
+    ).toThrow(/holdIn duration must be a positive number/);
+  });
+
+  it('rejects non-integer or non-positive cycles', () => {
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem({ cycles: 0 }))),
+    ).toThrow(/cycles must be a positive integer/);
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem({ cycles: 4.5 }))),
+    ).toThrow(/cycles must be a positive integer/);
+  });
+
+  it('rejects empty instructional texts', () => {
+    expect(() =>
+      validateTrackStructure(wrap(breathingExerciseItem({ inhaleText: '' }))),
+    ).toThrow(/inhaleText cannot be empty/);
+    expect(() =>
+      validateTrackStructure(
+        wrap(breathingExerciseItem({ holdOutText: '   ' })),
+      ),
+    ).toThrow(/holdOutText cannot be empty/);
   });
 
   it('accepts a game with no intro at all', () => {

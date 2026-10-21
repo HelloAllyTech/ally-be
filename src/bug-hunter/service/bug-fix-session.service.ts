@@ -470,7 +470,9 @@ export class BugFixSessionService {
                     ? 'the Verifier refused the last PR'
                     : retry?.kind === 'conflict'
                       ? 'the PR fell into conflict with master'
-                      : 'the last session failed'
+                      : retry?.kind === 'ci_failed'
+                        ? 'CI checks failed on the PR'
+                        : 'the last session failed'
                 } on "${finding.title}".`
               : startedBy
                 ? `Fix session started by user ${startedBy} for "${finding.title}".`

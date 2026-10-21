@@ -135,7 +135,7 @@ export class SchemaCatalogService {
       const columns = table.columns
         .map(
           (column) =>
-            `${column.name} ${column.type}${column.nullable ? '' : ' NOT NULL'}`,
+            `${/[A-Z]/.test(column.name) ? `"${column.name}"` : column.name} ${column.type}${column.nullable ? '' : ' NOT NULL'}`,
         )
         .join(', ');
       return `TABLE ${table.name} — ${table.purpose}\n  COLUMNS: ${columns}`;

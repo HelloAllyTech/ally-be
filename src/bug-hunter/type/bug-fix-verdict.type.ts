@@ -34,6 +34,8 @@ export const BUG_FIX_VERDICT_CHECKS = [
   'fault_layer_matches',
   /** The reporter's own steps (or the finding Verifier's reproduction) re-run at the PR head: the symptom is gone, not only the PR's test green. Required whenever steps exist. */
   'symptom_resolved',
+  /** Every reader of a value the diff changes — in this repo and in /tmp/siblings — still works, or is covered by a cross-repo plan. Skipped only when the diff changes no value anything else reads. */
+  'consumers_updated',
   /** Server-computed (OPP-0759): the PR touches a file a person must merge — Bug Hunter's own files, migrations, locales, seeds, snapshots, lockfiles, a stray pr-body.md. */
   'forbidden_files',
 ] as const;

@@ -104,7 +104,25 @@ export class BugHunterOrchestratorService {
             | undefined;
           if (seen?.headSha === pr.headSha) continue; // already decided for this head
           await this.onPrConflict(finding.id, pr.headSha);
-        } else if (pr.mergeableState === 'behind') {
+          continue;
+        }
+        // CI red on the PR's own head (lint, types, tests): send a session
+        // back to fix it on the same branch, once per head. Read before the
+        // "behind" update, which would move the head and restart CI.
+        const seenChecks = finding.metadata?.prChecksFailed as
+          | { headSha: string }
+          | undefined;
+        if (seenChecks?.headSha !== pr.headSha) {
+          const rollup = await this.github.getCheckRollup(
+            finding.repo,
+            pr.headSha,
+          );
+          if (rollup?.state === 'failure' && rollup.failed.length) {
+            await this.onPrChecksFailed(finding.id, pr.headSha, rollup.failed);
+            continue;
+          }
+        }
+        if (pr.mergeableState === 'behind') {
           const seen = finding.metadata?.prBranchUpdate as
             | { headSha: string }
             | undefined;
@@ -217,6 +235,106 @@ export class BugHunterOrchestratorService {
 ` +
         (veto ? `Not rebased by me because ${veto.reason}. ` : '') +
         `Rebase it yourself, ask me to try again, or close it.`,
+      findingId: finding.id,
+      repo: finding.repo ?? undefined,
+    });
+    return d7.pick === 'close' ? 'close' : 'ask_human';
+  }
+
+  /**
+   * D7 for a PR whose CI checks failed on its own head — lint, types, the
+   * suite. Rule-owned, like a conflict: send a session back to the SAME
+   * branch with the failing checks and the tail of each log, on the same
+   * tier, within the automatic-retry cap; a person after that. Until
+   * 2026-10-16 a red check on a Bug Hunter PR (ally-mobile #115, a typecheck)
+   * sat there until a person noticed.
+   */
+  async onPrChecksFailed(
+    findingId: string,
+    headSha: string,
+    failedChecks: string[],
+  ): Promise<D7Pick | null> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.PR_OPENED) return null;
+    await this.findingRepository.update(finding.id, {
+      metadata: {
+        ...(finding.metadata ?? {}),
+        prChecksFailed: {
+          headSha,
+          checks: failedChecks,
+          at: new Date().toISOString(),
+        },
+      } as Record<string, any>,
+    });
+    let excerpts: Record<string, string> = {};
+    try {
+      excerpts = finding.repo
+        ? await this.github.failedCheckExcerpts(finding.repo, headSha, 1_500)
+        : {};
+    } catch (error) {
+      this.warn('CI excerpts', finding.id, error);
+    }
+    const failures = failedChecks.map((name) =>
+      excerpts[name]
+        ? `${name} failed on head ${headSha.slice(0, 7)}. Log tail: ${excerpts[name]}`
+        : `${name} failed on head ${headSha.slice(0, 7)}`,
+    );
+    const state = stateOf(finding);
+    let veto: OrchestratorVeto | null = null;
+    if (state.retries >= BUG_HUNTER_D7_MAX_AUTOMATIC_RETRIES) {
+      veto = {
+        by: 'safety',
+        reason: `I have already sent this back ${state.retries} times; a person decides`,
+      };
+    } else {
+      veto = await this.vetoForBudget(finding);
+    }
+    const d7 = await this.decisions.decide<D7Pick>({
+      point: 'D7',
+      question: 'next_move',
+      repo: finding.repo ?? null,
+      runId: finding.runId ?? null,
+      findingId: finding.id,
+      menu: [...BUG_HUNTER_D7_MENU],
+      context: {
+        cause: 'ci_failed',
+        retries: state.retries,
+        headSha,
+        failedChecks,
+        budget: finding.budget ?? null,
+        fixPlan: finding.metadata?.fixPlan ?? null,
+      },
+      modelOwned: BUG_HUNTER_DECISION_OWNER_DEFAULTS.D7 === 'model',
+      rule: () => (veto ? 'ask_human' : 'retry_fix'),
+      validate: (raw) => oneOf(BUG_HUNTER_D7_MENU, raw),
+      veto: veto ?? undefined,
+    });
+    await this.remember(finding, d7.pick);
+    if (d7.pick === 'retry_fix' || d7.pick === 'escalate_model') {
+      try {
+        await this.fixSessionService.retry(finding, {
+          kind: 'ci_failed',
+          move: d7.pick,
+          failures,
+          prUrl: finding.prUrl ?? null,
+          decisionId: d7.record.id,
+        });
+        return d7.pick;
+      } catch (error) {
+        this.logger.warn(
+          `[BUG_HUNTER] D7 picked ${d7.pick} for the red PR on ${finding.id} but the retry could not start: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    await this.notificationService.notify({
+      level: BugHunterNotificationLevel.ACTION_NEEDED,
+      title: `CI failed on my fix PR for "${clip(finding.title)}"`,
+      body:
+        `Failing: ${failedChecks.join(', ')}. ` +
+        (veto ? `Not fixed by me because ${veto.reason}. ` : '') +
+        `Fix it on the branch, ask me to try again, or close it.`,
       findingId: finding.id,
       repo: finding.repo ?? undefined,
     });

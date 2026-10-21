@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
 import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
@@ -83,6 +83,26 @@ export class ScenariosRepository extends Repository<Scenarios> {
       });
     }
 
+    query
+      .leftJoin(
+        (subQuery) =>
+          subQuery
+            .from(ScenarioVersion, 'sv')
+            .select([
+              'sv."scenarioId"',
+              "sv.config->>'title' as title",
+              "sv.config->>'description' as description",
+              'ROW_NUMBER() OVER (PARTITION BY sv."scenarioId" ORDER BY sv."versionNumber" DESC) as rn',
+            ])
+            .where('sv.status = :status', {
+              status: ScenarioVersionStatus.PUBLISHED,
+            }),
+        'latest_version',
+        'latest_version."scenarioId" = scenario.id AND latest_version.rn = 1',
+      )
+      .addSelect('latest_version.title', 'version_title')
+      .addSelect('latest_version.description', 'version_description');
+
     const selectColumns = [
       'scenario.id',
       'scenario.title',
@@ -112,40 +132,15 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .addOrderBy('scenario.id', 'DESC')
       .getManyAndCount();
 
-    if (data.length > 0) {
-      const scenarioIds = data.map((s) => s.id);
-      const versions = await this.dataSource
-        .getRepository(ScenarioVersion)
-        .find({
-          where: {
-            scenarioId: In(scenarioIds),
-            status: ScenarioVersionStatus.PUBLISHED,
-          },
-          order: {
-            versionNumber: 'DESC',
-          },
-        });
-
-      const versionMap = new Map<
-        number,
-        { title: string; description: string }
-      >();
-      for (const version of versions) {
-        if (!versionMap.has(version.scenarioId)) {
-          versionMap.set(version.scenarioId, {
-            title: version.config.title,
-            description: version.config.description,
-          });
-        }
+    for (const scenario of data) {
+      if ((scenario as any).version_title) {
+        scenario.title = (scenario as any).version_title;
       }
-
-      for (const scenario of data) {
-        const version = versionMap.get(scenario.id);
-        if (version) {
-          scenario.title = version.title;
-          scenario.description = version.description;
-        }
+      if ((scenario as any).version_description) {
+        scenario.description = (scenario as any).version_description;
       }
+      delete (scenario as any).version_title;
+      delete (scenario as any).version_description;
     }
 
     return { data, count };

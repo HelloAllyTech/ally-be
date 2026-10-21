@@ -29,6 +29,7 @@ const study: BugFixStudy = {
   filesToChange: ['AppTooltip.tsx', 'api/tooltips.ts'],
   leaveAlone: ['en.json'],
   otherRepos: ['ally-be'],
+  consumers: { search: '', found: [] },
   risks: [],
   testPlan: 'AppTooltip.test.tsx asserts the language is passed',
   previousStudyWasWrongBecause: null,
@@ -112,6 +113,13 @@ describe('buildVerifyFixPrompt — the study check', () => {
     expect(p).toContain('--repo HelloAllyTech/<repo> for ally-be');
     expect(p).toContain('removes or hard-codes an accessibility attribute');
     expect(p).toContain('{"name":"study_followed"');
+  });
+
+  it('asks for every reader of a changed value across the sibling repos (2026-10-16 OTP)', () => {
+    const p = build(caseFile({ study }));
+    expect(p).toMatch(/11\. consumers_updated\./);
+    expect(p).toContain('every repo under /tmp/siblings');
+    expect(p).toContain('{"name":"consumers_updated"');
   });
 
   it('skips the check with a reason when no study exists, but keeps the mechanism question', () => {

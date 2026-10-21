@@ -13,7 +13,7 @@ import {
 } from '../type/track.type';
 import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
-import { GameContent } from '../type/game.type';
+import { GameContent, TrackGameKey } from '../type/game.type';
 import {
   TranslatableField,
   TranslatableFieldKind,
@@ -503,6 +503,32 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
         },
         visit,
       );
+
+      if (
+        (item.content as GameContent).gameKey ===
+        TrackGameKey.BREATHING_EXERCISE
+      ) {
+        const breathing = (item.content as GameContent).breathingExercise;
+        if (breathing) {
+          const fields = [
+            'inhaleText',
+            'holdInText',
+            'exhaleText',
+            'holdOutText',
+          ] as const;
+          for (const field of fields) {
+            visitField(
+              {
+                path: `content.breathingExercise.${field}`,
+                kind: TranslatableFieldKind.PROSE,
+                get: () => breathing[field],
+                set: (value) => (breathing[field] = value),
+              },
+              visit,
+            );
+          }
+        }
+      }
       break;
 
     case TrackItemType.VIDEO:

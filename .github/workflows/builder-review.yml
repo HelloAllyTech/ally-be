@@ -1,0 +1,41 @@
+# Builder's code review of a pull request, run here with the code checked out.
+# The logic is shared: HelloAllyTech/ally-be/.github/workflows/builder-review-opencode.yml.
+# Started by Builder (or by hand, as a dry run without review_run_id).
+name: Builder review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request to review
+        required: true
+      spec_run_id:
+        description: Builder build run whose spec the pull request was built from
+        required: true
+      review_run_id:
+        description: Builder review run to file the verdict to (empty = dry run)
+        required: false
+        default: ''
+      builder_pr_id:
+        description: Builder's id for the pull request (needed to file findings)
+        required: false
+        default: ''
+
+concurrency:
+  group: builder-review-${{ inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: HelloAllyTech/ally-be/.github/workflows/builder-review-opencode.yml@master
+    with:
+      pr_number: ${{ inputs.pr_number }}
+      spec_run_id: ${{ inputs.spec_run_id }}
+      review_run_id: ${{ inputs.review_run_id }}
+      builder_pr_id: ${{ inputs.builder_pr_id }}
+      node-version: '24'
+      node-options: '--max-old-space-size=6144'
+    secrets: inherit

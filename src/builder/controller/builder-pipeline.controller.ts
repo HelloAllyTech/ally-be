@@ -8,38 +8,20 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
-import { LoggerService } from 'src/logger/logger.service';
-import { AppConfigService } from 'src/config/config.service';
 import { BuilderBuildService } from '../service/builder-build.service';
 import { BuilderEventService } from '../service/builder-event.service';
-import { BuilderSteerService } from '../service/builder-steer.service';
-import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
-import { BuilderReportService } from '../service/builder-report.service';
-import { BuilderSettingsService } from '../service/builder-settings.service';
-import { BuilderExemplarService } from '../service/builder-exemplar.service';
-import { BuilderEpicService } from '../service/builder-epic.service';
 import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderPrdService } from '../service/builder-prd.service';
 import { BuilderSessionService } from '../service/builder-session.service';
-import {
-  BuilderBuildRunRepository,
-  BuilderQuestionRepository,
-} from '../repository/builder-build.repository';
-import { buildBuildPrompt, renderPrd } from '../constants/builder-build-prompt';
+import { BuilderCatalogService } from '../service/builder-catalog.service';
+import { BuilderEvidenceLogService } from '../service/builder-evidence-log.service';
+import { renderPrd } from '../constants/builder-build-prompt';
 import { renderPlatformRules } from '../constants/builder-platform-rules';
-import { buildPlanPrompt } from '../constants/builder-plan-prompt';
-import { buildRemediatePrompt } from '../constants/builder-remediate-prompt';
-import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
-import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
-import { buildFixPrompt } from '../constants/builder-fix-prompt';
-import { buildReviewPrompt } from '../constants/builder-review-prompt';
 import {
   buildDesignPrompt,
   buildDesignReviewPrompt,
@@ -49,44 +31,28 @@ import {
   sliceDesignForRepos,
 } from '../util/builder-technical-design.util';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
-import {
-  BUILDER_EVENT_BATCH_MAX,
-  BUILDER_LESSONS_IN_CONTEXT,
-  BUILDER_MAX_CODE_ITERATIONS,
-  BUILDER_MAX_REVIEW_RUNS_PER_PR,
-  BUILDER_PROMPTS,
-  BUILDER_SIZE_PROFILES,
-  classifyBuildSize,
-  prdTechnicalPlanLength,
-  BUILDER_WORKFLOW_REF,
-} from '../constants/builder.constants';
+import { BuilderCatalogEntry } from '../entity/builder-repo-catalog.entity';
+import { BUILDER_EVENT_BATCH_MAX } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
+  BuilderRepoDefinition,
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
 import {
   BuilderPrdVersionAuthor,
   BuilderRunMode,
   BuilderRunStatus,
-  BuilderStage,
 } from '../enum/builder.enum';
-import { BuilderBuildRun } from '../entity/builder-build-run.entity';
-import { BuilderSession } from '../entity/builder-session.entity';
-import { BuilderPrdDocument } from '../type/builder-prd.type';
 import {
-  AckBuilderSteersDto,
   IngestBuilderEventsDto,
-  RecordBuilderPrsDto,
-  RecordBuilderQuestionsDto,
-  RecordBuilderReportDto,
-  RecordBuilderFeedbackOutcomesDto,
   RecordBuilderRunCostDto,
   CompleteBuilderRunDto,
+  UpsertBuilderRepoCatalogDto,
   UpsertBuilderRepoMapDto,
   RecordBuilderReviewFindingsDto,
-  RecordBuilderRunModelDto,
   SubmitBuilderDesignDto,
   SubmitBuilderDesignReviewDto,
+  RecordBuilderUsageDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -97,8 +63,11 @@ import {
  * authenticate with a shared API key rather than a user's JWT, and the two
  * auth models must never end up on one route table by accident.
  *
- * The build protocol is served from here rather than baked into the workflow
- * file, so a change to how builds work takes effect on the next dispatch
+ * Two kinds of caller: Builder's own runner, which now only drafts technical
+ * designs (builder-session.yml), and the opencode workflows in each repo,
+ * which fetch an issue build's spec, a fix request's feedback, file a review
+ * and report spend. The design protocol is served from here rather than baked
+ * into the workflow file, so a change takes effect on the next dispatch
  * instead of after a PR merges.
  */
 @ApiTags('Builder pipeline (machine)')
@@ -106,33 +75,21 @@ import {
 @UseGuards(ApiAuthGuard)
 @Controller({ path: 'builder/pipeline', version: '1' })
 export class BuilderPipelineController {
-  private readonly logger = LoggerService.getInstance(
-    BuilderPipelineController.name,
-  );
-
   constructor(
-    private readonly configService: AppConfigService,
-    private readonly promptSharedService: PromptSharedService,
     private readonly buildService: BuilderBuildService,
-    private readonly steerService: BuilderSteerService,
     private readonly eventService: BuilderEventService,
-    private readonly questionService: BuilderQuestionService,
     private readonly pullRequestService: BuilderPullRequestService,
-    private readonly reportService: BuilderReportService,
-    private readonly settingsService: BuilderSettingsService,
-    private readonly exemplarService: BuilderExemplarService,
-    private readonly epicService: BuilderEpicService,
     private readonly knowledgeService: BuilderKnowledgeService,
     private readonly prdService: BuilderPrdService,
     private readonly sessionService: BuilderSessionService,
-    private readonly runRepository: BuilderBuildRunRepository,
-    private readonly questionRepository: BuilderQuestionRepository,
+    private readonly catalogService: BuilderCatalogService,
+    private readonly evidenceLog: BuilderEvidenceLogService,
   ) {}
 
   /**
-   * Run + session + PRD + repo definitions, which every phase prompt needs.
-   * One loader so a new phase cannot accidentally resolve repos differently
-   * from the others.
+   * Run + session + PRD + repo definitions, which every prompt and spec
+   * needs. One loader so no endpoint resolves repos differently from the
+   * others.
    */
   private async loadRunContext(runId: string) {
     const run = await this.buildService.getRunOrFail(runId);
@@ -157,7 +114,7 @@ export class BuilderPipelineController {
   @Get('runs/:runId/prompt')
   @Header('Content-Type', 'text/plain; charset=utf-8')
   @ApiOperation({
-    summary: 'The build protocol for this run, rendered server-side',
+    summary: 'The design protocol for this run, rendered server-side',
   })
   async getPrompt(
     @Param('runId', ParseUUIDPipe) runId: string,
@@ -165,9 +122,9 @@ export class BuilderPipelineController {
     const { run, session, doc, repos } = await this.loadRunContext(runId);
     const platformRules = await this.knowledgeService.platformRules();
 
-    // A design run writes the technical design and nothing else: read-only,
-    // every target repo checked out, and its output goes through the
-    // `design` tool rather than a branch.
+    // Only design runs go to Builder's runner. A design run writes the
+    // technical design and nothing else: read-only, every target repo checked
+    // out, and its output goes through the `design` tool rather than a branch.
     if (run.mode === BuilderRunMode.DESIGN) {
       return buildDesignPrompt({
         platformRules,
@@ -178,226 +135,14 @@ export class BuilderPipelineController {
         repoPacks: await this.knowledgeService.renderRepoPacks(
           session.repos ?? undefined,
         ),
+        interviewEvidence: await this.evidenceLog.renderForPrompt(session.id),
       });
     }
 
-    // A fix run's work is a list of complaints about an open pull request, not
-    // a PRD to implement, so it gets its own protocol from the same URL — the
-    // runner does not need to know which kind of run it is fetching for.
-    if (run.mode === BuilderRunMode.FIX) {
-      return this.renderFixPrompt(run, session, doc, repos, platformRules);
-    }
-
-    // Same URL, third protocol. A review run reads a finished diff and files
-    // findings; it never writes to the branch.
-    if (run.mode === BuilderRunMode.REVIEW) {
-      return this.renderReviewPrompt(run, session, doc, repos, platformRules);
-    }
-
-    const lessons = await this.knowledgeService.listLessonTexts(
-      BUILDER_LESSONS_IN_CONTEXT,
-      session.repos ?? undefined,
+    throw new BadRequestException(
+      `Run ${runId} is a ${run.mode} run. Builder's runner only drafts ` +
+        'technical designs now; a build runs as an issue in its repo.',
     );
-
-    // A resume run gets the answers it was waiting on plus a condensed
-    // account of where the previous run got to — never a transcript replay,
-    // which would cost more tokens than the work it describes.
-    let resumeContext: string | null = null;
-    let answeredQuestions: { prompt: string; answer: string }[] | undefined;
-    if (run.resumeOfRunId) {
-      resumeContext = await this.buildService.buildResumeContext(
-        run.resumeOfRunId,
-      );
-      const pending = await this.questionRepository.find({
-        where: { runId: run.resumeOfRunId },
-        order: { position: 'ASC' },
-      });
-      if (pending.length) {
-        answeredQuestions = await this.questionService.answeredForGroup(
-          pending[0].groupId,
-        );
-      }
-    }
-
-    // The frozen selection from the interview, so the build reads the same
-    // worked examples the PRD was written against.
-    const { digests: exemplars } =
-      await this.exemplarService.digestsForSession(session);
-
-    const milestone = await this.resolveMilestoneBlock(run);
-
-    return buildBuildPrompt({
-      platformRules,
-      guidance: await this.guidance(BUILDER_PROMPTS.CODER_GUIDANCE),
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      mode: run.mode,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      sessionUrl: `${this.configService.adminBaseUrl}/builder/${session.id}`,
-      lessons,
-      exemplars,
-      milestone,
-      branches: run.branches,
-      resumeContext,
-      answeredQuestions,
-    });
-  }
-
-  /**
-   * The milestone context for an epic run: its slice of the PRD, what earlier
-   * milestones already delivered, and the branch to stack on.
-   */
-  private async resolveMilestoneBlock(run: BuilderBuildRun) {
-    if (!run.milestoneId) return null;
-
-    const milestones = await this.epicService.listBySession(run.sessionId);
-    const current = milestones.find((m) => m.id === run.milestoneId);
-    if (!current) return null;
-
-    const completed = milestones.filter(
-      (m) => m.position < current.position && m.status === 'COMPLETED',
-    );
-    // Stack on the last completed milestone's branch, so this slice can build
-    // on code nobody has merged yet.
-    const previous = completed[completed.length - 1];
-
-    return {
-      position: current.position,
-      total: milestones.length,
-      title: current.title,
-      summaryMd: current.summaryMd,
-      requirementIds: current.requirementIds ?? [],
-      technicalNotesMd: current.technicalNotesMd,
-      baseBranch: previous ? `builder/${previous.branchSlug}` : null,
-      completed: completed.map((m) => ({
-        position: m.position,
-        title: m.title,
-        branch: `builder/${m.branchSlug}`,
-      })),
-    };
-  }
-
-  /**
-   * The fix protocol for a run pointed at an open pull request.
-   *
-   * Feedback rows are claimed as IN_FIX on the way out: without that, a
-   * reconcile tick landing mid-run would count them as still pending and
-   * dispatch a second fix run at the same comments.
-   */
-  private async renderFixPrompt(
-    run: BuilderBuildRun,
-    session: BuilderSession,
-    doc: { draft: BuilderPrdDocument },
-    repos: typeof BUILDER_REPOS,
-    platformRules: string,
-  ): Promise<string> {
-    if (!run.pullRequestId) {
-      throw new BadRequestException(
-        'This fix run has no pull request attached, so there is nothing to fix.',
-      );
-    }
-    const pullRequest = await this.pullRequestService.getById(
-      run.pullRequestId,
-    );
-    const feedback = await this.pullRequestService.claimForFix(
-      run.pullRequestId,
-      run.id,
-    );
-    const settings = await this.settingsService.get();
-
-    return buildFixPrompt({
-      platformRules,
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      pullRequest: {
-        repo: pullRequest.repo,
-        branch: pullRequest.branch,
-        prNumber: pullRequest.prNumber,
-        prUrl: pullRequest.prUrl,
-        ciStatus: pullRequest.ciStatus ?? null,
-      },
-      feedback: feedback.map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        author: item.author ?? null,
-        body: item.body ?? null,
-        path: item.path ?? null,
-        line: item.line ?? null,
-      })),
-      // Floored at 1: the counter is incremented at dispatch, so a prompt
-      // re-fetched before that landed would otherwise read "attempt 0 of 3".
-      attempt: Math.max(1, pullRequest.fixRunCount),
-      maxAttempts: settings.maxFixRunsPerPr ?? 3,
-    });
-  }
-
-  @Post('runs/:runId/feedback')
-  @ApiOperation({
-    summary: 'What a fix run did with each piece of review feedback',
-  })
-  async recordFeedbackOutcomes(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: RecordBuilderFeedbackOutcomesDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const updated = await this.pullRequestService.recordFeedbackOutcomes(
-      run.id,
-      run.sessionId,
-      dto.outcomes,
-    );
-    return { ok: true, updated };
-  }
-
-  /**
-   * The review protocol for a run pointed at an open pull request.
-   *
-   * Nothing is claimed on the way out, unlike `renderFixPrompt`. A review
-   * writes no feedback rows until it reports, so there is nothing a concurrent
-   * reconcile tick could double-dispatch against — `reviewedSha` was already
-   * stamped at dispatch for that.
-   */
-  private async renderReviewPrompt(
-    run: BuilderBuildRun,
-    session: BuilderSession,
-    doc: { draft: BuilderPrdDocument },
-    repos: typeof BUILDER_REPOS,
-    platformRules: string,
-  ): Promise<string> {
-    if (!run.pullRequestId) {
-      throw new BadRequestException(
-        'This review run has no pull request attached, so there is nothing to review.',
-      );
-    }
-    const pullRequest = await this.pullRequestService.getById(
-      run.pullRequestId,
-    );
-
-    return buildReviewPrompt({
-      platformRules,
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      pullRequest: {
-        id: pullRequest.id,
-        repo: pullRequest.repo,
-        branch: pullRequest.branch,
-        prNumber: pullRequest.prNumber,
-        prUrl: pullRequest.prUrl,
-        baseRef: BUILDER_WORKFLOW_REF,
-      },
-      attempt: pullRequest.reviewRunCount,
-      maxAttempts: BUILDER_MAX_REVIEW_RUNS_PER_PR,
-    });
   }
 
   @Post('runs/:runId/review')
@@ -415,185 +160,15 @@ export class BuilderPipelineController {
       dto.pullRequestId,
       dto.findings ?? [],
     );
-    return { ok: true, recorded };
-  }
-
-  /**
-   * The advisory plan length for this run's size class.
-   *
-   * Re-derived from the same inputs the dispatch sized the run from, rather
-   * than stored on the run: `classifyBuildSize` is pure, the PRD is frozen once
-   * a build starts, and a column would need a migration plus a CHECK extension
-   * to hold a value that is already computable.
-   */
-  private async planWordsFor(
-    session: BuilderSession,
-    doc: { draft?: BuilderPrdDocument | null },
-  ): Promise<number> {
-    const draft = (doc?.draft ?? {}) as Record<string, any>;
-    const milestones = await this.epicService.listBySession(session.id);
-    const size = classifyBuildSize({
-      requirementCount: Array.isArray(draft.requirements)
-        ? draft.requirements.length
-        : 0,
-      repoCount: (session.repos ?? []).length,
-      technicalPlanLength: prdTechnicalPlanLength(draft),
-      isEpic: milestones.length > 0,
-    });
-    return BUILDER_SIZE_PROFILES[size].planWords;
-  }
-
-  @Get('runs/:runId/plan-prompt')
-  @Header('Content-Type', 'text/plain; charset=utf-8')
-  @ApiOperation({
-    summary: 'The planning prompt (stronger-model pass, read-only tools)',
-  })
-  async getPlanPrompt(
-    @Param('runId', ParseUUIDPipe) runId: string,
-  ): Promise<string> {
-    const { run, session, doc, repos } = await this.loadRunContext(runId);
-    const lessons = await this.knowledgeService.listLessonTexts(
-      BUILDER_LESSONS_IN_CONTEXT,
-      session.repos ?? undefined,
-    );
-    const resumeContext = run.resumeOfRunId
-      ? await this.buildService.buildResumeContext(run.resumeOfRunId)
-      : null;
-    const repoPacks = await this.knowledgeService.renderRepoPacks(
-      session.repos ?? undefined,
-    );
-
-    return buildPlanPrompt({
-      platformRules: await this.knowledgeService.platformRules(),
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      lessons,
-      resumeContext,
-      repoPacks,
-      planWords: await this.planWordsFor(session, doc),
-    });
-  }
-
-  @Get('runs/:runId/remediate-prompt')
-  @Header('Content-Type', 'text/plain; charset=utf-8')
-  @ApiOperation({
-    summary:
-      'The remediation prompt: the coder re-invoked with gate failures and reviewer objections',
-  })
-  async getRemediatePrompt(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Query('round') round?: string,
-  ): Promise<string> {
-    const { run, session, doc, repos } = await this.loadRunContext(runId);
-    const phase = await this.buildService.getRunPhaseContext(run.id);
-
-    return buildRemediatePrompt({
-      platformRules: await this.knowledgeService.platformRules(),
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      round: Math.max(2, Number(round) || 2),
-      maxRounds: BUILDER_MAX_CODE_ITERATIONS,
-      gateFailures: phase.gateFailures,
-      objections: phase.objections,
-      planMd: phase.planMd,
-    });
-  }
-
-  @Get('runs/:runId/finalise-prompt')
-  @Header('Content-Type', 'text/plain; charset=utf-8')
-  @ApiOperation({
-    summary:
-      'The finalise prompt: E2E, push, PRs, report — after a green verify',
-  })
-  async getFinalisePrompt(
-    @Param('runId', ParseUUIDPipe) runId: string,
-  ): Promise<string> {
-    const { run, session, doc, repos } = await this.loadRunContext(runId);
-    const phase = await this.buildService.getRunPhaseContext(run.id);
-
-    return buildFinalisePrompt({
-      platformRules: await this.knowledgeService.platformRules(),
-      sessionId: session.id,
-      runId: run.id,
-      branchSlug: run.branchSlug,
-      prd: doc.draft,
-      repos,
-      apiBaseUrl: this.configService.publicApiBaseUrl,
-      sessionUrl: `${this.configService.adminBaseUrl}/builder/${session.id}`,
-      gateSummary: phase.gateSummary,
-      verifierNotes: phase.verifierNotes,
-      planMd: phase.planMd,
-      guidance: await this.guidance(BUILDER_PROMPTS.FINALISE_GUIDANCE),
-    });
-  }
-
-  /**
-   * A tunable guidance block, or null to let the caller's compiled default win.
-   *
-   * Swallows its own failure deliberately. A prompt-management outage must not
-   * fail a build that is already an hour in and has a working tree to push —
-   * the run continues on the text it shipped with, which is the same text the
-   * row holds until someone edits it.
-   */
-  private async guidance(promptCode: string): Promise<string | null> {
-    try {
-      return await this.promptSharedService.getPromptByCode(promptCode);
-    } catch (error) {
-      this.logger.warn(
-        `Could not load guidance "${promptCode}", using the compiled default: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+    // An in-repo review reports nothing else: its verdict is its end.
+    if (this.buildService.isRepoReview(run)) {
+      await this.buildService.settleRepoReview(
+        run,
+        BuilderRunStatus.SUCCEEDED,
+        null,
       );
-      return null;
     }
-  }
-
-  @Get('runs/:runId/verify-prompt')
-  @Header('Content-Type', 'text/plain; charset=utf-8')
-  @ApiOperation({
-    summary: 'The adversarial verification prompt (fresh-context second pass)',
-  })
-  async getVerifyPrompt(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Query('round') round?: string,
-  ): Promise<string> {
-    const { run, doc, repos } = await this.loadRunContext(runId);
-    const requestedRound = Math.max(1, Number(round) || 1);
-    const phase = await this.buildService.getRunPhaseContext(run.id);
-
-    // Round 2 is told what round 1 raised, read back from the stored
-    // verification event. This branch was dead before the verdict was
-    // persisted, so every round reviewed as if it were the first.
-    const previousObjections =
-      requestedRound > 1
-        ? phase.objections.map((objection) =>
-            [
-              objection.severity ? `[${objection.severity}]` : '',
-              [objection.repo, objection.file].filter(Boolean).join(' · '),
-              objection.summary ?? '',
-            ]
-              .filter(Boolean)
-              .join(' ')
-              .trim(),
-          )
-        : undefined;
-
-    return buildVerifyPrompt({
-      platformRules: await this.knowledgeService.platformRules(),
-      prd: doc.draft,
-      repos,
-      round: requestedRound,
-      previousObjections,
-      gateSummary: phase.gateSummary,
-    });
+    return { ok: true, recorded };
   }
 
   @Post('runs/:runId/events')
@@ -615,59 +190,6 @@ export class BuilderPipelineController {
     };
   }
 
-  @Post('runs/:runId/questions')
-  @ApiOperation({ summary: 'Pause the run and ask the admin (batched)' })
-  async recordQuestions(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: RecordBuilderQuestionsDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const saved = await this.questionService.recordPause(
-      run,
-      dto.questions,
-      dto.branches ?? null,
-    );
-    return {
-      ok: true,
-      groupId: saved[0]?.groupId ?? null,
-      note: 'Questions recorded. Exit 0 now — a resume run will continue from your branches.',
-    };
-  }
-
-  @Post('runs/:runId/prs')
-  @ApiOperation({ summary: 'Record the pull requests this run opened' })
-  async recordPullRequests(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: RecordBuilderPrsDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const saved = await this.pullRequestService.recordFromRunner(
-      run.sessionId,
-      run.id,
-      dto.pullRequests,
-    );
-    return { ok: true, recorded: saved.length };
-  }
-
-  @Post('runs/:runId/report')
-  @ApiOperation({ summary: "Store the agent's account of its own work" })
-  async recordReport(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: RecordBuilderReportDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const session = await this.sessionService.getSession(run.sessionId);
-    await this.reportService.recordFromRunner({
-      sessionId: run.sessionId,
-      runId: run.id,
-      type: dto.type,
-      contentMd: dto.contentMd,
-      metrics: dto.metrics ?? null,
-      repos: session.repos ?? undefined,
-    });
-    return { ok: true };
-  }
-
   @Post('runs/:runId/cost')
   @ApiOperation({ summary: 'Report token usage and cost for this run' })
   async recordCost(
@@ -679,17 +201,6 @@ export class BuilderPipelineController {
     return { ok: true };
   }
 
-  @Post('runs/:runId/model')
-  @ApiOperation({ summary: 'Record the model used for this run' })
-  async recordModel(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: RecordBuilderRunModelDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    await this.buildService.recordRunModel(run, dto);
-    return { ok: true };
-  }
-
   @Post('runs/:runId/complete')
   @ApiOperation({ summary: 'Finish the run' })
   async complete(
@@ -697,59 +208,11 @@ export class BuilderPipelineController {
     @Body() dto: CompleteBuilderRunDto,
   ) {
     const run = await this.buildService.getRunOrFail(runId);
-
-    // A run that already parked itself on a question stays parked: the
-    // workflow's `if: failure()` net fires on the way out of a pause too, and
-    // without this guard it would overwrite WAITING_FOR_INPUT with FAILED and
-    // strand the questions nobody can now answer.
-    if (run.status === BuilderRunStatus.WAITING_FOR_INPUT) {
-      return { ok: true, note: 'Run is paused for input; completion ignored.' };
-    }
-
-    // A `done` needs a machine-verified gate behind it. Testing used to be
-    // prompt-instructed with the agent's own `test_output` string as the only
-    // evidence, so a run that skipped it entirely still settled SUCCEEDED.
-    // Refused rather than trusted: the gate is cheap and the claim is not
-    // checkable any other way.
-    // A run that edited nothing is not claiming a fix, so there is nothing for
-    // a gate to verify. Two fix runs read their feedback, correctly found it
-    // was Builder's own approval with nothing to act on, said so on the pull
-    // request and changed no code — and were recorded FAILED, which poisoned
-    // the session and counted toward the breaker. Doing the right thing must
-    // not look like failing.
-    // A plan is not an outcome.
-    //
-    // 2026-09-24: the PLANNING agent of a build finished writing its plan and
-    // called `complete_run done`. ally-be accepted it — a planner edits no
-    // files, so `changedNothing` below waved the gate requirement through —
-    // and the run was settled before the coder had started. The pipeline then
-    // carried on regardless, coded, failed, and the reconcile tick logged
-    // "reported done and then failed; correcting session" eight minutes later.
-    // Thirty-four minutes, no pull request.
-    //
-    // `changedNothing` exists for fix runs that correctly find nothing to do,
-    // and that exemption stays. What it cannot mean is "the run is over",
-    // because a planner has by definition touched nothing and is by definition
-    // not finished. So the stage decides: SETUP and PLANNING are never a place
-    // a BUILD legitimately ends, whatever the agent believes.
-    //
-    // Reachable before, likelier now: the reporting protocol moved to MCP
-    // tools, so `complete_run` went from a shell command an agent had to
-    // compose to a typed tool sitting in every phase's tool list. Making a
-    // protocol easier to call correctly makes it easier to call wrongly, and
-    // the guard for that belongs on the server rather than in the phase prompt.
-    // Every mode, not just BUILD. A fix run skips the planner and reports from
-    // CODING; a review reports from REVIEWING. There is no mode whose work is
-    // finished while the rail still reads SETUP or PLANNING, so the rule needs
-    // no exceptions and gets none — one fewer condition to be wrong about, and
-    // it holds for a run whose mode is missing entirely.
     const session = await this.sessionService.getSession(run.sessionId);
 
-    // The one exception to the rule above, because a design run never posts
-    // a stage: it moves no session, so `currentStage` is whatever the last
-    // build left behind and says nothing about this run. Its evidence is the
-    // design itself — a `done` with no submission from this run is refused
-    // the same way a build's `done` with no gate is, and for the same reason.
+    // A design run's evidence is the design itself: a `done` with no
+    // submission from this run is refused, because the claim is not checkable
+    // any other way.
     if (run.mode === BuilderRunMode.DESIGN) {
       if (dto.outcome === 'done') {
         const doc = await this.prdService.getOrCreateDoc(
@@ -774,85 +237,22 @@ export class BuilderPipelineController {
       return { ok: true };
     }
 
-    const tooEarlyToFinish =
-      session.currentStage === BuilderStage.SETUP ||
-      session.currentStage === BuilderStage.PLANNING;
-
-    if (dto.outcome === 'done' && tooEarlyToFinish) {
-      this.logger.warn(
-        `Builder run ${run.id} reported done from ${session.currentStage} — ` +
-          'refusing the claim; the run continues.',
-      );
+    // Any other run reaching here is one the runner's outcome gate is
+    // settling after its engine exited (outcome-gate.sh). Builder's runner no
+    // longer builds — a build is an issue in its repo, and its pull request is
+    // its outcome — so only a failure is accepted: there is nothing a `done`
+    // from the runner could be checked against.
+    if (dto.outcome === 'done') {
       throw new ConflictException(
-        `A run cannot finish from ${session.currentStage}. If you are the ` +
-          'planning phase: write the plan and stop. The runner starts the ' +
-          'coder itself, and a later phase reports the outcome.',
+        `Run ${run.id} is a ${run.mode} run. Only a design run reports done ` +
+          'here; a build is settled from its issue and pull request.',
       );
     }
-
-    const changedNothing =
-      dto.outcome === 'done' &&
-      (await this.buildService.touchedNoFiles(run.id));
-
-    // A REVIEW run has no gate to pass, by construction.
-    //
-    // The mode reads a finished diff and writes findings; run-engine.sh never
-    // invokes the test gate for it, so `hasPassingGate` can only ever be false
-    // and the guard above made a correct review impossible to complete. On
-    // 2026-09-23 a review of ally-web#694 reported zero findings, approved the
-    // pull request — and was then refused its own completion twice, failed by
-    // outcome-gate.sh, and recorded as a failed run. A review that did exactly
-    // its job cannot be allowed to read as a failure: BUILD_FAILED is an
-    // announced kind, so the failure reaches Slack as well as the session.
-    //
-    // `changedNothing` was already meant to cover this and does not: it asks
-    // whether files were touched, and a reviewer that writes so much as a
-    // scratch file fails that test while still having nothing to gate.
-    // Naming the mode says what is actually true instead of inferring it.
-    const cannotGate = run.mode === BuilderRunMode.REVIEW;
-
-    if (
-      dto.outcome === 'done' &&
-      !changedNothing &&
-      !cannotGate &&
-      !(await this.buildService.hasPassingGate(run.id))
-    ) {
-      // Refused, NOT settled. The run may still be working.
-      //
-      // This used to record FAILED, on the assumption that a `done` without a
-      // gate came from an agent about to exit. It also arrives from one that
-      // simply completed too early: a coding phase that called `complete-run`
-      // in the middle of the pipeline, before the gate it is claiming had run
-      // at all. The run then carried on — gate, remediation, finalise, a real
-      // pull request — behind a session already painted red by a claim the
-      // pipeline had itself overtaken.
-      //
-      // Leaving it RUNNING loses nothing. An agent that goes on to quit is
-      // caught by outcome-gate.sh, which settles anything still QUEUED or
-      // RUNNING when the engine exits; an agent that carries on reaches a real
-      // outcome. Either way the verdict comes from what happened rather than
-      // from what was claimed halfway through.
-      this.logger.warn(
-        `Builder run ${run.id} reported done with no passing test gate — refusing the claim; the run continues.`,
-      );
-      throw new ConflictException(
-        'No passing gate_result for this run. The test gate has not run yet, ' +
-          'so there is nothing to complete against — carry on, and let the ' +
-          'pipeline reach its own outcome.',
-      );
-    }
-
     await this.buildService.settleRun(
       run,
-      dto.outcome === 'done'
-        ? BuilderRunStatus.SUCCEEDED
-        : BuilderRunStatus.FAILED,
-      dto.outcome === 'done' ? null : (dto.error ?? 'The build failed.'),
+      BuilderRunStatus.FAILED,
+      dto.error ?? 'The run failed.',
     );
-
-    if (dto.outcome === 'done') {
-      await this.reportService.composeSessionReport(run.sessionId);
-    }
     return { ok: true };
   }
 
@@ -881,24 +281,45 @@ export class BuilderPipelineController {
   }
 
   /**
-   * What a Ralph-loop build is building, and nothing about how: the platform
-   * rules and the PRD with its approved technical design. The loop's own
-   * prompt (scripts/builder/opencode/ralph.md) carries the protocol; the build
-   * prompt's single-coder protocol would contradict it, and contradicting
-   * instructions are what the loop exists to remove.
+   * What an issue build is building, and nothing about how: the platform
+   * rules, what the repo's CI checks, and the PRD with its approved technical
+   * design, cut to the run's repo. Fetched by the repo's builder.yml workflow
+   * (the issue carries only the run id) and by the in-repo review.
    */
   @Get('runs/:runId/spec')
   @Header('Content-Type', 'text/plain; charset=utf-8')
   @ApiOperation({
     summary:
-      'The spec a Ralph-loop build works from: rules, PRD, approved design',
+      'The spec an issue build works from: rules, CI checks, PRD, approved design',
   })
   async getSpec(@Param('runId', ParseUUIDPipe) runId: string): Promise<string> {
-    const { doc } = await this.loadRunContext(runId);
+    const { doc, repos } = await this.loadRunContext(runId);
     const platformRules = await this.knowledgeService.platformRules();
-    return [renderPlatformRules(platformRules), renderPrd(doc.draft)]
+    return [
+      renderPlatformRules(platformRules),
+      renderRepoChecks(repos),
+      renderPrd(doc.draft),
+    ]
       .filter(Boolean)
       .join('\n\n---\n\n');
+  }
+
+  /**
+   * The feedback a `/oc` fix request hands opencode on one of its pull
+   * requests. Fetched by builder-opencode.yml when the `/oc` comment carries
+   * Builder's `builder-feedback` marker, so findings never appear in a public
+   * repo's comments (BuilderPullRequestService.considerOpencodeFix).
+   */
+  @Get('pull-requests/:pullRequestId/fix-request')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'The feedback an outstanding /oc fix request asks opencode to address',
+  })
+  async getFixRequest(
+    @Param('pullRequestId', ParseUUIDPipe) pullRequestId: string,
+  ): Promise<string> {
+    return this.pullRequestService.fixRequestPrompt(pullRequestId);
   }
 
   @Get('runs/:runId/design-review-prompt')
@@ -1032,27 +453,6 @@ export class BuilderPipelineController {
     return { ok: true };
   }
 
-  /**
-   * The files a build may change, per repo, from the session's approved
-   * design — the build's hard scope check. Empty when there is no approved
-   * design, which the runner reads as "no design scope", not "no files".
-   */
-  @Get('runs/:runId/design-scope')
-  @ApiOperation({
-    summary: "The approved design's file scope, per repo, for the scope gate",
-  })
-  async getDesignScope(@Param('runId', ParseUUIDPipe) runId: string) {
-    const { doc } = await this.loadRunContext(runId);
-    const design = doc.draft.technicalDesign;
-    const repos: Record<string, string[]> = {};
-    if (design?.status === 'approved') {
-      for (const entry of design.scope ?? []) {
-        repos[entry.repo] = [...(repos[entry.repo] ?? []), ...entry.files];
-      }
-    }
-    return { repos };
-  }
-
   /** The platform rules on their own, for anything on the runner that wants them. */
   @Get('platform-rules')
   @Header('Content-Type', 'text/plain; charset=utf-8')
@@ -1086,75 +486,16 @@ export class BuilderPipelineController {
     };
   }
 
-  @Get('runs/:runId/budget')
-  @ApiOperation({
-    summary: 'Live spend against the session ceiling, checked between phases',
-  })
-  async getBudget(@Param('runId', ParseUUIDPipe) runId: string) {
-    const run = await this.buildService.getRunOrFail(runId);
-    return this.buildService.getBudgetState(run);
-  }
-
   /**
-   * The runner announcing that it has parked on the ceiling rather than
-   * aborting, so the admin gets told and the feed records where it stopped.
-   *
-   * The runner posts this once and then polls `/budget` until the ceiling moves
-   * or the window it is handed back runs out.
+   * What an opencode build or fix, or an in-repo review, spent. Posted by the
+   * Builder workflows when they finish; best-effort on their side.
    */
-  @Post('runs/:runId/budget-hold')
+  @Post('usage')
   @ApiOperation({
-    summary: 'A run is holding at a phase boundary, waiting for a raise',
+    summary: 'Record what an opencode run or a review spent (tokens, USD)',
   })
-  async budgetHold(@Param('runId', ParseUUIDPipe) runId: string) {
-    const run = await this.buildService.getRunOrFail(runId);
-    return this.buildService.recordBudgetHold(run);
-  }
-
-  /**
-   * Corrections an admin sent while this run was going, polled at phase
-   * boundaries alongside the budget check.
-   *
-   * A read, not a delivery: the runner appends what it gets to the next
-   * phase's prompt and only then acknowledges. If it dies in between, the
-   * notes stay pending and the next boundary delivers them — which is the
-   * right failure, because the one thing this surface must never do is
-   * swallow a person's correction silently.
-   */
-  @Get('runs/:runId/steer')
-  @ApiOperation({ summary: 'Steering notes waiting for this run' })
-  async getSteers(@Param('runId', ParseUUIDPipe) runId: string) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const pending = await this.steerService.listPending(run.sessionId);
-    return {
-      notes: pending.map((steer) => ({
-        id: steer.id,
-        note: steer.note,
-        at: steer.createdAt?.toISOString() ?? null,
-      })),
-    };
-  }
-
-  @Post('runs/:runId/steer/ack')
-  @ApiOperation({ summary: 'These steering notes reached a phase prompt' })
-  async ackSteers(
-    @Param('runId', ParseUUIDPipe) runId: string,
-    @Body() dto: AckBuilderSteersDto,
-  ) {
-    const run = await this.buildService.getRunOrFail(runId);
-    const delivered = await this.steerService.acknowledge(
-      run.sessionId,
-      run.id,
-      dto.ids,
-      dto.phase,
-    );
-    return { ok: true, delivered };
-  }
-
-  @Get('repo-commands')
-  @ApiOperation({ summary: 'Repos Builder can work in, with their commands' })
-  listRepoCommands() {
-    return { repos: BUILDER_REPOS };
+  recordUsage(@Body() dto: RecordBuilderUsageDto) {
+    return this.pullRequestService.recordUsage(dto);
   }
 
   @Post('repo-maps')
@@ -1170,4 +511,77 @@ export class BuilderPipelineController {
     });
     return { ok: true, repo: map.repo, generatedAt: map.generatedAt };
   }
+
+  @Post('repo-catalogs')
+  @ApiOperation({
+    summary: "Replace a repo's capability catalog (context-refresh workflow)",
+  })
+  async upsertRepoCatalog(@Body() dto: UpsertBuilderRepoCatalogDto) {
+    const catalog = await this.catalogService.upsert({
+      repo: dto.repo,
+      commitSha: dto.commitSha ?? null,
+      entries: normaliseCatalogEntries(dto.entries),
+      stats: dto.stats ?? null,
+    });
+    return {
+      ok: true,
+      repo: catalog.repo,
+      entries: catalog.entries.length,
+      generatedAt: catalog.generatedAt,
+    };
+  }
+}
+
+/**
+ * Keep only the declared keys of each catalog entry, as strings, and drop any
+ * entry without a kind and a name. The extractor is ours, but this endpoint is
+ * reachable by anything holding the pipeline key.
+ */
+function normaliseCatalogEntries(
+  entries: Record<string, any>[],
+): BuilderCatalogEntry[] {
+  const out: BuilderCatalogEntry[] = [];
+  for (const entry of entries ?? []) {
+    const kind = typeof entry?.kind === 'string' ? entry.kind.slice(0, 40) : '';
+    const name =
+      typeof entry?.name === 'string' ? entry.name.slice(0, 300) : '';
+    if (!kind || !name) continue;
+    out.push({
+      kind,
+      name,
+      path: typeof entry.path === 'string' ? entry.path.slice(0, 400) : '',
+      ...(typeof entry.detail === 'string'
+        ? { detail: entry.detail.slice(0, 300) }
+        : {}),
+      ...(typeof entry.app === 'string' ? { app: entry.app.slice(0, 80) } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * What this repository's CI will hold the pull request to, so a build runs the
+ * same commands before it finishes instead of learning them from a red check,
+ * and the docs rule its docs-guard enforces — a rule no fix run can satisfy
+ * after the fact, because it needs a line in the PR description.
+ */
+export function renderRepoChecks(repos: BuilderRepoDefinition[]): string {
+  if (!repos.length) return '';
+  const lines = ['## What CI checks in this repository', ''];
+  for (const repo of repos) {
+    const commands = [
+      repo.typecheck,
+      repo.lint,
+      ...(repo.ciChecks ?? []),
+      repo.affectedTest ?? repo.test,
+    ].filter(Boolean);
+    lines.push(`${repo.repo}: ${commands.map((c) => `\`${c}\``).join(', ')}`);
+  }
+  lines.push(
+    '',
+    'Run these before you finish and fix what they report. Formatting of the files you changed is applied for you afterwards.',
+    '',
+    'Docs: if `.docs-map.yml` exists, a file you change may map to a doc. Update a mapped doc inside this repository when your change makes it wrong. For a mapped wiki page, end your summary with one line: `Wiki-PR: none — <why the page stays accurate>` or `Wiki-PR: needed — <what the page must now say>`.',
+  );
+  return lines.join('\n');
 }

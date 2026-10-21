@@ -363,6 +363,14 @@ const PERMISSIONS = {
   VIEW_BUILDER: 'view:admin:builder',
   EDIT_BUILDER: 'edit:admin:builder',
 
+  // === COURSE COPILOT ===
+  // VIEW reads a session (transcript, blueprint, build state); EDIT runs the
+  // interview, approves blueprints and lets the agent write courses and
+  // roleplays. Like Builder there is no delete — a session is archived, and
+  // the course it made outlives it.
+  VIEW_COURSE_COPILOT: 'view:admin:course-copilot',
+  EDIT_COURSE_COPILOT: 'edit:admin:course-copilot',
+
   // === PRODUCT ROADMAP ===
   // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
   // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
@@ -525,6 +533,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.DELETE_AI_LAB,
   PERMISSIONS.VIEW_BUILDER,
   PERMISSIONS.EDIT_BUILDER,
+  PERMISSIONS.VIEW_COURSE_COPILOT,
+  PERMISSIONS.EDIT_COURSE_COPILOT,
   // Product Roadmap: SUPER_ADMIN can see the board and vote on it. The management
   // surface (EDIT_PRODUCT_ROADMAP) is deliberately withheld here and granted only to
   // SUPER_DUPER_ADMIN below.
@@ -673,10 +683,12 @@ const ADMIN_PERMISSIONS = [
   // were revoked by 1974700000000-RevokeTenantAdminOrgSettingsGrants. Tenant
   // content access is managed from the admin console.
 
-  // Text helpline: a tenant ADMIN supervises their own org's helpline and is
-  // the one who grants LISTENER / HELPLINE_SUPERVISOR from Helpline → Team.
-  // Written to `group_permissions` by 1975750000000-AddHelplinePermissions.
-  ...HELPLINE_SUPERVISOR_PERMISSIONS,
+  // Text helpline: team management only. The workspace (lobby, chats, monitor,
+  // QA) belongs to LISTENER / HELPLINE_SUPERVISOR, so an org admin who should
+  // take or supervise chats is given one of those groups like anyone else —
+  // and only then reaches Helpline → Team to staff it. The supervisor set was
+  // granted by 1975750000000 and revoked by
+  // 1976600000000-RevokeTenantAdminHelplineWorkspaceGrants.
   PERMISSIONS.EDIT_HELPLINE_TEAM,
 
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT

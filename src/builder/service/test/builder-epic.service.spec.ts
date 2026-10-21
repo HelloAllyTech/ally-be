@@ -178,6 +178,48 @@ describe('BuilderEpicService', () => {
       await expect(service.nextPending('session-1')).resolves.toBeNull();
     });
 
+    it('counts a repo milestone left BUILDING as still to build, and skips built or skipped ones', async () => {
+      repository.find.mockResolvedValue([
+        {
+          id: 'm-1',
+          position: 1,
+          repos: ['ally-be'],
+          status: BuilderMilestoneStatus.COMPLETED,
+        },
+        {
+          id: 'm-2',
+          position: 2,
+          repos: ['ally-web'],
+          status: BuilderMilestoneStatus.SKIPPED,
+        },
+        {
+          id: 'm-3',
+          position: 3,
+          repos: ['ally-mobile'],
+          status: BuilderMilestoneStatus.BUILDING,
+        },
+      ]);
+
+      const unbuilt = await service.unbuiltRepoMilestone('session-1');
+
+      expect(unbuilt?.id).toBe('m-3');
+    });
+
+    it('ignores epic milestones (no repos) when asking what is unbuilt', async () => {
+      repository.find.mockResolvedValue([
+        {
+          id: 'm-1',
+          position: 1,
+          repos: null,
+          status: BuilderMilestoneStatus.PENDING,
+        },
+      ]);
+
+      await expect(
+        service.unbuiltRepoMilestone('session-1'),
+      ).resolves.toBeNull();
+    });
+
     it('lists only the completed milestones before a position', async () => {
       // What the next milestone's prompt may rely on already existing.
       repository.find.mockResolvedValue(milestones);

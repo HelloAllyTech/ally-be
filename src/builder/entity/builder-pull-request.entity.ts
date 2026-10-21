@@ -79,6 +79,60 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   fixRunCount!: number;
 
   /**
+   * The head commit an outstanding `/oc` fix request was made against, and
+   * when. Set only on opencode pull requests, where feedback is handed to
+   * opencode as a `/oc` comment rather than to a fix run: opencode reports no
+   * per-item outcome, so a new head commit is how Builder learns it answered.
+   * Null when no request is outstanding.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  fixRequestedSha?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  fixRequestedAt?: Date | null;
+
+  /**
+   * Automation handed this pull request to a person: it stopped improving,
+   * or ran out of rounds (BuilderPullRequestService.considerEscalation).
+   * While set, Builder sends no reviews, `/oc` requests or approvals here.
+   * `needsHumanReason` is the plain-language why, shown as written.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  needsHumanAt?: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  needsHumanReason?: string | null;
+
+  /**
+   * How an escalation ended — `resumed` (a person gave it back), `merged` or
+   * `closed` — kept so later builds can learn which escalations were the
+   * agent being stuck and which were the reviewer being wrong.
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  escalationResolution?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  escalationResolvedAt?: Date | null;
+
+  /**
+   * One entry per in-repo review verdict, oldest first: the head it read, how
+   * many serious findings it filed, and their keys. What "is this getting
+   * better?" is decided from.
+   */
+  /**
+   * What automated review and `/oc` fixes on this pull request have cost so
+   * far (USD, as opencode prices the tokens), reported by the workflows
+   * (POST /builder/pipeline/usage). Counted against maxPrAutomationUsd.
+   */
+  @Column({ type: 'numeric', precision: 10, scale: 4, default: 0 })
+  automationCostUsd!: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  reviewHistory?:
+    | { sha: string | null; count: number; keys: string[]; at?: string }[]
+    | null;
+
+  /**
    * How many review runs this PR has had. Bounded for the same reason fix runs
    * are: a reviewer dispatched on every reconcile tick would re-read an
    * unchanged diff every few minutes and bill for it.
@@ -137,6 +191,18 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
 
   @Column({ type: 'varchar', length: 40, nullable: true })
   releaseTag?: string | null;
+
+  /** When the release reached production (releaseState became `released`). */
+  @Column({ type: 'timestamp', nullable: true })
+  releasedAt?: Date | null;
+
+  /**
+   * When Builder checked the service after the release. `releaseState`
+   * becomes `unhealthy` when that check failed, which stops automatic merges
+   * and releases until a person looks.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  releaseHealthCheckedAt?: Date | null;
 
   @Column({ type: 'varchar', length: 40, nullable: true })
   releaseRunId?: string | null;

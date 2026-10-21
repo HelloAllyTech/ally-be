@@ -1,0 +1,55 @@
+You are writing one ANNOTATED TRANSCRIPT exercise for a course on the Ally platform, which trains helpers — volunteer listeners, peer supporters and counsellors — in helping skills. The learner reads a short fictional conversation between a helper and a person seeking help, and marks the helper's lines with behaviour labels. It is a worked example: it shows the behaviours the learner is about to practise, before they have to produce them themselves.
+
+THE COURSE BRIEF (what the trainer told us — authoritative)
+{{brief_json}}
+
+WHERE THIS EXERCISE SITS (the course outline)
+{{course_outline}}
+
+THIS EXERCISE (its plan: purpose and focus)
+{{item_json}}
+
+The learning outcomes it serves:
+{{objectives}}
+
+The practice it prepares for: {{next_practice}}
+
+Behaviours the trainer confirmed —
+Helpful:
+{{helpful_behaviours}}
+Unhelpful:
+{{unhelpful_behaviours}}
+
+THE TRANSCRIPT ("units")
+- {{line_count}} lines, one line per speaker turn, in order.
+- Speakers by role: the helper as this audience is called ("Listener", "Counsellor", "Peer supporter") and the person ("Caller", "Client", "Texter"). Give the person a fictional first name in the intro, not in the speaker field.
+- A realistic conversation in this audience's real setting (brief.audience), with a beginning, a turning point and an ending. Real speech: short turns, hesitations, a person who sometimes deflects or tests the helper.
+- The helper is neither perfect nor hopeless. Mix helpful and unhelpful moments — roughly three helpful for every two unhelpful — so labels must be told apart, not applied everywhere. Some helper lines (a greeting, a practical question) deserve no label at all.
+- Everyone is fictional. Difficult material (grief, suicide and self-harm, abuse) is handled plainly and respectfully, without graphic detail, and never describes a method of self-harm. If risk comes up, a good helper responds to it.
+- Write in English unless the brief explicitly asks for written course content in another language.
+
+LABELS
+- {{label_instruction}}
+- Copy each label's text EXACTLY as written in the behaviour lists above — same words, same order of words. Only when the lists are empty, name the behaviours yourself in two to five words ("Reflects the feeling", "Gives advice too early").
+- At most {{max_labels}} labels. Include at least one helpful and one unhelpful label when both lists have entries.
+- "polarity": "helpful" or "unhelpful".
+- "description": one line saying what the behaviour looks like in words, so a learner can recognise it.
+
+ANSWER KEY ("targets")
+- Each target pairs one line id with one label id. Mostly the helper's lines; a label about noticing something (a missed risk cue, say) may target the person's line that carried the cue.
+- Every label is used by at least one target. Aim for 6-12 targets in all.
+- Mark only what a careful trainer would agree on; leave ambiguous lines unmarked.
+- Every target has a "note" of one or two sentences — the teaching moment: why this line is an example of the label, and what effect it has on the person (or what would have served them better). The note is what the learner reads when the key is revealed, so it is the point of the exercise.
+
+INTRO
+- "intro": one or two sentences that frame the task and pose the question to hold while reading ("Meera calls after her mother's funeral. Where does the listener move to fixing before Meera feels heard?").
+
+OUTPUT
+Return ONLY a JSON object — no code fences, no commentary — in exactly this shape:
+{
+  "intro": "…",
+  "units": [{"id": "u1", "speaker": "Caller", "text": "…"}, {"id": "u2", "speaker": "Listener", "text": "…"}],
+  "labels": [{"id": "l1", "text": "…", "description": "…", "polarity": "helpful"}],
+  "targets": [{"unitId": "u2", "labelId": "l1", "note": "…"}]
+}
+Ids are short strings you make up ("u1", "l1"); they need only be unique within this exercise and match wherever they are referenced.

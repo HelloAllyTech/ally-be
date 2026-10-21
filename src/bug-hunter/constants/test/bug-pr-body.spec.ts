@@ -137,6 +137,7 @@ describe('renderPrBody', () => {
           filesToChange: ['AppTooltip.tsx'],
           leaveAlone: ['en.json'],
           otherRepos: ['ally-be'],
+          consumers: { search: '', found: [] },
           risks: [],
           testPlan: 'AppTooltip.test.tsx',
           previousStudyWasWrongBecause: null,

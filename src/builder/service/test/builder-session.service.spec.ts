@@ -2,7 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { In, IsNull, Not } from 'typeorm';
 import { BuilderSessionService } from '../builder-session.service';
 import { BuilderSessionStatus } from '../../enum/builder.enum';
-import { BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT } from '../../constants/builder.constants';
+import {
+  BUILDER_HANDOFF_CONTEXT_MAX,
+  BUILDER_MAX_ACTIVE_SESSIONS_PER_TENANT,
+} from '../../constants/builder.constants';
 
 describe('BuilderSessionService', () => {
   let service: BuilderSessionService;
@@ -150,6 +153,64 @@ describe('BuilderSessionService', () => {
         service.createSession(1, { title: 'Fine' }),
       ).resolves.toBeDefined();
       expect(sessionRepository.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hand-off context', () => {
+    it('stores what the caller handed over, trimmed and bounded', async () => {
+      await service.createSession(1, {
+        title: 'From the roadmap',
+        handoffContext: `  ${'x'.repeat(BUILDER_HANDOFF_CONTEXT_MAX + 50)}  `,
+      });
+
+      const created = sessionRepository.create.mock.calls[0][0];
+      expect(created.handoffContext).toHaveLength(BUILDER_HANDOFF_CONTEXT_MAX);
+      expect(created.handoffContext.startsWith('x')).toBe(true);
+    });
+
+    it('stores none for a session started in Builder itself', async () => {
+      await service.createSession(1, { title: 'Plain', handoffContext: '   ' });
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ handoffContext: null }),
+      );
+    });
+
+    it('attaches to an existing session only where none is set yet', async () => {
+      // Frozen once written: a second press must not replace the first, and the guard has to
+      // be the UPDATE's own WHERE to hold under two presses racing.
+      sessionRepository.update.mockResolvedValue({ affected: 1 });
+
+      await expect(
+        service.attachHandoffContext('session-1', 'the brief'),
+      ).resolves.toBe(true);
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1', handoffContext: IsNull() },
+        { handoffContext: 'the brief' },
+      );
+    });
+
+    it('reports when there was already a hand-off and it wrote nothing', async () => {
+      sessionRepository.update.mockResolvedValue({ affected: 0 });
+
+      await expect(
+        service.attachHandoffContext('session-1', 'the brief'),
+      ).resolves.toBe(false);
+    });
+
+    it('reads the column explicitly, since no other session read loads it', async () => {
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        handoffContext: 'the brief',
+      });
+
+      await expect(service.getHandoffContext('session-1')).resolves.toBe(
+        'the brief',
+      );
+      expect(sessionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
+        select: { id: true, handoffContext: true },
+      });
     });
   });
 

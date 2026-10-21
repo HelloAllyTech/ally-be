@@ -146,6 +146,33 @@ describe('buildFixSessionPrompt', () => {
     expect(prompt).toContain('pipeline/precedents?findingId=finding-1');
   });
 
+  it('sends a red-CI retry to the same branch with the failing checks, and opens nothing new (2026-10-16)', () => {
+    const prompt = buildFixSessionPrompt({
+      finding: finding(),
+      repo: 'ally-mobile',
+      runId: 'run-1',
+      apiBaseUrl: 'https://api.example.com',
+      retry: {
+        kind: 'ci_failed',
+        move: 'retry_fix',
+        attempt: 1,
+        failures: [
+          'Tests / Typecheck failed on head feed567. Log tail: error TS2322',
+        ],
+        prUrl: 'https://github.com/HelloAllyTech/ally-mobile/pull/115',
+        decisionId: null,
+        at: '2026-10-16T00:00:00.000Z',
+      },
+    });
+    expect(prompt).toContain(
+      '## Why you are here again — attempt 2: CI failed on your PR',
+    );
+    expect(prompt).toContain('error TS2322');
+    expect(prompt).toContain('gh pr checkout 115');
+    expect(prompt).toContain('fails the same way on master too');
+    expect(prompt).toContain("push to that PR's branch and open nothing new");
+  });
+
   it('tells a fix on a protected repo that it cannot merge, and why', () => {
     // The failure this replaces: the protocol said "merge it", the bot has
     // push access against a master that wants a review, and both fix sessions
@@ -205,7 +232,10 @@ describe('buildFixSessionPrompt', () => {
   it('stops a fix that spans repos instead of landing half of it', () => {
     const prompt = build();
 
-    expect(prompt).toMatch(/ONLY this repo checked out/);
+    expect(prompt).toMatch(/checked out read-only under \/tmp\/siblings/);
+    expect(prompt).not.toMatch(/ONLY this repo checked out/);
+    expect(prompt).toMatch(/Find everyone who READS the value you change/);
+    expect(prompt).toContain('"consumers":{"search":');
     expect(prompt).toMatch(/merged half-fix is worse than no fix/);
     expect(prompt).toMatch(/WITHOUT committing anything/);
   });
@@ -470,6 +500,7 @@ describe('buildFixSessionPrompt', () => {
             filesToChange: ['en.json', 'mr.json'],
             leaveAlone: [],
             otherRepos: [],
+            consumers: { search: '', found: [] },
             risks: [],
             testPlan: 'i18n-parity',
             previousStudyWasWrongBecause: null,

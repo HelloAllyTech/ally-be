@@ -7,7 +7,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { In } from 'typeorm';
+import { In, IsNull, Like, MoreThan } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
@@ -15,12 +15,10 @@ import {
   PullRequestInfo,
 } from 'src/github/service/github-actions.service';
 import { AppConfigService } from 'src/config/config.service';
-import { BuilderEventType, BuilderRunStatus } from '../enum/builder.enum';
-import { buildVerificationComment } from '../util/verification-pr-comment.util';
+import { BuilderRunStatus } from '../enum/builder.enum';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import {
-  BuilderBuildEventRepository,
   BuilderPrFeedbackRepository,
   BuilderPullRequestRepository,
 } from '../repository/builder-build.repository';
@@ -34,14 +32,22 @@ import {
   BuilderSessionStatus,
   BuilderStage,
 } from '../enum/builder.enum';
-import { isBuilderRepo } from '../constants/builder-repos.constants';
+import {
+  findBuilderRepo,
+  isBuilderRepo,
+} from '../constants/builder-repos.constants';
 import {
   BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
-  BUILDER_MAX_REVIEW_RUNS_PER_PR,
+  BUILDER_MAX_REPO_REVIEWS_PER_PR,
+  BUILDER_PR_AUTOMATION_TIMEBOX_MS,
   BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
   BUILDER_WORKFLOW_REF,
   isUnfixableCheck,
+  BUILDER_RELEASE_SETTLE_MS,
+  BUILDER_HEALTH_RETRY_MS,
+  BUILDER_UNHEALTHY_HOLD_MS,
+  BUILDER_TRACK_RECORD_WINDOW,
 } from '../constants/builder.constants';
 import { resolveReleaseTargets } from 'src/release/constants/release-targets.constants';
 import { ProductionReleaseService } from 'src/release/service/production-release.service';
@@ -60,6 +66,11 @@ const ISSUE_BUILD_WORKFLOW = 'builder.yml';
 const ISSUE_BUILD_TIMEOUT_MS = 60 * 60_000;
 /** `/oc` fix requests Builder makes on red CI before failing the build. */
 const ISSUE_FIX_REQUESTS = 2;
+/** How long a `/oc` request on feedback may go unanswered before it is retried. */
+const OC_FIX_TIMEOUT_MS = 60 * 60_000;
+/** A branch opencode made (`opencode github run`), so its fixes go by `/oc`. */
+const isOpencodeBranch = (branch?: string | null): boolean =>
+  Boolean(branch?.startsWith('opencode/'));
 
 @Injectable()
 export class BuilderPullRequestService {
@@ -74,7 +85,6 @@ export class BuilderPullRequestService {
     private readonly notificationService: BuilderNotificationService,
     private readonly settingsService: BuilderSettingsService,
     private readonly github: GithubActionsService,
-    private readonly eventRepository: BuilderBuildEventRepository,
     private readonly releaseService: ProductionReleaseService,
     private readonly configService: AppConfigService,
     // Forward-ref'd: the build service reaches PRs through repositories only,
@@ -280,13 +290,6 @@ export class BuilderPullRequestService {
       }
     }
 
-    // Only on first sight. A run that re-reports its pull requests — a retry,
-    // a resumed run posting the same branch — must not stack a second identical
-    // comment on a thread a person is reading.
-    for (const pullRequest of opened) {
-      await this.postVerificationComment(sessionId, runId, pullRequest);
-    }
-
     if (results.length) {
       const session = await this.sessionRepository.findOne({
         where: { id: sessionId },
@@ -296,64 +299,6 @@ export class BuilderPullRequestService {
       }
     }
     return results;
-  }
-
-  /**
-   * Put the run's own review on the pull request it cleared.
-   *
-   * Builder already reviews its work before opening anything — the VERIFY
-   * phase is a separate invocation with a fresh context and a read-only tool
-   * allowlist, and no pull request opens until it passes. All of that happened
-   * inside the run, so the person who arrives at the PR sees a green tick and
-   * none of the reasoning behind it: not which requirements were checked, not
-   * what the reviewer objected to before the coder fixed it, and not whether
-   * the passing checks were judging an unmodified test configuration.
-   *
-   * This adds no judgement of its own. It renders events the run already
-   * wrote, so it costs a GitHub call and nothing else — no second model, no
-   * second opinion to reconcile with the first.
-   *
-   * Best-effort in every direction: a failed comment must not fail the pull
-   * request it was describing, and a run with nothing recorded posts nothing
-   * rather than an empty review that teaches people to skip these.
-   */
-  private async postVerificationComment(
-    sessionId: string,
-    runId: string,
-    pullRequest: BuilderPullRequest,
-  ): Promise<void> {
-    // Read once, outside the try: a catch that dereferences the same object
-    // the try failed on throws from the handler and escapes the guard entirely,
-    // turning best-effort telemetry into a failed pull-request record.
-    const where = `${pullRequest?.repo}#${pullRequest?.prNumber}`;
-    try {
-      const [verification, events] = await Promise.all([
-        this.eventRepository.latestOfType(runId, BuilderEventType.VERIFICATION),
-        this.eventRepository.listByRun(runId),
-      ]);
-      const gateResults = events.filter(
-        (event) => event.type === BuilderEventType.GATE_RESULT,
-      );
-
-      const body = buildVerificationComment({
-        verification,
-        gateResults,
-        sessionUrl: `${this.configService.adminBaseUrl}/builder/${sessionId}`,
-      });
-      if (!body) return;
-
-      await this.github.createIssueComment(
-        pullRequest.repo,
-        pullRequest.prNumber,
-        body,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Could not post the review summary to ${where}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 
   /**
@@ -397,7 +342,7 @@ export class BuilderPullRequestService {
   }
 
   /**
-   * Follow each issue-dispatched build (BUILDER_DISPATCH=issue) to its pull
+   * Follow each issue-dispatched build to its pull
    * request.
    *
    * The repo's `builder.yml` workflow runs opencode on the issue Builder
@@ -439,6 +384,7 @@ export class BuilderPullRequestService {
         repo,
         workflow: ISSUE_BUILD_WORKFLOW,
         since: run.dispatchedAt,
+        event: 'issues',
       });
       if (workflowRun && workflowRun.status !== 'completed') {
         await this.buildService.recordIssueMilestone(
@@ -446,6 +392,7 @@ export class BuilderPullRequestService {
           `working:${workflowRun.id}`,
           `opencode is working on ${repo}#${run.issueNumber}. Live log: ${workflowRun.htmlUrl}`,
           BuilderStage.CODING,
+          { workflowRunUrl: workflowRun.htmlUrl },
         );
       }
       if (workflowRun?.status === 'completed') {
@@ -485,11 +432,23 @@ export class BuilderPullRequestService {
     if (!pr.headSha) return;
     const sha = pr.headSha.slice(0, 7);
     const rollup = await this.github.getCheckRollup(repo, pr.headSha);
+    const ci = (state: 'success' | 'failure' | 'pending') => ({
+      ci: {
+        repo,
+        prNumber: pr.number as number,
+        prUrl: pr.htmlUrl,
+        sha: pr.headSha as string,
+        state,
+        failed: rollup?.failed ?? [],
+      },
+    });
     if (rollup?.state === 'success') {
       await this.buildService.recordIssueMilestone(
         run,
         `ci-pass:${pr.headSha}`,
         `CI passed on ${sha}. The build is done; ${pr.htmlUrl} is ready for review.`,
+        undefined,
+        ci('success'),
       );
       await this.buildService.settleRun(run, BuilderRunStatus.SUCCEEDED, null);
       return;
@@ -499,6 +458,8 @@ export class BuilderPullRequestService {
         run,
         `ci-pending:${pr.headSha}`,
         `CI is running on ${sha}.`,
+        undefined,
+        ci('pending'),
       );
       return;
     }
@@ -506,6 +467,8 @@ export class BuilderPullRequestService {
       run,
       `ci-fail:${pr.headSha}`,
       `CI failed on ${sha}: ${rollup.failed.join(', ') || 'see the checks'}.`,
+      undefined,
+      ci('failure'),
     );
 
     // Once per head commit: a new commit after the request means opencode
@@ -581,24 +544,48 @@ export class BuilderPullRequestService {
           : {}),
       },
     );
+    // What the steps below read is the head just fetched, not the one the row
+    // was loaded with: a `/oc` request records it, and settles on it moving.
+    pullRequest.headSha = remote.headSha ?? null;
 
     // A PR that is gone has nothing left to act on. Marked rather than
     // deleted: "we saw this and it stopped mattering" is the useful record,
     // and the flywheel reads closed-unmerged as its strongest signal.
     if (remote.merged || closedWithoutMerging) {
       await this.staleFeedback(pullRequest.id);
+      if (pullRequest.needsHumanAt && !pullRequest.escalationResolution) {
+        await this.repository.update(
+          { id: pullRequest.id },
+          {
+            escalationResolution: remote.merged ? 'merged' : 'closed',
+            escalationResolvedAt: new Date(),
+          },
+        );
+      }
       if (remote.merged) await this.considerRelease(pullRequest);
       return;
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+
+    // Handed to a person: nothing automatic happens here until they resume
+    // it. The merge prompt still applies — merging is theirs to decide.
+    if (
+      pullRequest.needsHumanAt ||
+      (isOpencodeBranch(pullRequest.branch) &&
+        ((await this.timeBoxSpent(pullRequest)) ||
+          (await this.budgetSpent(pullRequest))))
+    ) {
+      await this.considerMergePrompt(pullRequest, remote);
+      return;
+    }
     if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
 
-    // Review before fix, and only one of them per tick. A review run that
-    // dispatches leaves an active run behind, which `dispatchFixRun` refuses
-    // to race — so asking for both here would reliably get the second refused
-    // and look like a bug from the outside.
+    // Review before fix, and only one of them per tick. A review that
+    // dispatches leaves an active run behind, which a fix refuses to race
+    // (hasRunInFlight) — so asking for both here would reliably get the second
+    // refused and look like a bug from the outside.
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
@@ -661,6 +648,7 @@ export class BuilderPullRequestService {
   ): Promise<boolean> {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoMergeEnabled) return false;
+    if (await this.releaseIsUnhealthy()) return false;
 
     if (remote.merged || remote.state !== 'open') return false;
     if (remote.mergeableState !== 'clean') return false;
@@ -919,6 +907,7 @@ export class BuilderPullRequestService {
 
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoReleaseEnabled) return;
+    if (await this.releaseIsUnhealthy()) return;
 
     const { files, truncated } = await this.github.listPullRequestFiles(
       pullRequest.repo,
@@ -1122,6 +1111,11 @@ export class BuilderPullRequestService {
 
     await this.reportCredentialHealth();
     await this.reconcileFailedReleases();
+    await this.checkReleaseHealth().catch((error) =>
+      this.logger.warn(
+        `Could not check release health: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
 
     const releasing = await this.repository.find({
       where: { releaseState: 'releasing' },
@@ -1164,6 +1158,9 @@ export class BuilderPullRequestService {
           { id: pullRequest.id },
           {
             releaseState: verdict.state === 'succeeded' ? 'released' : 'failed',
+            ...(verdict.state === 'succeeded'
+              ? { releasedAt: new Date() }
+              : {}),
             ...(verdict.runUrl ? { releaseRunUrl: verdict.runUrl } : {}),
           },
         );
@@ -1199,6 +1196,150 @@ export class BuilderPullRequestService {
         );
       }
     }
+  }
+
+  /**
+   * After a release lands, check the service it went to is answering.
+   *
+   * Stacks, "Canary Deployments for Safe Agent Iteration": an automatic
+   * release is only safe with a check after it and a stop when it fails. A
+   * pipeline that went green is not the same as a service that works.
+   *
+   * Runs once per released pull request, a few minutes after it went live,
+   * against each of its release targets that has a health URL
+   * (AppConfigService.builderHealthUrls); three tries, half a minute apart.
+   * A failure marks the PR `unhealthy`, which stops every automatic merge and
+   * release (releaseIsUnhealthy) and tells the admin. Rolling back is a
+   * person's call: this stops the line, it does not undo the release.
+   */
+  async checkReleaseHealth(): Promise<void> {
+    const due = await this.repository.find({
+      where: { releaseState: 'released', releaseHealthCheckedAt: IsNull() },
+    });
+    for (const pullRequest of due) {
+      const releasedAt = pullRequest.releasedAt?.getTime() ?? 0;
+      if (!releasedAt || Date.now() - releasedAt < BUILDER_RELEASE_SETTLE_MS)
+        continue;
+      const urls = this.healthUrlsFor(pullRequest.repo);
+      const failing: string[] = [];
+      for (const url of urls) {
+        if (!(await this.answersHealthy(url))) failing.push(url);
+      }
+      await this.repository.update(
+        { id: pullRequest.id },
+        {
+          releaseHealthCheckedAt: new Date(),
+          ...(failing.length ? { releaseState: 'unhealthy' } : {}),
+        },
+      );
+      if (!urls.length) {
+        this.logger.info(
+          `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} released; no health URL for it, so not checked.`,
+        );
+        continue;
+      }
+      if (!failing.length) continue;
+      this.logger.warn(
+        `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} released but unhealthy: ${failing.join(', ')}. Automatic merges and releases stopped.`,
+      );
+      const session = await this.sessionRepository.findOne({
+        where: { id: pullRequest.sessionId },
+      });
+      if (session) {
+        await this.notificationService.releaseFailed(
+          session,
+          pullRequest.repo,
+          pullRequest.prNumber,
+          pullRequest.releaseTag ?? null,
+          `Deployed, but the health check is failing (${failing.join(', ')}). I've stopped automatic merges and releases until someone checks the service.`,
+          pullRequest.releaseRunUrl ?? null,
+        );
+      }
+    }
+  }
+
+  /** The health URLs for a repo's release targets; empty when none is known. */
+  private healthUrlsFor(repo: string): string[] {
+    const urls = this.configService.builderHealthUrls;
+    return Object.entries(urls)
+      .filter(([target]) => target === repo || target.startsWith(`${repo}:`))
+      .map(([, url]) => url);
+  }
+
+  private async answersHealthy(url: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt)
+        await new Promise((resolve) =>
+          setTimeout(resolve, BUILDER_HEALTH_RETRY_MS),
+        );
+      try {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) return true;
+      } catch {
+        // retried below
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Whether a recent release failed its health check. While one has, Builder
+   * merges and releases nothing on its own — the line stops until a person
+   * has looked (and cleared it by fixing forward or rolling back).
+   */
+  async releaseIsUnhealthy(): Promise<boolean> {
+    const since = new Date(Date.now() - BUILDER_UNHEALTHY_HOLD_MS);
+    return (
+      (await this.repository.count({
+        where: {
+          releaseState: 'unhealthy',
+          releaseHealthCheckedAt: MoreThan(since),
+        },
+      })) > 0
+    );
+  }
+
+  /**
+   * How Builder's recent opencode pull requests went, for deciding whether
+   * it has earned more autonomy. Stacks, "Progressive Delegation: Staged
+   * Autonomy Growth": widen autonomy as the agent proves reliable.
+   *
+   * Over the last `window` opencode PRs that got at least one review verdict:
+   * how many were approved clean, how many a person then merged exactly as
+   * reviewed (the merged head is the head the clean review read), how many
+   * needed a person, and how many releases failed their health check.
+   */
+  async trackRecord(window = BUILDER_TRACK_RECORD_WINDOW): Promise<{
+    window: number;
+    cleanReviewed: number;
+    mergedAsReviewed: number;
+    escalated: number;
+    unhealthyReleases: number;
+  }> {
+    const recent = (
+      await this.repository.find({
+        where: { branch: Like('opencode/%') },
+        order: { createdAt: 'DESC' },
+        take: window * 3,
+      })
+    )
+      .filter((pr) => (pr.reviewHistory?.length ?? 0) > 0)
+      .slice(0, window);
+    return {
+      window,
+      cleanReviewed: recent.filter((pr) => Boolean(pr.reviewPassedSha)).length,
+      mergedAsReviewed: recent.filter(
+        (pr) =>
+          pr.merged && pr.reviewPassedSha && pr.headSha === pr.reviewPassedSha,
+      ).length,
+      escalated: recent.filter(
+        (pr) => pr.needsHumanAt || pr.escalationResolution,
+      ).length,
+      unhealthyReleases: recent.filter((pr) => pr.releaseState === 'unhealthy')
+        .length,
+    };
   }
 
   /**
@@ -1305,8 +1446,31 @@ export class BuilderPullRequestService {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoReviewEnabled) return false;
 
-    if (pullRequest.reviewRunCount >= BUILDER_MAX_REVIEW_RUNS_PER_PR)
+    // Only opencode pull requests are reviewed, in their own repo's Actions.
+    // A `builder/*` pull request from Builder's old runner build has no
+    // review left to send it to.
+    if (!isOpencodeBranch(pullRequest.branch)) return false;
+    if (pullRequest.reviewRunCount >= BUILDER_MAX_REPO_REVIEWS_PER_PR) {
       return false;
+    }
+    const recent = await this.buildService.recentReviewOutcomes(
+      pullRequest.id,
+      2,
+    );
+    if (
+      recent.length === 2 &&
+      recent.every(
+        (status) =>
+          status === BuilderRunStatus.FAILED ||
+          status === BuilderRunStatus.TIMED_OUT,
+      )
+    ) {
+      await this.escalate(
+        pullRequest,
+        'The last two reviews ended without a verdict, so I cannot tell whether this is safe.',
+      );
+      return false;
+    }
     if (!headSha || pullRequest.reviewedSha === headSha) return false;
     if (rollup?.state !== 'success') return false;
 
@@ -1377,6 +1541,10 @@ export class BuilderPullRequestService {
     this.logger.info(
       `Review run ${runId} reported ${recorded} finding(s) on ${pullRequest.repo}#${pullRequest.prNumber}.`,
     );
+
+    if (isOpencodeBranch(pullRequest.branch)) {
+      await this.considerEscalation(pullRequest, findings, recorded);
+    }
 
     // A clean review is the only thing that can approve. Recorded as a fact on
     // the row rather than acted on only here, because approval is reconsidered
@@ -1470,6 +1638,9 @@ export class BuilderPullRequestService {
     pullRequest: BuilderPullRequest,
     known?: { remote: PullRequestInfo | null; rollup: CheckRollup | null },
   ): Promise<void> {
+    // Waiting on a person: a review that was already in flight must not
+    // approve it behind their back.
+    if (pullRequest.needsHumanAt) return;
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoApproveEnabled) return;
 
@@ -1612,6 +1783,13 @@ export class BuilderPullRequestService {
         // account — a definite answer, and definitely not our bot, so it falls
         // through to the git author name rather than to "unknown".
         const ours = this.isOwnActor(headAuthor.login ?? headAuthor.name ?? '');
+        // The failing step's own output, so a fix request carries the error
+        // rather than only the check's name.
+        const excerpts = ours
+          ? await this.github
+              .failedCheckExcerpts(pullRequest.repo, headSha)
+              .catch(() => ({}) as Record<string, string>)
+          : {};
 
         for (const check of rollup.failed) {
           // Two independent reasons a failure is not ours to act on, and the
@@ -1638,6 +1816,23 @@ export class BuilderPullRequestService {
               `${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`;
           } else {
             body = `The check "${check}" failed on ${shortSha}.`;
+            if (excerpts[check]) {
+              body += `\n\nThe failing step's output:\n\n\`\`\`\n${excerpts[check]}\n\`\`\``;
+            }
+          }
+
+          // A docs rule a fix run cannot satisfy is a person's call: say what
+          // the guard asked for, on an opencode PR, instead of recording it for
+          // nobody.
+          if (unfixable && ours && isOpencodeBranch(pullRequest.branch)) {
+            const asked = (excerpts[check] ?? '')
+              .split('\n')
+              .map((line) => line.replace(/^##\[error\]/, '').trim())
+              .find((line) => /wiki|docs/i.test(line));
+            await this.escalate(
+              pullRequest,
+              `Needs a docs decision: ${asked ?? `the "${check}" check failed`}. Add a Wiki-PR: line to the pull request description (a wiki PR link, or "Wiki-PR: none — <reason>"), or the docs:skip label with a reason.`,
+            );
           }
 
           await this.feedbackRepository.upsertIfNew({
@@ -1719,35 +1914,478 @@ export class BuilderPullRequestService {
   }
 
   /**
-   * Whether to send a fix run at this PR, and why not when not.
+   * Whether to ask for a fix on this PR, and why not when not.
    *
-   * Every guard here exists because the alternative is a loop that burns money
-   * without converging:
-   *  - the kill switch, because autonomy on someone's open PR should be opt-in;
-   *  - `fixRunCount`, because a fix that cannot fix it will not fix it on the
-   *    fourth attempt either;
-   *  - "no active run", because two runners on one branch is a merge conflict
-   *    Builder created for itself.
-   *
-   * Two of those are enforced elsewhere, and looking for them here is why this
-   * list used to describe a guard that did not exist. "No active run" lives in
-   * `BuilderBuildService.dispatchFixRun`, which every path to a fix run goes
-   * through. The head-sha check lives in `ingestFeedback`: a CI failure on a
-   * commit Builder did not author is written OBSERVED rather than PENDING, and
-   * `countPending` never sees it — so the guard is upstream of the count below
-   * rather than a fourth `if` in this method.
+   * Only opencode pull requests are fixed: their feedback goes back to
+   * opencode as a `/oc` comment (considerOpencodeFix). A `builder/*` pull
+   * request left by a build on Builder's old runner is no longer worked on
+   * automatically — that runner only drafts designs now — so its feedback
+   * waits for a person.
    */
   private async considerFixRun(pullRequest: BuilderPullRequest): Promise<void> {
+    if (!isOpencodeBranch(pullRequest.branch)) return;
+    await this.considerOpencodeFix(pullRequest);
+  }
+
+  /**
+   * Feedback on an opencode pull request goes to opencode, as a `/oc` comment,
+   * not to a fix run on the old runner.
+   *
+   * opencode made the branch, knows it, and is what the repo's `builder.yml`
+   * runs on a `/oc` comment; a second agent on the same branch is two
+   * authors of one change. The comment carries only a marker: the findings
+   * themselves are fetched privately by the workflow
+   * (GET /builder/pipeline/pull-requests/:id/fix-request), because ally-be,
+   * ally-web and ally-ai are public and a review reads against a private
+   * design — the same reason a build issue carries only its run id.
+   *
+   * The same guards as a fix run: the kill switch, the per-PR ceiling, and
+   * nothing in flight for the session (while the issue build runs, red CI is
+   * its to fix — reconcileIssueRun). One request at a time: opencode reports
+   * no per-item outcome, so the request stays open until the branch moves
+   * (settleOpencodeFix).
+   */
+  private async considerOpencodeFix(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    if (pullRequest.fixRequestedAt) {
+      await this.settleOpencodeFix(pullRequest);
+      return;
+    }
+
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoFixEnabled) return;
-
-    const ceiling = settings.maxFixRunsPerPr ?? 0;
-    if (ceiling && pullRequest.fixRunCount >= ceiling) return;
-
     const pending = await this.feedbackRepository.countPending(pullRequest.id);
+    const ceiling = settings.maxFixRunsPerPr ?? 0;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) {
+      // Out of rounds with something still open — failing checks or
+      // findings — is a person's call now, not another quiet stop.
+      if (pending) {
+        await this.escalate(
+          pullRequest,
+          `${pullRequest.fixRunCount} fix rounds and ${pending} problem${pending === 1 ? '' : 's'} still open.`,
+        );
+      }
+      return;
+    }
     if (!pending) return;
+    if (await this.buildService.hasRunInFlight(pullRequest.sessionId)) return;
 
-    await this.buildService.dispatchFixRun(pullRequest);
+    const items = await this.feedbackRepository.listActionable(pullRequest.id);
+    if (!items.length) return;
+
+    const commentUrl = await this.github.createIssueComment(
+      pullRequest.repo,
+      pullRequest.prNumber,
+      `/oc Address Builder's review feedback on this pull request ` +
+        `(${items.length} item${items.length === 1 ? '' : 's'}). ` +
+        'Fix each one on this branch and keep every check passing. ' +
+        'Say which you fixed, and for any you disagree with, why.\n\n' +
+        `<!-- builder-feedback: ${pullRequest.id} -->`,
+    );
+    if (!commentUrl) return;
+
+    await this.feedbackRepository.update(
+      { id: In(items.map((item) => item.id)) },
+      {
+        status: BuilderPrFeedbackStatus.IN_FIX,
+        fixRunId: null,
+        replyUrl: commentUrl,
+      },
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        fixRunCount: pullRequest.fixRunCount + 1,
+        fixRequestedSha: pullRequest.headSha ?? null,
+        fixRequestedAt: new Date(),
+      },
+    );
+    this.logger.info(
+      `[BUILDER] Asked opencode to address ${items.length} feedback item(s) on ${pullRequest.repo}#${pullRequest.prNumber}: ${commentUrl}`,
+    );
+  }
+
+  /**
+   * Close an outstanding `/oc` request once opencode has answered it.
+   *
+   *  - The branch moved: opencode pushed, so the items are addressed. CI and
+   *    the next review judge whether they really are.
+   *  - opencode's run finished and the branch did not move: nothing it did
+   *    reached the branch, whatever its reply says — on ally-mobile#114 it
+   *    switched branches, opencode skipped the push, and the reply claimed
+   *    every item fixed. The items go back to PENDING and the round counts,
+   *    so the escalation rules, not a reply, decide when to stop.
+   *  - Neither within the timeout: the items go back to PENDING for another
+   *    request, which the per-PR ceiling bounds.
+   */
+  private async settleOpencodeFix(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    const requestedAt = pullRequest.fixRequestedAt as Date;
+    const moved =
+      Boolean(pullRequest.headSha) &&
+      pullRequest.headSha !== pullRequest.fixRequestedSha;
+
+    let status: BuilderPrFeedbackStatus | null = null;
+    if (moved) {
+      status = BuilderPrFeedbackStatus.ADDRESSED;
+    } else {
+      const answer = await this.github.findRunSince({
+        repo: pullRequest.repo,
+        workflow: ISSUE_BUILD_WORKFLOW,
+        since: requestedAt,
+        event: 'issue_comment',
+      });
+      if (answer?.status === 'completed') {
+        status = BuilderPrFeedbackStatus.PENDING;
+        this.logger.warn(
+          `[BUILDER] opencode finished on ${pullRequest.repo}#${pullRequest.prNumber} without pushing; its feedback goes back to pending.`,
+        );
+      } else if (Date.now() - requestedAt.getTime() > OC_FIX_TIMEOUT_MS) {
+        status = BuilderPrFeedbackStatus.PENDING;
+      }
+    }
+    if (!status) return;
+
+    await this.feedbackRepository.update(
+      { pullRequestId: pullRequest.id, status: BuilderPrFeedbackStatus.IN_FIX },
+      {
+        status,
+        ...(status === BuilderPrFeedbackStatus.PENDING
+          ? {}
+          : { addressedAt: new Date() }),
+      },
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      { fixRequestedSha: null, fixRequestedAt: null },
+    );
+    this.logger.info(
+      `[BUILDER] opencode's fix request on ${pullRequest.repo}#${pullRequest.prNumber} settled: feedback ${status}.`,
+    );
+  }
+
+  /**
+   * The feedback an outstanding `/oc` request hands opencode, as its prompt.
+   * Read by the repo's `builder.yml` (builder-opencode.yml) when a `/oc`
+   * comment carries Builder's `builder-feedback` marker.
+   */
+  async fixRequestPrompt(pullRequestId: string): Promise<string> {
+    const pullRequest = await this.repository.findOne({
+      where: { id: pullRequestId },
+    });
+    if (!pullRequest) {
+      throw new NotFoundException(`No Builder pull request ${pullRequestId}.`);
+    }
+    const items = (
+      await this.feedbackRepository.listActionable(pullRequest.id)
+    ).filter((item) => item.status === BuilderPrFeedbackStatus.IN_FIX);
+    const lines = items.map((item, index) => {
+      const where = item.path
+        ? ` (${item.path}${item.line ? `:${item.line}` : ''})`
+        : '';
+      const source =
+        item.kind === BuilderPrFeedbackKind.AGENT_REVIEW
+          ? 'Review finding'
+          : item.kind === BuilderPrFeedbackKind.CI_FAILURE
+            ? 'Failing check'
+            : `Comment from ${item.author ?? 'a reviewer'}`;
+      return `${index + 1}. ${source}${where}:\n${String(item.body ?? '').trim()}`;
+    });
+    return [
+      `Address this feedback on pull request #${pullRequest.prNumber}, on its own branch.`,
+      'Fix each item where it is right. Where you disagree, change nothing for it and',
+      "say why in your reply. Keep every check passing: run the repository's typecheck,",
+      'lint and tests and fix what they report. Do not change a test to make it pass',
+      'unless the test itself is wrong, and say so if it is. Change nothing outside',
+      'what the feedback asks for. End with a short list of what you fixed, what you',
+      'disagreed with, and how you tested it.',
+      ...this.repoCheckLines(pullRequest.repo),
+      '',
+      ...(lines.length ? lines : ['(No feedback is outstanding.)']),
+    ].join('\n');
+  }
+
+  /** The commands this repository's CI holds a pull request to. */
+  private repoCheckLines(repo: string): string[] {
+    const definition = findBuilderRepo(repo);
+    if (!definition) return [];
+    const commands = [
+      definition.typecheck,
+      definition.lint,
+      ...(definition.ciChecks ?? []),
+      definition.affectedTest ?? definition.test,
+    ].filter(Boolean);
+    return [
+      '',
+      `CI runs: ${commands.map((c) => `\`${c}\``).join(', ')}. Formatting of changed files is applied for you afterwards.`,
+    ];
+  }
+
+  /**
+   * Decide, from the review just filed, whether this pull request is still
+   * converging or needs a person.
+   *
+   * Stacks, "Escalation Criteria for Human-in-the-Loop Review": route to a
+   * person on exceeded thresholds, persistent errors and unresolved conflicts.
+   * Each rule below is one of those:
+   *  - out of rounds: serious findings remain once the fix ceiling is spent;
+   *  - not getting better: two fix rounds in a row that did not reduce them;
+   *  - the same problem twice: a finding that survived two fix rounds, which
+   *    is opencode unable to fix it or disagreeing with it.
+   * A clean review never escalates.
+   */
+  private async considerEscalation(
+    pullRequest: BuilderPullRequest,
+    findings: { key?: string; body?: string }[],
+    count: number,
+  ): Promise<void> {
+    // Keys arrive as "<sha>:<slug>" so a finding that survives a round is
+    // filed as new; the slug is what identifies the problem.
+    const slug = (key?: string) =>
+      String(key ?? '').replace(/^[0-9a-f]{7,40}:/, '');
+    const keys = findings.map((finding) => slug(finding.key)).filter(Boolean);
+    const history = [
+      ...(pullRequest.reviewHistory ?? []),
+      {
+        sha: pullRequest.reviewedSha ?? null,
+        count,
+        keys,
+        at: new Date().toISOString(),
+      },
+    ];
+    await this.repository.update(
+      { id: pullRequest.id },
+      { reviewHistory: history },
+    );
+    pullRequest.reviewHistory = history;
+    if (count === 0) return;
+
+    const settings = await this.settingsService.get();
+    const ceiling = settings.maxFixRunsPerPr ?? 0;
+    if (ceiling && pullRequest.fixRunCount >= ceiling) {
+      await this.escalate(
+        pullRequest,
+        `After ${pullRequest.fixRunCount} fix round${pullRequest.fixRunCount === 1 ? '' : 's'}, the latest review still found ${count} problem${count === 1 ? '' : 's'}.`,
+      );
+      return;
+    }
+    if (await this.timeBoxSpent(pullRequest)) return;
+
+    const [a, b, c] = history.slice(-3);
+    if (c && b.count >= a.count && c.count >= b.count) {
+      await this.escalate(
+        pullRequest,
+        `Two fix rounds in a row did not reduce the problems the review found (still ${count}).`,
+      );
+      return;
+    }
+
+    const survivor = c
+      ? keys.find((key) => a.keys.includes(key) && b.keys.includes(key))
+      : undefined;
+    if (survivor) {
+      const finding = findings.find((item) => slug(item.key) === survivor);
+      const what = String(finding?.body ?? survivor)
+        .split('\n')
+        .map((line) => line.replace(/^\[(high|medium|low)\]\s*/i, '').trim())
+        .find(Boolean);
+      await this.escalate(
+        pullRequest,
+        `The same problem survived two fix rounds: ${what}`,
+      );
+    }
+  }
+
+  /**
+   * Record what an opencode run or a review spent (POST pipeline/usage).
+   *
+   * Every report adds to the session's total and, when it names one, the
+   * run's cost. Reports for a pull request — a review, a `/oc` fix, a
+   * person's `/oc` — add to that PR's automation spend, which the per-PR
+   * budget (maxPrAutomationUsd) is checked against. A build report names its
+   * run (the issue marker); its PR does not exist yet, so it counts towards
+   * the session, not a PR budget.
+   */
+  async recordUsage(report: {
+    kind: 'build' | 'fix' | 'review';
+    repo: string;
+    prNumber?: number | null;
+    runId?: string | null;
+    costUsd: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  }): Promise<{ ok: boolean; sessionId: string | null }> {
+    const cost = Math.max(0, Number(report.costUsd) || 0);
+    const pullRequest = report.prNumber
+      ? await this.repository.findOne({
+          where: { repo: report.repo, prNumber: report.prNumber },
+          order: { createdAt: 'DESC' },
+        })
+      : null;
+    const sessionId = await this.buildService.recordExternalUsage(
+      report.runId ?? null,
+      pullRequest?.sessionId ?? null,
+      cost,
+    );
+    if (pullRequest && cost > 0) {
+      await this.repository.increment(
+        { id: pullRequest.id },
+        'automationCostUsd',
+        cost,
+      );
+    }
+    this.logger.info(
+      `[BUILDER] ${report.kind} on ${report.repo}${report.prNumber ? `#${report.prNumber}` : ''} cost $${cost.toFixed(4)} (${report.inputTokens ?? 0} in / ${report.outputTokens ?? 0} out tokens).`,
+    );
+    return { ok: true, sessionId };
+  }
+
+  /**
+   * The spend limit: this pull request's automated review and fixes have cost
+   * at least maxPrAutomationUsd. Escalates, and says whether it did. Checked
+   * before every review or `/oc` request, so Builder never starts work past
+   * the limit.
+   */
+  private async budgetSpent(pullRequest: BuilderPullRequest): Promise<boolean> {
+    const settings = await this.settingsService.get();
+    const limit = Number(settings.maxPrAutomationUsd ?? 0);
+    const spent = Number(pullRequest.automationCostUsd ?? 0);
+    if (!limit || spent < limit) return false;
+    await this.escalate(
+      pullRequest,
+      `Spent $${spent.toFixed(2)} of the $${limit.toFixed(2)} automation budget on review and fixes` +
+        (await this.openProblemsClause(pullRequest)),
+    );
+    return true;
+  }
+
+  /**
+   * How an escalation ends: the problems still open (not the last review's
+   * count, which went on reading 4 after fixes for two of them were pushed),
+   * and whether fixes were pushed that no review has read yet.
+   */
+  private async openProblemsClause(
+    pullRequest: BuilderPullRequest,
+  ): Promise<string> {
+    const open = await this.feedbackRepository.countActionable(pullRequest.id);
+    const unreviewed =
+      !!pullRequest.headSha &&
+      !!pullRequest.reviewedSha &&
+      pullRequest.headSha !== pullRequest.reviewedSha;
+    const problems = open
+      ? `, and ${open} problem${open === 1 ? ' is' : 's are'} still open`
+      : ', and no problem is still open';
+    return (
+      problems +
+      (unreviewed
+        ? '. Fixes were pushed after the last review and have not been reviewed yet.'
+        : '.')
+    );
+  }
+
+  /**
+   * The time box: review-and-fix has run on this pull request for
+   * BUILDER_PR_AUTOMATION_TIMEBOX_MS since its first review, and its latest
+   * review still had serious findings. Escalates, and says whether it did.
+   * Checked on every tick as well as on each verdict, so a loop waiting on
+   * opencode or CI still stops on time.
+   */
+  private async timeBoxSpent(
+    pullRequest: BuilderPullRequest,
+  ): Promise<boolean> {
+    const history = pullRequest.reviewHistory ?? [];
+    const first = history.find((entry) => entry.at)?.at;
+    const last = history[history.length - 1];
+    if (!first || !last || last.count === 0) return false;
+    const spent = Date.now() - new Date(first).getTime();
+    if (spent < BUILDER_PR_AUTOMATION_TIMEBOX_MS) return false;
+    await this.escalate(
+      pullRequest,
+      `${spent >= 2 * 3_600_000 ? `${Math.round(spent / 3_600_000)} hours` : `${Math.round(spent / 60_000)} minutes`} of automated review and fixes` +
+        (await this.openProblemsClause(pullRequest)),
+    );
+    return true;
+  }
+
+  /**
+   * Stop automation on one pull request and tell a person why. Idempotent: a
+   * PR already waiting on someone is not escalated (or announced) again.
+   *
+   * Stacks, "Escalate Agent Errors to Human Operators Transparently": the
+   * stop is said, with its reason, rather than left as a loop that went quiet.
+   */
+  private async escalate(
+    pullRequest: BuilderPullRequest,
+    reason: string,
+  ): Promise<void> {
+    if (pullRequest.needsHumanAt) return;
+    const at = new Date();
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        needsHumanAt: at,
+        needsHumanReason: reason,
+        escalationResolution: null,
+        escalationResolvedAt: null,
+      },
+    );
+    pullRequest.needsHumanAt = at;
+    pullRequest.needsHumanReason = reason;
+    this.logger.warn(
+      `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} handed to a person: ${reason}`,
+    );
+    const session = await this.sessionRepository.findOne({
+      where: { id: pullRequest.sessionId },
+    });
+    if (session) {
+      await this.notificationService.prNeedsHuman(session, pullRequest, reason);
+    }
+  }
+
+  /**
+   * Give a pull request back to automation, with a fresh budget of rounds. The
+   * person has steered it (a `/oc` comment, a fix of their own) or decided a
+   * finding was wrong; either way the history that escalated it no longer
+   * describes the branch.
+   */
+  async resumeAutomation(
+    sessionId: string,
+    pullRequestId: string,
+    userId: number,
+  ): Promise<BuilderPullRequest> {
+    const pullRequest = await this.repository.findOne({
+      where: { id: pullRequestId, sessionId },
+    });
+    if (!pullRequest) {
+      throw new NotFoundException(
+        'That pull request is not part of this session.',
+      );
+    }
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        needsHumanAt: null,
+        needsHumanReason: null,
+        escalationResolution: pullRequest.needsHumanAt
+          ? 'resumed'
+          : (pullRequest.escalationResolution ?? null),
+        escalationResolvedAt: pullRequest.needsHumanAt
+          ? new Date()
+          : (pullRequest.escalationResolvedAt ?? null),
+        fixRunCount: 0,
+        reviewRunCount: 0,
+        reviewedSha: null,
+        reviewHistory: [],
+        fixRequestedSha: null,
+        fixRequestedAt: null,
+      },
+    );
+    this.logger.info(
+      `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} given back to automation by user ${userId}.`,
+    );
+    return this.repository.findOneOrFail({ where: { id: pullRequest.id } });
   }
 
   listBySession(sessionId: string): Promise<BuilderPullRequest[]> {
@@ -1756,77 +2394,5 @@ export class BuilderPullRequestService {
 
   listFeedback(sessionId: string): Promise<BuilderPrFeedback[]> {
     return this.feedbackRepository.listBySession(sessionId);
-  }
-
-  getById(pullRequestId: string): Promise<BuilderPullRequest> {
-    return this.repository.findOneOrFail({ where: { id: pullRequestId } });
-  }
-
-  /**
-   * Hand a fix run the items it should deal with, and mark them as claimed.
-   *
-   * Claiming matters because reconcile runs on a timer: a tick landing while a
-   * fix run is mid-flight would count these as still pending and dispatch a
-   * second run at the same comments.
-   */
-  async claimForFix(
-    pullRequestId: string,
-    runId: string,
-  ): Promise<BuilderPrFeedback[]> {
-    const items = await this.feedbackRepository.listActionable(pullRequestId);
-    if (items.length) {
-      await this.feedbackRepository.update(
-        { id: In(items.map((item) => item.id)) },
-        { status: BuilderPrFeedbackStatus.IN_FIX, fixRunId: runId },
-      );
-    }
-    return items;
-  }
-
-  /**
-   * What a fix run reports back: which items it handled and how.
-   *
-   * Trusted from the runner because only the runner knows — it read the
-   * comment, wrote the code and posted the reply. What ally-be checks is that
-   * the item belongs to this run's PR, so a stray key cannot mark another
-   * session's feedback done.
-   */
-  async recordFeedbackOutcomes(
-    runId: string,
-    sessionId: string,
-    outcomes: {
-      feedbackId?: string;
-      status?: string;
-      replyUrl?: string;
-    }[],
-  ): Promise<number> {
-    let updated = 0;
-    for (const outcome of outcomes) {
-      if (!outcome.feedbackId) continue;
-      const row = await this.feedbackRepository.findOne({
-        where: { id: outcome.feedbackId, sessionId },
-      });
-      if (!row) {
-        this.logger.warn(
-          `Builder run ${runId} reported feedback ${outcome.feedbackId}, which is not this session's — ignoring.`,
-        );
-        continue;
-      }
-      const status =
-        outcome.status === 'dismissed'
-          ? BuilderPrFeedbackStatus.DISMISSED
-          : BuilderPrFeedbackStatus.ADDRESSED;
-      await this.feedbackRepository.update(
-        { id: row.id },
-        {
-          status,
-          fixRunId: runId,
-          replyUrl: outcome.replyUrl ?? row.replyUrl ?? null,
-          addressedAt: new Date(),
-        },
-      );
-      updated += 1;
-    }
-    return updated;
   }
 }

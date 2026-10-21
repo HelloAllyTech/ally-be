@@ -190,6 +190,56 @@ export class BuilderGithubReadService {
     }
   }
 
+  /**
+   * The written documentation in one repo: markdown at its root and anywhere under `docs/`,
+   * as paths only.
+   *
+   * An index rather than a search — the roadmap copilot lists these so it knows which page
+   * explains an area before it spends a read on one. Filtered BEFORE the entry cap, unlike
+   * `repoTree`: ally-be holds ~3,700 files, and a cap applied first would cut its docs/
+   * folder off before a single page was listed. CHANGELOG.md is left out; it is a release
+   * log, not a description of anything.
+   */
+  async listDocs(repo: string, ref = 'master'): Promise<Record<string, any>> {
+    if (!this.isConfigured) {
+      return this.notConfigured();
+    }
+    if (!isBuilderReadableRepo(repo)) {
+      return { ok: false, error: 'unknown_repo', repo };
+    }
+    try {
+      const response = await axios.get(
+        `https://api.github.com/repos/${this.org}/${repo}/git/trees/${ref}`,
+        {
+          headers: this.headers,
+          params: { recursive: '1' },
+          timeout: 30_000,
+        },
+      );
+      const all: any[] = response.data?.tree ?? [];
+      const docs = all
+        .filter((entry) => entry?.type === 'blob')
+        .map((entry) => entry.path as string)
+        .filter(
+          (entryPath) =>
+            /\.md$/i.test(entryPath) &&
+            (/^[^/]+$/.test(entryPath) || entryPath.startsWith('docs/')) &&
+            !/^CHANGELOG\.md$/i.test(entryPath),
+        );
+      return {
+        ok: true,
+        repo,
+        ref,
+        totalCount: docs.length,
+        truncated: docs.length > BUILDER_GITHUB_TREE_MAX_ENTRIES,
+        githubTruncated: Boolean(response.data?.truncated),
+        files: docs.slice(0, BUILDER_GITHUB_TREE_MAX_ENTRIES),
+      };
+    } catch (error) {
+      return this.failure('docs_failed', error);
+    }
+  }
+
   private notConfigured(): Record<string, any> {
     return {
       ok: false,

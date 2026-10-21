@@ -33,6 +33,10 @@ const study = {
   rootCause: 'The app never sends its language.',
   approach: 'Send i18n.language as languageCode; accept it server-side.',
   filesToChange: ['AppTooltip.tsx'],
+  consumers: {
+    search: 'grep -rn "useGetActiveTooltipsQuery" . /tmp/siblings',
+    found: [],
+  },
   testPlan: 'AppTooltip.test.tsx asserts the hook is called with the language',
 };
 
@@ -104,6 +108,31 @@ describe('BugFixStudyService', () => {
     });
     const many = await service.record(finding(), 'run-1', study);
     expect(many.review?.concerns).toHaveLength(4);
+  });
+
+  it('refuses a backend-only study whose own risks say the clients may break (2026-10-16 OTP), but not a plan step', async () => {
+    complete.mockResolvedValue({ content: '{"concerns":[]}' });
+    const otp = {
+      ...study,
+      valueLivesIn: 'code',
+      approach: 'Change OTP_LENGTH from 4 to 6.',
+      filesToChange: ['src/auth/util/auth.util.ts'],
+      consumers: { search: 'grep -rn OTP_LENGTH src', found: [] },
+      risks: [
+        'Clients might have front-end validation that expects a 4-digit code. This is a breaking change for them.',
+      ],
+    };
+    await expect(
+      service.record(finding({ repo: 'ally-be' }), 'run-1', otp),
+    ).rejects.toThrow(/risks say another app may break/);
+    expect(update).not.toHaveBeenCalled();
+    await expect(
+      service.record(
+        finding({ repo: 'ally-be', parentFindingId: 'parent-1' } as never),
+        'run-1',
+        otp,
+      ),
+    ).resolves.toBeTruthy();
   });
 
   it('refuses a study that puts the value in a layer the Verifier ruled out, and accepts one that agrees', async () => {

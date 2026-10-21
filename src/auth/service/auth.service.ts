@@ -27,7 +27,10 @@ import {
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
 } from '../dto/login.dto';
-import { UserSuspendedException } from '../exception/login.exception';
+import {
+  OtpRateLimitedException,
+  UserSuspendedException,
+} from '../exception/login.exception';
 import { UserRole } from 'src/common/constants/user.constants';
 import {
   AppleTokenPayload,
@@ -42,6 +45,11 @@ import { EmailSendFailedException } from 'src/aws/service/ses.service';
 import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Impersonate } from '../interface/impersonate.interface';
+import {
+  describeWait,
+  OTP_LIMIT_MESSAGES,
+  OTP_LIMITS,
+} from '../constants/otp-limits.constants';
 
 @Injectable()
 export class AuthService {
@@ -55,6 +63,11 @@ export class AuthService {
     new URL('https://appleid.apple.com/auth/keys'),
   );
   private static readonly APPLE_ISSUER = 'https://appleid.apple.com';
+
+  /** A Google OAuth client id is `<project number>-<suffix>.apps.googleusercontent.com`. */
+  private static googleProjectNumber(clientId: string): string | undefined {
+    return /^(\d+)-[\w-]+\.apps\.googleusercontent\.com$/.exec(clientId)?.[1];
+  }
 
   constructor(
     private dataSource: DataSource,
@@ -360,10 +373,23 @@ export class AuthService {
     }
   }
 
+  /**
+   * The fixed code for a test account, matched on the normalised address like
+   * every login-code key. Matched as typed, a capitalised spelling of a test
+   * address would take the real-account path and overwrite the fixed code
+   * stored under the normalised one.
+   */
+  private getTestAccountOtp(email: string): string | undefined {
+    const normalizedEmail = this.normalizeEmail(email);
+    const match = Object.entries(this.getTestAccounts()).find(
+      ([address]) => this.normalizeEmail(address) === normalizedEmail,
+    );
+    return match?.[1];
+  }
+
   private async handleTestAccountOtp(email: string) {
-    const testAccounts = this.getTestAccounts();
-    if (testAccounts[email]) {
-      const otp = testAccounts[email];
+    const otp = this.getTestAccountOtp(email);
+    if (otp) {
       await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
       this.logger.info(`OTP for test account ${email} generated`);
       return true;
@@ -377,6 +403,12 @@ export class AuthService {
     const { email, allowedRoles, appType } = generateOtpDto;
     if (!email) {
       throw new BadRequestException('Email is required');
+    }
+    // Before the account lookup, so an unknown address is limited exactly like
+    // a known one. Test accounts are exempt: no email is sent for them, and
+    // their fixed code is still covered by the daily guess limit at verify.
+    if (!this.getTestAccountOtp(email)) {
+      await this.reserveCodeRequest(email);
     }
     // Trim + lowercase before the lookup: accounts are stored normalised
     // this way (see `UserService.bulkAddUsers`), but mobile keyboards
@@ -412,16 +444,13 @@ export class AuthService {
       );
     }
 
+    // The previous code and its link stop working, and the new code starts
+    // with a full set of guesses.
+    await this.destroyOtp(email);
+
     const isTestAccount = await this.handleTestAccountOtp(email);
     if (isTestAccount) {
       return { success: true, expiresIn: this.OTP_TTL };
-    }
-    // Delete existing unused attempt from cache
-    const existingAttempt = await this.cache.get(this.getAuthAttemptKey(email));
-    if (existingAttempt) {
-      const parsed: CachedAuthAttempt = JSON.parse(existingAttempt);
-      await this.cache.del(this.getMagicTokenKey(parsed.magicTokenHash));
-      await this.cache.del(this.getAuthAttemptKey(email));
     }
 
     const otp = AuthUtil.generateOtp();
@@ -506,13 +535,17 @@ export class AuthService {
       throw new BadRequestException('Email is required');
     }
 
-    const testAccounts = this.getTestAccounts();
-    if (testAccounts[email]) {
+    if (this.getTestAccountOtp(email)) {
       const cachedOtp = await this.cache.get(this.getOtpKey(email));
-      if (!cachedOtp || cachedOtp !== otp) {
+      if (!cachedOtp) {
         this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
         throw new UnauthorizedException('Invalid OTP');
       }
+      const guessesOnThisCode = await this.spendOtpGuess(email);
+      if (cachedOtp !== otp) {
+        return this.rejectWrongOtp(email, guessesOnThisCode);
+      }
+      await this.clearOtpGuesses(email);
       return await this.validateUserAndIssueTokens(
         allowedRoles,
         email,
@@ -538,16 +571,18 @@ export class AuthService {
       throw new UnauthorizedException('Expired OTP');
     }
 
+    // Spent before the comparison, never after: concurrent requests each take
+    // their own slot, so firing guesses in parallel buys no extra ones.
+    const guessesOnThisCode = await this.spendOtpGuess(email);
+
     const cachedOtp = await this.cache.get(this.getOtpKey(email));
     if (cachedOtp && cachedOtp !== otp) {
       this.logger.error(`Invalid OTP for email ${email}`);
-      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
-      throw new UnauthorizedException('Invalid OTP');
+      return this.rejectWrongOtp(email, guessesOnThisCode);
     }
 
     if (this.hashSecret(otp) !== attempt.otpHash) {
-      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
-      throw new UnauthorizedException('Invalid OTP');
+      return this.rejectWrongOtp(email, guessesOnThisCode);
     }
 
     // Mark attempt as used by deleting from cache
@@ -557,6 +592,7 @@ export class AuthService {
     if (cachedOtp) {
       await this.cache.del(this.getOtpKey(email));
     }
+    await this.clearOtpGuesses(email);
 
     return await this.validateUserAndIssueTokens(
       allowedRoles,
@@ -569,12 +605,114 @@ export class AuthService {
     return email.trim().toLowerCase();
   }
 
+  // Every per-address key below is built from the normalised address, so one
+  // account has one code and one set of counters however its address is typed.
+
   private getOtpKey(email: string) {
-    return `otp:${email}`;
+    return `otp:${this.normalizeEmail(email)}`;
   }
 
   private getOtpRequestCountKey(email: string) {
-    return `otp_requests:${email}`;
+    return `otp_requests:${this.normalizeEmail(email)}`;
+  }
+
+  private getOtpGuessKey(email: string) {
+    return `otp_guesses:${this.normalizeEmail(email)}`;
+  }
+
+  private getOtpDailyGuessKey(email: string) {
+    return `otp_guesses_day:${this.normalizeEmail(email)}`;
+  }
+
+  private getOtpCodeRequestKey(email: string) {
+    return `otp_code_requests:${this.normalizeEmail(email)}`;
+  }
+
+  /** Counts this request against the address's code-request window; refuses past the limit. */
+  private async reserveCodeRequest(email: string): Promise<void> {
+    const window = await this.cache.incrWithExpiry(
+      this.getOtpCodeRequestKey(email),
+      OTP_LIMITS.CODE_WINDOW_SECONDS,
+    );
+    if (window.count > OTP_LIMITS.MAX_CODES_PER_WINDOW) {
+      this.logOtpGenerationError(email, 'Too many codes requested');
+      throw new OtpRateLimitedException(
+        OTP_LIMIT_MESSAGES.generateRequest(describeWait(window.ttlSeconds)),
+        window.ttlSeconds,
+      );
+    }
+  }
+
+  /**
+   * Spends one check of a code, against both the address's daily allowance and
+   * the code's own, and returns how many checks this code has now had. Refuses
+   * when either is used up; a code past its allowance is destroyed.
+   */
+  private async spendOtpGuess(email: string): Promise<number> {
+    const today = await this.cache.incrWithExpiry(
+      this.getOtpDailyGuessKey(email),
+      OTP_LIMITS.GUESS_DAY_SECONDS,
+    );
+    if (today.count > OTP_LIMITS.MAX_GUESSES_PER_DAY) {
+      this.logVerificationError(
+        email,
+        'Daily OTP guess limit reached',
+        AuthProvider.EMAIL_OTP,
+      );
+      throw new OtpRateLimitedException(
+        OTP_LIMIT_MESSAGES.dailyGuesses(describeWait(today.ttlSeconds)),
+        today.ttlSeconds,
+      );
+    }
+
+    const thisCode = await this.cache.incrWithExpiry(
+      this.getOtpGuessKey(email),
+      this.OTP_TTL,
+    );
+    if (thisCode.count > OTP_LIMITS.MAX_GUESSES_PER_CODE) {
+      return this.rejectWrongOtp(email, thisCode.count);
+    }
+    return thisCode.count;
+  }
+
+  /**
+   * Refuses a wrong code. The check that uses up a code's allowance destroys
+   * it there and then, and says so, rather than leaving the learner to type
+   * another code into a dead one.
+   */
+  private async rejectWrongOtp(
+    email: string,
+    guessesOnThisCode: number,
+  ): Promise<never> {
+    if (guessesOnThisCode >= OTP_LIMITS.MAX_GUESSES_PER_CODE) {
+      await this.destroyOtp(email);
+      this.logVerificationError(
+        email,
+        'Too many incorrect OTPs',
+        AuthProvider.EMAIL_OTP,
+      );
+      throw new UnauthorizedException(OTP_LIMIT_MESSAGES.CODE_LOCKED);
+    }
+    this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
+    throw new UnauthorizedException('Invalid OTP');
+  }
+
+  /** Deletes the address's current code, its sign-in link and its guess count. */
+  private async destroyOtp(email: string): Promise<void> {
+    const cachedAttempt = await this.cache.get(this.getAuthAttemptKey(email));
+    if (cachedAttempt) {
+      const parsed: CachedAuthAttempt = JSON.parse(cachedAttempt);
+      await this.cache.del(this.getMagicTokenKey(parsed.magicTokenHash));
+    }
+    await this.cache.del(this.getAuthAttemptKey(email));
+    await this.cache.del(this.getOtpKey(email));
+    await this.cache.del(this.getOtpGuessKey(email));
+  }
+
+  /** After a successful sign-in, which proves the learner holds the inbox. */
+  private async clearOtpGuesses(email: string): Promise<void> {
+    await this.cache.del(this.getOtpGuessKey(email));
+    await this.cache.del(this.getOtpDailyGuessKey(email));
   }
 
   /**
@@ -628,7 +766,7 @@ export class AuthService {
   }
 
   private getAuthAttemptKey(email: string) {
-    return `auth_attempt:${email}`;
+    return `auth_attempt:${this.normalizeEmail(email)}`;
   }
 
   private getMagicTokenKey(magicTokenHash: string) {
@@ -651,15 +789,9 @@ export class AuthService {
 
   async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenPayload> {
     try {
-      const allowedAudiences = [
-        this.configService.googleAuth.androidClientId,
-        this.configService.googleAuth.iosClientId,
-        this.configService.googleAuth.webClientId,
-      ] as string[];
-
       const ticket = await this.googleClient.verifyIdToken({
         idToken,
-        audience: allowedAudiences,
+        audience: this.configService.googleAuth.clientIds,
       });
 
       const payload = ticket.getPayload();
@@ -673,13 +805,47 @@ export class AuthService {
     }
   }
 
+  /**
+   * Google describes an access token issued to any OAuth client, so a valid
+   * token only proves who the user is when it was issued to one of Ally's own
+   * clients: one of the configured ids or, failing that, another client in the
+   * same Google Cloud project. The fallback is there because nothing makes the
+   * web apps' client id appear in the server's list, and only Ally can create
+   * clients in its own project.
+   */
   async verifyGoogleAccessToken(
     accessToken: string,
   ): Promise<GoogleTokenPayload> {
     try {
       const tokenInfo = await this.googleClient.getTokenInfo(accessToken);
 
-      if (!tokenInfo.email) {
+      const { clientIds } = this.configService.googleAuth;
+      const issuedTo = [tokenInfo.aud, tokenInfo.azp].filter(
+        (id): id is string => !!id,
+      );
+      if (!issuedTo.some((id) => clientIds.includes(id))) {
+        const ownProjects = new Set(
+          clientIds.map(AuthService.googleProjectNumber).filter(Boolean),
+        );
+        const sameProjectClient = issuedTo.find((id) =>
+          ownProjects.has(AuthService.googleProjectNumber(id)),
+        );
+        // Client ids aren't personal data. Logged so an unlisted client,
+        // ours or not, shows up straight away.
+        if (!sameProjectClient) {
+          this.logger.warn(
+            `Rejected a Google access token issued to client ${issuedTo[0] ?? 'unknown'}`,
+          );
+          throw new UnauthorizedException('Invalid Google token');
+        }
+        this.logger.warn(
+          `Accepted a Google access token from unlisted client ${sameProjectClient} in Ally's Google project; add it to GOOGLE_WEB_CLIENT_ID`,
+        );
+      }
+
+      // The typings say boolean, but tokeninfo returns every field as a
+      // string, so a verified address arrives as 'true'.
+      if (!tokenInfo.email || String(tokenInfo.email_verified) !== 'true') {
         throw new UnauthorizedException('Invalid Google token');
       }
 
@@ -873,6 +1039,7 @@ export class AuthService {
     // Mark attempt as used by deleting from cache
     await this.cache.del(this.getAuthAttemptKey(email));
     await this.cache.del(this.getMagicTokenKey(hash));
+    await this.clearOtpGuesses(email);
 
     return await this.validateUserAndIssueTokens(
       allowedRoles,

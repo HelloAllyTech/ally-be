@@ -37,6 +37,7 @@ import {
   MergeOpportunitiesDto,
   MonthBoardQueryDto,
   MoveOpportunityDto,
+  QuickAddOpportunityDto,
   RoadmapReferenceImageUploadUrlDto,
   SetAllocationDto,
   SplitOpportunityDto,
@@ -51,6 +52,7 @@ import {
   OpportunityResponseDto,
   RoadmapFacetsDto,
   RoadmapReferenceImageUploadUrlResponseDto,
+  OpportunityBriefResponseDto,
   RoadmapVoterDto,
   SetAllocationResponseDto,
   OpenBuilderSessionResponseDto,
@@ -182,6 +184,22 @@ export class RoadmapOpportunityController {
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/brief')
+  @ApiOperation({
+    summary: "The opportunity copilot's brief, as filed",
+    description:
+      'Strategic fit, reach, evidence, success metric, assumptions, what was dropped and the ' +
+      "copilot's assessment. `brief` is null for anything filed without one. Fetched by the " +
+      'drawer when `hasBrief` is true, rather than riding on every board row.',
+  })
+  @ApiResponse({ status: 200, type: OpportunityBriefResponseDto })
+  findBrief(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OpportunityBriefResponseDto> {
+    return this.opportunityService.getBrief(id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @Get('opportunities/:id/voters')
   @ApiOperation({
     summary: "The votes behind an opportunity's priorityScore, by admin",
@@ -221,6 +239,42 @@ export class RoadmapOpportunityController {
     return this.opportunityService.create(user.id, dto, {
       canManage: await this.access.canManage(user.id),
       enforceReadiness: true,
+    });
+  }
+
+  /**
+   * The same filing as `create`, with the readiness gate OFF.
+   *
+   * A deliberate second door, for a named few: the `product_roadmap_quick_add` toggle on top of
+   * the VOTE tier, granted per-admin from Admin User Management. The interview exists so a draft
+   * reaches the board already sharpened; a curator who already knows what belongs on it pays that
+   * cost for nothing, and this is where they skip it. `enforceReadiness: false` is the whole
+   * difference — ownership, images, vector indexing and the realtime event all run as on `create`,
+   * so a quick-added row is indistinguishable from an interviewed one except that `hasBrief` is
+   * false (the DTO cannot carry a brief, and the server would refuse an unsigned one).
+   *
+   * Its own route rather than a flag on `create`: a flag is a bypass any VOTE-tier caller could
+   * send, and the gate would again be a discipline the client chose to keep.
+   */
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_QUICK_ADD, {
+    permissions: [PERMISSIONS.VOTE_PRODUCT_ROADMAP],
+  })
+  @Post('opportunities/quick')
+  @ApiOperation({
+    summary: 'File a new opportunity directly, skipping the readiness check',
+    description:
+      'Requires the product_roadmap_quick_add admin toggle. Same body and rules as POST ' +
+      '/opportunities minus readinessToken and brief; `ownerUserId` still needs ' +
+      'edit:admin:product-roadmap.',
+  })
+  @ApiResponse({ status: 201, type: OpportunityResponseDto })
+  async quickAdd(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: QuickAddOpportunityDto,
+  ): Promise<OpportunityResponseDto> {
+    return this.opportunityService.create(user.id, dto, {
+      canManage: await this.access.canManage(user.id),
+      enforceReadiness: false,
     });
   }
 

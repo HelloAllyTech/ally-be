@@ -172,10 +172,10 @@ describe('RoadmapOpportunityService — readiness gate', () => {
    * else — filed the row, because the checklist only ever ran in the browser.
    */
   it('refuses a failing draft, naming what failed', async () => {
-    givenVerdict(['specific', 'who_it_affects']);
+    givenVerdict(['clear_why', 'who_it_affects']);
 
     await expect(file()).rejects.toThrow(BadRequestException);
-    await expect(file()).rejects.toThrow(/specific, who_it_affects/);
+    await expect(file()).rejects.toThrow(/clear_why, who_it_affects/);
     expect(opportunityRepository.save).not.toHaveBeenCalled();
   });
 
@@ -184,7 +184,7 @@ describe('RoadmapOpportunityService — readiness gate', () => {
    * `readinessOverride: true` from its toggle; it must buy nothing, for a manager or anyone else.
    */
   it('refuses a failing draft even when a stale client asks to override it', async () => {
-    givenVerdict(['specific']);
+    givenVerdict(['clear_why']);
 
     await expect(
       file({ readinessOverride: true } as never, { canManage: true }),
@@ -193,15 +193,19 @@ describe('RoadmapOpportunityService — readiness gate', () => {
   });
 
   /**
-   * Size is part of the gate, and it is graded against the effort being FILED rather than the
-   * one in the token, so it holds whatever the client sends.
+   * Size is not capped: an opportunity does not have to be narrow to be well defined, so a
+   * broad one files at its honest size instead of being refused until it is cut down.
    */
-  it('blocks a draft sized above what may be filed, even with every criterion green', async () => {
-    givenVerdict([], RoadmapOpportunityEffort.XL);
+  it.each([
+    RoadmapOpportunityEffort.L,
+    RoadmapOpportunityEffort.XL,
+    RoadmapOpportunityEffort.XXL,
+  ])('files a %s opportunity with every criterion green', async (effort) => {
+    givenVerdict([], effort);
 
-    await expect(file({ effort: RoadmapOpportunityEffort.XL })).rejects.toThrow(
-      /size/,
-    );
+    await file({ effort });
+
+    expect(savedRow()).toMatchObject({ effort });
   });
 
   it('accepts a human correction of a size the model got wrong', async () => {
@@ -258,5 +262,106 @@ describe('RoadmapOpportunityService — readiness gate', () => {
 
     expect(verify).not.toHaveBeenCalled();
     expect(opportunityRepository.save).toHaveBeenCalled();
+  });
+
+  describe("the copilot's brief", () => {
+    const BRIEF = {
+      strategicFit: [{ goal: 'Cut time-to-first-value', why: 'Fewer steps.' }],
+      evidence: [{ source: 'analytics', claim: '40 a week.', ref: 'q1' }],
+      assessment: {
+        rating: 'promising',
+        summary: 'Clear; needs a metric.',
+        openRecommendations: ['Name a metric.'],
+      },
+    };
+
+    it('checks the brief against the token and stores it normalised', async () => {
+      givenVerdict([]);
+
+      await file({ brief: BRIEF });
+
+      expect(verify).toHaveBeenCalledWith('signed.verdict', {
+        description: DRAFT,
+        productGoal: GOAL,
+        brief: BRIEF,
+      });
+      expect(savedRow().brief).toMatchObject({
+        strategicFit: BRIEF.strategicFit,
+        assessment: { rating: 'promising' },
+        reach: { howMany: null, howOften: null },
+      });
+    });
+
+    it('files with no brief as null, not as an empty brief', async () => {
+      givenVerdict([]);
+
+      await file();
+
+      expect(savedRow().brief).toBeNull();
+    });
+
+    /**
+     * Without a token nothing vouches for the brief, so it would be an unsigned document
+     * labelled as the copilot's judgement — refused even during the tokenless rollout window.
+     */
+    it('refuses a brief that arrives without a token, or on a path that does not verify one', async () => {
+      await expect(
+        file({ brief: BRIEF, readinessToken: undefined }),
+      ).rejects.toThrow(/copilot brief/);
+      await expect(
+        file({ brief: BRIEF }, { enforceReadiness: false }),
+      ).rejects.toThrow(/copilot brief/);
+      expect(opportunityRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The filing conversation, kept so the Builder session started from this opportunity begins
+   * where it ended. Same door as the brief, but never a reason to refuse a filing.
+   */
+  describe('the filing interview', () => {
+    const TRANSCRIPT = [
+      { role: 'agent', content: 'What should change?' },
+      { role: 'admin', content: 'Let learners rate the debrief.' },
+    ];
+
+    it("stores the copilot's conversation with its draft", async () => {
+      givenVerdict([]);
+
+      await file({ interviewTranscript: TRANSCRIPT });
+
+      expect(savedRow().interviewTranscript).toEqual(TRANSCRIPT);
+    });
+
+    it('drops a malformed message instead of refusing the filing', async () => {
+      // A 400 here would lose the very conversation the column exists to keep.
+      givenVerdict([]);
+
+      await file({
+        interviewTranscript: [
+          ...TRANSCRIPT,
+          { role: 'system', content: 'x' },
+          'junk',
+        ] as never,
+      });
+
+      expect(savedRow().interviewTranscript).toEqual(TRANSCRIPT);
+    });
+
+    it('ignores a transcript off the copilot path, without refusing it', async () => {
+      // No token means no copilot draft — there is no conversation behind it to keep.
+      await file({
+        interviewTranscript: TRANSCRIPT,
+        readinessToken: undefined,
+      });
+      expect(savedRow().interviewTranscript).toBeNull();
+
+      opportunityRepository.create.mockClear();
+      await file(
+        { interviewTranscript: TRANSCRIPT },
+        { enforceReadiness: false },
+      );
+      expect(savedRow().interviewTranscript).toBeNull();
+    });
   });
 });

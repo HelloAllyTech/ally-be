@@ -23,6 +23,7 @@ import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
 import { TrackGameService } from '../service/track-game.service';
 import { TrackProgressDashboardService } from '../service/track-progress-dashboard.service';
+import { TrackResourceEmbedService } from '../service/track-resource-embed.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
 import {
   QuizAnswerDto,
@@ -49,6 +50,7 @@ export class TrackLearnerController {
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
     private readonly trackProgressDashboardService: TrackProgressDashboardService,
+    private readonly trackResourceEmbedService: TrackResourceEmbedService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -88,7 +90,11 @@ export class TrackLearnerController {
       'No login required. Served only while the course is published and its ' +
       'author has switched public view on; otherwise 404, with the same ' +
       'message whether or not the course exists. Titles, descriptions and ' +
-      'component types only — no content, no progress.',
+      'component types only — no content, no progress. `story` is the ' +
+      "course's story-led landing page with its display rules already " +
+      'applied (null unless the author set a hook): a block is present only ' +
+      'when it is switched on and has the content it needs, and the content ' +
+      'note lists the trigger warnings on the course’s roleplays and cases.',
   })
   @Get('tracks/:trackId/public')
   async getPublicTrackOutline(
@@ -184,6 +190,22 @@ export class TrackLearnerController {
   @Post('tracks/items/:itemId/article-read')
   async markArticleRead(@Param('itemId', ParseUUIDPipe) itemId: string) {
     return this.trackEnrollmentService.markArticleRead(itemId);
+  }
+
+  @ApiOperation({
+    summary: "Which of an article's resources must open outside the app",
+    description:
+      'Checks each resource URL server-side (status code and framing ' +
+      'headers, cached) because an embedded frame cannot report a 403, a ' +
+      'bot-check page or an embedding block to the player. Any failure ' +
+      'reports openExternally: true.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Get('tracks/items/:itemId/resources/embeddability')
+  async getResourceEmbeddability(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.trackResourceEmbedService.getResourceEmbeddability(itemId);
   }
 
   @ApiOperation({

@@ -291,6 +291,12 @@ export class GithubActionsService {
     repo: string;
     workflow: string;
     since: Date;
+    /**
+     * The event that started the run. A Builder `builder.yml` run starts on
+     * `issues` or `issue_comment`, never `workflow_dispatch`, so filtering on
+     * the dispatch event never found one.
+     */
+    event?: string;
   }): Promise<WorkflowRun | null> {
     this.requireConfigured();
     try {
@@ -298,13 +304,17 @@ export class GithubActionsService {
         this.url(params.repo, `actions/workflows/${params.workflow}/runs`),
         {
           headers: this.headers,
-          params: { event: 'workflow_dispatch', per_page: 30 },
+          params: { event: params.event ?? 'workflow_dispatch', per_page: 30 },
           timeout: 15_000,
         },
       );
       const candidates = (data?.workflow_runs ?? [])
         .map((run: any) => this.toWorkflowRun(run))
         .filter((run: WorkflowRun) => run.createdAt >= params.since)
+        // A workflow whose job condition is false still records a run, as
+        // `skipped`: `builder.yml` does so for every comment and every other
+        // label in the repo. Those are not the run anyone is looking for.
+        .filter((run: WorkflowRun) => run.conclusion !== 'skipped')
         .sort(
           (a: WorkflowRun, b: WorkflowRun) =>
             a.createdAt.getTime() - b.createdAt.getTime(),
@@ -946,7 +956,18 @@ export class GithubActionsService {
             headers: this.headers,
             timeout: 15_000,
           })
-          .then((response) => response.data?.check_runs ?? []),
+          .then((response) => response.data?.check_runs ?? [])
+          .catch((error) => {
+            // A fine-grained token cannot be granted Checks at all, so on a
+            // private repo (ally-mobile, ally-ai-learn) this read is refused
+            // however the token is set up — ally-mobile#114 sat green and
+            // unread. Every check those repos run is an Actions job, and the
+            // Actions API takes the `Actions: read` a fine-grained token can
+            // have. Any other failure still fails the whole read.
+            const status = (error as AxiosError)?.response?.status;
+            if (status !== 403 && status !== 404) throw error;
+            return this.checkRunsFromActions(repo, ref);
+          }),
         axios
           .get(this.url(repo, `commits/${ref}/status`), {
             headers: this.headers,
@@ -1005,6 +1026,109 @@ export class GithubActionsService {
       );
       return null;
     }
+  }
+
+  /**
+   * The tail of each failed check's log on a commit, by check name — what a
+   * fix request needs so the agent fixes the actual error instead of spending
+   * a turn finding it ("Lint & format failed" said nothing about which file).
+   *
+   * Actions check runs share their id with the job, so the job log is one
+   * request. Timestamps and colour codes are stripped; error-looking lines are
+   * kept first, then the last lines of the log, capped at `maxChars`. Best
+   * effort throughout: a check whose log cannot be read is left out.
+   */
+  async failedCheckExcerpts(
+    repo: string,
+    ref: string,
+    maxChars = 2_500,
+  ): Promise<Record<string, string>> {
+    this.requireConfigured();
+    const excerpts: Record<string, string> = {};
+    let runs: any[] = [];
+    try {
+      const { data } = await axios.get(
+        this.url(repo, `commits/${ref}/check-runs`),
+        { headers: this.headers, timeout: 15_000 },
+      );
+      runs = data?.check_runs ?? [];
+    } catch {
+      return excerpts;
+    }
+    for (const run of runs) {
+      if (!['failure', 'timed_out'].includes(String(run?.conclusion))) continue;
+      try {
+        const { data } = await axios.get(
+          this.url(repo, `actions/jobs/${run.id}/logs`),
+          {
+            headers: this.headers,
+            timeout: 20_000,
+            responseType: 'text',
+            maxRedirects: 5,
+          },
+        );
+        const lines = String(data)
+          .split('\n')
+          .map((line) =>
+            line
+              .replace(/\x1b\[[0-9;]*m/g, '')
+              .replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z\s?/, '')
+              .trimEnd(),
+          )
+          .filter(
+            (line) =>
+              line &&
+              !/^##\[(group|endgroup)\]|^\[command\]|npm warn|DeprecationWarning|git config|safe\.directory/.test(
+                line,
+              ),
+          );
+        const errors = lines.filter((line) =>
+          /error|fail|✖|×|\[warn\]|increased|expected|received/i.test(line),
+        );
+        const tail = lines.slice(-30);
+        const picked = [...new Set([...errors.slice(-25), ...tail])].join('\n');
+        excerpts[String(run.name)] =
+          picked.length > maxChars ? picked.slice(-maxChars) : picked;
+      } catch {
+        // left out: an unreadable log must not block the feedback itself
+      }
+    }
+    return excerpts;
+  }
+
+  /**
+   * The Actions jobs that ran on a commit, shaped like check runs (name,
+   * status, conclusion) — what the checks API reports for them, read through
+   * the API a fine-grained token can reach. Only the latest attempt of each
+   * job, as the checks API shows.
+   */
+  private async checkRunsFromActions(
+    repo: string,
+    ref: string,
+  ): Promise<Array<{ name: string; status: string; conclusion: string }>> {
+    const { data } = await axios.get(this.url(repo, 'actions/runs'), {
+      headers: this.headers,
+      params: { head_sha: ref, per_page: 100 },
+      timeout: 15_000,
+    });
+    const jobs = await Promise.all(
+      (data?.workflow_runs ?? []).map(async (run: any) => {
+        const { data: page } = await axios.get(
+          this.url(repo, `actions/runs/${run.id}/jobs`),
+          {
+            headers: this.headers,
+            params: { filter: 'latest', per_page: 100 },
+            timeout: 15_000,
+          },
+        );
+        return page?.jobs ?? [];
+      }),
+    );
+    return jobs.flat().map((job: any) => ({
+      name: String(job?.name ?? ''),
+      status: String(job?.status ?? ''),
+      conclusion: String(job?.conclusion ?? ''),
+    }));
   }
 
   /**
@@ -1221,6 +1345,21 @@ export class GithubActionsService {
         }`,
       );
       return [];
+    }
+  }
+
+  /** Closes an issue as not planned — a build that was stopped. Throws on failure. */
+  async closeIssue(repo: string, number: number): Promise<void> {
+    this.requireConfigured();
+    try {
+      await axios.patch(
+        this.url(repo, `issues/${number}`),
+        { state: 'closed', state_reason: 'not_planned' },
+        { headers: this.headers, timeout: 15_000 },
+      );
+    } catch (error) {
+      this.noteAuthOutcome(error);
+      throw this.toReadableError(error, `Could not close ${repo}#${number}`);
     }
   }
 

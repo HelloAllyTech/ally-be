@@ -55,6 +55,9 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-6': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-5': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-1': { inputPer1MUsd: 15, outputPer1MUsd: 75 },
+  // Exact key, not left to the prefix match: `claude-sonnet-5-5` starts with
+  // `claude-sonnet-5`, which would price it at that entry's sticker rate.
+  'claude-sonnet-5-5': { inputPer1MUsd: 2, outputPer1MUsd: 10 },
   // Sticker rate ($3/$15) rather than the 2026-08-31 introductory discount —
   // this table prices at list, not at time-bound promotions.
   'claude-sonnet-5': { inputPer1MUsd: 3, outputPer1MUsd: 15 },
@@ -183,6 +186,9 @@ export function computeCostUsd(
 // ---------------------------------------------------------------------------
 export const STT_PRICING_PER_MINUTE_USD: Record<string, number> = {
   deepgram: 0.0077,
+  // gemini-2.5-flash audio input: $1/1M tokens at ~32 tokens per second of
+  // audio ≈ $0.0019/min, plus a little output; rounded up.
+  gemini: 0.0025,
   openai: 0.006, // whisper-1
   google: 0.016, // chirp_2 (v2)
   sarvam: 0.006,

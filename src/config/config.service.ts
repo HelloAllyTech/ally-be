@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
-import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
+import {
+  BUILDER_MODEL_DEFAULTS,
+  BUILDER_WORKFLOW_REF,
+} from '../builder/constants/builder.constants';
 import {
   LLM_TIER_ENV_VAR,
   LLM_TIER_FLOOR,
@@ -204,6 +207,24 @@ export class AppConfigService {
    * local port purely so a dev environment fails with an obvious connection
    * error instead of a confusing undefined-URL one.
    */
+  /**
+   * Where Builder checks a service is healthy after releasing it, by release
+   * target (RELEASE_TARGETS key). BUILDER_HEALTH_URLS (JSON) overrides; a
+   * target with no URL is reported as not checked, never as healthy.
+   */
+  get builderHealthUrls(): Record<string, string> {
+    const defaults: Record<string, string> = {
+      'ally-be': `${this.publicApiBaseUrl}/api/health`,
+      'ally-web:admin': 'https://admin.helloally.ai',
+    };
+    try {
+      const raw = this.configService.get<string>('BUILDER_HEALTH_URLS', '');
+      return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
+    } catch {
+      return defaults;
+    }
+  }
+
   get publicApiBaseUrl(): string {
     return this.configService.get<string>(
       'PUBLIC_API_BASE_URL',
@@ -675,14 +696,23 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Every OAuth client id Ally's own apps sign in to Google with. A Google ID
+   * token must be issued to one of these; an access token to one of these or
+   * another client in the same Google Cloud project. Each variable may hold a
+   * comma-separated list, so another web client can be added without dropping
+   * the one mobile builds already use.
+   */
   get googleAuth() {
-    return {
-      webClientId: this.configService.get<string>('GOOGLE_WEB_CLIENT_ID'),
-      iosClientId: this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
-      androidClientId: this.configService.get<string>(
-        'GOOGLE_ANDROID_CLIENT_ID',
-      ),
-    };
+    const clientIds = [
+      'GOOGLE_WEB_CLIENT_ID',
+      'GOOGLE_IOS_CLIENT_ID',
+      'GOOGLE_ANDROID_CLIENT_ID',
+    ]
+      .flatMap((key) => this.configService.get<string>(key, '').split(','))
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return { clientIds };
   }
 
   get appleAuth() {
@@ -791,6 +821,28 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * The roadmap's opportunity copilot — the guided interview that files every opportunity.
+   *
+   * Sonnet by default: each turn is a short tool loop over research (board, analytics, code,
+   * interview notes) followed by a structured answer, which is squarely what it is for, at a
+   * fraction of Opus's per-turn cost. A `roadmap_opportunity_copilot` prompt row naming a
+   * model beats this. When the resolved provider has no key on this environment the copilot
+   * falls back to `fallbackModel` rather than refusing to file anything.
+   */
+  get roadmapCopilot() {
+    return {
+      model: this.configService.get<string>(
+        'ROADMAP_COPILOT_MODEL',
+        'claude-sonnet-5-5',
+      ),
+      fallbackModel: this.configService.get<string>(
+        'ROADMAP_COPILOT_FALLBACK_MODEL',
+        'gpt-5',
+      ),
+    };
+  }
+
   get builder() {
     return {
       // Model per role in the tiered loop. Defaults live in ONE place
@@ -813,6 +865,14 @@ export class AppConfigService {
       verifierModel: this.configService.get<string>(
         'BUILDER_VERIFIER_MODEL',
         BUILDER_MODEL_DEFAULTS.verifier,
+      ),
+      // The ally-be ref a design run's builder-session.yml runs from. master
+      // everywhere except while a change to the runner is proven on dev
+      // against its own branch before it merges. Design runs only: releases
+      // always dispatch from master.
+      designWorkflowRef: this.configService.get<string>(
+        'BUILDER_WORKFLOW_REF',
+        BUILDER_WORKFLOW_REF,
       ),
       // Cheap tier for mechanical passes: repo maps, summaries, consolidation.
       mechanicalModel: this.configService.get<string>(
@@ -841,16 +901,6 @@ export class AppConfigService {
       // muted channel is worse than no channel because it still looks like
       // coverage.
       slackChannel: this.configService.get<string>('BUILDER_SLACK_CHANNEL'),
-      /**
-       * How a build run is started. `workflow` (the default): Builder's own
-       * runner, the builder-session workflow in ally-be. `issue`: an issue in
-       * the target repo, labelled `builder`, which that repo's `builder.yml`
-       * workflow works into a pull request with opencode.
-       */
-      dispatch:
-        this.configService.get<string>('BUILDER_DISPATCH') === 'issue'
-          ? ('issue' as const)
-          : ('workflow' as const),
       /**
        * Slack user ids allowed to merge and release from the channel.
        *
@@ -897,6 +947,44 @@ export class AppConfigService {
     return {
       apiUrl: this.configService.get<string>('STACKS_API_URL'),
       apiKey: this.configService.get<string>('STACKS_API_KEY'),
+    };
+  }
+
+  get courseCopilot() {
+    return {
+      // Interview/edit-loop model. The `course_copilot_interviewer_system`
+      // prompt row wins when it names a model — that is the supported way to
+      // change it per environment. Defaults to the REASONING tier rather than a
+      // vendor id, for the reason characterInterview.model gives below.
+      model: this.configService.get<string>(
+        'COURSE_COPILOT_MODEL',
+        this.llmTiers[LlmModelTier.REASONING],
+      ),
+      // Usually unset: the provider is inferred from the model id.
+      provider: this.configService.get<string>('COURSE_COPILOT_PROVIDER'),
+      // Tool round-trips per turn. A normal interview turn is 1-3 (an
+      // update_brief, a lookup, ask_trainer); an edit turn can chain a read,
+      // a regenerate and a meta update.
+      maxToolIterations: Number(
+        this.configService.get<number>(
+          'COURSE_COPILOT_MAX_TOOL_ITERATIONS',
+          10,
+        ),
+      ),
+      // Default per-session spend ceiling, USD. 0 = uncapped.
+      sessionBudgetUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_SESSION_BUDGET_USD', 15),
+      ),
+      // Images have no pricing row; each counts at this flat rate.
+      imageCostUsd: Number(
+        this.configService.get<number>('COURSE_COPILOT_IMAGE_COST_USD', 0.1),
+      ),
+      buildConcurrency: Number(
+        this.configService.get<number>('COURSE_COPILOT_BUILD_CONCURRENCY', 4),
+      ),
+      maxNewRoleplays: Number(
+        this.configService.get<number>('COURSE_COPILOT_MAX_NEW_ROLEPLAYS', 4),
+      ),
     };
   }
 
@@ -983,6 +1071,38 @@ export class AppConfigService {
    * low for faithful translation, and maxTokens is generous since a full agent
    * template can be long.
    */
+  /**
+   * Engine for every translation stored in the DB (OpenAITranslationsService:
+   * simulations, events, behaviors, badges, courses, paths, cases, tooltips,
+   * transcripts, dynamic i18n). Gemini by default; TRANSLATION_PROVIDER=openai
+   * switches back to OPENAI_TRANSLATION_MODEL without a code change.
+   */
+  get translation() {
+    const provider = this.configService.get<string>(
+      'TRANSLATION_PROVIDER',
+      'gemini',
+    );
+    return {
+      provider,
+      model:
+        this.configService.get<string>('TRANSLATION_MODEL') ??
+        (provider === 'openai'
+          ? this.openai.translationModel
+          : 'gemini-2.5-flash'),
+      // Generous: a whole scenario's metadata comes back in one JSON object,
+      // and Gemini 2.5 counts thinking tokens against this budget.
+      maxTokens: Number(
+        this.configService.get<number>('TRANSLATION_MAX_TOKENS', 16384),
+      ),
+      // Gemini 2.5 thinking is off for translation: in side-by-side runs it
+      // cost ~10-14x the output tokens and ~4x the latency without reliably
+      // better tone. TRANSLATION_THINKING_BUDGET overrides (-1 = model decides).
+      thinkingBudget: Number(
+        this.configService.get<number>('TRANSLATION_THINKING_BUDGET', 0),
+      ),
+    };
+  }
+
   get promptTranslation() {
     return {
       defaultProvider: this.configService.get<string>(

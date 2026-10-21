@@ -34,7 +34,11 @@ import {
   AnnotationSwatch,
   markKey,
 } from '../type/annotation.type';
-import { GameContent, TrackGameKey } from '../type/game.type';
+import {
+  BreathingExerciseContent,
+  GameContent,
+  TrackGameKey,
+} from '../type/game.type';
 import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
@@ -415,6 +419,40 @@ export function validateGameContent(
   }
   if (content.intro !== undefined && typeof content.intro !== 'string') {
     fail(`${label}: intro must be text.`);
+  }
+
+  if (content.gameKey === TrackGameKey.BREATHING_EXERCISE) {
+    validateBreathingExerciseContent(content.breathingExercise, label);
+  }
+}
+
+function validateBreathingExerciseContent(
+  content: BreathingExerciseContent | undefined,
+  label: string,
+): void {
+  if (!content) {
+    fail(`${label} is missing the breathing exercise configuration.`);
+  }
+  const durations = ['inhale', 'holdIn', 'exhale', 'holdOut'] as const;
+  for (const field of durations) {
+    const value = content[field];
+    if (typeof value !== 'number' || value <= 0) {
+      fail(`${label}: ${field} duration must be a positive number.`);
+    }
+  }
+  if (!Number.isInteger(content.cycles) || content.cycles <= 0) {
+    fail(`${label}: cycles must be a positive integer.`);
+  }
+  const texts = [
+    'inhaleText',
+    'holdInText',
+    'exhaleText',
+    'holdOutText',
+  ] as const;
+  for (const field of texts) {
+    if (!content[field]?.trim()) {
+      fail(`${label}: ${field} cannot be empty.`);
+    }
   }
 }
 
@@ -992,7 +1030,13 @@ function annotationStructuralSignature(item: UpsertTrackItemDto): unknown {
  */
 function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
   if (item.type !== TrackItemType.GAME || !item.content) return null;
-  return { gameKey: (item.content as GameContent).gameKey };
+  const game = item.content as GameContent;
+  return {
+    gameKey: game.gameKey,
+    ...(game.gameKey === TrackGameKey.BREATHING_EXERCISE
+      ? { breathingExercise: game.breathingExercise }
+      : {}),
+  };
 }
 
 /**

@@ -119,7 +119,6 @@ function callTool(name, args, { status = 200, body = '{}', phase } = {}) {
           BUILDER_RUN_ID: 'test-run',
           // Point the marker files somewhere harmless.
           BUILDER_HELPER_ENV: '/nonexistent-on-purpose',
-          BUILDER_REPORTED_MARKER: path.join(tmp, 'reported-marker'),
           BUILDER_PHASE_FILE: phase === undefined ? '/nonexistent-on-purpose' : writePhase(phase),
         },
       });
@@ -163,121 +162,18 @@ function callTool(name, args, { status = 200, body = '{}', phase } = {}) {
 
 const textOf = (call) => call?.result?.content?.[0]?.text ?? '';
 
-console.log('── builder MCP reporting server ──');
+console.log('── builder MCP reporting server (design runs) ──');
 
-await test('a markdown report arrives as valid JSON, newlines and all', async () => {
-  // THE regression. Through the shell channel the agent hand-assembled
-  // `{"type":"run_report","contentMd":"## What was done⏎…` and ally-be
-  // answered 400, losing the whole write-up. A JSON string cannot hold a
-  // literal newline; a JSON-RPC field can hold anything.
-  const contentMd =
-    '## What was done\n\n- Moved notifications to a bell icon.\n- 11 tests.\n\n' +
-    'It had "quotes", a \\backslash and a ```fence```.\n';
-
-  const { call, received } = await callTool('report', { contentMd });
-
-  const post = received.find((r) => r.url.endsWith('/report'));
-  assert.equal(post.parseError, null, 'ally-be must be able to parse it');
-  assert.equal(post.parsed.type, 'run_report');
-  assert.equal(post.parsed.contentMd, contentMd);
-  assert.match(textOf(call), /stored/);
-});
-
-await test('a refused report is said in the feed, not swallowed', async () => {
-  const { received, call } = await callTool(
-    'report',
-    { contentMd: '## Anything\n' },
-    { status: 500, body: '{"message":"nope"}' },
-  );
-
-  const said = received.find(
-    (r) =>
-      r.url.endsWith('/events') &&
-      /could not be stored/.test(JSON.stringify(r.parsed)),
-  );
-  assert.ok(said, 'the drop must reach the run feed');
-  assert.match(textOf(call), /NOT stored/);
-});
-
-await test('a stage the rail does not know is refused with the list', async () => {
-  const { call, received } = await callTool('stage', { stage: 'EXECUTION' });
-
-  assert.equal(call.result.isError, true);
-  assert.match(textOf(call), /is not a stage/);
-  assert.match(textOf(call), /REMEDIATING/);
-  assert.equal(
-    received.filter((r) => r.url.endsWith('/events')).length,
-    0,
-    'nothing should reach ally-be',
-  );
-});
-
-await test('a near-miss spelling is corrected rather than argued with', async () => {
-  const { call, received } = await callTool('stage', { stage: 'finalizing' });
-
-  assert.match(textOf(call), /FINALISING/);
-  const post = received.find((r) => r.url.endsWith('/events'));
-  assert.equal(post.parsed.events[0].payload.stage, 'FINALISING');
-});
-
-await test('the checklist takes structured items, with no file and no jq', async () => {
-  const items = [
-    { id: '1', text: 'Add the icon', status: 'done' },
-    { id: '2', text: 'Write tests', status: 'in_progress' },
-  ];
-  const { call, received } = await callTool('todo', { items });
-
-  const post = received.find((r) => r.url.endsWith('/events'));
-  assert.deepEqual(post.parsed.events[0].payload.items, items);
-  assert.match(textOf(call), /2 item/);
-});
-
-// The scope gate reads declarations from a file the runner and the server
-// share; the feed gets a line a reviewer can see.
-await test('a scope change is written for the gate and said in the feed', async () => {
-  const file = path.join(tmp, 'scope-changes.jsonl');
-  process.env.BUILDER_SCOPE_CHANGES = file;
-  try {
-    const { call, received } = await callTool('scope_change', {
-      repo: 'ally-web',
-      path: 'repos/ally-web/apps/admin/src/a.ts',
-      reason: 'the editor imports its toolbar config from here',
-    });
-
-    const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.deepEqual(lines, [
-      {
-        repo: 'ally-web',
-        // A path given from the workspace is stored relative to the repo.
-        path: 'apps/admin/src/a.ts',
-        reason: 'the editor imports its toolbar config from here',
-      },
-    ]);
-    const said = received.find(
-      (r) => r.url.endsWith('/events') && /Scope change: ally-web\/apps\/admin\/src\/a\.ts/.test(JSON.stringify(r.parsed)),
-    );
-    assert.ok(said, 'the declaration must reach the run feed');
-    assert.match(textOf(call), /declared ally-web\/apps\/admin\/src\/a\.ts/);
-  } finally {
-    delete process.env.BUILDER_SCOPE_CHANGES;
-  }
-});
-
-await test('a scope change without a reason is refused', async () => {
-  const { call } = await callTool('scope_change', { repo: 'ally-web', path: 'a.ts', reason: '' });
-  assert.equal(call.result.isError, true);
-});
-
-// The design tools belong to their own phases: a coder offered `design` could
-// rewrite the scope it is about to be held to.
-await test('design tools are offered only in their own phase', async () => {
-  // Only their own tool and `note`: a designer that called `stage` moved a
-  // session that was not building to CODING.
+// Each pass gets its own tool and `note`, nothing else: the designer must not
+// file a verdict on its own design, and the critic must not rewrite it.
+await test('each design pass is offered only its own tool and note', async () => {
   assert.deepEqual((await listTools('design')).sort(), ['design', 'note']);
   assert.deepEqual((await listTools('design-review')).sort(), ['design_review', 'note']);
-  for (const phase of ['code', 'plan', 'verify', 'finalise', undefined]) {
-    const tools = await listTools(phase);
-    assert.ok(!tools.includes('design') && !tools.includes('design_review'), `${phase} must not have them`);
+});
+
+await test('any other phase gets note only', async () => {
+  for (const phase of ['setup', 'code', 'review', '', undefined]) {
+    assert.deepEqual(await listTools(phase), ['note'], `${phase} must get note only`);
   }
 });
 
@@ -289,6 +185,18 @@ const DESIGN = {
   testMap: [],
   openDecisions: [],
 };
+
+await test('a markdown design arrives as valid JSON, newlines and all', async () => {
+  // Through the old shell channel a hand-assembled JSON string holding
+  // multi-line markdown was a 400. A JSON-RPC field can hold anything.
+  const designMd =
+    '## Approach\n\n- Add a column.\n- 11 tests.\n\n' +
+    'It had "quotes", a \\backslash and a ```fence```.\n';
+  const { received } = await callTool('design', { ...DESIGN, designMd }, { phase: 'design' });
+  const post = received.find((r) => r.url.endsWith('/design'));
+  assert.equal(post.parseError, null, 'ally-be must be able to parse it');
+  assert.equal(post.parsed.designMd, designMd);
+});
 
 await test('a submitted design marks the run and relays what blocks approval', async () => {
   const marker = path.join(tmp, 'design-submitted');
@@ -352,50 +260,39 @@ await test('a design review derives its verdict from defects, and keeps suggesti
   }
 });
 
-await test('an empty question is refused before it can pause the run', async () => {
-  const { call, received } = await callTool('ask', { questions: [] });
+await test('a note reaches the run feed', async () => {
+  const { call, received } = await callTool(
+    'note',
+    { type: 'plan', text: 'Reading the three readers.' },
+    { phase: 'design' },
+  );
+  const post = received.find((r) => r.url.endsWith('/events'));
+  assert.deepEqual(post.parsed.events, [
+    { type: 'plan', payload: { text: 'Reading the three readers.' } },
+  ]);
+  assert.match(textOf(call), /note recorded/);
+});
 
+await test('calling the other pass\'s tool says it does not exist here', async () => {
+  const { call, received } = await callTool(
+    'design_review',
+    { defects: [], suggestions: [] },
+    { phase: 'design' },
+  );
   assert.equal(call.result.isError, true);
+  assert.match(textOf(call), /not available to the design phase/);
+  // Nothing reached ally-be.
   assert.equal(received.length, 0);
 });
 
-await test('a pause that was not recorded says so, loudly', async () => {
-  // The agent must not believe it paused. It is still running, and something
-  // has to tell it so.
-  const { call } = await callTool(
-    'ask',
-    { questions: [{ question: 'Which repo?' }] },
-    { status: 503, body: '{"message":"down"}' },
-  );
-
-  assert.equal(call.result.isError, true);
-  assert.match(textOf(call), /still running/);
-});
-
-await test('a refused completion is reported as refused, not as success', async () => {
-  // ally-be answers 2xx with `ok:false` when it refuses a `done` the gate does
-  // not corroborate. A naive reader sees the 200 and calls it recorded.
-  const { call } = await callTool(
-    'complete_run',
-    { outcome: 'done' },
-    { status: 200, body: '{"ok":false,"note":"No passing gate_result."}' },
-  );
-
-  assert.equal(call.result.isError, true);
-  assert.match(textOf(call), /REFUSED/);
-  assert.match(textOf(call), /No passing gate_result/);
-});
-
-await test('a failure carries a reason even when none was given', async () => {
-  const { received } = await callTool('complete_run', { outcome: 'failed' });
-
-  const post = received.find((r) => r.url.endsWith('/complete'));
-  assert.equal(post.parsed.outcome, 'failed');
-  assert.match(post.parsed.error, /without a reason/);
+await test('a tool the runner no longer has is unknown', async () => {
+  const { call, received } = await callTool('complete_run', { outcome: 'done' });
+  assert.match(call.error?.message ?? '', /Unknown tool: complete_run/);
+  assert.equal(received.length, 0);
 });
 
 await test('a dead ally-be does not take the server down with it', async () => {
-  // Telemetry may never fail a build. The agent gets something it can read.
+  // The agent gets something it can read, not a JSON-RPC error.
   const child = spawn('node', [SERVER], {
     env: {
       ...process.env,
@@ -404,6 +301,7 @@ await test('a dead ally-be does not take the server down with it', async () => {
       ALLY_BE_API_KEY: 'k',
       BUILDER_RUN_ID: 'r',
       BUILDER_HELPER_ENV: '/nonexistent-on-purpose',
+      BUILDER_PHASE_FILE: writePhase('design'),
     },
   });
 
@@ -426,73 +324,18 @@ await test('a dead ally-be does not take the server down with it', async () => {
       `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`,
     );
     child.stdin.write(
-      `${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'stage', arguments: { stage: 'CODING' } } })}\n`,
+      `${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'note', arguments: { type: 'plan', text: 'x' } } })}\n`,
     );
   });
 
   assert.ok(reply.result, 'a transport failure must not be a JSON-RPC error');
-  assert.match(textOf(reply), /CODING/);
+  assert.match(textOf(reply), /NOT recorded/);
 });
 
-await test('an unknown method is declined without killing the session', async () => {
-  const { replies } = await callTool('stage', { stage: 'CODING' });
-  // The handshake and the call both answered, in order, on one process.
+await test('the handshake and a call both answer, in order, on one process', async () => {
+  const { replies } = await callTool('note', { type: 'plan', text: 'x' }, { phase: 'design' });
   assert.equal(replies.find((r) => r.id === 1).result.serverInfo.name, 'builder-reporting');
   assert.ok(replies.find((r) => r.id === 3).result);
-});
-
-
-// ── one phase may end the run ───────────────────────────────────────────────
-//
-// A coding agent committed its work, called `complete_run`, was refused
-// because no gate had run, said "I understand complete-run is not my task" —
-// and called it again. Twenty-three times, until the wall clock. Every refusal
-// was correct; the loop was not a misunderstanding, so refusing harder could
-// not have fixed it.
-
-await test('the coder is never offered the tool that ends the run', async () => {
-  const tools = await listTools('code');
-
-  assert.ok(!tools.includes('complete_run'), 'complete_run must be withheld');
-  // Everything else it reports with stays.
-  for (const name of ['stage', 'note', 'todo', 'prs', 'report', 'ask']) {
-    assert.ok(tools.includes(name), `${name} should remain`);
-  }
-});
-
-await test('the planner and verifier are not offered it either', async () => {
-  for (const phase of ['plan', 'verify']) {
-    const tools = await listTools(phase);
-    assert.ok(!tools.includes('complete_run'), `${phase} must not have it`);
-  }
-});
-
-await test('finalise, fix and review keep it', async () => {
-  for (const phase of ['finalise', 'fix', 'review']) {
-    const tools = await listTools(phase);
-    assert.ok(tools.includes('complete_run'), `${phase} must keep it`);
-  }
-});
-
-await test('an unknown phase withholds nothing', async () => {
-  // A runner too old to write the file must not lose the ability to finish.
-  const tools = await listTools(undefined);
-
-  assert.ok(tools.includes('complete_run'));
-});
-
-await test('calling a withheld tool says it does not exist here, once', async () => {
-  const { call, received } = await callTool(
-    'complete_run',
-    { outcome: 'done' },
-    { phase: 'code' },
-  );
-
-  assert.equal(call.result.isError, true);
-  assert.match(textOf(call), /not available to the code phase/);
-  // Nothing reached ally-be: the run is not settled by a call that never
-  // should have been possible.
-  assert.equal(received.length, 0);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

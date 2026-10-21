@@ -120,8 +120,22 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
    * fourth attempt either, and the failure mode without a ceiling is a loop
    * that pushes commits until someone notices the bill.
    */
-  @Column({ type: 'int', default: 3 })
+  @Column({ type: 'int', default: 2 })
   maxFixRunsPerPr!: number;
+
+  /**
+   * The most Builder may spend (model tokens, in USD, as opencode prices
+   * them) on automated review and fixes for one pull request before handing
+   * it to a person. Null means no limit.
+   */
+  @Column({
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    default: 10,
+  })
+  maxPrAutomationUsd?: string | null;
 
   /** Legacy coder-tier default; `coderModel` wins when both are set. */
   @Column({ type: 'varchar', length: 80, nullable: true })
