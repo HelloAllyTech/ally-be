@@ -22,6 +22,15 @@ export interface TenantScope {
 const OUT_OF_SCOPE_MESSAGE = 'You do not have access to this organization';
 
 /**
+ * The refusal for something that spans every organization — a platform-only
+ * feature toggle, a @PlatformWidePermissions route. Names the way out, since
+ * the admin can do nothing about it themselves.
+ */
+export const PLATFORM_WIDE_ONLY_MESSAGE =
+  'This is only available to admins with access to every organization. ' +
+  'Ask whoever manages admin access to lift your organization restriction.';
+
+/**
  * TenantScopeService
  * ------------------
  * The one answer to "which organisations can this caller reach", so a

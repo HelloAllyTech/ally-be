@@ -14,6 +14,7 @@ import {
 } from 'src/exception/failure-messages';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
+import { PLATFORM_WIDE_ONLY_MESSAGE } from 'src/authorization/service/tenant-scope.service';
 import {
   FEATURE_TOGGLE_KEY,
   FeatureToggleOptions,
@@ -65,6 +66,21 @@ export class FeatureToggleGuard implements CanActivate {
         error: 'Unauthorized',
         statusCode: HttpStatus.UNAUTHORIZED,
         errorCode: ErrorCode.UNAUTHENTICATED,
+      });
+    }
+
+    // Ahead of the org-level branch below too: a platform-only surface spans
+    // every organization, so no tenant preference can open it to an admin
+    // restricted to some.
+    if (
+      await this.featureToggleService.isWithheld(user.id, options.featureKey)
+    ) {
+      throw new ForbiddenException({
+        message: PLATFORM_WIDE_ONLY_MESSAGE,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+        featureKey: options.featureKey,
       });
     }
 

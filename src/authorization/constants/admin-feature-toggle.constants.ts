@@ -134,6 +134,15 @@ export interface FeatureToggleDefinition {
   label: string;
   description: string;
   legacyGrants: FeatureToggleLegacyGrants;
+  /**
+   * The surface reaches every organization at once and cannot be narrowed to
+   * some, so a platform admin restricted to an organization allowlist is
+   * refused it even with the toggle on: FeatureToggleGuard 403s and
+   * `/v1/users/me/feature-toggles` leaves it out, which is what hides it in
+   * the admin console. Their toggle row is kept, and works again the moment
+   * the restriction is lifted.
+   */
+  platformOnly?: true;
 }
 
 const SDA_ONLY: FeatureToggleLegacyGrants = {
@@ -199,6 +208,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Roleplay Session Logs',
     description: 'View roleplay session logs and their detail pages.',
     legacyGrants: SUPER_ADMIN_TIER,
+    // Every organization's sessions and transcripts.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.ORG_DETAIL_CONTENT_TABS,
@@ -212,6 +223,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Analytics',
     description: 'Access the Analytics tab and its general sub-tabs.',
     legacyGrants: SUPER_ADMIN_TIER,
+    // Charts default to every organization, and ~30 cannot be scoped to one.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.ANALYTICS_AGENT,
@@ -219,6 +232,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'The Analytics Agent sub-tab, on top of general Analytics access.',
     legacyGrants: SDA_ONLY,
+    // Model-written SQL over views that span every organization.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.ANALYTICS_SUGGESTIONS,
@@ -226,6 +241,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'The Analytics Suggestions sub-tab, on top of general Analytics access.',
     legacyGrants: SDA_ONLY,
+    // Built from platform-wide analytics.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.UX_SIGNALS,
@@ -282,6 +299,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Logs',
     description: 'View AWS CloudWatch application logs.',
     legacyGrants: SDA_ONLY,
+    // Application logs carry no organization at all.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.AGENT_TEST_CASES,
@@ -302,6 +321,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Manage the WhatsApp Q&A bot: templates, conversations, unanswered queue and analytics.',
     legacyGrants: SDA_ONLY,
+    // One bot for the platform; most contacts belong to no organization.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.KNOWLEDGE_BASE,
@@ -332,6 +353,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Assign/remove the platform admin role and edit other admins’ feature toggles. Holding this is required to change anyone’s toggles, including your own.',
     legacyGrants: SDA_ONLY,
+    // Could grant the platform admin role, or edit their own toggles.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.MULTI_TENANT_ALLOWLIST_MANAGEMENT,
@@ -339,6 +362,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Restrict a platform admin to a specific set of tenants (or clear the restriction).',
     legacyGrants: SDA_ONLY,
+    // Could lift their own organization restriction.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.BUG_HUNTER,
@@ -395,4 +420,14 @@ export const FEATURE_TOGGLE_KEYS: FeatureToggleKey[] = FEATURE_TOGGLES.map(
 
 export function isValidFeatureToggleKey(key: string): key is FeatureToggleKey {
   return FEATURE_TOGGLE_KEYS.includes(key as FeatureToggleKey);
+}
+
+/**
+ * Whether a toggle is withheld from organization-restricted admins — see
+ * FeatureToggleDefinition.platformOnly.
+ */
+export function isPlatformOnlyToggle(key: string): boolean {
+  return FEATURE_TOGGLES.some(
+    (definition) => definition.key === key && definition.platformOnly === true,
+  );
 }

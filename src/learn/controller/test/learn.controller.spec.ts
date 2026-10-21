@@ -22,6 +22,7 @@ import {
 } from '../../enum/scenario-session-status.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import { UserService } from 'src/user/service/user.service';
@@ -285,6 +286,16 @@ describe('LearnController', () => {
           provide: Reflector,
           useValue: {
             getAllAndOverride: jest.fn(),
+          },
+        },
+        {
+          // OwnTenantScopeGuard / PlatformWideGuard: an unrestricted caller.
+          provide: TenantScopeService,
+          useValue: {
+            isRestricted: jest.fn().mockResolvedValue(false),
+            resolveScope: jest
+              .fn()
+              .mockResolvedValue({ tenantIds: null, restricted: false }),
           },
         },
         {
