@@ -1,4 +1,12 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { DebriefFeedbackService } from '../service/debrief-feedback.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -14,12 +22,17 @@ export class DebriefFeedbackController {
 
   @Post()
   async createFeedback(
-    @Param('sessionId') sessionId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() body: CreateDebriefFeedbackDto,
   ) {
     const tenantId = ExecutionManager.getTenantId();
+    const userId = Number(ExecutionManager.getUserId());
+    if (!tenantId || !userId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
     return this.feedbackService.createFeedback(
-      tenantId!,
+      tenantId,
+      userId,
       sessionId,
       body.rating,
       body.comment,
