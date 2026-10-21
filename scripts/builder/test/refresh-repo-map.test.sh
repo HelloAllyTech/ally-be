@@ -34,6 +34,7 @@ check() {
 
 BIN="${WORK}/bin"
 POSTS="${WORK}/posts.log"
+CALLS="${WORK}/calls.log"
 mkdir -p "$BIN"
 
 # git: the clone just has to produce a directory to cd into; the script then
@@ -47,15 +48,30 @@ case "$1" in
 esac
 FAKE
 
-# opencode: one step whose text is FAKE_MAP_CHARS characters long. Zero
-# characters means the step wrote nothing, which is how an empty reply looks.
+# opencode: one step per comma-separated length in FAKE_MAP_STEPS (default: a
+# single step of FAKE_MAP_CHARS). Zero characters means the step wrote
+# nothing, which is how an empty reply looks. A `--continue` call is the
+# same-session retry and replies with FAKE_RETRY_CHARS; every call is logged.
 cat >"${BIN}/opencode" <<'FAKE'
 #!/usr/bin/env bash
-echo '{"type":"step_start"}'
-if [ "${FAKE_MAP_CHARS:-0}" -gt 0 ]; then
-  text="$(head -c "$FAKE_MAP_CHARS" /dev/zero | tr '\0' x)"
-  printf '{"type":"text","part":{"text":"%s"}}\n' "$text"
-fi
+emit() {
+  echo '{"type":"step_start"}'
+  if [ "$1" -gt 0 ]; then
+    text="$(head -c "$1" /dev/zero | tr '\0' x)"
+    printf '{"type":"text","part":{"text":"%s"}}\n' "$text"
+  fi
+}
+case " $* " in
+  *" --continue "*)
+    echo continue >>"$CALLS_LOG"
+    emit "${FAKE_RETRY_CHARS:-0}"
+    ;;
+  *)
+    echo run >>"$CALLS_LOG"
+    IFS=',' read -r -a lengths <<<"${FAKE_MAP_STEPS:-${FAKE_MAP_CHARS:-0}}"
+    for n in "${lengths[@]}"; do emit "$n"; done
+    ;;
+esac
 FAKE
 
 cat >"${BIN}/curl" <<'FAKE'
@@ -71,7 +87,8 @@ run_map() {
   local chars="$1"
   shift
   : >"$POSTS"
-  env PATH="${BIN}:${PATH}" POSTS_LOG="$POSTS" FAKE_MAP_CHARS="$chars" \
+  : >"$CALLS"
+  env PATH="${BIN}:${PATH}" POSTS_LOG="$POSTS" CALLS_LOG="$CALLS" FAKE_MAP_CHARS="$chars" \
     BUILDER_GH_TOKEN=t GITHUB_REPOSITORY_OWNER=o ALLY_BE_API_URL=http://localhost:1 \
     ALLY_BE_API_KEY=k "$@" \
     bash "$SCRIPT" somerepo >"${WORK}/out.log" 2>"${WORK}/err.log"
@@ -106,6 +123,18 @@ check "  and names the floor it used" 1 "$(said '6000-char floor')"
 check "a non-numeric floor is an error" 1 "$(run_map 20000 BUILDER_MAP_MIN_CHARS=lots)"
 check "  and nothing is posted" 0 "$(posts)"
 check "  and says what was wrong" 1 "$(said 'must be a whole number')"
+
+# 5. Which step is the map, and the same-session retry (2026-10-21: the
+#    pack was written and then a sign-off step became the "map").
+check "the longest step is the map, not a closing sign-off" 0 "$(run_map 0 FAKE_MAP_STEPS=120,9000,56)"
+check "  and it is posted without a retry" 1 "$(posts)"
+check "  and no retry was needed" 0 "$(grep -c continue "$CALLS")"
+check "a short reply is retried once in the same session" 0 "$(run_map 300 FAKE_RETRY_CHARS=12000)"
+check "  and the retried document is posted" 1 "$(posts)"
+check "  and the retry continued the session" 1 "$(grep -c continue "$CALLS")"
+check "a retry that is still short leaves the previous map" 1 "$(run_map 300 FAKE_RETRY_CHARS=500)"
+check "  and nothing is posted" 0 "$(posts)"
+check "  and both attempts log their step lengths" 2 "$(said 'text chars per step')"
 
 echo
 echo "${passed} passed, ${failed} failed"

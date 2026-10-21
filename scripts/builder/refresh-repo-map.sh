@@ -12,6 +12,7 @@
 set -euo pipefail
 
 REPO="${1:?usage: refresh-repo-map.sh <repo>}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -97,32 +98,31 @@ opencode run \
   "$PROMPT" \
   > /tmp/map-result.jsonl
 
-# opencode has no terminal frame carrying the answer, so the document is
-# reassembled from its `text` records, as normaliseOpencode() in
-# forward-events.mjs does. Unlike there, only the LAST step that wrote any
-# text counts: the steps before it are the agent narrating its own
-# exploration between tool calls ("Let me read CLAUDE.md"), and that is
-# not part of the map. Errors are echoed because an auth or model failure
-# otherwise surfaces only as the empty-map refusal below, with no reason.
-MAP_MD="$(node -e "
-  const fs = require('fs');
-  let step = [];
-  let lastWithText = [];
-  for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let record;
-    try { record = JSON.parse(line); } catch { continue; }
-    if (record?.type === 'step_start') {
-      step = [];
-    } else if (record?.type === 'text' && record.part?.text?.trim()) {
-      step.push(record.part.text);
-      lastWithText = step;
-    } else if (record?.type === 'error') {
-      console.error('[opencode] ' + (record.error?.data?.message ?? record.error?.name ?? 'unknown error'));
-    }
-  }
-  process.stdout.write(lastWithText.join('\n').trim());
-")"
+# Which step of the transcript is the document: see map-text.mjs (the longest
+# step, not the last — a final sign-off used to become the map).
+MAP_MD="$(node "${SCRIPT_DIR}/map-text.mjs" /tmp/map-result.jsonl)"
+
+# A reply under the floor is usually a model that explored and then stopped
+# without writing the document. One retry in the SAME session costs a fraction
+# of the first run — the exploration is already in its context — and is what
+# turns that into a pack instead of another week on a stale map.
+RETRY_FLOOR="${BUILDER_MAP_MIN_CHARS:-4000}"
+case "$RETRY_FLOOR" in '' | *[!0-9]*) RETRY_FLOOR=4000 ;; esac
+if [ "${#MAP_MD}" -lt "$RETRY_FLOOR" ]; then
+  echo "Map for ${REPO} came back at ${#MAP_MD} chars; asking once more in the same session." >&2
+  opencode run \
+    --continue \
+    --model "$MAP_MODEL" \
+    --agent mapper \
+    --format json \
+    --auto \
+    "You have explored the repository. Now write the complete Repo Knowledge Pack described in the first message, 2,000-4,000 words, all five sections, as one document. Output the document only." \
+    > /tmp/map-retry.jsonl || true
+  RETRY_MD="$(node "${SCRIPT_DIR}/map-text.mjs" /tmp/map-retry.jsonl)"
+  if [ "${#RETRY_MD}" -gt "${#MAP_MD}" ]; then
+    MAP_MD="$RETRY_MD"
+  fi
+fi
 
 if [ -z "$MAP_MD" ]; then
   echo "Empty map for ${REPO} — refusing to overwrite a good one with nothing." >&2
