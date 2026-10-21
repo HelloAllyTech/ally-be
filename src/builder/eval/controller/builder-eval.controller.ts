@@ -196,6 +196,9 @@ export class BuilderEvalController {
       trigger: 'manual',
       fixtureIds: dto.fixtureIds,
       repetitions: dto.repetitions,
+      ...(dto.validatedTurns !== undefined
+        ? { overrides: { validatedTurns: dto.validatedTurns } }
+        : {}),
       userId: user.id,
     });
   }

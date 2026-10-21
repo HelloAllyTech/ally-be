@@ -29,6 +29,7 @@ import { BuilderEvidenceLogService } from '../../service/builder-evidence-log.se
 import { BuilderReadinessService } from '../../service/builder-readiness.service';
 import { BuilderPrdReviewService } from '../../service/builder-prd-review.service';
 import { BuilderPlatformContextService } from '../../service/builder-platform-context.service';
+import { BuilderSettingsService } from '../../service/builder-settings.service';
 import { BuilderEvalOverrides } from '../type/builder-eval.type';
 import { SandboxStores } from './builder-eval-stores';
 
@@ -72,7 +73,9 @@ export interface BuilderEvalSandbox {
  * - usage, re-labelled BUILDER_EVAL so the replay's spend is not reported as
  *   real interviews, and summed into the run's cost;
  * - exemplar selection, which is off: it writes to the session row and is a
- *   ranking call the replay does not need to repeat.
+ *   ranking call the replay does not need to repeat;
+ * - the validated-turns switch, from the run's overrides (every suite stamps
+ *   it), falling back to the live setting — so a suite can replay either loop.
  */
 @Injectable()
 export class BuilderEvalSandboxFactory {
@@ -89,6 +92,7 @@ export class BuilderEvalSandboxFactory {
     private readonly evidence: BuilderEvidenceService,
     private readonly catalog: BuilderCatalogService,
     private readonly platformContext: BuilderPlatformContextService,
+    private readonly settingsService: BuilderSettingsService,
   ) {}
 
   create(options: {
@@ -296,6 +300,14 @@ export class BuilderEvalSandboxFactory {
       llmCompletion,
       readiness,
       this.platformContext,
+      {
+        get: async () => ({
+          ...(await this.settingsService.get()),
+          ...(overrides.validatedTurns !== undefined
+            ? { validatedTurns: overrides.validatedTurns }
+            : {}),
+        }),
+      } as BuilderSettingsService,
     );
 
     return {

@@ -149,6 +149,10 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
         }),
       } as any,
       readinessService as any,
+      undefined,
+      // These tests pin the loop as it ran before validated turns, which the
+      // switch keeps available; the validated loop has its own spec.
+      { get: jest.fn().mockResolvedValue({ validatedTurns: false }) } as any,
     );
 
     // `create` is the non-streaming call the cheap-model summariser uses;

@@ -114,6 +114,7 @@ describe('BuilderEvalSandboxFactory', () => {
         renderContextSection: jest.fn().mockResolvedValue(''),
       } as any,
       { render: jest.fn().mockResolvedValue('') } as any,
+      { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
     );
     return { factory, requests, promptSharedService, llmUsage, githubRead };
   };

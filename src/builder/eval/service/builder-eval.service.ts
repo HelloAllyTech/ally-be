@@ -29,8 +29,13 @@ import {
 import { gateViolations } from '../util/builder-eval-scoring.util';
 import { BuilderEvalFixtureService } from './builder-eval-fixture.service';
 import { BuilderEvalRunnerService } from './builder-eval-runner.service';
+import { BuilderSettingsService } from '../../service/builder-settings.service';
 
 const DEFAULT_REPETITIONS = 3;
+
+/** The loop a suite ran. Suites from before the switch existed ran the legacy one. */
+const loopOf = (overrides: BuilderEvalOverrides | null | undefined): boolean =>
+  overrides?.validatedTurns === true;
 
 /** Roll a suite's runs up per fixture and overall. Pure, for the gate and the page. */
 export function summariseSuite(
@@ -190,6 +195,7 @@ export class BuilderEvalService {
     private readonly fixtureService: BuilderEvalFixtureService,
     private readonly runner: BuilderEvalRunnerService,
     private readonly promptsService: PromptsService,
+    private readonly settingsService: BuilderSettingsService,
   ) {
     this.suites = dataSource.getRepository(BuilderEvalSuite);
     this.runs = dataSource.getRepository(BuilderEvalRun);
@@ -225,6 +231,13 @@ export class BuilderEvalService {
       10,
       Math.max(1, Math.round(input.repetitions ?? DEFAULT_REPETITIONS)),
     );
+    // The loop is part of what a suite measured — stamped now, from the live
+    // switch unless the caller chose, so the record says which loop ran.
+    const overrides: BuilderEvalOverrides = {
+      ...(input.overrides ?? {}),
+      validatedTurns:
+        input.overrides?.validatedTurns ?? (await this.liveValidatedTurns()),
+    };
 
     const suite = await this.suites.save(
       this.suites.create({
@@ -232,7 +245,7 @@ export class BuilderEvalService {
         status: 'running',
         fixtureIds: fixtures.map((fixture) => fixture.id),
         repetitions,
-        overrides: input.overrides ?? null,
+        overrides,
         candidate: input.candidate ?? null,
         createdBy: input.userId,
       }),
@@ -442,6 +455,15 @@ export class BuilderEvalService {
     );
   }
 
+  /** The live validated-turns switch; a failed read means the column default, on. */
+  private async liveValidatedTurns(): Promise<boolean> {
+    try {
+      return (await this.settingsService.get()).validatedTurns !== false;
+    } catch {
+      return true;
+    }
+  }
+
   /**
    * A recent completed run of the same fixtures on the live settings, or a
    * fresh one started now and awaited.
@@ -459,10 +481,15 @@ export class BuilderEvalService {
       order: { completedAt: 'DESC' },
       take: 20,
     });
+    // Same loop as the candidate, and nothing else overridden: a baseline
+    // from the other loop would credit (or blame) the prompt for the loop.
+    const loop = loopOf(suite.overrides);
     const reusable = recent.find(
       (candidate) =>
         (candidate.completedAt ?? new Date(0)) >= since &&
-        !candidate.overrides &&
+        !candidate.overrides?.prompts &&
+        !candidate.overrides?.llmConfig &&
+        loopOf(candidate.overrides) === loop &&
         !!candidate.summary &&
         suite.fixtureIds.every((id) => candidate.fixtureIds.includes(id)),
     );
@@ -472,6 +499,7 @@ export class BuilderEvalService {
       trigger: 'baseline',
       fixtureIds: suite.fixtureIds,
       repetitions: suite.repetitions,
+      overrides: { validatedTurns: loop },
       userId: suite.createdBy ?? 0,
       baselineFor: suite.id,
     }).catch((error: unknown) => {

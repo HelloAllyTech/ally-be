@@ -57,6 +57,7 @@ export class BuilderSettingsService {
         | 'plannerModel'
         | 'coderModel'
         | 'verifierModel'
+        | 'validatedTurns'
       >
     >,
     userId: number,
@@ -99,6 +100,14 @@ export class BuilderSettingsService {
       this.logger.info(
         `Builder auto-approve ${
           changes.autoApproveEnabled ? 'ENABLED' : 'DISABLED'
+        } by user ${userId}`,
+      );
+    }
+    // A change to what every admin's interview does on their next turn.
+    if (changes.validatedTurns !== undefined) {
+      this.logger.info(
+        `Builder validated interview turns ${
+          changes.validatedTurns ? 'ON' : 'OFF'
         } by user ${userId}`,
       );
     }

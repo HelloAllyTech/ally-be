@@ -37,7 +37,31 @@ import {
   BuilderInterviewToolsService,
   BuilderToolExecutionContext,
 } from './builder-interview-tools.service';
-import { BuilderSseFrame } from '../type/builder-sse.type';
+import {
+  BuilderSseFrame,
+  BuilderToolExecutionOutcome,
+  BuilderTurnReceipt,
+} from '../type/builder-sse.type';
+import { BuilderSettingsService } from './builder-settings.service';
+import { freeTextOf } from './builder-readiness.service';
+import { isAcknowledgement } from '../util/builder-readiness-checks.util';
+import {
+  claimsPrdEdit,
+  claimsPrdReady,
+} from '../util/builder-turn-claims.util';
+import {
+  BUILDER_PRD_EDIT_TOOLS,
+  BUILDER_TERMINAL_TOOLS,
+  buildTurnReceipt,
+  describeToolAttempt,
+  describeToolFailure,
+  isResearchTool,
+  joinCallsToResults,
+  receiptIsEmpty,
+  receiptOfStoredTurn,
+  renderReceiptLine,
+} from '../util/builder-turn-receipt.util';
+import { BUILDER_TURN_PROTOCOL } from '../constants/builder-validated-tools.constants';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
 import { BuilderPrdReadiness } from '../type/builder-prd.type';
 import {
@@ -124,10 +148,125 @@ const BUILDER_PROVIDER_ERROR_CODES: Record<AgentProviderFailure, string> = {
   [AgentProviderFailure.UNKNOWN]: 'interview_error',
 };
 
+/**
+ * A validated turn that did work but never sent a reply. Not "came back
+ * empty": its receipt lists what it read and changed, and saying nothing was
+ * written would contradict the line under it.
+ */
+const BUILDER_NO_REPLY_ERROR =
+  'That turn ended without a reply. What it read and changed is listed under ' +
+  'this message — send your message again to carry on.';
+
+/**
+ * Times a validated turn's reply is sent back before the next one goes out
+ * regardless, with what it still gets wrong on the receipt. Two: one problem
+ * per attempt is the common case, and a third attempt costs the admin more
+ * waiting than a reply with a warning under it.
+ */
+const BUILDER_MAX_TURN_REJECTIONS = 2;
+
+/** A validated pass that ended in prose instead of a turn-ending call. */
+const BUILDER_END_TURN_NUDGE =
+  'The admin has not seen that — only the `message` of `ask_admin` or `finish_turn` ' +
+  'reaches them. Finish what the turn needs (edits included), then end it with one of those.';
+
+/** The second time: from here only the turn-ending tools are offered. */
+const BUILDER_END_TURN_NUDGE_FINAL =
+  'End the turn now with `ask_admin` or `finish_turn`; nothing else will run this turn.';
+
+/** On the receipt when the reply had to be the model's own notes. */
+const BUILDER_PROSE_FALLBACK_WARNING =
+  "Builder didn't end the turn with a reply, so its working notes are shown instead.";
+
+/** Room the summarised turns' receipts get in the replayed history. */
+const BUILDER_EARLIER_RECEIPTS_MAX_CHARS = 6_000;
+
 /** Shown to the admin when a turn overruns the cap past recovering. */
 const BUILDER_TRUNCATION_ERROR =
   "That turn ran past the response limit before anything was saved, so the PRD hasn't " +
   'changed. Ask for one section at a time — "write the requirements only" — and it will fit.';
+
+/** Everything one turn accumulates, shared by both loops and the checkpoint. */
+interface InterviewTurnState {
+  /** Legacy loop: the prose the admin watched stream in. */
+  textParts: string[];
+  /** Validated loop: what the model wrote outside the reply. Never shown. */
+  workingNotes: string[];
+  /** Validated loop: the reply the admin was shown. */
+  reply: string | null;
+  allToolCalls: Record<string, any>[];
+  allToolResults: Record<string, any>[];
+  questions: Record<string, any>[];
+  iterations: number;
+  stopReason: string | null;
+  errored: boolean;
+  error: string | null;
+  truncations: number;
+  invalidToolCalls: number;
+  emptyPasses: number;
+  /** Replies sent back to the model this turn. */
+  rejections: number;
+  /** Problems already held against a reply once; raised again, they only warn. */
+  raised: Set<string>;
+  /** What the reply was delivered with anyway, for the receipt. */
+  warnings: string[];
+  prdUnchangedBecause: string | null;
+  receipt: BuilderTurnReceipt | null;
+}
+
+function createTurnState(): InterviewTurnState {
+  return {
+    textParts: [],
+    workingNotes: [],
+    reply: null,
+    allToolCalls: [],
+    allToolResults: [],
+    questions: [],
+    iterations: 0,
+    stopReason: null,
+    errored: false,
+    error: null,
+    truncations: 0,
+    invalidToolCalls: 0,
+    emptyPasses: 0,
+    rejections: 0,
+    raised: new Set(),
+    warnings: [],
+    prdUnchangedBecause: null,
+    receipt: null,
+  };
+}
+
+/** What both loops run with; fixed for the turn. */
+interface InterviewLoopContext {
+  sessionId: string;
+  provider: IAgentLlmProvider;
+  model: string;
+  providerName: string;
+  system: AgentSystemBlock[];
+  messages: any[];
+  tools: any[];
+  context: BuilderToolExecutionContext;
+  maxIterations: number;
+  /** PRD version when the turn started — "did the PRD change" is this moving. */
+  versionBefore: number;
+  /** The admin's own words this turn, when there are some to apply. */
+  adminFreeText: string | null;
+  checkpoint: (final: boolean) => Promise<void>;
+}
+
+/** A reason a validated reply is not shown yet, phrased for each reader. */
+interface ReplyProblem {
+  /** Stable for the turn, so a problem holds a reply back only once. */
+  key: string;
+  toModel: string;
+  toAdmin: string;
+}
+
+const clipText = (text: string, max: number): string => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+};
 
 /**
  * The PRD-interview turn loop: stream an Anthropic response, execute tool
@@ -176,6 +315,14 @@ export class BuilderInterviewOrchestratorService {
     /** The platform map block. Optional so a fixture without one still runs a turn. */
     @Optional()
     private readonly platformContext?: BuilderPlatformContextService,
+    /**
+     * The validated-turns switch. Optional so a fixture without it runs
+     * validated. Typed as the class, not a Pick of it: the parameter type is
+     * the injection token, and a structural type would emit `Object`, which
+     * @Optional() would quietly resolve to nothing.
+     */
+    @Optional()
+    private readonly settingsService?: BuilderSettingsService,
   ) {}
 
   /**
@@ -240,17 +387,22 @@ export class BuilderInterviewOrchestratorService {
   }
 
   /**
-   * One provider round-trip: relay text deltas as `token` frames, return the
-   * accumulated turn.
+   * One provider round-trip. Relays text deltas as `token` frames when asked
+   * to — the legacy loop shows prose as it streams; a validated turn shows
+   * nothing until its reply has been checked — and returns the accumulated
+   * turn.
    */
   private async *runPass(
     provider: IAgentLlmProvider,
     request: AgentStreamRequest,
+    relayText = true,
   ): AsyncGenerator<BuilderSseFrame, AgentTurnResult> {
     let result: AgentTurnResult | null = null;
     for await (const event of provider.stream(request)) {
       if (event.type === 'text_delta') {
-        yield { event: 'token', data: { delta: event.text } };
+        if (relayText) {
+          yield { event: 'token', data: { delta: event.text } };
+        }
       } else {
         result = event.message;
       }
@@ -270,6 +422,11 @@ export class BuilderInterviewOrchestratorService {
    * allocates the assistant row and checkpoints it after every model pass and
    * every tool, so an interrupted turn keeps whatever it had already done.
    * Yields SSE frames throughout.
+   *
+   * Which loop runs is `builder_settings.validatedTurns`: the validated loop
+   * (the reply reaches the admin only once it is true) or the loop the
+   * interview ran before it. Either way the turn ends with a receipt of what
+   * it read, changed and what failed.
    */
   async *streamTurn(
     sessionId: string,
@@ -338,6 +495,7 @@ export class BuilderInterviewOrchestratorService {
     }
 
     const history = await this.messageRepository.listBySession(sessionId);
+    const validatedTurns = await this.validatedTurnsEnabled();
 
     // Persist the admin's message first — the transcript survives whatever
     // happens next.
@@ -349,7 +507,7 @@ export class BuilderInterviewOrchestratorService {
             ...(dto.answer ? { answer: dto.answer } : {}),
           }
         : null;
-    await this.messageRepository.appendMessage(sessionId, {
+    const userMessage = await this.messageRepository.appendMessage(sessionId, {
       role: BuilderMessageRole.USER,
       content: userContent,
       metadata: userMetadata,
@@ -376,6 +534,7 @@ export class BuilderInterviewOrchestratorService {
       session.repos ?? undefined,
       exemplars,
       await this.sessionService.getHandoffContext(sessionId),
+      validatedTurns,
     );
     const messages: any[] = [
       ...(await this.replayHistory(session, history)),
@@ -388,21 +547,21 @@ export class BuilderInterviewOrchestratorService {
         ),
       },
     ];
-    const tools = this.toolsService.getToolDefinitions();
+    const tools = this.toolsService.getToolDefinitions({ validatedTurns });
 
-    const context: BuilderToolExecutionContext = { session, doc, userId };
+    const context: BuilderToolExecutionContext = {
+      session,
+      doc,
+      userId,
+      validatedTurns,
+    };
+    // The document as the turn found it: the receipt's "changed" is the
+    // difference between this and what the turn leaves, so it describes what
+    // the PRD now holds rather than what the edits set out to do.
+    const draftBefore = JSON.parse(JSON.stringify(doc.draft ?? null));
+    const versionBefore = doc.versionNumber;
 
-    const textParts: string[] = [];
-    const allToolCalls: Record<string, any>[] = [];
-    const allToolResults: Record<string, any>[] = [];
-    const questions: Record<string, any>[] = [];
-    let iterations = 0;
-    let stopReason: string | null = null;
-    let turnErrored = false;
-    let turnError: string | null = null;
-    let truncations = 0;
-    let invalidToolCalls = 0;
-    let emptyPasses = 0;
+    const turn = createTurnState();
 
     /**
      * Flush the accumulators onto the assistant row.
@@ -417,21 +576,35 @@ export class BuilderInterviewOrchestratorService {
         // Copied, not passed by reference: a checkpoint is a snapshot of the
         // turn as it stands, and the accumulators keep growing underneath it.
         await this.messageRepository.checkpointMessage(assistantMessage.id, {
-          content: textParts.join('\n\n') || null,
-          toolCalls: allToolCalls.length > 0 ? [...allToolCalls] : null,
-          toolResults: allToolResults.length > 0 ? [...allToolResults] : null,
+          // What the admin saw. In a validated turn that is the delivered
+          // reply alone; the model's other prose is working notes.
+          content: validatedTurns
+            ? turn.reply || null
+            : turn.textParts.join('\n\n') || null,
+          toolCalls:
+            turn.allToolCalls.length > 0 ? [...turn.allToolCalls] : null,
+          toolResults:
+            turn.allToolResults.length > 0 ? [...turn.allToolResults] : null,
           metadata: {
             model,
-            iterations,
-            stopReason,
-            errored: turnErrored,
+            iterations: turn.iterations,
+            stopReason: turn.stopReason,
+            errored: turn.errored,
+            loop: validatedTurns ? 'validated' : 'legacy',
             // Persisted, not just streamed: an `error` frame only reaches the
             // tab that was open when it happened. Without the message on the
             // row, a reload renders a failed turn as no turn at all — the
             // admin sees their own message answered by silence.
-            ...(turnError ? { errorMessage: turnError } : {}),
+            ...(turn.error ? { errorMessage: turn.error } : {}),
             streaming: !final,
-            ...(questions.length > 0 ? { questions: [...questions] } : {}),
+            ...(turn.questions.length > 0
+              ? { questions: [...turn.questions] }
+              : {}),
+            ...(turn.workingNotes.length > 0
+              ? { workingNotes: [...turn.workingNotes] }
+              : {}),
+            ...(turn.rejections > 0 ? { rejections: turn.rejections } : {}),
+            ...(turn.receipt ? { receipt: turn.receipt } : {}),
           },
         });
       } catch (error) {
@@ -443,275 +616,36 @@ export class BuilderInterviewOrchestratorService {
       }
     };
 
+    const loop: InterviewLoopContext = {
+      sessionId,
+      provider,
+      model,
+      providerName,
+      system,
+      messages,
+      tools,
+      context,
+      maxIterations,
+      versionBefore,
+      adminFreeText: this.adminWordsToApply(userMessage),
+      checkpoint,
+    };
+
     try {
-      for (let iteration = 0; iteration < maxIterations; iteration++) {
-        iterations = iteration + 1;
-
-        const finalMessage = yield* this.runPass(provider, {
-          model,
-          maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
-          system,
-          messages,
-          tools,
-        });
-        stopReason = finalMessage.stopReason;
-        this.recordUsage(
-          finalMessage.usage,
-          model,
-          providerName,
-          sessionId,
-          iterations,
-        );
-
-        // The model tried to call a tool and produced something unreadable, so
-        // the turn arrives EMPTY — indistinguishable from it choosing to say
-        // nothing. Gemini does this intermittently on a schema the size of the
-        // interview's. Transient, so retry the same pass rather than settle a
-        // turn that did nothing; the truncation budget bounds it.
-        if (stopReason === 'invalid_tool_call') {
-          if (invalidToolCalls >= BUILDER_MAX_TRUNCATION_RETRIES) {
-            this.logger.warn(
-              `Builder session ${sessionId}: ${providerName}/${model} returned ` +
-                `an unreadable tool call ${invalidToolCalls + 1} times; giving up.`,
-            );
-            turnErrored = true;
-            turnError = 'invalid_tool_call';
-            yield {
-              event: 'error',
-              data: {
-                code: 'invalid_tool_call',
-                message: BUILDER_INVALID_TOOL_CALL_ERROR,
-              },
-            };
-            break;
-          }
-          invalidToolCalls += 1;
-          this.logger.warn(
-            `Builder session ${sessionId}: unreadable tool call from ` +
-              `${providerName}/${model}; retrying (${invalidToolCalls}).`,
-          );
-          continue;
-        }
-
-        const contentBlocks: any[] = finalMessage.content ?? [];
-        for (const block of contentBlocks) {
-          // Whitespace is not a reply. Gemini's empty STOP arrives as a bare
-          // "\n", and counted as text it slipped past the empty-pass retry
-          // below: the turn settled blank and the admin had to type
-          // "continue" to get the interview moving again.
-          if (block?.type === 'text' && block.text?.trim()) {
-            textParts.push(block.text);
-          }
-        }
-        const toolUses = contentBlocks.filter(
-          (block) => block?.type === 'tool_use',
-        );
-
-        // The model ran out of output room mid-message.
-        //
-        // This is the failure that looked like the agent going quiet: a
-        // `max_tokens` stop carries whatever text it managed plus, usually, a
-        // half-written tool_use whose `input` the SDK reconstructs by partial
-        // JSON parse. Executing that would apply an arbitrary fragment of the
-        // intended patch, so the block is dropped — but dropping it silently
-        // is what produced turns that announced "writing the requirements
-        // now" and wrote nothing, and turns that produced no row at all. Tell
-        // the model what happened and let it re-do the write in pieces.
-        if (stopReason === 'max_tokens') {
-          truncations += 1;
-          if (truncations > BUILDER_MAX_TRUNCATION_RETRIES) {
-            this.logger.error(
-              `Builder session ${sessionId}: model output still truncated at ` +
-                `${BUILDER_INTERVIEW_MAX_TOKENS} tokens after ` +
-                `${BUILDER_MAX_TRUNCATION_RETRIES} retries; ending the turn.`,
-            );
-            turnErrored = true;
-            turnError = BUILDER_TRUNCATION_ERROR;
-            yield {
-              event: 'error',
-              data: {
-                code: 'response_truncated',
-                message: BUILDER_TRUNCATION_ERROR,
-              },
-            };
-            break;
-          }
-
-          this.logger.warn(
-            `Builder session ${sessionId}: model output truncated at ` +
-              `${BUILDER_INTERVIEW_MAX_TOKENS} tokens ` +
-              `(retry ${truncations}/${BUILDER_MAX_TRUNCATION_RETRIES}, ` +
-              `${toolUses.length} tool call(s) discarded).`,
-          );
-
-          await checkpoint(false);
-
-          // Only the completed text blocks are replayed — a truncated
-          // tool_use has no result to pair it with, and the API rejects a
-          // dangling one.
-          const textBlocks = contentBlocks.filter(
-            (block) => block?.type === 'text' && block.text,
-          );
-          if (textBlocks.length > 0) {
-            messages.push({ role: 'assistant', content: textBlocks });
-          }
-          messages.push({ role: 'user', content: BUILDER_TRUNCATION_NUDGE });
-          continue;
-        }
-
-        // A pass that said nothing and called nothing, on a turn that has so
-        // far produced nothing either.
-        //
-        // Breaking here lands on the backstop below, which tells the admin to
-        // send their message again — so the recovery was always "run the same
-        // request a second time", and it was the person who had to do it,
-        // after waiting for a turn that was never going to say anything. The
-        // model is non-deterministic and the transcript is unchanged, so the
-        // retry that works is the one we can make ourselves.
-        //
-        // Same bound and the same shape as the `invalid_tool_call` retry above
-        // — these are two spellings of the same silence, one where the
-        // provider names the cause and one where it does not.
-        if (
-          stopReason !== 'tool_use' &&
-          textParts.length === 0 &&
-          allToolCalls.length === 0 &&
-          emptyPasses < BUILDER_MAX_TRUNCATION_RETRIES
-        ) {
-          emptyPasses += 1;
-          this.logger.warn(
-            `Builder session ${sessionId}: ${providerName}/${model} returned an ` +
-              `empty turn (stop reason ${stopReason ?? 'none'}); retrying ` +
-              `(${emptyPasses}/${BUILDER_MAX_TRUNCATION_RETRIES}).`,
-          );
-          continue;
-        }
-
-        if (stopReason !== 'tool_use' || toolUses.length === 0) {
-          break;
-        }
-
-        // The prose of this pass is on the admin's screen already; save it
-        // before spending minutes in the tools that follow.
-        await checkpoint(false);
-
-        messages.push({ role: 'assistant', content: contentBlocks });
-
-        const toolResultBlocks: any[] = [];
-        let endTurn = false;
-
-        for (const toolUse of toolUses) {
-          const name = String(toolUse.name);
-          const input = (toolUse.input ?? {}) as Record<string, any>;
-          yield { event: 'tool_call', data: { name, input } };
-          allToolCalls.push({ id: toolUse.id, name, input });
-
-          let outcome;
-          try {
-            outcome = await this.toolsService.execute(name, input, context);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            this.logger.error(
-              `Builder tool "${name}" failed for session ${sessionId}: ${message}`,
-            );
-            // Handed back as a result rather than thrown: the model can
-            // usually repair a bad call, and a thrown error ends the turn.
-            outcome = {
-              modelResult: { ok: false, error: 'tool_failed', message },
-              summary: `Tool ${name} failed: ${message}`,
-            };
-          }
-
-          for (const frame of outcome.events ?? []) {
-            if (frame.event === 'question') {
-              questions.push(frame.data);
-            }
-            yield frame;
-          }
-          yield {
-            event: 'tool_result',
-            data: { name, summary: outcome.summary },
-          };
-
-          allToolResults.push({
-            toolUseId: toolUse.id,
-            name,
-            result: outcome.modelResult,
-          });
-          toolResultBlocks.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(outcome.modelResult),
-          });
-          // Per tool, not per iteration: a github_read_file that returns a
-          // large file, or a stacks_search, is exactly the work nobody wants
-          // to pay for twice.
-          await checkpoint(false);
-          if (outcome.endTurn) {
-            endTurn = true;
-          }
-        }
-
-        messages.push({ role: 'user', content: toolResultBlocks });
-
-        if (endTurn) {
-          stopReason = 'end_turn';
-          break;
-        }
-      }
-
-      // The iteration cap landed on a truncated pass, so the retry above never
-      // got to run. Nothing was applied, and the admin is owed the same
-      // explanation as the give-up path.
-      if (stopReason === 'max_tokens' && !turnErrored) {
-        turnErrored = true;
-        turnError = BUILDER_TRUNCATION_ERROR;
-        yield {
-          event: 'error',
-          data: {
-            code: 'response_truncated',
-            message: BUILDER_TRUNCATION_ERROR,
-          },
-        };
-      }
-
-      // Budget exhausted while the model still wanted tools: one tool-less
-      // pass so the turn ends in prose rather than a raw error.
-      if (stopReason === 'tool_use') {
-        this.logger.warn(
-          `Builder session ${sessionId} hit the ${maxIterations}-iteration cap; ` +
-            'making a tool-less wrap-up pass.',
-        );
-        const wrapUpMessage = yield* this.runPass(provider, {
-          model,
-          maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
-          system,
-          messages,
-        });
-        this.recordUsage(
-          wrapUpMessage.usage,
-          model,
-          providerName,
-          sessionId,
-          iterations,
-        );
-        for (const block of wrapUpMessage.content ?? []) {
-          if (block?.type === 'text' && block.text) {
-            textParts.push(block.text);
-          }
-        }
-        stopReason = wrapUpMessage.stopReason ?? 'end_turn';
+      if (validatedTurns) {
+        yield* this.runValidatedLoop(loop, turn);
+      } else {
+        yield* this.runLegacyLoop(loop, turn);
       }
     } catch (error) {
-      turnErrored = true;
+      turn.errored = true;
       // Classified rather than relayed. What a provider throws is written for
       // whoever holds the API key, not for the admin mid-interview — and now
       // that three providers can run this turn, "what a raw error looks like"
       // is three different things. The classification is stable across them.
       const failure = classifyAgentProviderError(error);
       const message = BUILDER_PROVIDER_ERRORS[failure];
-      turnError = message;
+      turn.error = message;
       this.logger.error(
         `Builder interview turn failed for session ${sessionId} on ` +
           `${providerName}/${model} (${failure}): ` +
@@ -728,18 +662,41 @@ export class BuilderInterviewOrchestratorService {
     // there with nothing under it — is indistinguishable from the agent having
     // hung, so anything that still gets here says so rather than settling
     // quietly.
-    if (!turnErrored && textParts.length === 0 && allToolCalls.length === 0) {
-      turnErrored = true;
-      turnError = BUILDER_EMPTY_TURN_ERROR;
+    const saidNothing = validatedTurns
+      ? !turn.reply && turn.questions.length === 0
+      : turn.textParts.length === 0 && turn.allToolCalls.length === 0;
+    if (!turn.errored && saidNothing) {
+      turn.errored = true;
+      // A validated turn can have done work and still not replied — the
+      // receipt below lists it, so "nothing was written" would be untrue.
+      const worked = validatedTurns && turn.allToolCalls.length > 0;
+      turn.error = worked ? BUILDER_NO_REPLY_ERROR : BUILDER_EMPTY_TURN_ERROR;
       this.logger.warn(
-        `Builder session ${sessionId}: turn produced no text and no tool ` +
-          `calls (stop reason ${stopReason ?? 'none'}).`,
+        `Builder session ${sessionId}: turn ended without a reply ` +
+          `(stop reason ${turn.stopReason ?? 'none'}, ` +
+          `${turn.allToolCalls.length} tool call(s)).`,
       );
       yield {
         event: 'error',
-        data: { code: 'empty_turn', message: BUILDER_EMPTY_TURN_ERROR },
+        data: {
+          code: worked ? 'no_reply' : 'empty_turn',
+          message: turn.error,
+        },
       };
     }
+
+    // Built from what the tools returned and what the document now holds —
+    // for a failed turn too, since edits that landed before the failure are
+    // real and the admin should see them.
+    turn.receipt = buildTurnReceipt({
+      calls: joinCallsToResults(turn.allToolCalls, turn.allToolResults),
+      before: draftBefore,
+      after: context.doc.draft,
+      versionFrom: versionBefore,
+      versionTo: context.doc.versionNumber,
+      warnings: turn.warnings,
+      prdUnchangedBecause: turn.prdUnchangedBecause,
+    });
 
     // Settle the assistant row even for aborted turns: `streaming` goes false
     // here and nowhere else, so a row still marked open is a turn that died.
@@ -803,6 +760,12 @@ export class BuilderInterviewOrchestratorService {
       readiness,
     );
 
+    // Last before `done`, after the reviewer's chip, so the receipt is what
+    // the turn's activity settles into on screen — the same as on a reload.
+    yield {
+      event: 'receipt',
+      data: turn.receipt as unknown as Record<string, any>,
+    };
     yield {
       event: 'done',
       data: {
@@ -811,6 +774,888 @@ export class BuilderInterviewOrchestratorService {
         readinessScore: readiness.score,
       },
     };
+  }
+
+  /**
+   * Whether this turn runs validated. Read per turn so the switch takes effect
+   * on the next message; a settings read that fails keeps validated turns on,
+   * the column's own default.
+   */
+  private async validatedTurnsEnabled(): Promise<boolean> {
+    if (!this.settingsService) return true;
+    try {
+      return (await this.settingsService.get()).validatedTurns !== false;
+    } catch (error) {
+      this.logger.warn(
+        `Builder settings unavailable; running a validated turn: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    }
+  }
+
+  /**
+   * What the admin said this turn in their own words — the text a validated
+   * turn must record or explain. Null for an option pick or a plain "ok,
+   * thanks", which the readiness rubric does not hold the PRD to either.
+   */
+  private adminWordsToApply(message: BuilderMessage): string | null {
+    const text = freeTextOf(message);
+    return text && !isAcknowledgement(text) ? text : null;
+  }
+
+  /**
+   * The interview loop as it ran before validated turns: prose streams as it
+   * is written, tools run in the order called, and `ask_admin` ends the loop
+   * after its batch. Kept unchanged behind `builder_settings.validatedTurns`
+   * so the switch is a real way back, and so the replay eval can compare the
+   * two on the same fixtures.
+   */
+  private async *runLegacyLoop(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+  ): AsyncGenerator<BuilderSseFrame> {
+    const {
+      sessionId,
+      provider,
+      model,
+      providerName,
+      system,
+      messages,
+      tools,
+      context,
+      maxIterations,
+      checkpoint,
+    } = loop;
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      turn.iterations = iteration + 1;
+
+      const finalMessage = yield* this.runPass(provider, {
+        model,
+        maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
+        system,
+        messages,
+        tools,
+      });
+      turn.stopReason = finalMessage.stopReason;
+      this.recordUsage(
+        finalMessage.usage,
+        model,
+        providerName,
+        sessionId,
+        turn.iterations,
+      );
+
+      // The model tried to call a tool and produced something unreadable, so
+      // the turn arrives EMPTY — indistinguishable from it choosing to say
+      // nothing. Gemini does this intermittently on a schema the size of the
+      // interview's. Transient, so retry the same pass rather than settle a
+      // turn that did nothing; the truncation budget bounds it.
+      if (turn.stopReason === 'invalid_tool_call') {
+        if (turn.invalidToolCalls >= BUILDER_MAX_TRUNCATION_RETRIES) {
+          this.logger.warn(
+            `Builder session ${sessionId}: ${providerName}/${model} returned ` +
+              `an unreadable tool call ${turn.invalidToolCalls + 1} times; giving up.`,
+          );
+          turn.errored = true;
+          turn.error = 'invalid_tool_call';
+          yield {
+            event: 'error',
+            data: {
+              code: 'invalid_tool_call',
+              message: BUILDER_INVALID_TOOL_CALL_ERROR,
+            },
+          };
+          break;
+        }
+        turn.invalidToolCalls += 1;
+        this.logger.warn(
+          `Builder session ${sessionId}: unreadable tool call from ` +
+            `${providerName}/${model}; retrying (${turn.invalidToolCalls}).`,
+        );
+        continue;
+      }
+
+      const contentBlocks: any[] = finalMessage.content ?? [];
+      for (const block of contentBlocks) {
+        // Whitespace is not a reply. Gemini's empty STOP arrives as a bare
+        // "\n", and counted as text it slipped past the empty-pass retry
+        // below: the turn settled blank and the admin had to type
+        // "continue" to get the interview moving again.
+        if (block?.type === 'text' && block.text?.trim()) {
+          turn.textParts.push(block.text);
+        }
+      }
+      const toolUses = contentBlocks.filter(
+        (block) => block?.type === 'tool_use',
+      );
+
+      // The model ran out of output room mid-message.
+      //
+      // This is the failure that looked like the agent going quiet: a
+      // `max_tokens` stop carries whatever text it managed plus, usually, a
+      // half-written tool_use whose `input` the SDK reconstructs by partial
+      // JSON parse. Executing that would apply an arbitrary fragment of the
+      // intended patch, so the block is dropped — but dropping it silently
+      // is what produced turns that announced "writing the requirements
+      // now" and wrote nothing, and turns that produced no row at all. Tell
+      // the model what happened and let it re-do the write in pieces.
+      if (turn.stopReason === 'max_tokens') {
+        if (
+          !(yield* this.handleTruncation(loop, turn, contentBlocks, toolUses))
+        ) {
+          break;
+        }
+        continue;
+      }
+
+      // A pass that said nothing and called nothing, on a turn that has so
+      // far produced nothing either.
+      //
+      // Breaking here lands on the backstop below, which tells the admin to
+      // send their message again — so the recovery was always "run the same
+      // request a second time", and it was the person who had to do it,
+      // after waiting for a turn that was never going to say anything. The
+      // model is non-deterministic and the transcript is unchanged, so the
+      // retry that works is the one we can make ourselves.
+      //
+      // Same bound and the same shape as the `invalid_tool_call` retry above
+      // — these are two spellings of the same silence, one where the
+      // provider names the cause and one where it does not.
+      if (
+        turn.stopReason !== 'tool_use' &&
+        turn.textParts.length === 0 &&
+        turn.allToolCalls.length === 0 &&
+        turn.emptyPasses < BUILDER_MAX_TRUNCATION_RETRIES
+      ) {
+        turn.emptyPasses += 1;
+        this.logger.warn(
+          `Builder session ${sessionId}: ${providerName}/${model} returned an ` +
+            `empty turn (stop reason ${turn.stopReason ?? 'none'}); retrying ` +
+            `(${turn.emptyPasses}/${BUILDER_MAX_TRUNCATION_RETRIES}).`,
+        );
+        continue;
+      }
+
+      if (turn.stopReason !== 'tool_use' || toolUses.length === 0) {
+        break;
+      }
+
+      // The prose of this pass is on the admin's screen already; save it
+      // before spending minutes in the tools that follow.
+      await checkpoint(false);
+
+      messages.push({ role: 'assistant', content: contentBlocks });
+
+      const toolResultBlocks: any[] = [];
+      let endTurn = false;
+
+      for (const toolUse of toolUses) {
+        const name = String(toolUse.name);
+        const input = (toolUse.input ?? {}) as Record<string, any>;
+        yield { event: 'tool_call', data: { name, input } };
+        turn.allToolCalls.push({ id: toolUse.id, name, input });
+
+        const outcome = await this.executeTool(name, input, context, sessionId);
+
+        for (const frame of outcome.events ?? []) {
+          if (frame.event === 'question') {
+            turn.questions.push(frame.data);
+          }
+          yield frame;
+        }
+        yield {
+          event: 'tool_result',
+          data: { name, summary: outcome.summary },
+        };
+
+        turn.allToolResults.push({
+          toolUseId: toolUse.id,
+          name,
+          result: outcome.modelResult,
+        });
+        toolResultBlocks.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: JSON.stringify(outcome.modelResult),
+        });
+        // Per tool, not per iteration: a github_read_file that returns a
+        // large file, or a stacks_search, is exactly the work nobody wants
+        // to pay for twice.
+        await checkpoint(false);
+        if (outcome.endTurn) {
+          endTurn = true;
+        }
+      }
+
+      messages.push({ role: 'user', content: toolResultBlocks });
+
+      if (endTurn) {
+        turn.stopReason = 'end_turn';
+        break;
+      }
+    }
+
+    // The iteration cap landed on a truncated pass, so the retry above never
+    // got to run. Nothing was applied, and the admin is owed the same
+    // explanation as the give-up path.
+    if (turn.stopReason === 'max_tokens' && !turn.errored) {
+      turn.errored = true;
+      turn.error = BUILDER_TRUNCATION_ERROR;
+      yield {
+        event: 'error',
+        data: {
+          code: 'response_truncated',
+          message: BUILDER_TRUNCATION_ERROR,
+        },
+      };
+    }
+
+    // Budget exhausted while the model still wanted tools: one tool-less
+    // pass so the turn ends in prose rather than a raw error.
+    if (turn.stopReason === 'tool_use') {
+      this.logger.warn(
+        `Builder session ${sessionId} hit the ${maxIterations}-iteration cap; ` +
+          'making a tool-less wrap-up pass.',
+      );
+      const wrapUpMessage = yield* this.runPass(provider, {
+        model,
+        maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
+        system,
+        messages,
+      });
+      this.recordUsage(
+        wrapUpMessage.usage,
+        model,
+        providerName,
+        sessionId,
+        turn.iterations,
+      );
+      for (const block of wrapUpMessage.content ?? []) {
+        if (block?.type === 'text' && block.text) {
+          turn.textParts.push(block.text);
+        }
+      }
+      turn.stopReason = wrapUpMessage.stopReason ?? 'end_turn';
+    }
+  }
+
+  /**
+   * A pass cut off at the output cap. Its tool calls are fragments and are
+   * dropped; the model is told so and asked to write again in pieces. Returns
+   * false once the retries are spent, having said so to the admin.
+   */
+  private async *handleTruncation(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+    contentBlocks: any[],
+    toolUses: any[],
+  ): AsyncGenerator<BuilderSseFrame, boolean> {
+    const { sessionId, messages, checkpoint } = loop;
+    turn.truncations += 1;
+    if (turn.truncations > BUILDER_MAX_TRUNCATION_RETRIES) {
+      this.logger.error(
+        `Builder session ${sessionId}: model output still truncated at ` +
+          `${BUILDER_INTERVIEW_MAX_TOKENS} tokens after ` +
+          `${BUILDER_MAX_TRUNCATION_RETRIES} retries; ending the turn.`,
+      );
+      turn.errored = true;
+      turn.error = BUILDER_TRUNCATION_ERROR;
+      yield {
+        event: 'error',
+        data: {
+          code: 'response_truncated',
+          message: BUILDER_TRUNCATION_ERROR,
+        },
+      };
+      return false;
+    }
+
+    this.logger.warn(
+      `Builder session ${sessionId}: model output truncated at ` +
+        `${BUILDER_INTERVIEW_MAX_TOKENS} tokens ` +
+        `(retry ${turn.truncations}/${BUILDER_MAX_TRUNCATION_RETRIES}, ` +
+        `${toolUses.length} tool call(s) discarded).`,
+    );
+
+    await checkpoint(false);
+
+    // Only the completed text blocks are replayed — a truncated
+    // tool_use has no result to pair it with, and the API rejects a
+    // dangling one.
+    const textBlocks = contentBlocks.filter(
+      (block) => block?.type === 'text' && block.text,
+    );
+    if (textBlocks.length > 0) {
+      messages.push({ role: 'assistant', content: textBlocks });
+    }
+    messages.push({ role: 'user', content: BUILDER_TRUNCATION_NUDGE });
+    return true;
+  }
+
+  /** Run one tool, turning a throw into a result the model can repair from. */
+  private async executeTool(
+    name: string,
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+    sessionId: string,
+  ): Promise<BuilderToolExecutionOutcome> {
+    try {
+      return await this.toolsService.execute(name, input, context);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Builder tool "${name}" failed for session ${sessionId}: ${message}`,
+      );
+      // Handed back as a result rather than thrown: the model can
+      // usually repair a bad call, and a thrown error ends the turn.
+      return {
+        modelResult: { ok: false, error: 'tool_failed', message },
+        summary: `Tool ${name} failed: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * A validated turn: the reply reaches the admin only once it is true.
+   *
+   * The turn ends through `ask_admin` or `finish_turn`, and that call is
+   * checked before anything is shown. Not delivered — the model is told why
+   * and the loop goes on — when the same step held a call that failed or a
+   * lookup whose result the model had not read yet; when an earlier PRD edit
+   * failed and nothing repaired it; when the message says the PRD changed and
+   * it did not, or says it is ready and it is not; or when the admin's own
+   * words this turn changed nothing and the model did not say why. Each
+   * problem is held against the reply once: raised again, it goes through as
+   * a warning on the receipt rather than looping. After two rejections the
+   * next step can only edit and end the turn, and whatever it sends is
+   * delivered with what it still gets wrong listed under it.
+   *
+   * Nothing the model writes outside the turn-ending call is shown — it is
+   * kept as working notes. The opportunity copilot's `submit_turn` is the
+   * pattern; it has filed every roadmap opportunity this way.
+   */
+  private async *runValidatedLoop(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+  ): AsyncGenerator<BuilderSseFrame> {
+    const {
+      sessionId,
+      provider,
+      model,
+      providerName,
+      system,
+      messages,
+      tools,
+      maxIterations,
+      checkpoint,
+    } = loop;
+    const endingTools = tools.filter((tool) =>
+      BUILDER_TERMINAL_TOOLS.has(String(tool.name)),
+    );
+    const editAndEndingTools = tools.filter(
+      (tool) =>
+        BUILDER_TERMINAL_TOOLS.has(String(tool.name)) ||
+        BUILDER_PRD_EDIT_TOOLS.has(String(tool.name)),
+    );
+    // Prose without a turn-ending call: nudged once with every tool still on
+    // offer (it may need to edit first), then offered only the ending tools.
+    let nudged = false;
+    let mustEnd = false;
+    // Room for the retries (unreadable calls, empty passes, truncation), each
+    // bounded by its own counter, on top of the iteration cap.
+    const hardStop = maxIterations + 2 * BUILDER_MAX_TRUNCATION_RETRIES;
+
+    for (let iteration = 0; iteration < hardStop; iteration++) {
+      turn.iterations = iteration + 1;
+      const lastPass = mustEnd || iteration >= maxIterations - 1;
+      const lenient = turn.rejections >= BUILDER_MAX_TURN_REJECTIONS;
+      const offered = lastPass
+        ? endingTools
+        : lenient
+          ? editAndEndingTools
+          : tools;
+
+      const finalMessage = yield* this.runPass(
+        provider,
+        {
+          model,
+          maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
+          system,
+          messages,
+          tools: offered,
+        },
+        false,
+      );
+      turn.stopReason = finalMessage.stopReason;
+      this.recordUsage(
+        finalMessage.usage,
+        model,
+        providerName,
+        sessionId,
+        turn.iterations,
+      );
+
+      if (turn.stopReason === 'invalid_tool_call') {
+        if (turn.invalidToolCalls >= BUILDER_MAX_TRUNCATION_RETRIES) {
+          this.logger.warn(
+            `Builder session ${sessionId}: ${providerName}/${model} returned ` +
+              `an unreadable tool call ${turn.invalidToolCalls + 1} times; giving up.`,
+          );
+          turn.errored = true;
+          turn.error = 'invalid_tool_call';
+          yield {
+            event: 'error',
+            data: {
+              code: 'invalid_tool_call',
+              message: BUILDER_INVALID_TOOL_CALL_ERROR,
+            },
+          };
+          return;
+        }
+        turn.invalidToolCalls += 1;
+        continue;
+      }
+
+      const contentBlocks: any[] = finalMessage.content ?? [];
+      const textBlocks = contentBlocks.filter(
+        (block) => block?.type === 'text' && block.text?.trim(),
+      );
+      const passText = textBlocks
+        .map((block) => String(block.text).trim())
+        .join('\n\n');
+      const toolUses = contentBlocks.filter(
+        (block) => block?.type === 'tool_use',
+      );
+      if (passText) turn.workingNotes.push(passText);
+
+      if (turn.stopReason === 'max_tokens') {
+        if (
+          !(yield* this.handleTruncation(loop, turn, contentBlocks, toolUses))
+        ) {
+          return;
+        }
+        continue;
+      }
+
+      if (toolUses.length === 0) {
+        // Nothing at all: the same request again, as the legacy loop does.
+        if (!passText && turn.emptyPasses < BUILDER_MAX_TRUNCATION_RETRIES) {
+          turn.emptyPasses += 1;
+          this.logger.warn(
+            `Builder session ${sessionId}: ${providerName}/${model} returned an ` +
+              `empty pass; retrying (${turn.emptyPasses}/${BUILDER_MAX_TRUNCATION_RETRIES}).`,
+          );
+          continue;
+        }
+        if (!lastPass) {
+          // Ended in prose. Nothing outside a turn-ending call reaches the
+          // admin, so ask for one — kept in the history, so the next pass can
+          // turn its own notes into the message.
+          if (textBlocks.length) {
+            messages.push({ role: 'assistant', content: textBlocks });
+          }
+          messages.push({
+            role: 'user',
+            content: nudged
+              ? BUILDER_END_TURN_NUDGE_FINAL
+              : BUILDER_END_TURN_NUDGE,
+          });
+          if (nudged) mustEnd = true;
+          nudged = true;
+          continue;
+        }
+        // Still prose with only the ending tools on offer. Its notes are
+        // shown rather than nothing, and the receipt says so.
+        const fallback =
+          passText || turn.workingNotes[turn.workingNotes.length - 1] || '';
+        if (fallback) {
+          yield* this.deliverReply(loop, turn, null, fallback, [
+            BUILDER_PROSE_FALLBACK_WARNING,
+          ]);
+        }
+        return;
+      }
+
+      // The notes of this pass are saved before the tools run for minutes.
+      await checkpoint(false);
+      messages.push({ role: 'assistant', content: contentBlocks });
+
+      const endings = toolUses.filter((use) =>
+        BUILDER_TERMINAL_TOOLS.has(String(use.name)),
+      );
+      const others = toolUses.filter(
+        (use) => !BUILDER_TERMINAL_TOOLS.has(String(use.name)),
+      );
+      const offeredNames = new Set(offered.map((tool) => String(tool.name)));
+      const results = new Map<string, Record<string, any>>();
+      yield* this.runValidatedCalls(loop, turn, others, offeredNames, results);
+
+      const answer = (extra: Record<string, Record<string, any>> = {}) =>
+        messages.push({
+          role: 'user',
+          content: toolUses.map((use) => ({
+            type: 'tool_result',
+            tool_use_id: use.id,
+            content: JSON.stringify(extra[use.id] ?? results.get(use.id) ?? {}),
+          })),
+        });
+
+      if (!endings.length) {
+        answer();
+        continue;
+      }
+
+      // One reply per turn. A second turn-ending call in the same step is
+      // dropped — usually a second question, which belongs in the next turn.
+      const [ending, ...extraEndings] = endings;
+      const dropped: Record<string, Record<string, any>> = {};
+      for (const extra of extraEndings) {
+        dropped[extra.id] = {
+          ok: false,
+          delivered: false,
+          error: 'one_reply_per_turn',
+          message:
+            'Only the first turn-ending call in a step counts; this one was dropped. Ask ' +
+            'the next question after the admin answers.',
+        };
+        turn.allToolCalls.push({
+          id: extra.id,
+          name: String(extra.name),
+          input: extra.input ?? {},
+        });
+        turn.allToolResults.push({
+          toolUseId: extra.id,
+          name: String(extra.name),
+          result: dropped[extra.id],
+        });
+      }
+
+      const input = (ending.input ?? {}) as Record<string, any>;
+      const message = String(input.message ?? '').trim() || passText;
+      const problems = await this.replyProblems(
+        loop,
+        turn,
+        String(ending.name),
+        input,
+        message,
+        others,
+        results,
+      );
+      const blocking = problems.filter(
+        (problem) => !turn.raised.has(problem.key),
+      );
+
+      if (blocking.length && !lenient && !lastPass) {
+        turn.rejections += 1;
+        problems.forEach((problem) => turn.raised.add(problem.key));
+        const rejection = {
+          ok: false,
+          delivered: false,
+          error: 'not_delivered',
+          message:
+            'Not delivered — the admin has not seen this turn. Fix what is listed, then end ' +
+            'the turn again.',
+          reasons: problems.map((problem) => problem.toModel),
+        };
+        turn.allToolCalls.push({
+          id: ending.id,
+          name: String(ending.name),
+          input,
+        });
+        turn.allToolResults.push({
+          toolUseId: ending.id,
+          name: String(ending.name),
+          result: rejection,
+        });
+        this.logger.info(
+          `[BUILDER_INTERVIEW] session=${sessionId} ${ending.name} not delivered ` +
+            `(${turn.rejections}): ${problems.map((problem) => problem.key).join(', ')}`,
+        );
+        answer({ ...dropped, [ending.id]: rejection });
+        await checkpoint(false);
+        continue;
+      }
+
+      yield* this.deliverReply(
+        loop,
+        turn,
+        ending,
+        message,
+        problems.map((problem) => problem.toAdmin),
+      );
+      return;
+    }
+  }
+
+  /**
+   * The calls of one validated step, other than the turn-ending one. Lookups
+   * run together — they only read — and are reported together; edits run
+   * after them, one at a time and in order, because each one changes the
+   * document the next one applies to.
+   */
+  private async *runValidatedCalls(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+    uses: any[],
+    offeredNames: Set<string>,
+    results: Map<string, Record<string, any>>,
+  ): AsyncGenerator<BuilderSseFrame> {
+    const { sessionId, context, checkpoint } = loop;
+    const record = function* (
+      use: any,
+      outcome: BuilderToolExecutionOutcome,
+    ): Generator<BuilderSseFrame> {
+      const name = String(use.name);
+      for (const frame of outcome.events ?? []) yield frame;
+      yield { event: 'tool_result', data: { name, summary: outcome.summary } };
+      turn.allToolResults.push({
+        toolUseId: use.id,
+        name,
+        result: outcome.modelResult,
+      });
+      results.set(use.id, outcome.modelResult);
+    };
+    const run = (use: any): Promise<BuilderToolExecutionOutcome> =>
+      offeredNames.has(String(use.name))
+        ? this.executeTool(
+            String(use.name),
+            (use.input ?? {}) as Record<string, any>,
+            context,
+            sessionId,
+          )
+        : Promise.resolve({
+            modelResult: {
+              ok: false,
+              error: 'not_available',
+              message:
+                'Not run: at this point in the turn only ending it (and editing the PRD) is ' +
+                'available.',
+            },
+            summary: `${use.name} not run`,
+          });
+
+    const lookups = uses.filter((use) => isResearchTool(String(use.name)));
+    const rest = uses.filter((use) => !lookups.includes(use));
+    for (const use of lookups) {
+      const name = String(use.name);
+      const input = (use.input ?? {}) as Record<string, any>;
+      yield { event: 'tool_call', data: { name, input } };
+      turn.allToolCalls.push({ id: use.id, name, input });
+    }
+    const outcomes = await Promise.all(lookups.map(run));
+    for (const [index, use] of lookups.entries()) {
+      yield* record(use, outcomes[index]);
+    }
+    if (lookups.length) await checkpoint(false);
+
+    for (const use of rest) {
+      const name = String(use.name);
+      const input = (use.input ?? {}) as Record<string, any>;
+      yield { event: 'tool_call', data: { name, input } };
+      turn.allToolCalls.push({ id: use.id, name, input });
+      yield* record(use, await run(use));
+      await checkpoint(false);
+    }
+  }
+
+  /**
+   * What is wrong with a reply, checked before it is shown. Each problem has
+   * a key, so the same problem holds a reply back once (`turn.raised`), and
+   * two phrasings: what the model needs to fix it, and what the admin reads
+   * on the receipt if the reply goes out anyway.
+   */
+  private async replyProblems(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+    endingName: string,
+    input: Record<string, any>,
+    message: string,
+    others: any[],
+    results: Map<string, Record<string, any>>,
+  ): Promise<ReplyProblem[]> {
+    const { sessionId, context, versionBefore, adminFreeText } = loop;
+    const problems: ReplyProblem[] = [];
+    const describe = (use: any) =>
+      describeToolAttempt(
+        String(use.name),
+        (use.input ?? {}) as Record<string, any>,
+      );
+
+    const failedHere = others.filter(
+      (use) => results.get(use.id)?.ok === false,
+    );
+    if (failedHere.length) {
+      problems.push({
+        key: `failed:${failedHere.map((use) => use.id).join(',')}`,
+        toModel:
+          `${failedHere.length === 1 ? 'A call' : `${failedHere.length} calls`} in this step ` +
+          'failed, and the reply was written without knowing it: ' +
+          failedHere
+            .map(
+              (use) =>
+                `${describe(use)} — ${describeToolFailure(results.get(use.id) ?? {})}`,
+            )
+            .join('; ') +
+          '. Repair it or try another way — or, if it cannot be done, say so in the message.',
+        toAdmin: `Written before Builder saw that ${
+          failedHere.length === 1 ? 'a call' : `${failedHere.length} calls`
+        } in the same step failed.`,
+      });
+    }
+
+    const unread = others.filter(
+      (use) =>
+        isResearchTool(String(use.name)) && results.get(use.id)?.ok !== false,
+    );
+    if (unread.length) {
+      problems.push({
+        key: `unread:${unread.map((use) => use.id).join(',')}`,
+        toModel:
+          `You ended the turn in the same step as ${unread.length} lookup(s) (` +
+          unread.map(describe).join('; ') +
+          '), so the reply was written before their results existed. The results are with ' +
+          'this message: read them, then end the turn.',
+        toAdmin: `Written before Builder had read ${unread.length} of its lookups.`,
+      });
+    }
+
+    // An edit that failed in an earlier step, with no successful edit since.
+    const edits = joinCallsToResults(
+      turn.allToolCalls,
+      turn.allToolResults,
+    ).filter((call) => BUILDER_PRD_EDIT_TOOLS.has(call.name) && call.result);
+    const lastFailure = edits
+      .map((call) => call.result?.ok === false)
+      .lastIndexOf(true);
+    const lastSuccess = edits
+      .map((call) => call.result?.ok !== false)
+      .lastIndexOf(true);
+    const failedEditHere = failedHere.some((use) =>
+      BUILDER_PRD_EDIT_TOOLS.has(String(use.name)),
+    );
+    if (lastFailure > lastSuccess && !failedEditHere) {
+      const call = edits[lastFailure];
+      problems.push({
+        key: `unrepaired:${lastFailure}`,
+        toModel:
+          `Your last PRD edit failed and nothing since has repaired it: ${describeToolAttempt(
+            call.name,
+            call.input,
+          )} — ${describeToolFailure(call.result ?? {})}. Repair it, or say in the message ` +
+          'that it did not land.',
+        toAdmin: 'A PRD edit failed and nothing repaired it.',
+      });
+    }
+
+    const versionMoved = context.doc.versionNumber !== versionBefore;
+    if (claimsPrdEdit(message) && !versionMoved) {
+      problems.push({
+        key: 'claims_edit',
+        toModel:
+          'Your message says the PRD changed, but nothing in it changed this turn. Make the ' +
+          'edit first — or, if you have not decided to change it, do not say you did.',
+        toAdmin:
+          'Builder said the PRD changed, but nothing in it changed this turn.',
+      });
+    }
+
+    if (claimsPrdReady(message)) {
+      const readiness = await this.readiness.assess(sessionId, context.doc);
+      if (!readiness.ready) {
+        problems.push({
+          key: 'claims_ready',
+          toModel:
+            'Your message says the PRD is ready, and readiness says it is not: ' +
+            readiness.blockers.slice(0, 4).join(' | ') +
+            '. Fix those, or say what is left instead.',
+          toAdmin:
+            'Builder said the PRD is ready; the readiness check disagrees.',
+        });
+      }
+    }
+
+    if (
+      adminFreeText &&
+      !versionMoved &&
+      !String(input.prdUnchangedBecause ?? '').trim()
+    ) {
+      problems.push({
+        key: 'unapplied_message',
+        toModel:
+          `The admin's message ("${clipText(adminFreeText, 160)}") has not changed the PRD. ` +
+          'Record what it settles before you end the turn — or, if it changes nothing in ' +
+          'the PRD, say why in prdUnchangedBecause.',
+        toAdmin:
+          "Your message hasn't changed the PRD, and Builder didn't say why.",
+      });
+    }
+
+    if (endingName === 'finish_turn' && !message) {
+      problems.push({
+        key: 'empty_message',
+        toModel:
+          'finish_turn needs a message — it is the only thing the admin sees.',
+        toAdmin: 'Builder ended the turn without a message.',
+      });
+    }
+    if (endingName === 'ask_admin' && !String(input.prompt ?? '').trim()) {
+      problems.push({
+        key: 'empty_prompt',
+        toModel: 'ask_admin needs a prompt — the question itself.',
+        toAdmin: 'Builder asked a question with no text.',
+      });
+    }
+    return problems;
+  }
+
+  /**
+   * Show the reply: its message as one `token` frame (the stream contract the
+   * UI already renders), then the question card if it asked one. `ending` is
+   * null for the prose fallback, which asks nothing.
+   */
+  private async *deliverReply(
+    loop: InterviewLoopContext,
+    turn: InterviewTurnState,
+    ending: any | null,
+    message: string,
+    warnings: string[],
+  ): AsyncGenerator<BuilderSseFrame> {
+    const { sessionId, context, checkpoint } = loop;
+    const questionFrames: BuilderSseFrame[] = [];
+    if (ending) {
+      const name = String(ending.name);
+      const input = (ending.input ?? {}) as Record<string, any>;
+      const outcome = await this.executeTool(name, input, context, sessionId);
+      for (const frame of outcome.events ?? []) {
+        if (frame.event === 'question') {
+          turn.questions.push(frame.data);
+          questionFrames.push(frame);
+        }
+      }
+      turn.allToolCalls.push({ id: ending.id, name, input });
+      turn.allToolResults.push({
+        toolUseId: ending.id,
+        name,
+        result: { ...outcome.modelResult, delivered: true },
+      });
+      const unchanged = String(input.prdUnchangedBecause ?? '').trim();
+      turn.prdUnchangedBecause = unchanged || null;
+    }
+
+    // A reply that was the pass's own prose, not a field of the call, is the
+    // reply now rather than a working note.
+    const notes = turn.workingNotes;
+    if (message && notes[notes.length - 1] === message) notes.pop();
+
+    turn.reply = message || null;
+    turn.warnings.push(...warnings);
+    turn.stopReason = 'end_turn';
+    if (message) yield { event: 'token', data: { delta: message } };
+    for (const frame of questionFrames) yield frame;
+    await checkpoint(false);
   }
 
   /**
@@ -915,6 +1760,7 @@ export class BuilderInterviewOrchestratorService {
     repos?: string[],
     exemplars: string[] = [],
     handoffContext: string | null = null,
+    validatedTurns = false,
   ): Promise<AgentSystemBlock[]> {
     const [instructions, context, platformRules, platformMap] =
       await Promise.all([
@@ -934,8 +1780,12 @@ export class BuilderInterviewOrchestratorService {
     // the technical plan is written knowing them. The plan that renamed a
     // persisted key in session 880e73e6 was written by this agent, which had
     // never been told released clients lag the backend.
+    // The turn protocol rides the same block, after the rules: how a turn
+    // ends is code's to say, not the dashboard prompt's, and it is only true
+    // while validated turns are on.
+    const protocol = validatedTurns ? `\n\n${BUILDER_TURN_PROTOCOL}` : '';
     const blocks: AgentSystemBlock[] = [
-      { text: `${instructions}\n\n${platformRules}`, cache: true },
+      { text: `${instructions}\n\n${platformRules}${protocol}`, cache: true },
       { text: context, cache: true },
     ];
     // The reusable systems and the docs index: what already exists, read before any question.
@@ -1099,10 +1949,13 @@ export class BuilderInterviewOrchestratorService {
       }
       if (!summary) return this.rebuildAnthropicHistory(history);
 
+      const receipts = this.renderEarlierReceipts(history.slice(0, boundary));
       return [
         {
           role: 'user',
-          content: `<earlier_conversation_summary>\n${summary}\n</earlier_conversation_summary>`,
+          content:
+            `<earlier_conversation_summary>\n${summary}\n</earlier_conversation_summary>` +
+            (receipts ? `\n\n${receipts}` : ''),
         },
         ...this.rebuildAnthropicHistory(history.slice(boundary)),
       ];
@@ -1114,6 +1967,45 @@ export class BuilderInterviewOrchestratorService {
       );
       return this.rebuildAnthropicHistory(history);
     }
+  }
+
+  /**
+   * What each summarised turn did, from the server's record rather than the
+   * summariser's reading of it.
+   *
+   * The summary is a model's digest of prose, and past forty messages it was
+   * the only record of the early turns — so a lookup that failed, or an edit
+   * that never landed, dropped out of what the interview knew about itself.
+   * These lines are rebuilt from the stored receipts on every turn (cheap,
+   * and deterministic, so nothing a summariser drops can take them with it).
+   * Newest last, and capped, because this block is paid for on every turn.
+   */
+  private renderEarlierReceipts(turns: BuilderMessage[]): string {
+    const lines = turns
+      .filter((message) => message.role === BuilderMessageRole.ASSISTANT)
+      .map((message) => ({
+        seq: message.seq,
+        receipt: receiptOfStoredTurn(message),
+      }))
+      .filter(({ receipt }) => !receiptIsEmpty(receipt))
+      .map(({ seq, receipt }) => `- #${seq}: ${renderReceiptLine(receipt)}`);
+    if (!lines.length) return '';
+    const kept: string[] = [];
+    let budget = BUILDER_EARLIER_RECEIPTS_MAX_CHARS;
+    for (const line of [...lines].reverse()) {
+      if (line.length > budget) break;
+      kept.unshift(line);
+      budget -= line.length + 1;
+    }
+    const omitted = lines.length - kept.length;
+    return [
+      '<earlier_receipts>',
+      'What each summarised turn read, changed and what failed — the system record, not ' +
+        'your notes. A failure listed here was never repaired unless a later turn says so.',
+      ...(omitted ? [`(${omitted} older turn(s) omitted)`] : []),
+      ...kept,
+      '</earlier_receipts>',
+    ].join('\n');
   }
 
   /**
@@ -1167,8 +2059,20 @@ export class BuilderInterviewOrchestratorService {
   ): Promise<string | null> {
     const rendered = turns
       .map((message) => {
-        const who = message.role === BuilderMessageRole.USER ? 'Admin' : 'You';
-        return `${who}: ${(message.content ?? '').slice(0, 2_000)}`;
+        if (message.role === BuilderMessageRole.USER) {
+          return `Admin: ${(message.content ?? '').slice(0, 2_000)}`;
+        }
+        // The receipt rides with the prose so the digest can keep a failure
+        // or an edit that did not land — the prose alone may claim otherwise.
+        const receipt = receiptOfStoredTurn(message);
+        return [
+          `You: ${(message.content ?? '').slice(0, 2_000)}`,
+          receiptIsEmpty(receipt)
+            ? ''
+            : `[receipt: ${renderReceiptLine(receipt).slice(0, 1_000)}]`,
+        ]
+          .filter(Boolean)
+          .join('\n');
       })
       .filter((line) => line.length > 8)
       .join('\n\n');
@@ -1182,7 +2086,8 @@ export class BuilderInterviewOrchestratorService {
         'be dropped from the replayed transcript without losing what it ' +
         'settled. Keep: decisions made and the reason for each, options that ' +
         'were considered and rejected, constraints and preferences the admin ' +
-        'stated, and anything still open. Drop: pleasantries, restatements, ' +
+        'stated, and anything still open — including every failure a [receipt] ' +
+        'line records that no later turn repaired. Drop: pleasantries, restatements, ' +
         'and anything already written into the PRD — the agent reads that ' +
         'separately and in full. Write it as notes to yourself, not prose.',
       prompt: rendered,

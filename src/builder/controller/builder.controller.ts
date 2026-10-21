@@ -754,6 +754,9 @@ export class BuilderController {
         ...(dto.verifierModel !== undefined
           ? { verifierModel: dto.verifierModel || null }
           : {}),
+        ...(dto.validatedTurns !== undefined
+          ? { validatedTurns: dto.validatedTurns }
+          : {}),
         ...(dto.maxPrAutomationUsd !== undefined
           ? {
               maxPrAutomationUsd: dto.maxPrAutomationUsd

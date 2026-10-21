@@ -211,6 +211,7 @@ describe('BuilderEvalService', () => {
         fixtures as any,
         { run: jest.fn() } as any,
         {} as any,
+        { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
       );
       // The background execution is not under test here.
       jest.spyOn(service as any, 'execute').mockResolvedValue(undefined);
@@ -258,6 +259,8 @@ describe('BuilderEvalService', () => {
           overrides: {
             prompts: { builder_interviewer_system: 'New interviewer.' },
             llmConfig: { builder_interviewer_system: { model: 'gpt-5' } },
+            // The loop it ran is part of the record — the live one here.
+            validatedTurns: true,
           },
           candidate: expect.objectContaining({
             content: 'New interviewer.',
@@ -305,6 +308,7 @@ describe('BuilderEvalService', () => {
       {} as any,
       {} as any,
       promptsService as any,
+      { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
     );
 
     await (service as any).publish({
@@ -337,6 +341,7 @@ describe('BuilderEvalService', () => {
       {} as any,
       {} as any,
       promptsService as any,
+      { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
     );
 
     await (service as any).publish({
@@ -353,5 +358,75 @@ describe('BuilderEvalService', () => {
       { temperature: null },
       { evalApproved: true },
     );
+  });
+
+  describe('choosing a baseline for a prompt gate', () => {
+    const completed = (id: string, overrides: any) => ({
+      id,
+      trigger: 'manual',
+      status: 'completed',
+      completedAt: new Date(),
+      overrides,
+      summary: { runs: 3 },
+      fixtureIds: ['debrief'],
+      repetitions: 3,
+    });
+    const build = (recent: any[]) => {
+      const suites = { find: jest.fn().mockResolvedValue(recent) };
+      const service = new BuilderEvalService(
+        { getRepository: () => suites } as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        { get: jest.fn().mockResolvedValue({ validatedTurns: true }) } as any,
+      );
+      const startSuite = jest
+        .spyOn(service, 'startSuite')
+        .mockResolvedValue(null as any);
+      return { service, startSuite };
+    };
+    const gate = (validatedTurns: boolean) => ({
+      id: 'gate-1',
+      fixtureIds: ['debrief'],
+      repetitions: 3,
+      createdBy: 7,
+      overrides: {
+        prompts: { builder_interviewer_system: 'x' },
+        validatedTurns,
+      },
+    });
+
+    it('reuses only a baseline that ran the same interview loop', async () => {
+      // Newest first: a legacy-loop suite from before the switch, then a
+      // validated one. A validated candidate must be compared with the second.
+      const legacy = completed('legacy-1', null);
+      const validated = completed('validated-1', { validatedTurns: true });
+      const { service } = build([legacy, validated]);
+
+      await expect((service as any).resolveBaseline(gate(true))).resolves.toBe(
+        validated,
+      );
+      await expect((service as any).resolveBaseline(gate(false))).resolves.toBe(
+        legacy,
+      );
+    });
+
+    it('never reuses a suite that overrode a prompt or a model', async () => {
+      const { service, startSuite } = build([
+        completed('cand-1', {
+          prompts: { builder_interviewer_system: 'y' },
+          validatedTurns: true,
+        }),
+      ]);
+
+      await (service as any).resolveBaseline(gate(true));
+
+      expect(startSuite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trigger: 'baseline',
+          overrides: { validatedTurns: true },
+        }),
+      );
+    });
   });
 });

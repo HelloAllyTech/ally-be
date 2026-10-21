@@ -29,6 +29,19 @@ import {
   isBuilderReadableRepo,
 } from '../constants/builder-repos.constants';
 import { BUILDER_STACKS_DEFAULT_RESULTS } from '../constants/builder.constants';
+import {
+  applyTolerantPrdPatch,
+  PrdEdit,
+  structuralRegressions,
+} from '../util/builder-prd-edits.util';
+import { describeToolAttempt } from '../util/builder-turn-receipt.util';
+import {
+  ASK_ADMIN_VALIDATED_NOTE,
+  ASK_ADMIN_VALIDATED_PROPERTIES,
+  FINISH_TURN_TOOL,
+  PRD_EDIT_TOOLS,
+  UPDATE_PRD_BY_ID_NOTE,
+} from '../constants/builder-validated-tools.constants';
 
 /**
  * Truncate a stored value down to something a model can read in a tool result.
@@ -62,11 +75,53 @@ function describeStored(value: unknown): unknown {
   return value;
 }
 
+/** The entry an id-addressed edit named, as it now stands in the draft. */
+function storedEntry(draft: any, edit: PrdEdit): unknown {
+  const same = (a: unknown, b: unknown) =>
+    String(a ?? '')
+      .trim()
+      .toLowerCase() ===
+    String(b ?? '')
+      .trim()
+      .toLowerCase();
+  switch (edit.kind) {
+    case 'set_section':
+      return edit.section === 'dataModelMd' || edit.section === 'apiMd'
+        ? draft?.technicalPlan?.[edit.section]
+        : draft?.[edit.section];
+    case 'upsert_requirement':
+      return (draft?.requirements ?? []).find((row: any) =>
+        same(row?.id, edit.id),
+      );
+    case 'upsert_assumption':
+      return (draft?.assumptions ?? []).find((row: any) =>
+        same(row?.id, edit.id),
+      );
+    case 'set_repo_plan':
+      return (draft?.technicalPlan?.repos ?? []).find((plan: any) =>
+        same(plan?.repo, edit.repo),
+      );
+    case 'set_open_questions':
+      return draft?.openQuestions;
+    default:
+      // A removal: what is left is the answer.
+      return edit.kind === 'remove_repo_plan'
+        ? (draft?.technicalPlan?.repos ?? []).map((plan: any) => plan?.repo)
+        : (draft?.requirements ?? []).map((row: any) => row?.id);
+  }
+}
+
 /** Mutable per-turn context threaded through tool executions. */
 export interface BuilderToolExecutionContext {
   session: BuilderSession;
   doc: BuilderPrdDoc;
   userId: number;
+  /**
+   * Validated turns (builder_settings.validatedTurns): agent writes may not
+   * add a requirement without an id or a repo plan without a repo. Off, the
+   * writes behave as they did before the setting existed.
+   */
+  validatedTurns?: boolean;
 }
 
 /**
@@ -96,7 +151,44 @@ export class BuilderInterviewToolsService {
     private readonly messageRepository: BuilderMessageRepository,
   ) {}
 
-  getToolDefinitions(): any[] {
+  /**
+   * The tool belt for one turn. With validated turns on, the turn-ending tools
+   * carry the reply itself (`message`), `finish_turn` exists for a turn with
+   * no question, and the PRD can be edited by id. Off, it is exactly the belt
+   * the interview had before — so the setting switches the whole behaviour
+   * back, and the replay eval can compare the two.
+   */
+  getToolDefinitions(options: { validatedTurns?: boolean } = {}): any[] {
+    const legacy = this.legacyToolDefinitions();
+    if (!options.validatedTurns) return legacy;
+    return [
+      ...legacy.map((tool) =>
+        tool.name === 'ask_admin'
+          ? {
+              ...tool,
+              description: `${tool.description}\n${ASK_ADMIN_VALIDATED_NOTE}`,
+              input_schema: {
+                ...tool.input_schema,
+                properties: {
+                  ...tool.input_schema.properties,
+                  ...ASK_ADMIN_VALIDATED_PROPERTIES,
+                },
+                required: [...tool.input_schema.required, 'message'],
+              },
+            }
+          : tool.name === 'update_prd'
+            ? {
+                ...tool,
+                description: `${tool.description}\n${UPDATE_PRD_BY_ID_NOTE}`,
+              }
+            : tool,
+      ),
+      FINISH_TURN_TOOL,
+      ...PRD_EDIT_TOOLS,
+    ];
+  }
+
+  private legacyToolDefinitions(): any[] {
     return [
       {
         name: 'ask_admin',
@@ -548,8 +640,22 @@ export class BuilderInterviewToolsService {
         );
       case 'ask_admin':
         return this.executeAskAdmin(input);
+      case 'finish_turn':
+        return {
+          modelResult: { ok: true, delivered: true },
+          summary: 'Turn finished',
+          endTurn: true,
+        };
       case 'update_prd':
         return this.executeUpdatePrd(input, context);
+      case 'set_section':
+      case 'upsert_requirement':
+      case 'remove_requirement':
+      case 'set_repo_plan':
+      case 'remove_repo_plan':
+      case 'upsert_assumption':
+      case 'set_open_questions':
+        return this.executeEdit(name, input, context);
       case 'dismiss_review_finding':
         return this.executeDismissFinding(input, context);
       case 'github_search_code':
@@ -833,6 +939,30 @@ export class BuilderInterviewToolsService {
       };
     }
 
+    // Refused before anything is written: a row the plan cannot cite is a
+    // defect the readiness rubric would only report after the fact.
+    if (context.validatedTurns) {
+      let problems: string[] = [];
+      try {
+        problems = structuralRegressions(
+          context.doc.draft,
+          applyTolerantPrdPatch(context.doc.draft, ops),
+        );
+      } catch {
+        // A patch that does not apply fails below with its own message.
+      }
+      if (problems.length) {
+        return {
+          modelResult: {
+            ok: false,
+            error: 'patch_rejected',
+            message: problems.join(' '),
+          },
+          summary: `PRD patch rejected: ${problems[0]}`,
+        };
+      }
+    }
+
     try {
       const { doc, diagnostics } = await this.prdService.applyPatch(
         context.doc,
@@ -920,6 +1050,71 @@ export class BuilderInterviewToolsService {
           hint: 'Re-read the PRD structure and retry with corrected paths.',
         },
         summary: `PRD patch rejected: ${message}`,
+      };
+    }
+  }
+
+  /**
+   * One id-addressed PRD edit: a section by key, a requirement or assumption
+   * by id, a repo plan by repo name. Same read-back as `update_prd` — the
+   * readiness it leaves and what is now stored at the entry it named — so the
+   * agent never has to infer whether it landed.
+   */
+  private async executeEdit(
+    name: string,
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+  ): Promise<BuilderToolExecutionOutcome> {
+    const edit = { ...(input ?? {}), kind: name } as PrdEdit;
+    try {
+      const { doc } = await this.prdService.applyEdit(
+        context.doc,
+        edit,
+        context.userId,
+        BuilderPrdVersionAuthor.AGENT,
+        input?.changeSummary
+          ? String(input.changeSummary)
+          : describeToolAttempt(name, input),
+      );
+      context.doc = doc;
+      const readiness = await this.readiness.settle(
+        context.session.id,
+        doc,
+        'edit',
+      );
+      return {
+        modelResult: {
+          ok: true,
+          versionNumber: doc.versionNumber,
+          readinessScore: readiness.score,
+          ready: readiness.ready,
+          blockers: readiness.blockers,
+          stored: describeStored(storedEntry(doc.draft, edit)),
+        },
+        summary: `PRD updated: ${
+          input?.changeSummary
+            ? String(input.changeSummary)
+            : describeToolAttempt(name, input).replace(/^PRD edit: /, '')
+        }`,
+        events: [
+          {
+            event: 'prd_draft',
+            data: { draft: doc.draft, versionNumber: doc.versionNumber },
+          },
+          {
+            event: 'readiness',
+            data: readiness as unknown as Record<string, any>,
+          },
+        ],
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `${name} failed for session ${context.session.id}: ${message}`,
+      );
+      return {
+        modelResult: { ok: false, error: 'edit_failed', message },
+        summary: `PRD edit rejected: ${message}`,
       };
     }
   }
