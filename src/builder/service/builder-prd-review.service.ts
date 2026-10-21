@@ -102,6 +102,29 @@ export function renderTranscriptForReview(
   ].join('\n');
 }
 
+/**
+ * What Ally already runs, as plain facts for the reviewer: each system's name,
+ * what it is for, and when to reuse it.
+ *
+ * Not the interviewer's rendering. That one carries instructions to the
+ * interviewer ("run ai_tasks_lookup for anything involving an AI output"),
+ * and the reviewer read those as requirements on the PRD — filing "missed
+ * reuse: never consulted the AI task registry" against a sound PRD.
+ */
+export function renderSystemsForReview(catalog: BuilderCatalogService): string {
+  try {
+    return catalog
+      .capabilities()
+      .map(
+        (capability) =>
+          `- ${capability.name}: ${capability.whatItIs} Reuse when: ${capability.reuseWhen}`,
+      )
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
 /** The reviewer's findings, validated and numbered. Drops anything malformed. */
 export function parseReviewFindings(
   text: string,
@@ -211,7 +234,7 @@ export class BuilderPrdReviewService {
       const [messages, evidence, systems] = await Promise.all([
         this.messageRepository.listBySession(sessionId),
         this.evidenceLog.renderForPrompt(sessionId, 120),
-        this.catalog.renderContextSection().catch(() => ''),
+        Promise.resolve(renderSystemsForReview(this.catalog)),
       ]);
       const result = await this.llmCompletion.complete({
         taskId: BUILDER_AI_TASKS.PRD_REVIEW,
