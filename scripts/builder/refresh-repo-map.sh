@@ -129,6 +129,28 @@ if [ -z "$MAP_MD" ]; then
   exit 1
 fi
 
+# "Not empty" turned out to be too low a bar. Production packs came back at 54
+# and 235 characters — an apology, a one-line status, a "Done." — and each one
+# replaced a good map, because the only question asked was whether anything at
+# all had come back. A real pack is 2,000-4,000 words, tens of thousands of
+# characters; 4,000 sits far under the smallest legitimate one and far over
+# every failure seen. The environment overrides it, so a repo that really is
+# tiny can lower it without an edit here. Anything under the floor is treated
+# exactly like an empty map: a failed job, and the previous map stays.
+MIN_CHARS="${BUILDER_MAP_MIN_CHARS:-4000}"
+case "$MIN_CHARS" in
+  '' | *[!0-9]*)
+    # A typo'd override must not quietly turn the floor off: `[ -lt ]` on a
+    # non-number is an error, which an `if` reads as "not under the floor".
+    echo "BUILDER_MAP_MIN_CHARS must be a whole number, got '${MIN_CHARS}'." >&2
+    exit 1
+    ;;
+esac
+if [ "${#MAP_MD}" -lt "$MIN_CHARS" ]; then
+  echo "Map for ${REPO} is ${#MAP_MD} chars, under the ${MIN_CHARS}-char floor — keeping the previous map." >&2
+  exit 1
+fi
+
 FILE_COUNT="$(git ls-files | wc -l | tr -d ' ')"
 
 # Built through node rather than string interpolation: the map is thousands of
