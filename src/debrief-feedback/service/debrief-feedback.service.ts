@@ -21,7 +21,7 @@ export class DebriefFeedbackService {
     comment?: string,
   ) {
     const existing = await this.feedbackRepo.findOne({
-      where: { scenarioSessionId },
+      where: { scenarioSessionId, tenantId },
     });
     if (existing) {
       throw new ConflictException('Feedback for this session already exists');
@@ -41,6 +41,8 @@ export class DebriefFeedbackService {
       .where("o.context->>'scenarioSessionId' = :sessionId", {
         sessionId: scenarioSessionId,
       })
+      .andWhere('o.tenantId = :tenantId', { tenantId })
+      .andWhere('o.skillError IS NULL')
       .getOne();
 
     if (observation) {

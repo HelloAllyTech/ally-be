@@ -22,8 +22,16 @@ describe('SkillExperimentChallengerJobService', () => {
   let state: any;
 
   beforeEach(async () => {
+    const feedbackQueryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn(),
+    };
     feedbackRepo = {
-      find: jest.fn(),
+      createQueryBuilder: jest.fn(() => feedbackQueryBuilder),
     };
     experimentRepo = {
       find: jest.fn(),
@@ -97,10 +105,13 @@ describe('SkillExperimentChallengerJobService', () => {
       challengerTrafficPercent: 10,
     };
     experimentRepo.find.mockResolvedValue([experiment]);
-    feedbackRepo.find.mockResolvedValue([
+    const mockFeedbacks = [
       { rating: 'positive', comment: 'Good', createdAt: new Date() },
       { rating: 'negative', comment: 'Bad', createdAt: new Date() },
-    ]);
+    ];
+    feedbackRepo
+      .createQueryBuilder()
+      .getMany.mockResolvedValue(mockFeedbacks);
     variantRepo.findOneBy.mockResolvedValue({
       id: 'v1',
       content: 'Old content',
@@ -114,7 +125,7 @@ describe('SkillExperimentChallengerJobService', () => {
 
     await service.run();
 
-    expect(feedbackRepo.find).toHaveBeenCalled();
+    expect(feedbackRepo.createQueryBuilder).toHaveBeenCalled();
     expect(llm.complete).toHaveBeenCalled();
     expect(variantRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({

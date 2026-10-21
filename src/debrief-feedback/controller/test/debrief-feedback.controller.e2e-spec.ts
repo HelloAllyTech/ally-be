@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ConflictException } from '@nestjs/common';
+import { INestApplication, ConflictException, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { DebriefFeedbackService } from '../../service/debrief-feedback.service';
 import { DebriefFeedbackController } from '../debrief-feedback.controller';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 
 describe('DebriefFeedbackController (e2e)', () => {
   let app: INestApplication;
@@ -17,9 +18,13 @@ describe('DebriefFeedbackController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [DebriefFeedbackController],
       providers: [{ provide: DebriefFeedbackService, useValue: service }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe());
     await app.init();
 
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
@@ -59,5 +64,13 @@ describe('DebriefFeedbackController (e2e)', () => {
       .post(`/v1/scenario-sessions/${sessionId}/debrief-feedback`)
       .send({ rating: 'positive' })
       .expect(409);
+  });
+
+  it('POST /v1/scenario-sessions/:sessionId/debrief-feedback (400 Bad Request on invalid rating)', () => {
+    const sessionId = 'sess-1';
+    return request(app.getHttpServer())
+      .post(`/v1/scenario-sessions/${sessionId}/debrief-feedback`)
+      .send({ rating: 'invalid' })
+      .expect(400);
   });
 });

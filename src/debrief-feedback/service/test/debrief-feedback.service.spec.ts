@@ -20,6 +20,7 @@ describe('DebriefFeedbackService', () => {
     };
     queryBuilder = {
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn(),
     };
     observationRepo = {

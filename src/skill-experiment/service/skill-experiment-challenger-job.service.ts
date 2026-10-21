@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository } from 'typeorm';
 import { DebriefFeedback } from '../../debrief-feedback/entity/debrief-feedback.entity';
 import { SkillExperiment } from '../entity/skill-experiment.entity';
 import { SkillExperimentVariant } from '../entity/skill-experiment-variant.entity';
@@ -21,8 +21,10 @@ import { SkillExperimentStateService } from './skill-experiment-state.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import {
   parseFirstJsonObject,
+  renderTemplate,
   stripMarkdownFences,
 } from 'src/learn/util/autofill-shared.util';
+import { SkillExperimentObservation } from '../entity/skill-experiment-observation.entity';
 import { contentHash } from '../util/placeholder-lock.util';
 import { validateDraft } from './skill-experiment-designer.service';
 import { LoggerService } from 'src/logger/logger.service';
@@ -68,18 +70,25 @@ export class SkillExperimentChallengerJobService {
   }
 
   private async processExperiment(experiment: SkillExperiment): Promise<void> {
-    // 1. Fetch recent feedback (last 7 days)
+    // 1. Fetch recent feedback (last 7 days) for the champion variant
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    // We filter by tenantId too if we want to be strict, but these are global experiments.
-    // However, debrief_feedback has tenant_id. Since experiments are per-skill (global),
-    // we aggregate across all tenants.
-    const feedbacks = await this.feedbackRepo.find({
-      where: {
-        createdAt: MoreThan(oneWeekAgo),
-      },
-    });
+    const feedbacks = await this.feedbackRepo
+      .createQueryBuilder('f')
+      .innerJoin(
+        SkillExperimentObservation,
+        'o',
+        "f.scenarioSessionId = (o.context->>'scenarioSessionId')::uuid",
+      )
+      .where('o.experimentId = :experimentId', { experimentId: experiment.id })
+      .andWhere('o.variantId = :variantId', {
+        variantId: experiment.championVariantId,
+      })
+      .andWhere('f.createdAt > :oneWeekAgo', { oneWeekAgo })
+      .orderBy('f.createdAt', 'DESC')
+      .take(100)
+      .getMany();
 
     if (feedbacks.length === 0) {
       this.logger.info(`No recent feedback for experiment ${experiment.id}`);
@@ -128,12 +137,13 @@ ${comments.map((c) => `- ${c}`).join('\n')}
       taskId: SKILL_EXPERIMENT_AI_TASK_IDS.CHALLENGER_GENERATOR,
       task: LlmTask.SKILL_EXPERIMENT_CHALLENGER_JOB,
       promptCode: SKILL_EXPERIMENT_PROMPT_CODES.CHALLENGER_GENERATOR,
-      system,
-      prompt: JSON.stringify({
+      system: renderTemplate(system, {
         championPrompt: champion.content,
         feedback: aggregatedFeedback,
         rubric: JSON.stringify(experiment.rubric, null, 2),
       }),
+      prompt:
+        'Generate the revised prompt based on the provided feedback and rubric.',
       jsonMode: true,
       maxTokens: SKILL_EXPERIMENT_ENGINE.DESIGNER_MAX_TOKENS,
       usageMetadata: {

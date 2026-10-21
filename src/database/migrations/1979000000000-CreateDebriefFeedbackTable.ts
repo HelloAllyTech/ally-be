@@ -22,9 +22,15 @@ export class CreateDebriefFeedbackTable1979000000000 implements MigrationInterfa
     await queryRunner.query(
       `ALTER TABLE "skill_experiment_observations" ADD COLUMN "context" jsonb`,
     );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_skill_experiment_observations_context_session_id" ON "skill_experiment_observations" (("context"->>'scenarioSessionId'))`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_skill_experiment_observations_context_session_id"`,
+    );
     await queryRunner.query(
       `ALTER TABLE "skill_experiment_observations" DROP COLUMN IF EXISTS "context"`,
     );

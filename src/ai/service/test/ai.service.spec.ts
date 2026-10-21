@@ -326,7 +326,7 @@ describe('AiService', () => {
         'sess-1',
       );
 
-      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE);
+      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE, 'sess-1');
       const sent = (mockedAxios as any).mock.calls.at(-1)[0].data;
       expect(sent.prompts[CODE]).toEqual({
         prompt: 'VARIANT {chat_history}',
@@ -376,6 +376,7 @@ describe('AiService', () => {
       await service.getScenarioSessionEvaluation(mockMessages, true, 'prev');
       expect(mockSkillExperiments.assign).toHaveBeenCalledWith(
         'ally_ai_scenario_scenario_evaluation_with_memory',
+        undefined,
       );
     });
 
