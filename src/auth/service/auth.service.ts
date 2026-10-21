@@ -172,7 +172,10 @@ export class AuthService {
   }
 
   async refreshTokens(oldRefreshToken: string, userId: number) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'username', 'tenantId', 'status', 'email'],
+    });
     if (!user) {
       throw new NotFoundException('User not found');
     }

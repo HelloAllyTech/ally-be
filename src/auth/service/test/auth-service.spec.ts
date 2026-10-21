@@ -439,6 +439,19 @@ describe('AuthService', () => {
       expect(refreshTokenQueryBuilder.delete).toHaveBeenCalled();
       expect(refreshTokenQueryBuilder.execute).toHaveBeenCalled();
     });
+
+    it('should select tenantId when fetching the user for token refresh', async () => {
+      jwtService.decode.mockReturnValue({ sub: userId, jti: 'j1' });
+      refreshTokenRepository.findOne.mockResolvedValue(exactRow());
+
+      await authService.refreshTokens(oldRefreshToken, userId);
+
+      expect(userRepository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: ['id', 'username', 'tenantId', 'status', 'email'],
+        }),
+      );
+    });
   });
 
   describe('validateRefreshToken', () => {
