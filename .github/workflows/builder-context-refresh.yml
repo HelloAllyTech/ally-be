@@ -101,3 +101,37 @@ jobs:
             exit 1
           fi
           echo "Refreshed ${refreshed} of ${attempted} maps."
+
+      # The capability catalog: what is in each repo, listed by a script, not
+      # written by a model. Its own step, and its own clone, so a pack that
+      # failed above cannot take the catalog down with it, nor the reverse —
+      # the two fail for different reasons and the interview needs whichever
+      # one it can get. Cheap (no model), so it runs for every repo every time.
+      - name: Refresh each repo's catalog
+        run: |
+          set -uo pipefail
+          failed=""
+          for repo in $(echo "$REFRESH_REPOS" | jq -r '.[]'); do
+            echo "::group::catalog $repo"
+            dir="$(mktemp -d)"
+            if git clone -q --depth 1 \
+                "https://x-access-token:${BUILDER_GH_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/${repo}.git" \
+                "${dir}/${repo}" \
+              && node protocol/scripts/builder/extract-catalog.mjs "$repo" "${dir}/${repo}" > "${dir}/catalog.json" \
+              && curl -fsS -X POST \
+                "${ALLY_BE_API_URL}/api/v1/builder/pipeline/repo-catalogs" \
+                -H "x-api-key: ${ALLY_BE_API_KEY}" \
+                -H 'Content-Type: application/json' \
+                -d @"${dir}/catalog.json" > /dev/null; then
+              echo "Catalog refreshed for ${repo} ($(jq '.entries | length' "${dir}/catalog.json") entries)."
+            else
+              echo "::warning::Could not refresh the catalog for ${repo}"
+              failed="${failed} ${repo}"
+            fi
+            rm -rf "$dir"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::Catalog refresh failed for:${failed}. The interview is reading a stale platform map for those repos."
+            exit 1
+          fi

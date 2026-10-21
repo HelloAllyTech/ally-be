@@ -34,7 +34,7 @@ import { RoadmapStrategyGoalRepository } from '../repository/roadmap-strategy.re
 import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 import { RoadmapStrategyContextService } from './roadmap-strategy-context.service';
 import { RoadmapOpportunityService } from './roadmap-opportunity.service';
-import { RoadmapCopilotProductMapService } from './roadmap-copilot-product-map.service';
+import { BuilderProductMapService } from 'src/builder/service/builder-product-map.service';
 import {
   COPILOT_SUBMIT_TOOL,
   RoadmapCopilotToolsService,
@@ -125,7 +125,7 @@ export class RoadmapCopilotService {
     private readonly productGoalRepository: RoadmapProductGoalRepository,
     private readonly strategyGoalRepository: RoadmapStrategyGoalRepository,
     private readonly readinessToken: RoadmapReadinessTokenService,
-    private readonly productMap: RoadmapCopilotProductMapService,
+    private readonly productMap: BuilderProductMapService,
   ) {}
 
   /** One turn, collected — for the JSON endpoint the pre-streaming admin bundle still calls. */

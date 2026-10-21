@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import {
   AgentLlmProviderFactory,
@@ -31,6 +31,7 @@ import { BuilderMessageRole } from '../enum/builder.enum';
 import { BuilderSessionService } from './builder-session.service';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
+import { BuilderPlatformContextService } from './builder-platform-context.service';
 import {
   BuilderInterviewToolsService,
   BuilderToolExecutionContext,
@@ -167,6 +168,9 @@ export class BuilderInterviewOrchestratorService {
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly agentLlmFactory: AgentLlmProviderFactory,
     private readonly llmCompletion: LlmCompletionService,
+    /** The platform map block. Optional so a fixture without one still runs a turn. */
+    @Optional()
+    private readonly platformContext?: BuilderPlatformContextService,
   ) {}
 
   /**
@@ -847,11 +851,13 @@ export class BuilderInterviewOrchestratorService {
     exemplars: string[] = [],
     handoffContext: string | null = null,
   ): Promise<AgentSystemBlock[]> {
-    const [instructions, context, platformRules] = await Promise.all([
-      this.buildSystemPrompt(),
-      this.knowledgeService.buildContextBlock(repos, exemplars),
-      this.knowledgeService.platformRules(),
-    ]);
+    const [instructions, context, platformRules, platformMap] =
+      await Promise.all([
+        this.buildSystemPrompt(),
+        this.knowledgeService.buildContextBlock(repos, exemplars),
+        this.knowledgeService.platformRules(),
+        this.platformContext?.render() ?? Promise.resolve(''),
+      ]);
     // Typed, not `any[]`. These used to be Anthropic's own shape
     // (`cache_control: ephemeral`) written straight into the request; the
     // provider-neutral layer takes `cache` instead and each adapter honours it
@@ -867,6 +873,13 @@ export class BuilderInterviewOrchestratorService {
       { text: `${instructions}\n\n${platformRules}`, cache: true },
       { text: context, cache: true },
     ];
+    // The reusable systems and the docs index: what already exists, read before any question.
+    // Its own block because it refreshes on its own schedule; shared by every session, so it
+    // stays inside the common prefix. Session 2bc3a5cf proposed rebuilding Auto-improve
+    // because nothing in its context said Auto-improve existed.
+    if (platformMap.trim()) {
+      blocks.push({ text: platformMap, cache: true });
+    }
     // Last, so the two blocks above stay a prefix shared with every other session. Frozen
     // per session, so it caches as well as they do.
     if (handoffContext) {

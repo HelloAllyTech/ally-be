@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { FEATURE_TOGGLES } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { BuilderGithubReadService } from 'src/builder/service/builder-github-read.service';
-import { BuilderKnowledgeService } from 'src/builder/service/builder-knowledge.service';
+import { BuilderGithubReadService } from './builder-github-read.service';
+import { BuilderKnowledgeService } from './builder-knowledge.service';
+import { BuilderCatalogService } from './builder-catalog.service';
 import {
   BUILDER_REPOS,
   BUILDER_WIKI_REPO,
-} from 'src/builder/constants/builder-repos.constants';
+} from '../constants/builder-repos.constants';
 
-import { ROADMAP_COPILOT_PRODUCT_MAP } from '../constants/product-roadmap.constants';
+import { BUILDER_PRODUCT_MAP } from '../constants/builder.constants';
 
 /** The wiki's own one-line-per-page index, generated from page frontmatter. */
 const WIKI_ROUTING_PATH = 'wiki/ROUTING.md';
@@ -41,7 +42,15 @@ interface MapSection {
 }
 
 /**
- * What the opportunity copilot knows about Ally *as built*, before it looks anything up.
+ * What an agent knows about Ally *as built*, before it looks anything up — read by the
+ * opportunity copilot whole, and by the Builder interview for the parts its own context does
+ * not already carry (the reusable systems and the documentation index).
+ *
+ * It lives in Builder rather than in the roadmap because Builder owns every source it reads
+ * (packs, catalog, GitHub reads), and the roadmap may depend on Builder but never the reverse.
+ * One map, two readers: the copilot and the interview used to know different things about the
+ * same product, and the interview — which knew less about what already exists — was the one
+ * that proposed rebuilding Auto-improve in session 2bc3a5cf.
  *
  * ## Why this exists
  *
@@ -73,18 +82,49 @@ interface MapSection {
  * map" must read as "look it up", never as "there is nothing there".
  */
 @Injectable()
-export class RoadmapCopilotProductMapService {
+export class BuilderProductMapService {
   private readonly logger = LoggerService.getInstance(
-    RoadmapCopilotProductMapService.name,
+    BuilderProductMapService.name,
   );
 
   private cached: { text: string; expiresAt: number } | null = null;
   private inflight: Promise<string> | null = null;
 
+  private docsCached: { text: string; expiresAt: number } | null = null;
+
   constructor(
     private readonly knowledge: BuilderKnowledgeService,
     private readonly githubRead: BuilderGithubReadService,
+    private readonly catalog: BuilderCatalogService,
   ) {}
+
+  /**
+   * The documentation index alone — the wiki's page list and every repo's docs — for an agent
+   * whose own context already carries the repositories, packs and admin surfaces. Cached on
+   * the same terms as the full render.
+   */
+  async renderDocsIndex(): Promise<string> {
+    if (this.docsCached && this.docsCached.expiresAt > Date.now()) {
+      return this.docsCached.text;
+    }
+    const [wiki, docs] = await Promise.all([this.wikiIndex(), this.repoDocs()]);
+    const text = [
+      '# Documentation you can read',
+      'Docs say what an area is for and why; read the one that matches before the code. ' +
+        'docs_search finds pages not listed here.',
+      wiki.text,
+      docs.text,
+    ].join('\n\n');
+    this.docsCached = {
+      text,
+      expiresAt:
+        Date.now() +
+        (wiki.complete && docs.complete
+          ? BUILDER_PRODUCT_MAP.TTL_MS
+          : BUILDER_PRODUCT_MAP.RETRY_TTL_MS),
+    };
+    return text;
+  }
 
   async render(): Promise<string> {
     if (this.cached && this.cached.expiresAt > Date.now()) {
@@ -98,8 +138,8 @@ export class RoadmapCopilotProductMapService {
             expiresAt:
               Date.now() +
               (complete
-                ? ROADMAP_COPILOT_PRODUCT_MAP.TTL_MS
-                : ROADMAP_COPILOT_PRODUCT_MAP.RETRY_TTL_MS),
+                ? BUILDER_PRODUCT_MAP.TTL_MS
+                : BUILDER_PRODUCT_MAP.RETRY_TTL_MS),
           };
           return text;
         })
@@ -111,10 +151,17 @@ export class RoadmapCopilotProductMapService {
   }
 
   private async assemble(): Promise<MapSection> {
-    const [packs, wiki, docs] = await Promise.all([
+    const [packs, wiki, docs, systems] = await Promise.all([
       this.repoPacks(),
       this.wikiIndex(),
       this.repoDocs(),
+      this.catalog
+        .renderContextSection()
+        .then((text) => ({
+          text: text.replace(/^# /gm, '## '),
+          complete: true,
+        }))
+        .catch(() => ({ text: '', complete: false })),
     ]);
     const text = [
       '# Ally as built — the product map',
@@ -124,6 +171,7 @@ export class RoadmapCopilotProductMapService {
         'before you say it does not.',
       this.repositories(),
       this.adminSurfaces(),
+      systems.text,
       packs.text,
       '## Documentation you can read',
       wiki.text,
@@ -176,7 +224,7 @@ export class RoadmapCopilotProductMapService {
         const map = byRepo.get(repo);
         const body = map?.mapMd?.trim() ?? '';
         // A pack this short is a failed generation ("Done.", a refusal), not a map.
-        if (body.length < ROADMAP_COPILOT_PRODUCT_MAP.MIN_USABLE_PACK_CHARS) {
+        if (body.length < BUILDER_PRODUCT_MAP.MIN_USABLE_PACK_CHARS) {
           lines.push(
             `### ${repo}\n\nNo usable knowledge pack. Learn this repo with docs_search, ` +
               'github_repo_tree and its README before saying how anything in it works.',
@@ -191,11 +239,11 @@ export class RoadmapCopilotProductMapService {
         ]
           .filter(Boolean)
           .join(', ');
-        const cut = body.length > ROADMAP_COPILOT_PRODUCT_MAP.PACK_MAX_CHARS;
+        const cut = body.length > BUILDER_PRODUCT_MAP.PACK_MAX_CHARS;
         lines.push(
           `### ${repo}${stamp ? ` (${stamp})` : ''}\n\n${
             cut
-              ? `${body.slice(0, ROADMAP_COPILOT_PRODUCT_MAP.PACK_MAX_CHARS)}\n\n… [cut here — the rest of this pack is conventions and commands]`
+              ? `${body.slice(0, BUILDER_PRODUCT_MAP.PACK_MAX_CHARS)}\n\n… [cut here — the rest of this pack is conventions and commands]`
               : body
           }`,
         );
@@ -203,7 +251,7 @@ export class RoadmapCopilotProductMapService {
       return { text: lines.join('\n\n'), complete: true };
     } catch (error) {
       this.logger.warn(
-        `[ROADMAP] Copilot product map: knowledge packs unavailable: ${(error as Error)?.message}`,
+        `[BUILDER] Product map: knowledge packs unavailable: ${(error as Error)?.message}`,
       );
       return {
         text: `${header}\n\nCould not be read this time. Use docs_search and github_repo_tree.`,
@@ -249,7 +297,7 @@ export class RoadmapCopilotProductMapService {
       .join('')
       .trim();
     return {
-      text: `${header}\n\n${bound(kept, ROADMAP_COPILOT_PRODUCT_MAP.WIKI_INDEX_MAX_CHARS)}`,
+      text: `${header}\n\n${bound(kept, BUILDER_PRODUCT_MAP.WIKI_INDEX_MAX_CHARS)}`,
       complete: true,
     };
   }
@@ -278,7 +326,7 @@ export class RoadmapCopilotProductMapService {
         Array.isArray(result.files) ? result.files : []
       ).filter((path: string) => !ROOT_DOCS_DROPPED.has(path));
       if (!files.length) return `- ${repo}: no markdown docs`;
-      const shown = files.slice(0, ROADMAP_COPILOT_PRODUCT_MAP.DOCS_PER_REPO);
+      const shown = files.slice(0, BUILDER_PRODUCT_MAP.DOCS_PER_REPO);
       const more = files.length - shown.length;
       return `- ${repo}: ${shown.join(', ')}${more > 0 ? `, and ${more} more (docs_search finds them)` : ''}`;
     });

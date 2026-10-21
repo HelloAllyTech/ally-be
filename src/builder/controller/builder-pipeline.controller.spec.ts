@@ -11,11 +11,14 @@ import { BuilderPullRequestService } from '../service/builder-pull-request.servi
 import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderPrdService } from '../service/builder-prd.service';
 import { BuilderSessionService } from '../service/builder-session.service';
+import { BuilderCatalogService } from '../service/builder-catalog.service';
+import { BuilderEvidenceLogService } from '../service/builder-evidence-log.service';
 import { createDraftingDesign } from '../util/builder-technical-design.util';
 
 describe('BuilderPipelineController', () => {
   let app: INestApplication;
   let mockBuilderBuildService: Partial<BuilderBuildService>;
+  let mockCatalogService: any;
 
   let mockBuilderSessionService: { getSession: jest.Mock };
   let mockPrdService: Record<string, jest.Mock>;
@@ -38,6 +41,13 @@ describe('BuilderPipelineController', () => {
         .mockResolvedValue('## Platform rules\n\nBe additive.'),
       renderRepoPacks: jest.fn().mockResolvedValue(''),
     };
+    mockCatalogService = {
+      upsert: jest.fn(async (params: any) => ({
+        repo: params.repo,
+        entries: params.entries,
+        generatedAt: new Date('2026-10-21T00:00:00Z'),
+      })),
+    };
     mockBuilderBuildService = {
       getRunOrFail: jest.fn().mockResolvedValue({
         id: uuidv4(),
@@ -59,6 +69,11 @@ describe('BuilderPipelineController', () => {
         { provide: BuilderKnowledgeService, useValue: mockKnowledgeService },
         { provide: BuilderPrdService, useValue: mockPrdService },
         { provide: BuilderSessionService, useValue: mockBuilderSessionService },
+        { provide: BuilderCatalogService, useValue: mockCatalogService },
+        {
+          provide: BuilderEvidenceLogService,
+          useValue: { renderForPrompt: jest.fn().mockResolvedValue('') },
+        },
       ],
     }).compile();
 
@@ -103,6 +118,60 @@ describe('BuilderPipelineController', () => {
       'FAILED',
       'no pull request was opened',
     );
+  });
+
+  /**
+   * The catalog is posted by the context-refresh workflow. The endpoint keeps only the declared
+   * keys of each entry and drops entries without a kind and a name — anything holding the
+   * pipeline key can reach it.
+   */
+  it('stores a repo catalog, keeping only the declared keys', async () => {
+    await request(app.getHttpServer())
+      .post('/builder/pipeline/repo-catalogs')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        repo: 'ally-be',
+        commitSha: 'abc123',
+        entries: [
+          {
+            kind: 'module',
+            name: 'skill-experiment',
+            path: 'src/skill-experiment',
+            extra: 'x',
+          },
+          { kind: 'table', path: 'no-name.ts' },
+          { name: 'no-kind' },
+        ],
+        stats: { files: 10 },
+      })
+      .expect(201)
+      .expect((res) =>
+        expect(res.body).toMatchObject({
+          ok: true,
+          repo: 'ally-be',
+          entries: 1,
+        }),
+      );
+
+    expect(mockCatalogService.upsert).toHaveBeenCalledWith({
+      repo: 'ally-be',
+      commitSha: 'abc123',
+      entries: [
+        {
+          kind: 'module',
+          name: 'skill-experiment',
+          path: 'src/skill-experiment',
+        },
+      ],
+      stats: { files: 10 },
+    });
+  });
+
+  it('refuses a catalog without the pipeline key', async () => {
+    await request(app.getHttpServer())
+      .post('/builder/pipeline/repo-catalogs')
+      .send({ repo: 'ally-be', entries: [] })
+      .expect(401);
   });
 
   /**

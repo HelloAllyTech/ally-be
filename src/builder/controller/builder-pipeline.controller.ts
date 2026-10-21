@@ -18,6 +18,8 @@ import { BuilderPullRequestService } from '../service/builder-pull-request.servi
 import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderPrdService } from '../service/builder-prd.service';
 import { BuilderSessionService } from '../service/builder-session.service';
+import { BuilderCatalogService } from '../service/builder-catalog.service';
+import { BuilderEvidenceLogService } from '../service/builder-evidence-log.service';
 import { renderPrd } from '../constants/builder-build-prompt';
 import { renderPlatformRules } from '../constants/builder-platform-rules';
 import {
@@ -29,6 +31,7 @@ import {
   sliceDesignForRepos,
 } from '../util/builder-technical-design.util';
 import { BuilderTechnicalDesign } from '../type/builder-prd.type';
+import { BuilderCatalogEntry } from '../entity/builder-repo-catalog.entity';
 import { BUILDER_EVENT_BATCH_MAX } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
@@ -44,6 +47,7 @@ import {
   IngestBuilderEventsDto,
   RecordBuilderRunCostDto,
   CompleteBuilderRunDto,
+  UpsertBuilderRepoCatalogDto,
   UpsertBuilderRepoMapDto,
   RecordBuilderReviewFindingsDto,
   SubmitBuilderDesignDto,
@@ -78,6 +82,8 @@ export class BuilderPipelineController {
     private readonly knowledgeService: BuilderKnowledgeService,
     private readonly prdService: BuilderPrdService,
     private readonly sessionService: BuilderSessionService,
+    private readonly catalogService: BuilderCatalogService,
+    private readonly evidenceLog: BuilderEvidenceLogService,
   ) {}
 
   /**
@@ -129,6 +135,7 @@ export class BuilderPipelineController {
         repoPacks: await this.knowledgeService.renderRepoPacks(
           session.repos ?? undefined,
         ),
+        interviewEvidence: await this.evidenceLog.renderForPrompt(session.id),
       });
     }
 
@@ -504,6 +511,52 @@ export class BuilderPipelineController {
     });
     return { ok: true, repo: map.repo, generatedAt: map.generatedAt };
   }
+
+  @Post('repo-catalogs')
+  @ApiOperation({
+    summary: "Replace a repo's capability catalog (context-refresh workflow)",
+  })
+  async upsertRepoCatalog(@Body() dto: UpsertBuilderRepoCatalogDto) {
+    const catalog = await this.catalogService.upsert({
+      repo: dto.repo,
+      commitSha: dto.commitSha ?? null,
+      entries: normaliseCatalogEntries(dto.entries),
+      stats: dto.stats ?? null,
+    });
+    return {
+      ok: true,
+      repo: catalog.repo,
+      entries: catalog.entries.length,
+      generatedAt: catalog.generatedAt,
+    };
+  }
+}
+
+/**
+ * Keep only the declared keys of each catalog entry, as strings, and drop any
+ * entry without a kind and a name. The extractor is ours, but this endpoint is
+ * reachable by anything holding the pipeline key.
+ */
+function normaliseCatalogEntries(
+  entries: Record<string, any>[],
+): BuilderCatalogEntry[] {
+  const out: BuilderCatalogEntry[] = [];
+  for (const entry of entries ?? []) {
+    const kind = typeof entry?.kind === 'string' ? entry.kind.slice(0, 40) : '';
+    const name =
+      typeof entry?.name === 'string' ? entry.name.slice(0, 300) : '';
+    if (!kind || !name) continue;
+    out.push({
+      kind,
+      name,
+      path: typeof entry.path === 'string' ? entry.path.slice(0, 400) : '',
+      ...(typeof entry.detail === 'string'
+        ? { detail: entry.detail.slice(0, 300) }
+        : {}),
+      ...(typeof entry.app === 'string' ? { app: entry.app.slice(0, 80) } : {}),
+    });
+  }
+  return out;
 }
 
 /**
