@@ -37,8 +37,7 @@ import { TenantResponseDto } from '../dto/tenant-response.dto';
 import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
 import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from './tenant-case-shared';
-import { PermissionsService } from '../../authorization/service/permissions.service';
-import { AdminTenantService } from '../../user/service/admin-tenant.service';
+import { TenantScopeService } from '../../authorization/service/tenant-scope.service';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -69,10 +68,8 @@ export class TenantService {
     private readonly settingsService: SettingsService,
     private readonly preferenceService: PreferenceService,
     private readonly tenantCaseSharedService: TenantCaseSharedService,
-    @Inject(forwardRef(() => PermissionsService))
-    private permissionsService: PermissionsService,
-    @Inject(forwardRef(() => AdminTenantService))
-    private adminTenantService: AdminTenantService,
+    @Inject(forwardRef(() => TenantScopeService))
+    private readonly tenantScopeService: TenantScopeService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -338,28 +335,17 @@ export class TenantService {
     search?: string,
     options?: Pagination,
   ): Promise<GetAllTenantsResponseDto> {
-    const userId = ExecutionManager.getUserId();
-
-    const isMultiTenantAdmin = userId
-      ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
-      : false;
-
-    let tenantsIds: string[] = [];
-    if (isMultiTenantAdmin) {
-      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
-        Number(userId),
-      );
-      tenantsIds = adminTenants.data.map((t: any) => t.id);
-
-      if (tenantsIds.length == 0) {
-        return { data: [], count: 0 };
-      }
+    // null = every tenant. The repository reads an empty array the same way,
+    // so a caller scoped to nothing has to be answered here.
+    const scopedTenantIds = await this.tenantScopeService.resolveTenantIds();
+    if (scopedTenantIds !== null && scopedTenantIds.length === 0) {
+      return { data: [], count: 0 };
     }
 
     const { tenants, count } = await this.tenantsRepository.getAllTenants(
       search,
       options,
-      tenantsIds,
+      scopedTenantIds ?? [],
     );
     if (tenants.length == 0) {
       return { data: [], count: 0 };
@@ -420,23 +406,14 @@ export class TenantService {
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
 
-    const isMultiTenantAdmin = userId
-      ? await this.permissionsService.isMultiTenantAdmin(userId)
-      : false;
+    const isMultiTenantAdmin =
+      await this.tenantScopeService.isRestricted(userId);
 
     if (isMultiTenantAdmin) {
-      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
-        Number(userId),
-      );
-
-      if (adminTenants) {
-        const adminTenantIds = adminTenants.data.map((t: any) => t.id);
-        if (!adminTenantIds.includes(id)) {
-          throw new BadRequestException(
-            'You are not authorized to update this organization settings.',
-          );
-        }
-      }
+      await this.tenantScopeService.assertTenantInScope(id, {
+        userId,
+        message: 'You are not authorized to update this organization settings.',
+      });
 
       // Flagging an org as a test organization removes it from platform-wide
       // analytics, so it stays a super-admin decision — MULTI_TENANT_ADMIN

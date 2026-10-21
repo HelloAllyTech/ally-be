@@ -2,6 +2,7 @@ import { BranchingScenarioContent } from '../type/branching.type';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { Competency } from 'src/learn/entity/competency.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { Track } from '../entity/track.entity';
 import { applyPromptHtml, storedPromptsOf } from '../util/prompt-html.util';
@@ -79,7 +81,46 @@ export class TrackService {
     private readonly caseSharedService: CaseSharedService,
     private readonly tenantService: TenantService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
+
+  /**
+   * A track is global content: the same row is served to every organization
+   * it is assigned to. A platform admin restricted to some organizations may
+   * therefore change only tracks they created — the rule roleplays already
+   * follow (ScenarioService) — and may not make one global, which assigns it
+   * to every organization at once. Everyone else is unaffected.
+   *
+   * Called by the admin controller ahead of every route that changes an
+   * existing track, its structure or its translations.
+   */
+  async assertCallerMayEdit(trackId: string): Promise<void> {
+    const userId = this.getUserId();
+    if (!(await this.tenantScopeService.isRestricted(userId))) {
+      return;
+    }
+    const track = await this.trackRepository.findOne({
+      where: { id: trackId },
+      select: ['id', 'createdBy'],
+    });
+    if (!track) {
+      throw new NotFoundException('Track not found');
+    }
+    if (track.createdBy !== userId) {
+      throw new ForbiddenException('You can only edit your own courses');
+    }
+  }
+
+  async assertCallerMayMakeGlobal(isGlobal?: boolean): Promise<void> {
+    if (isGlobal !== true) {
+      return;
+    }
+    if (await this.tenantScopeService.isRestricted(this.getUserId())) {
+      throw new ForbiddenException(
+        'Organization-restricted admins cannot make a course available to every organization',
+      );
+    }
+  }
 
   async getTracks(filters?: TrackFilterOptions) {
     if (filters?.tenantId) {

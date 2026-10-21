@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -24,8 +25,8 @@ import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
 import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from '../tenant-case-shared';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -65,7 +66,11 @@ describe('TenantService', () => {
   let settingsService: jest.Mocked<SettingsService>;
   let tenantDashboardSharedService: jest.Mocked<TenantDashboardSharedService>;
   let mockPermissionsService: any;
-  let mockAdminTenantService: any;
+  // The organizations an allowlisted platform admin holds, read by the real
+  // TenantScopeService through the fake repositories below.
+  let allowlistedTenantIds: string[];
+  let mockAdminTenantRepository: any;
+  let mockTenantsRepository: any;
   let mockAuditLogService: any;
   let posthog: { capture: jest.Mock };
 
@@ -115,8 +120,9 @@ describe('TenantService', () => {
       createQueryBuilder: jest.fn(),
     };
 
-    const mockTenantsRepository = {
+    mockTenantsRepository = {
       getallTenants: jest.fn(),
+      getAllTenants: jest.fn().mockResolvedValue({ tenants: [], count: 0 }),
     };
 
     const mockUserRepository = {
@@ -184,11 +190,25 @@ describe('TenantService', () => {
 
     mockPermissionsService = {
       isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+      getUserPermissions: jest
+        .fn()
+        .mockResolvedValue([PERMISSIONS.SYSTEM_ACCESS]),
     };
 
-    mockAdminTenantService = {
-      getTenantsForAdmin: jest.fn().mockResolvedValue({ data: [], count: 0 }),
+    allowlistedTenantIds = [];
+    mockAdminTenantRepository = {
+      find: jest.fn(async () =>
+        allowlistedTenantIds.map((tenantId) => ({ tenantId })),
+      ),
     };
+    const tenantScopeService = new TenantScopeService(
+      mockPermissionsService,
+      mockAdminTenantRepository,
+      {
+        find: jest.fn(async () => allowlistedTenantIds.map((id) => ({ id }))),
+        findOne: jest.fn().mockResolvedValue(null),
+      } as any,
+    );
 
     mockAuditLogService = {
       log: jest.fn(),
@@ -251,12 +271,8 @@ describe('TenantService', () => {
           useValue: mockTenantCaseSharedService,
         },
         {
-          provide: PermissionsService,
-          useValue: mockPermissionsService,
-        },
-        {
-          provide: AdminTenantService,
-          useValue: mockAdminTenantService,
+          provide: TenantScopeService,
+          useValue: tenantScopeService,
         },
         {
           provide: AuditLogService,
@@ -521,6 +537,46 @@ describe('TenantService', () => {
     });
   });
 
+  describe('getAllTenants', () => {
+    it('lists every organization for an unrestricted platform admin', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+
+      await service.getAllTenants(undefined, {});
+
+      expect(mockTenantsRepository.getAllTenants).toHaveBeenCalledWith(
+        undefined,
+        {},
+        [],
+      );
+    });
+
+    it('lists only the allowlisted organizations for a restricted platform admin', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      allowlistedTenantIds = ['tenant-a'];
+
+      await service.getAllTenants(undefined, {});
+
+      expect(mockTenantsRepository.getAllTenants).toHaveBeenCalledWith(
+        undefined,
+        {},
+        ['tenant-a'],
+      );
+    });
+
+    it('lists nothing — not everything — once their organizations are all gone', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      allowlistedTenantIds = [];
+
+      await expect(service.getAllTenants(undefined, {})).resolves.toEqual({
+        data: [],
+        count: 0,
+      });
+      expect(mockTenantsRepository.getAllTenants).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateTenant', () => {
     let mockEntityManager: any;
 
@@ -769,22 +825,19 @@ describe('TenantService', () => {
       ).toHaveBeenCalledWith('test-tenant-id', dashboardIds, mockEntityManager);
     });
 
-    it('should throw BadRequestException when multi-tenant admin is not authorized to update the tenant', async () => {
+    it('should refuse a multi-tenant admin updating a tenant off their allowlist', async () => {
       const userId = '123';
       const tenantId = 'test-tenant-id';
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
 
       tenantRepository.findOne.mockResolvedValueOnce(mockTenant);
       mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
-      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
-        data: [{ id: 'other-tenant-id' }],
-        count: 1,
-      });
+      allowlistedTenantIds = ['other-tenant-id'];
 
       await expect(
         service.updateTenant(tenantId, { name: 'New Name' } as any),
       ).rejects.toThrow(
-        new BadRequestException(
+        new ForbiddenException(
           'You are not authorized to update this organization settings.',
         ),
       );
@@ -792,8 +845,10 @@ describe('TenantService', () => {
       expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
         Number(userId),
       );
-      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
-        Number(userId),
+      expect(mockAdminTenantRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: Number(userId) }),
+        }),
       );
       expect(mockEntityManager.update).not.toHaveBeenCalled();
     });
@@ -812,18 +867,17 @@ describe('TenantService', () => {
         .mockResolvedValueOnce(updatedTenantEntity); // Final findById
 
       mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
-      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
-        data: [{ id: tenantId }],
-        count: 1,
-      });
+      allowlistedTenantIds = [tenantId];
 
       const result = await service.updateTenant(tenantId, updateDto as any);
 
       expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
         Number(userId),
       );
-      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
-        Number(userId),
+      expect(mockAdminTenantRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: Number(userId) }),
+        }),
       );
       expect(mockEntityManager.update).toHaveBeenCalled();
       expect(result).toEqual(
@@ -846,10 +900,7 @@ describe('TenantService', () => {
         .mockResolvedValueOnce(updatedTenantEntity); // Final findById
 
       mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
-      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
-        data: [{ id: tenantId }],
-        count: 1,
-      });
+      allowlistedTenantIds = [tenantId];
 
       await service.updateTenant(tenantId, updateDto as any);
 
@@ -903,7 +954,7 @@ describe('TenantService', () => {
       expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
         Number(userId),
       );
-      expect(mockAdminTenantService.getTenantsForAdmin).not.toHaveBeenCalled();
+      expect(mockAdminTenantRepository.find).not.toHaveBeenCalled();
       expect(mockEntityManager.update).toHaveBeenCalled();
       expect(result).toEqual(
         expect.objectContaining({

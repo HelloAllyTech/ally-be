@@ -7,7 +7,7 @@ import { PreferenceName } from 'src/common/constants/user.constants';
 describe('FeatureToggleGuard', () => {
   let guard: FeatureToggleGuard;
   let reflector: { getAllAndOverride: jest.Mock };
-  let featureToggleService: { hasToggle: jest.Mock };
+  let featureToggleService: { hasToggle: jest.Mock; isWithheld: jest.Mock };
   let tenantFeatureService: { isEnabledForTenant: jest.Mock };
 
   const contextFor = (user: any): ExecutionContext =>
@@ -22,7 +22,10 @@ describe('FeatureToggleGuard', () => {
 
   beforeEach(() => {
     reflector = { getAllAndOverride: jest.fn() };
-    featureToggleService = { hasToggle: jest.fn().mockResolvedValue(false) };
+    featureToggleService = {
+      hasToggle: jest.fn().mockResolvedValue(false),
+      isWithheld: jest.fn().mockResolvedValue(false),
+    };
     tenantFeatureService = {
       isEnabledForTenant: jest.fn().mockResolvedValue(false),
     };
@@ -120,5 +123,43 @@ describe('FeatureToggleGuard', () => {
     await expect(guard.canActivate(contextFor(undefined))).rejects.toThrow(
       'Please sign in to continue.',
     );
+  });
+
+  describe('platform-only toggles (organization-restricted admins)', () => {
+    beforeEach(() => {
+      reflector.getAllAndOverride.mockReturnValue({
+        featureKey: FeatureToggleKey.ANALYTICS,
+        tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+      });
+    });
+
+    it('refuses a restricted admin with a reason, even holding the toggle', async () => {
+      featureToggleService.isWithheld.mockResolvedValue(true);
+      featureToggleService.hasToggle.mockResolvedValue(true);
+      tenantFeatureService.isEnabledForTenant.mockResolvedValue(true);
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin)),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          message: expect.stringContaining('access to every organization'),
+          featureKey: FeatureToggleKey.ANALYTICS,
+        }),
+      });
+      // Not even the org-level escape hatch is consulted.
+      expect(tenantFeatureService.isEnabledForTenant).not.toHaveBeenCalled();
+    });
+
+    it('grants an unrestricted admin holding the toggle', async () => {
+      featureToggleService.hasToggle.mockResolvedValue(true);
+
+      await expect(guard.canActivate(contextFor(platformAdmin))).resolves.toBe(
+        true,
+      );
+      expect(featureToggleService.isWithheld).toHaveBeenCalledWith(
+        platformAdmin.id,
+        FeatureToggleKey.ANALYTICS,
+      );
+    });
   });
 });

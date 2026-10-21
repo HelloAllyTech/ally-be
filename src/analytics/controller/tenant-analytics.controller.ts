@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { EnableAnalyticsDto } from '../dto/enable-analytics.dto';
@@ -111,7 +112,9 @@ export class TenantAnalyticsController {
   @ApiOperation({ summary: 'Update tenant dashboards' })
   @ApiBody({ type: EnableAnalyticsDto })
   @ApiResponse({ status: 200, description: 'Tenant dashboards updated' })
-  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  // The body names the organization; an organization-restricted admin may
+  // only set the dashboards of one on their allowlist.
+  @TenantScopedPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   async updateTenantDashboards(
     @Body() enableAnalyticsDto: EnableAnalyticsDto,
   ): Promise<boolean> {
