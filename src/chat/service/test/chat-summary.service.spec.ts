@@ -12,6 +12,11 @@ import {
 import { SettingsService } from 'src/settings/service/settings.service';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
+
+const mockTenantScopeService = {
+  assertTenantInScope: jest.fn().mockResolvedValue(undefined),
+};
 
 describe('ChatSummaryService', () => {
   let service: ChatSummaryService;
@@ -185,6 +190,10 @@ describe('ChatSummaryService', () => {
           provide: PermissionValidator,
           useValue: mockPermissionValidator,
         },
+        {
+          provide: TenantScopeService,
+          useValue: mockTenantScopeService,
+        },
       ],
     }).compile();
 
@@ -198,6 +207,25 @@ describe('ChatSummaryService', () => {
   });
 
   describe('exportSummary', () => {
+    it('answers 404 for a chat outside the caller organizations, even with ORGANIZATION_ACCESS', async () => {
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
+      mockTenantScopeService.assertTenantInScope.mockRejectedValueOnce(
+        new ForbiddenException(),
+      );
+
+      await expect(service.exportSummary(mockTokenUser, 1)).rejects.toThrow(
+        new NotFoundException('Chat with ID 1 not found'),
+      );
+      expect(mockTenantScopeService.assertTenantInScope).toHaveBeenCalledWith(
+        'test-tenant',
+        { userId: mockTokenUser.id },
+      );
+    });
+
     it('should export summary successfully for client', async () => {
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         chat: mockChat,

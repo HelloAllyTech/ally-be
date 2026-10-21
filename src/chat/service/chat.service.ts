@@ -324,14 +324,19 @@ export class ChatService {
     });
   }
   async getChatById(chatId: number) {
+    const tenantId = ExecutionManager.getTenantId();
     const cachedChat = await this.cache.get(`chat:${chatId}`);
     if (cachedChat) {
-      return JSON.parse(cachedChat) as Chat;
+      // The cache key carries no tenant, so a hit has to pass the same tenant
+      // test the query below applies. Without it, a chat cached by one org's
+      // request was handed to a caller in any other org who asked for its id.
+      const chat = JSON.parse(cachedChat) as Chat;
+      return !tenantId || chat.tenantId === tenantId ? chat : null;
     }
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
-        tenantId: ExecutionManager.getTenantId(),
+        tenantId,
       },
     });
     if (chat) {
