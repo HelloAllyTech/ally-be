@@ -50,9 +50,6 @@ rules:
 
   - id: ai-task-registry
     watch:
-      - "src/**/service/*-ai.service.ts"
-      - "src/**/service/*autofill*.service.ts"
-      - "src/**/service/*-orchestrator.service.ts"
       # Every provider layer, not just the ones that existed when this rule was
       # written: `src/llm-agent/` was added by the character-interview
       # multi-provider change and would have slipped through a narrower list.
