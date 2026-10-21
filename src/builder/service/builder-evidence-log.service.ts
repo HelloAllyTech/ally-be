@@ -200,15 +200,20 @@ function describeResult(
   if (Array.isArray(list)) {
     return list
       .slice(0, 12)
-      .map((item: any) =>
-        typeof item === 'string'
-          ? item
-          : [item?.repo, item?.path ?? item?.name ?? item?.title]
-              .filter(Boolean)
-              .join(':'),
-      )
+      .map((item: any) => (typeof item === 'string' ? item : describeHit(item)))
       .join(', ');
   }
   if (typeof result?.answer === 'string') return result.answer;
   return null;
+}
+
+/**
+ * One search hit as `repo:path`. Catalog hits already carry the repo in their
+ * path (`ally-be:src/learn`), and joining the two printed it twice.
+ */
+function describeHit(item: any): string {
+  const where = String(item?.path ?? item?.name ?? item?.title ?? '');
+  const repo = item?.repo ? String(item.repo) : '';
+  if (!repo || where.startsWith(`${repo}:`)) return where || repo;
+  return where ? `${repo}:${where}` : repo;
 }

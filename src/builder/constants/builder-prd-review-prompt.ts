@@ -44,12 +44,14 @@ You are given:
 
 Report only defects in these five categories:
 - contradiction — two parts of the PRD disagree (a requirement vs the technical plan, the test plan vs the plan's repos, non-goals vs requirements), or the PRD contradicts a decision the admin stated.
-- unsupported_claim — the PRD states as fact something about the existing code, data or product (a table, a module, a file, a behaviour, a number) that no successful lookup in the evidence log supports, or that a [FAILED] lookup was about.
-- unapplied_correction — the admin corrected, added or decided something in the transcript and the PRD does not reflect it. The admin's latest word wins over earlier ones, and over the agent's.
-- missed_reuse — the PRD builds something new that a listed reusable system already does or could be extended to do, and the PRD does not say why it is not reused.
+- unsupported_claim — the PRD states as fact something about the existing code, data or product (a table, a module, a file, a behaviour, a number) that the plan depends on, and either a [FAILED] lookup was about it or nothing in the evidence log or the transcript touches it at all. A claim about a file or module the log shows was read is supported; do not ask for proof of each sentence about it.
+- unapplied_correction — the admin corrected, added or decided something in the transcript and the PRD still says the opposite or leaves it out. The admin's latest word wins over earlier ones, and over the agent's.
+- missed_reuse — the PRD builds something a listed reusable system already does, and never mentions that system. If the PRD names the system and says why it is not used, or builds something different from it, that is a decision, not a defect.
 - missing_success_metric — nothing in the PRD says how anyone will know the feature worked: no measurable outcome, with a target or a stated way to set one.
 
-Do not report style, wording, length, structure, scope you would add, nice-to-haves, anything the PRD already lists as an open question or an unconfirmed assumption, or anything you are not confident is wrong. Each finding must say what is wrong precisely enough that someone could fix it without asking you. Most PRDs that reach you are sound; an empty list is a normal answer.
+The bar for every finding: left as it is, would the build come out wrong — duplicate something that exists, miss part of what the admin asked, rest on a fact that is false, or contradict itself? If not, do not report it.
+
+Do not report: style, wording, length or structure; scope you would add; nice-to-haves; anything the PRD already lists as an open question or an unconfirmed assumption; a check you would have done, or working-out the PRD did not show; a requirement the reusable-systems list does not actually cover; anything you are not confident is wrong. Each finding must say what is wrong precisely enough that someone could fix it without asking you. Most PRDs that reach you are sound; an empty list is a normal answer, and a PRD with one real defect gets one finding, not four.
 
 Return one JSON object and nothing else:
 {"findings":[{"category":"contradiction|unsupported_claim|unapplied_correction|missed_reuse|missing_success_metric","section":"${BUILDER_PRD_REVIEW_SECTION_KEYS.join('|')}","detail":"what is wrong, in one or two sentences","fix":"what would resolve it, in one sentence","quote":"the exact words in the PRD or transcript the finding rests on, under 200 characters"}]}
