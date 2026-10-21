@@ -757,6 +757,9 @@ export class BuilderController {
         ...(dto.validatedTurns !== undefined
           ? { validatedTurns: dto.validatedTurns }
           : {}),
+        ...(dto.situationBrief !== undefined
+          ? { situationBrief: dto.situationBrief }
+          : {}),
         ...(dto.maxPrAutomationUsd !== undefined
           ? {
               maxPrAutomationUsd: dto.maxPrAutomationUsd

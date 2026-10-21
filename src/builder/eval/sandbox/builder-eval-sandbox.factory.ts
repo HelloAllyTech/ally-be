@@ -55,6 +55,7 @@ export interface BuilderEvalSandbox {
   costUsd: () => number;
   /** Which interview loop this replay runs. */
   validatedTurns: boolean;
+  situationBrief: boolean;
 }
 
 /**
@@ -126,6 +127,7 @@ export class BuilderEvalSandboxFactory {
 
     const overrides = options.overrides ?? {};
     const validatedTurns = overrides.validatedTurns === true;
+    const situationBrief = overrides.situationBrief === true;
     const realPrompts = this.promptSharedService;
     const prompts = new Proxy(realPrompts, {
       get(target, property, receiver) {
@@ -307,7 +309,8 @@ export class BuilderEvalSandboxFactory {
       readiness,
       this.platformContext,
       {
-        get: async () => ({ validatedTurns }) as BuilderSettings,
+        get: async () =>
+          ({ validatedTurns, situationBrief }) as BuilderSettings,
       } as BuilderSettingsService,
     );
 
@@ -321,6 +324,7 @@ export class BuilderEvalSandboxFactory {
       passes,
       costUsd: () => cost,
       validatedTurns,
+      situationBrief,
     };
   }
 }

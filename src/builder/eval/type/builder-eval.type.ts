@@ -88,6 +88,13 @@ export interface BuilderEvalOverrides {
    * before the setting existed, which all ran the legacy loop.
    */
   validatedTurns?: boolean;
+  /**
+   * Whether the replay runs the interview protocol (builder_settings.situationBrief):
+   * a discovery sweep and a situation brief before the first question, then the
+   * question gate. Stamped like `validatedTurns`; absent on suites from before
+   * it existed, which ran without it. Only has an effect with validated turns.
+   */
+  situationBrief?: boolean;
   /** Model settings by prompt code, as the prompt row would hold them. */
   llmConfig?: Record<
     string,
@@ -127,6 +134,19 @@ export interface BuilderEvalGates {
 export interface BuilderEvalMetrics {
   /** The interview loop the run replayed; absent on runs from before it was recorded. */
   loop?: 'validated' | 'legacy';
+  /** The interview protocol ran (builder_settings.situationBrief); absent before it existed. */
+  protocol?: boolean;
+  /** A situation brief was shown. */
+  briefDelivered?: boolean;
+  /**
+   * The brief came before the first question — the protocol's promise that
+   * what exists is named before anything is asked. False with no brief.
+   */
+  briefBeforeFirstQuestion?: boolean;
+  /** Lines in the brief. */
+  briefLines?: number;
+  /** Brief lines the simulated admin corrected. Each correcting reply also counts in `corrections`. */
+  briefCorrections?: number;
   turns: number;
   /** ask_admin calls. */
   questions: number;
@@ -173,6 +193,8 @@ export interface BuilderEvalTurnRecord {
   correction?: boolean;
   builder: string;
   question?: string | null;
+  /** The situation brief this turn showed, one line each: `X1 exists: …`. */
+  brief?: string[];
   toolCalls: { name: string; ok: boolean; summary?: string }[];
 }
 

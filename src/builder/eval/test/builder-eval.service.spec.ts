@@ -259,8 +259,11 @@ describe('BuilderEvalService', () => {
           overrides: {
             prompts: { builder_interviewer_system: 'New interviewer.' },
             llmConfig: { builder_interviewer_system: { model: 'gpt-5' } },
-            // The loop it ran is part of the record — the live one here.
+            // The loop it ran is part of the record — the live one here:
+            // validated, without the interview protocol (the stub has no
+            // situationBrief, which reads as off).
             validatedTurns: true,
+            situationBrief: false,
           },
           candidate: expect.objectContaining({
             content: 'New interviewer.',
@@ -424,7 +427,7 @@ describe('BuilderEvalService', () => {
       expect(startSuite).toHaveBeenCalledWith(
         expect.objectContaining({
           trigger: 'baseline',
-          overrides: { validatedTurns: true },
+          overrides: { validatedTurns: true, situationBrief: false },
         }),
       );
     });

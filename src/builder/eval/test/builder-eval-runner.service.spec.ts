@@ -53,6 +53,98 @@ describe('BuilderEvalRunnerService', () => {
     });
   });
 
+  describe('the situation brief', () => {
+    const brief = {
+      id: 'brief-1',
+      message: 'Here is what exists.',
+      createdAt: '2026-10-21T00:00:00Z',
+      lines: [
+        {
+          id: 'X1',
+          kind: 'exists' as const,
+          text: 'Auto-improve',
+          cites: [
+            {
+              ref: 'E1',
+              label: 'capability_lookup "auto improve" — Auto-improve',
+            },
+          ],
+        },
+        {
+          id: 'P1',
+          kind: 'proposal' as const,
+          approach: 'new' as const,
+          part: 'loop',
+          text: 'A new challenger job',
+          cites: [],
+        },
+      ],
+    };
+
+    it("reads the admin's verdicts on the brief's lines", () => {
+      expect(
+        parseAdminReply(
+          JSON.stringify({
+            message: 'Mostly right.',
+            lines: [
+              { id: 'X1', verdict: 'confirm' },
+              {
+                id: 'P1',
+                verdict: 'correct',
+                correction: 'Reuse Auto-improve, do not build a job',
+              },
+              { id: 'P2', verdict: 'correct' },
+            ],
+            correction: true,
+            about: ['C2'],
+          }),
+        )?.lines,
+      ).toEqual([
+        { id: 'X1', verdict: 'confirm' },
+        {
+          id: 'P1',
+          verdict: 'correct',
+          correction: 'Reuse Auto-improve, do not build a job',
+        },
+        // A correction with no words is a confirmation.
+        { id: 'P2', verdict: 'confirm' },
+      ]);
+    });
+
+    it('answers every line of the brief, confirming the ones the admin did not mention', () => {
+      expect(
+        replyToMessage(
+          {
+            message: 'Reuse it.',
+            optionIds: [],
+            correction: true,
+            about: ['C2'],
+            done: false,
+            lines: [
+              {
+                id: 'P1',
+                verdict: 'correct',
+                correction: 'Reuse Auto-improve',
+              },
+            ],
+          },
+          null,
+          brief,
+        ),
+      ).toEqual({
+        message: 'Reuse it.',
+        briefResponse: {
+          briefId: 'brief-1',
+          lines: [
+            { id: 'X1', verdict: 'confirm' },
+            { id: 'P1', verdict: 'correct', correction: 'Reuse Auto-improve' },
+          ],
+          note: 'Reuse it.',
+        },
+      });
+    });
+  });
+
   describe('replyToMessage', () => {
     const question = {
       id: 'q1',

@@ -17,7 +17,11 @@ import { PRD_SECTION_KEYS, PRD_SECTION_LABELS } from './builder-prd-edits.util';
  */
 
 /** Tools that end the turn; the reply itself, not something the turn did. */
-export const BUILDER_TERMINAL_TOOLS = new Set(['ask_admin', 'finish_turn']);
+export const BUILDER_TERMINAL_TOOLS = new Set([
+  'ask_admin',
+  'finish_turn',
+  'submit_situation_brief',
+]);
 
 /** Tools that write the PRD. */
 export const BUILDER_PRD_EDIT_TOOLS = new Set([

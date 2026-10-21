@@ -61,7 +61,27 @@ import {
   receiptOfStoredTurn,
   renderReceiptLine,
 } from '../util/builder-turn-receipt.util';
-import { BUILDER_TURN_PROTOCOL } from '../constants/builder-validated-tools.constants';
+import {
+  BUILDER_INTERVIEW_PROTOCOL,
+  BUILDER_TURN_PROTOCOL,
+} from '../constants/builder-validated-tools.constants';
+import {
+  BuilderDiscovery,
+  foundLines,
+  planDiscovery,
+  renderDiscoveryBlock,
+  runDiscovery,
+} from '../util/builder-discovery.util';
+import {
+  BuilderBriefResponse,
+  BuilderSituationBrief,
+  normaliseBriefResponse,
+  normaliseSituationBrief,
+  renderBriefForModel,
+  renderBriefResponse,
+  storedSituationBrief,
+} from '../util/builder-situation-brief.util';
+import { questionGateProblems } from '../util/builder-question-gate.util';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
 import { BuilderPrdReadiness } from '../type/builder-prd.type';
 import {
@@ -212,6 +232,18 @@ interface InterviewTurnState {
   warnings: string[];
   prdUnchangedBecause: string | null;
   receipt: BuilderTurnReceipt | null;
+  /** The discovery sweep this turn ran, if it ran one. */
+  discovery: BuilderDiscovery | null;
+  /** What the sweep's calls returned, for the receipt; never persisted. */
+  discoveryCalls: {
+    name: string;
+    input: Record<string, any>;
+    result: Record<string, any>;
+  }[];
+  /** A brief the reply carries, checked and waiting to be shown. */
+  pendingBrief: BuilderSituationBrief | null;
+  /** The brief this turn showed. */
+  situationBrief: BuilderSituationBrief | null;
 }
 
 function createTurnState(): InterviewTurnState {
@@ -234,6 +266,10 @@ function createTurnState(): InterviewTurnState {
     warnings: [],
     prdUnchangedBecause: null,
     receipt: null,
+    discovery: null,
+    discoveryCalls: [],
+    pendingBrief: null,
+    situationBrief: null,
   };
 }
 
@@ -253,6 +289,10 @@ interface InterviewLoopContext {
   /** The admin's own words this turn, when there are some to apply. */
   adminFreeText: string | null;
   checkpoint: (final: boolean) => Promise<void>;
+  /** The interview protocol (builder_settings.situationBrief) is on this turn. */
+  protocol: boolean;
+  /** This turn's reply is the situation brief. */
+  briefDue: boolean;
 }
 
 /** A reason a validated reply is not shown yet, phrased for each reader. */
@@ -496,15 +536,31 @@ export class BuilderInterviewOrchestratorService {
 
     const history = await this.messageRepository.listBySession(sessionId);
     const validatedTurns = await this.validatedTurnsEnabled();
+    // The interview protocol rides on validated turns: its brief and its
+    // question gate are checked the way a validated reply is.
+    const protocol = validatedTurns && (await this.situationBriefEnabled());
+    const briefDue = protocol && this.isBriefDue(history);
+
+    // An answer to the situation brief is rendered here, from the verdicts,
+    // so the model, the transcript and the learning loop read the same words.
+    const briefAnswered = dto.briefResponse
+      ? this.briefBeingAnswered(history)
+      : null;
+    const briefResponse: BuilderBriefResponse | null = dto.briefResponse
+      ? normaliseBriefResponse(briefAnswered, dto.briefResponse)
+      : null;
 
     // Persist the admin's message first — the transcript survives whatever
     // happens next.
-    const userContent = this.renderUserContent(dto);
+    const userContent = briefResponse
+      ? renderBriefResponse(briefAnswered, briefResponse)
+      : this.renderUserContent(dto);
     const userMetadata =
-      dto.questionId || dto.answer
+      dto.questionId || dto.answer || briefResponse
         ? {
             ...(dto.questionId ? { questionId: dto.questionId } : {}),
             ...(dto.answer ? { answer: dto.answer } : {}),
+            ...(briefResponse ? { briefResponse } : {}),
           }
         : null;
     const userMessage = await this.messageRepository.appendMessage(sessionId, {
@@ -530,30 +586,15 @@ export class BuilderInterviewOrchestratorService {
     // land in is inside the cached prefix, so a selection that varied per turn
     // would cost more in cache misses than the examples are worth.
     const exemplars = await this.resolveExemplars(session);
-    const system = await this.buildSystemBlocks(
-      session.repos ?? undefined,
-      exemplars,
-      await this.sessionService.getHandoffContext(sessionId),
-      validatedTurns,
-    );
-    const messages: any[] = [
-      ...(await this.replayHistory(session, history)),
-      {
-        role: 'user',
-        content: this.buildLiveUserTurn(
-          doc.draft,
-          await this.readiness.assess(sessionId, doc),
-          userContent,
-        ),
-      },
-    ];
-    const tools = this.toolsService.getToolDefinitions({ validatedTurns });
+    const handoffContext =
+      await this.sessionService.getHandoffContext(sessionId);
 
     const context: BuilderToolExecutionContext = {
       session,
       doc,
       userId,
       validatedTurns,
+      questionGate: protocol,
     };
     // The document as the turn found it: the receipt's "changed" is the
     // difference between this and what the turn leaves, so it describes what
@@ -605,6 +646,12 @@ export class BuilderInterviewOrchestratorService {
               : {}),
             ...(turn.rejections > 0 ? { rejections: turn.rejections } : {}),
             ...(turn.receipt ? { receipt: turn.receipt } : {}),
+            // The sweep and the brief live on the row, not the session: the
+            // transcript is what a later turn, a reload and a replay all read.
+            ...(turn.discovery ? { discovery: turn.discovery } : {}),
+            ...(turn.situationBrief
+              ? { situationBrief: turn.situationBrief }
+              : {}),
           },
         });
       } catch (error) {
@@ -615,6 +662,89 @@ export class BuilderInterviewOrchestratorService {
         );
       }
     };
+
+    // The discovery sweep, before the first pass: what exists is the server's
+    // to look up, not the model's to remember to. Its lookups go through the
+    // interview's own tools, so the evidence log records each one, and the
+    // admin watches them in the chips they already know.
+    if (briefDue) {
+      const plan = await planDiscovery(
+        this.llmCompletion,
+        {
+          sessionId,
+          title: session.title,
+          opening: userContent,
+          handoff: handoffContext,
+        },
+        (problem) =>
+          this.logger.warn(
+            `Builder session ${sessionId}: discovery planner fell back (${problem}).`,
+          ),
+      );
+      turn.discovery = yield* runDiscovery(
+        plan.queries,
+        async (name, input) => {
+          const outcome = await this.executeTool(
+            name,
+            input,
+            context,
+            sessionId,
+          );
+          turn.discoveryCalls.push({
+            name,
+            input,
+            result: outcome.modelResult ?? {},
+          });
+          return outcome;
+        },
+        plan.planned,
+      );
+      this.logger.info(
+        `[BUILDER_INTERVIEW] session=${sessionId} discovery: ${
+          turn.discovery.items.length
+        } lookups (${plan.planned}), ${
+          turn.discovery.items.filter((item) => item.ok && item.found.length)
+            .length
+        } found something`,
+      );
+      await checkpoint(false);
+    }
+
+    const system = await this.buildSystemBlocks(
+      session.repos ?? undefined,
+      exemplars,
+      handoffContext,
+      validatedTurns,
+      protocol,
+    );
+    const messages: any[] = [
+      ...(await this.replayHistory(session, history)),
+      {
+        role: 'user',
+        content: this.buildLiveUserTurn(
+          doc.draft,
+          await this.readiness.assess(sessionId, doc),
+          userContent,
+          [
+            ...(turn.discovery
+              ? [
+                  renderDiscoveryBlock(turn.discovery),
+                  'This is the opening turn of the interview: read what matters, then end it ' +
+                    'with `submit_situation_brief`. No question until the admin has answered it.',
+                ]
+              : []),
+            ...(briefAnswered
+              ? [renderBriefForModel(briefAnswered, briefResponse)]
+              : []),
+          ],
+        ),
+      },
+    ];
+    const tools = this.toolsService.getToolDefinitions({
+      validatedTurns,
+      situationBrief: protocol,
+      briefDue,
+    });
 
     const loop: InterviewLoopContext = {
       sessionId,
@@ -629,6 +759,8 @@ export class BuilderInterviewOrchestratorService {
       versionBefore,
       adminFreeText: this.adminWordsToApply(userMessage),
       checkpoint,
+      protocol,
+      briefDue,
     };
 
     try {
@@ -689,7 +821,12 @@ export class BuilderInterviewOrchestratorService {
     // for a failed turn too, since edits that landed before the failure are
     // real and the admin should see them.
     turn.receipt = buildTurnReceipt({
-      calls: joinCallsToResults(turn.allToolCalls, turn.allToolResults),
+      // The sweep's lookups first: the server ran them for this turn, and
+      // the receipt is the record of what the turn looked at.
+      calls: [
+        ...turn.discoveryCalls,
+        ...joinCallsToResults(turn.allToolCalls, turn.allToolResults),
+      ],
       before: draftBefore,
       after: context.doc.draft,
       versionFrom: versionBefore,
@@ -793,6 +930,66 @@ export class BuilderInterviewOrchestratorService {
       );
       return true;
     }
+  }
+
+  /**
+   * Whether this turn runs the interview protocol (builder_settings.situationBrief).
+   * Only meaningful with validated turns. Off when the settings carry no such
+   * field — a fixture whose specs predate the protocol; the column always has
+   * one — and when there is no settings service at all. A failed read keeps it
+   * on, the column's own default.
+   */
+  private async situationBriefEnabled(): Promise<boolean> {
+    if (!this.settingsService) return false;
+    try {
+      return (await this.settingsService.get()).situationBrief === true;
+    } catch (error) {
+      this.logger.warn(
+        `Builder settings unavailable; running the situation brief: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    }
+  }
+
+  /**
+   * Whether this turn's reply is the situation brief: none has been shown,
+   * nothing has been asked (an interview that started before the protocol
+   * keeps going as it was), and the sweep has not already run twice — a
+   * first turn with nothing to brief on gets one more try, not a loop.
+   */
+  private isBriefDue(history: BuilderMessage[]): boolean {
+    const assistant = history.filter(
+      (message) => message.role === BuilderMessageRole.ASSISTANT,
+    );
+    if (assistant.some((message) => storedSituationBrief(message.metadata))) {
+      return false;
+    }
+    if (
+      assistant.some(
+        (message) =>
+          Array.isArray(message.metadata?.questions) &&
+          message.metadata!.questions.length > 0,
+      )
+    ) {
+      return false;
+    }
+    return (
+      assistant.filter((message) => message.metadata?.discovery).length < 2
+    );
+  }
+
+  /** The brief the admin is answering: the newest assistant row's, if it showed one. */
+  private briefBeingAnswered(
+    history: BuilderMessage[],
+  ): BuilderSituationBrief | null {
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const message = history[index];
+      if (message.role !== BuilderMessageRole.ASSISTANT) continue;
+      return storedSituationBrief(message.metadata);
+    }
+    return null;
   }
 
   /**
@@ -1343,6 +1540,7 @@ export class BuilderInterviewOrchestratorService {
         message,
         others,
         results,
+        offeredNames.has(String(ending.name)),
       );
       const blocking = problems.filter(
         (problem) => !turn.raised.has(problem.key),
@@ -1462,6 +1660,30 @@ export class BuilderInterviewOrchestratorService {
   }
 
   /**
+   * What the session's lookups this turn found or read, as text a brief
+   * citation can match: files by path, search hits by `repo:path`, and every
+   * discovery finding. Searches that failed back nothing.
+   */
+  private turnSources(turn: InterviewTurnState): string[] {
+    const sources: string[] = [];
+    for (const item of turn.discovery?.items ?? []) {
+      if (item.ok) sources.push(...item.found);
+    }
+    for (const call of [
+      ...turn.discoveryCalls,
+      ...joinCallsToResults(turn.allToolCalls, turn.allToolResults),
+    ]) {
+      if (!call.result || call.result.ok === false) continue;
+      if (!isResearchTool(call.name)) continue;
+      const repo = call.input?.repo ? String(call.input.repo) : '';
+      const path = call.input?.path ? String(call.input.path) : '';
+      if (path) sources.push(path, `${repo}:${path}`, `${repo}/${path}`);
+      sources.push(...foundLines(call.result));
+    }
+    return [...new Set(sources.filter(Boolean))];
+  }
+
+  /**
    * What is wrong with a reply, checked before it is shown. Each problem has
    * a key, so the same problem holds a reply back once (`turn.raised`), and
    * two phrasings: what the model needs to fix it, and what the admin reads
@@ -1475,9 +1697,39 @@ export class BuilderInterviewOrchestratorService {
     message: string,
     others: any[],
     results: Map<string, Record<string, any>>,
+    offered = true,
   ): Promise<ReplyProblem[]> {
     const { sessionId, context, versionBefore, adminFreeText } = loop;
     const problems: ReplyProblem[] = [];
+    const isBrief = endingName === 'submit_situation_brief';
+
+    // An ending this step was not offered: a question before the brief, or a
+    // brief once there is no brief to give.
+    if (!offered) {
+      problems.push({
+        key: 'not_offered',
+        toModel: loop.briefDue
+          ? 'This is the opening turn: end it with `submit_situation_brief`. The admin sees ' +
+            'what you found before you ask them anything.'
+          : `\`${endingName}\` is not available now — end with \`ask_admin\` or \`finish_turn\`.`,
+        toAdmin: loop.briefDue
+          ? 'Builder asked a question before showing what it found.'
+          : 'Builder ended the turn with a tool it was not offered.',
+      });
+    }
+
+    if (isBrief) {
+      const { brief, problems: briefProblems } = normaliseSituationBrief(
+        input,
+        { discovery: turn.discovery, sources: this.turnSources(turn) },
+      );
+      turn.pendingBrief = brief;
+      problems.push(...briefProblems);
+    }
+
+    if (loop.protocol && endingName === 'ask_admin') {
+      problems.push(...questionGateProblems(input));
+    }
     const describe = (use: any) =>
       describeToolAttempt(
         String(use.name),
@@ -1577,8 +1829,11 @@ export class BuilderInterviewOrchestratorService {
       }
     }
 
+    // The brief is what the admin's words become before the PRD does: it is
+    // answered first, then written.
     if (
       adminFreeText &&
+      !isBrief &&
       !versionMoved &&
       !String(input.prdUnchangedBecause ?? '').trim()
     ) {
@@ -1634,6 +1889,18 @@ export class BuilderInterviewOrchestratorService {
           turn.questions.push(frame.data);
           questionFrames.push(frame);
         }
+      }
+      // The brief was checked against the evidence on the way here; what
+      // the admin gets is that checked copy, with its line ids and labels.
+      if (name === 'submit_situation_brief' && turn.pendingBrief) {
+        turn.situationBrief = {
+          ...turn.pendingBrief,
+          message: message || turn.pendingBrief.message,
+        };
+        questionFrames.push({
+          event: 'situation_brief',
+          data: turn.situationBrief as unknown as Record<string, any>,
+        });
       }
       turn.allToolCalls.push({ id: ending.id, name, input });
       turn.allToolResults.push({
@@ -1701,6 +1968,7 @@ export class BuilderInterviewOrchestratorService {
     draft: unknown,
     readiness: BuilderPrdReadiness,
     userContent: string,
+    extra: string[] = [],
   ): string {
     const blockers = readiness.blockers.length
       ? readiness.blockers.map((blocker) => `- ${blocker}`).join('\n')
@@ -1714,6 +1982,9 @@ export class BuilderInterviewOrchestratorService {
       blockers,
       '</readiness>',
       '',
+      // The discovery sweep, or the brief being answered: this turn's
+      // evidence, read before the admin's words it is for.
+      ...extra.flatMap((block) => [block, '']),
       userContent,
     ].join('\n');
   }
@@ -1761,6 +2032,7 @@ export class BuilderInterviewOrchestratorService {
     exemplars: string[] = [],
     handoffContext: string | null = null,
     validatedTurns = false,
+    protocol = false,
   ): Promise<AgentSystemBlock[]> {
     const [instructions, context, platformRules, platformMap] =
       await Promise.all([
@@ -1783,9 +2055,17 @@ export class BuilderInterviewOrchestratorService {
     // The turn protocol rides the same block, after the rules: how a turn
     // ends is code's to say, not the dashboard prompt's, and it is only true
     // while validated turns are on.
-    const protocol = validatedTurns ? `\n\n${BUILDER_TURN_PROTOCOL}` : '';
+    // The interview protocol follows it, on the same terms.
+    const turnProtocol = validatedTurns
+      ? `\n\n${BUILDER_TURN_PROTOCOL}${
+          protocol ? `\n\n${BUILDER_INTERVIEW_PROTOCOL}` : ''
+        }`
+      : '';
     const blocks: AgentSystemBlock[] = [
-      { text: `${instructions}\n\n${platformRules}${protocol}`, cache: true },
+      {
+        text: `${instructions}\n\n${platformRules}${turnProtocol}`,
+        cache: true,
+      },
       { text: context, cache: true },
     ];
     // The reusable systems and the docs index: what already exists, read before any question.
@@ -2101,10 +2381,24 @@ export class BuilderInterviewOrchestratorService {
 
   private rebuildAnthropicHistory(history: BuilderMessage[]): any[] {
     const messages: any[] = [];
-    for (const message of history) {
+    for (const [index, message] of history.entries()) {
       if (message.role === BuilderMessageRole.USER) {
         if (message.content) {
-          messages.push({ role: 'user', content: message.content });
+          // A discovery sweep answered this message: replay what it found
+          // where the model first read it, so the brief's refs (E1…) still
+          // mean something on later turns.
+          const next = history[index + 1];
+          const discovery =
+            next?.role === BuilderMessageRole.ASSISTANT
+              ? (next.metadata?.discovery as BuilderDiscovery | undefined)
+              : undefined;
+          messages.push({
+            role: 'user',
+            content:
+              discovery && Array.isArray(discovery.items)
+                ? `${renderDiscoveryBlock(discovery)}\n\n${message.content}`
+                : message.content,
+          });
         }
         continue;
       }

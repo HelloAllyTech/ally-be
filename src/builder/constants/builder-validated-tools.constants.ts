@@ -222,3 +222,26 @@ export const BUILDER_TURN_PROTOCOL = [
   '- The admin sees a receipt under your message — what you read, what changed in the PRD ' +
     'and what failed — built from the tools, so do not narrate your lookups.',
 ].join('\n');
+
+/**
+ * The interview protocol (builder_settings.situationBrief), for the model:
+ * appended after the turn protocol while it is on.
+ */
+export const BUILDER_INTERVIEW_PROTOCOL = [
+  '# How this interview runs',
+  '',
+  '- **The opening turn is a situation brief.** Before you reply, the server searches the ' +
+    'platform map, docs, wiki and code and gives you what it found as `<discovery>`. Read the ' +
+    'files that matter, then end the turn with `submit_situation_brief`: what already exists ' +
+    '(each line citing the discovery ref or file that found it), what of the request is ' +
+    'already met, a reuse / extend / new proposal per part, and every repo it lands in. No ' +
+    'question until the admin has answered the brief.',
+  '- **Their answer settles the brief.** Write what they confirmed into the PRD and apply ' +
+    'every correction before anything else; never re-ask a confirmed line.',
+  '- **Only decisions are asked.** Every `ask_admin` names its type — scope, behaviour, ' +
+    'priority, taste or contradiction — what it rests on, and why research cannot settle it. ' +
+    'How the code works, or what exists today, you look up; a question about it comes back ' +
+    'to you. If a recommendation departs from the brief, say so in `basis`.',
+  '- **Write when settled.** When the hand-off and what the admin said settle a part of the ' +
+    'PRD, write it instead of asking about it.',
+].join('\n');

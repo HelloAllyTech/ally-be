@@ -36,6 +36,13 @@ import {
 } from '../util/builder-prd-edits.util';
 import { describeToolAttempt } from '../util/builder-turn-receipt.util';
 import {
+  ASK_ADMIN_GATE_NOTE,
+  gatedRationale,
+  QUESTION_GATE_PROPERTIES,
+  QUESTION_GATE_REQUIRED,
+} from '../util/builder-question-gate.util';
+import { SUBMIT_SITUATION_BRIEF_TOOL } from '../util/builder-situation-brief.util';
+import {
   ASK_ADMIN_VALIDATED_NOTE,
   ASK_ADMIN_VALIDATED_PROPERTIES,
   FINISH_TURN_TOOL,
@@ -122,6 +129,12 @@ export interface BuilderToolExecutionContext {
    * writes behave as they did before the setting existed.
    */
   validatedTurns?: boolean;
+  /**
+   * The interview protocol (builder_settings.situationBrief): `ask_admin`
+   * carries a question type, a basis and why research cannot settle it, and
+   * the card's rationale says the last two.
+   */
+  questionGate?: boolean;
 }
 
 /**
@@ -158,22 +171,40 @@ export class BuilderInterviewToolsService {
    * the interview had before — so the setting switches the whole behaviour
    * back, and the replay eval can compare the two.
    */
-  getToolDefinitions(options: { validatedTurns?: boolean } = {}): any[] {
+  getToolDefinitions(
+    options: {
+      validatedTurns?: boolean;
+      /** The interview protocol: the question gate on ask_admin. */
+      situationBrief?: boolean;
+      /** The opening turn under the protocol: the brief, and no question yet. */
+      briefDue?: boolean;
+    } = {},
+  ): any[] {
     const legacy = this.legacyToolDefinitions();
     if (!options.validatedTurns) return legacy;
-    return [
+    const gate = Boolean(options.situationBrief);
+    const tools = [
       ...legacy.map((tool) =>
         tool.name === 'ask_admin'
           ? {
               ...tool,
-              description: `${tool.description}\n${ASK_ADMIN_VALIDATED_NOTE}`,
+              description: [
+                tool.description,
+                ASK_ADMIN_VALIDATED_NOTE,
+                ...(gate ? [ASK_ADMIN_GATE_NOTE] : []),
+              ].join('\n'),
               input_schema: {
                 ...tool.input_schema,
                 properties: {
                   ...tool.input_schema.properties,
                   ...ASK_ADMIN_VALIDATED_PROPERTIES,
+                  ...(gate ? QUESTION_GATE_PROPERTIES : {}),
                 },
-                required: [...tool.input_schema.required, 'message'],
+                required: [
+                  ...tool.input_schema.required,
+                  'message',
+                  ...(gate ? QUESTION_GATE_REQUIRED : []),
+                ],
               },
             }
           : tool.name === 'update_prd'
@@ -186,6 +217,14 @@ export class BuilderInterviewToolsService {
       FINISH_TURN_TOOL,
       ...PRD_EDIT_TOOLS,
     ];
+    // The brief is the opening turn's reply: no question until the admin has
+    // seen what Builder found.
+    return gate && options.briefDue
+      ? [
+          ...tools.filter((tool) => tool.name !== 'ask_admin'),
+          SUBMIT_SITUATION_BRIEF_TOOL,
+        ]
+      : tools;
   }
 
   private legacyToolDefinitions(): any[] {
@@ -639,7 +678,15 @@ export class BuilderInterviewToolsService {
             `Docs: "${input?.query}" — ${result.results?.length ?? 0} page(s)`,
         );
       case 'ask_admin':
-        return this.executeAskAdmin(input);
+        return this.executeAskAdmin(input, context);
+      case 'submit_situation_brief':
+        // Checked and shown by the interview orchestrator, which holds the
+        // discovery results the brief cites; this only closes the call.
+        return {
+          modelResult: { ok: true, delivered: true },
+          summary: 'Situation brief shown',
+          endTurn: true,
+        };
       case 'finish_turn':
         return {
           modelResult: { ok: true, delivered: true },
@@ -837,6 +884,7 @@ export class BuilderInterviewToolsService {
 
   private executeAskAdmin(
     input: Record<string, any>,
+    context?: BuilderToolExecutionContext,
   ): BuilderToolExecutionOutcome {
     const questionId = uuidv4();
     const selectKinds = ['singleSelect', 'multiSelect', 'dropdown'];
@@ -850,7 +898,18 @@ export class BuilderInterviewToolsService {
       id: questionId,
       prompt: String(input?.prompt ?? ''),
       kind,
-      ...(input?.rationale ? { rationale: String(input.rationale) } : {}),
+      ...(context?.questionGate
+        ? {
+            ...(gatedRationale(input)
+              ? { rationale: gatedRationale(input) }
+              : {}),
+            ...(input?.questionType
+              ? { questionType: String(input.questionType) }
+              : {}),
+          }
+        : input?.rationale
+          ? { rationale: String(input.rationale) }
+          : {}),
       ...(options.length ? { options } : {}),
       // A select question without a custom escape hatch forces the admin to
       // pick a wrong answer, so it is on by default rather than on request.

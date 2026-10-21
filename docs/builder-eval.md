@@ -81,7 +81,14 @@ mid-way starts again. After three resumes it is marked errored. `POST /v1/builde
 interview loop it ran in `overrides.validatedTurns` — the live `builder_settings.validatedTurns`
 unless the request passes `validatedTurns` to compare the two loops. Suites from before the
 switch existed have no value and replay the legacy loop even when resumed after a deploy, so a
-suite never changes loops halfway. Each run's `metrics.loop` says which loop it replayed. Read
+suite never changes loops halfway. Each run's `metrics.loop` says which loop it replayed. The
+interview protocol is stamped the same way, in `overrides.situationBrief` (the live
+`builder_settings.situationBrief` unless the request passes `situationBrief`; absent means off),
+and a prompt-gate baseline must match it too. Under it the simulated admin answers the situation
+brief line by line — confirming what the ground truth agrees with, correcting what it
+contradicts — and each run records `metrics.protocol`, `briefDelivered`,
+`briefBeforeFirstQuestion` (what exists was named before anything was asked), `briefLines` and
+`briefCorrections`; a reply that corrects the brief also counts in `corrections`. Read
 the results with
 `GET /v1/builder/eval/suites/:id`. Each run carries its gates, metrics, judge, and a
 turn-by-turn transcript.

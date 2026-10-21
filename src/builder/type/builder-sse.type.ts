@@ -25,6 +25,9 @@ export type BuilderSseEventName =
   | 'prd_draft'
   | 'readiness'
   | 'receipt'
+  // The opening turn's situation brief (builder_settings.situationBrief): the
+  // card the admin confirms or corrects line by line.
+  | 'situation_brief'
   | 'error'
   | 'done'
   // Keep-alive written by the stream controller every ~15s; clients ignore it.

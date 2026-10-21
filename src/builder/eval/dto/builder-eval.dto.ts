@@ -166,6 +166,16 @@ export class StartEvalSuiteDto {
   @IsOptional()
   @IsBoolean()
   validatedTurns?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Replay with the interview protocol (discovery sweep, situation brief, question ' +
+      'gate) on or off; defaults to the live builder_settings.situationBrief. Only has ' +
+      'an effect with validated turns.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  situationBrief?: boolean;
 }
 
 export class SubmitPromptCandidateDto extends StartEvalSuiteDto {

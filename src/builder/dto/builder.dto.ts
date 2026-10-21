@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
@@ -55,6 +56,47 @@ export class BuilderAnswerDto {
   none?: boolean;
 }
 
+/** The admin's verdict on one situation-brief line. */
+export class BuilderBriefLineVerdictDto {
+  @ApiProperty({ example: 'X2' })
+  @IsString()
+  @MaxLength(20)
+  id!: string;
+
+  @ApiProperty({ enum: ['confirm', 'correct'] })
+  @IsIn(['confirm', 'correct'])
+  verdict!: 'confirm' | 'correct';
+
+  @ApiPropertyOptional({
+    description: 'What is true instead — required for a correction',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  correction?: string;
+}
+
+/** The admin's response to a situation brief, line by line. */
+export class BuilderBriefResponseDto {
+  @ApiProperty({ description: 'The brief being answered' })
+  @IsString()
+  @MaxLength(64)
+  briefId!: string;
+
+  @ApiProperty({ type: [BuilderBriefLineVerdictDto] })
+  @IsArray()
+  @ArrayMaxSize(60)
+  @ValidateNested({ each: true })
+  @Type(() => BuilderBriefLineVerdictDto)
+  lines!: BuilderBriefLineVerdictDto[];
+
+  @ApiPropertyOptional({ description: 'Anything else, in their words' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  note?: string;
+}
+
 export class CreateBuilderMessageDto {
   @ApiProperty({ description: "The admin's message for this turn" })
   @IsString()
@@ -73,6 +115,14 @@ export class CreateBuilderMessageDto {
   @ValidateNested()
   @Type(() => BuilderAnswerDto)
   answer?: BuilderAnswerDto;
+  @ApiPropertyOptional({
+    type: BuilderBriefResponseDto,
+    description: 'When answering a situation brief: a verdict per line',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BuilderBriefResponseDto)
+  briefResponse?: BuilderBriefResponseDto;
 }
 
 export class CreateBuilderSessionDto {
@@ -331,6 +381,16 @@ export class UpdateBuilderSettingsDto {
   @IsOptional()
   @IsBoolean()
   validatedTurns?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'The interview protocol, on top of validated turns: a new interview opens with a ' +
+      'discovery sweep and a situation brief the admin confirms or corrects line by line, ' +
+      'and every later question names its type, its basis and why research cannot settle it.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  situationBrief?: boolean;
 }
 
 export class ListBuilderSessionsQueryDto {
