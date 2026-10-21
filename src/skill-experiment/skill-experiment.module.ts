@@ -15,6 +15,8 @@ import { SkillExperimentEngineService } from './service/skill-experiment-engine.
 import { SkillExperimentService } from './service/skill-experiment.service';
 import { SkillExperimentSchedulerRegistrationService } from './service/skill-experiment-scheduler-registration.service';
 import { SkillExperimentController } from './controller/skill-experiment.controller';
+import { SkillExperimentChallengerJobService } from './service/skill-experiment-challenger-job.service';
+import { DebriefFeedback } from '../debrief-feedback/entity/debrief-feedback.entity';
 
 /**
  * Auto-improve for System Skills: A/B tests designer-drafted revisions of a
@@ -33,6 +35,7 @@ import { SkillExperimentController } from './controller/skill-experiment.control
       SkillExperimentObservation,
       SkillExperimentEvent,
       Prompt,
+      DebriefFeedback,
     ]),
     PromptModule,
     LlmAgentModule,
@@ -46,6 +49,7 @@ import { SkillExperimentController } from './controller/skill-experiment.control
     SkillExperimentEngineService,
     SkillExperimentService,
     SkillExperimentSchedulerRegistrationService,
+    SkillExperimentChallengerJobService,
   ],
   exports: [SkillExperimentRouterService],
 })

@@ -16,21 +16,21 @@ off ──start──▶ baseline ──enough outputs judged──▶ testing �
                                                                                      resume ◀─────┘
 ```
 
-1. **Baseline.** The skill's text is snapshotted as the run's *Original* and serves 100% of traffic.
+1. **Baseline.** The skill's text is snapshotted as the run's _Original_ and serves 100% of traffic.
    Every output is judged. Once `minSamplesPerVariant` outputs are judged, the run learns the output
    shape (JSON with these keys, or text) and either pauses — the original already meets the target —
    or asks the designer for the first challenger.
 2. **Testing.** The champion serves `100 − challengerTrafficPercent`% and one challenger the rest.
    When both have `minSamplesPerVariant` judged outputs the challenger **wins** if it leads by at
-   least `minImprovement` points *and* the gap is significant (one-sided Welch z ≥ 1.645); it
+   least `minImprovement` points _and_ the gap is significant (one-sided Welch z ≥ 1.645); it
    **loses** if it is significantly worse, or has had twice the sample without winning. A winner
    becomes the champion and the loser is retired; either way the designer drafts the next
    challenger from the current champion.
 3. **Paused.** The loop stops when the champion's mean reaches `targetScore`, the run has used
    `maxVariants`, `maxConsecutiveLosses` challengers lose in a row, or the designer fails three
    rounds running. **The champion then serves 100% of traffic** until an admin acts.
-4. **Admin actions.** *Apply* writes the champion to the skill as a new System Skills version and
-   turns the experiment off. *Resume* continues with a fresh variant budget. *Turn off* sends
+4. **Admin actions.** _Apply_ writes the champion to the skill as a new System Skills version and
+   turns the experiment off. _Resume_ continues with a fresh variant budget. _Turn off_ sends
    every request back to the skill's own text at once.
 
 The engine ticks on the shared 5-minute scheduler bucket, but runs in the background under its own
@@ -54,7 +54,7 @@ keep serving their current split, but nothing is judged or drafted.
 - **A failing challenger never costs a user their result.** Both pilot call sites retry once on the
   skill's own text when the challenger arm throws; the failure is still recorded against the
   challenger.
-- **The judge is blind.** It sees the rubric, the input, the output and the *original* instructions
+- **The judge is blind.** It sees the rubric, the input, the output and the _original_ instructions
   — never which variant produced the output, and never the variant's text, so a challenger that
   lowered its own bar is still graded against the original job.
 - **An admin's edit wins.** If the skill text changes in System Skills while a run is live, the
@@ -74,6 +74,12 @@ JSON message, so the files have no placeholders. Both are AI-task-registry rows
 `llm_usage` with `metadata.experimentId`. The judge scores each criterion 1–5; the overall score is
 the weighted mean mapped to 0–100.
 
+## User feedback (Debrief improvements)
+
+Debrief skills can also be improved using direct learner feedback. When a learner rates a debrief (thumbs up/down) via the learner app, the rating is translated into a score (100 for positive, 0 for negative) and stored in `skill_experiment_observations`.
+
+A weekly job (`SkillExperimentChallengerJobService`) aggregates this feedback and generates a new challenger prompt using the `skill_experiment_challenger_generator` system skill. This allows the debrief quality to improve recursively based on real user sentiment, handled automatically by the same engine that manages standard AI-judged experiments.
+
 ## Data
 
 `skill_experiment_observations` stores each judged execution's **raw input and output** — for the
@@ -85,11 +91,11 @@ do not get it.
 
 ## Connected skills
 
-| Skill (`promptCode`) | Runtime | Call site |
-|---|---|---|
-| `track_quiz_open_ended_grading_user` | ally-be | `TrackQuizLlmGraderService.gradeOpenEndedAnswer` |
-| `ally_ai_scenario_scenario_evaluation` | ally-ai | `AiService.getScenarioSessionEvaluation` (`needMemory = false`) |
-| `ally_ai_scenario_scenario_evaluation_with_memory` | ally-ai | the same, `needMemory = true` |
+| Skill (`promptCode`)                               | Runtime | Call site                                                       |
+| -------------------------------------------------- | ------- | --------------------------------------------------------------- |
+| `track_quiz_open_ended_grading_user`               | ally-be | `TrackQuizLlmGraderService.gradeOpenEndedAnswer`                |
+| `ally_ai_scenario_scenario_evaluation`             | ally-ai | `AiService.getScenarioSessionEvaluation` (`needMemory = false`) |
+| `ally_ai_scenario_scenario_evaluation_with_memory` | ally-ai | the same, `needMemory = true`                                   |
 
 ### Connecting another skill
 
@@ -98,12 +104,22 @@ do not get it.
    ```ts
    const arm = await this.skillExperiments.assign(PROMPT_CODE); // null = no experiment
    try {
-     const text = arm?.content ?? (await this.promptSharedService.getPromptByCode(PROMPT_CODE));
+     const text =
+       arm?.content ??
+       (await this.promptSharedService.getPromptByCode(PROMPT_CODE));
      const output = await runTheSkill(text, variables);
-     void this.skillExperiments.record(arm, { input: variables, output, tenantId });
+     void this.skillExperiments.record(arm, {
+       input: variables,
+       output,
+       tenantId,
+     });
      return output;
    } catch (error) {
-     void this.skillExperiments.record(arm, { input: variables, error: String(error), tenantId });
+     void this.skillExperiments.record(arm, {
+       input: variables,
+       error: String(error),
+       tenantId,
+     });
      if (arm && !arm.isOriginal) return runTheSkill(await ownText(), variables); // never cost the user
      throw error;
    }
@@ -112,6 +128,7 @@ do not get it.
    `input` is what the judge reads as "the data the skill ran on" — pass the variables or the
    request payload, flattened to strings where you can. For an ally-ai skill, send `arm.content`
    in the request's `prompts` map under the **full prompt code** (see `AiService.experimentPromptEntry`).
+
 2. Add the code to `CONNECTED_SKILLS` in `constants/skill-experiment.constants.ts` with a one-line
    output description and a starting rubric.
 3. Import `SkillExperimentModule` in the call site's module and add a test for the arm, record and

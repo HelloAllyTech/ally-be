@@ -84,6 +84,9 @@ export class SkillExperimentObservation extends BaseWithoutTenantEntity {
   @Column({ type: 'int', default: 0 })
   judgeAttempts!: number;
 
+  @Column({ type: 'jsonb', nullable: true })
+  context?: Record<string, any> | null;
+
   @Column({ type: 'timestamp', nullable: true })
   judgedAt?: Date | null;
 }

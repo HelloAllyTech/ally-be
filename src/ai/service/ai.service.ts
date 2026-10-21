@@ -1127,8 +1127,9 @@ export class AiService {
       : SCENARIO_EVALUATION_PROMPT_CODE;
     const arm = usageTask
       ? null
-      : await this.skillExperiments.assign(promptCode);
+      : await this.skillExperiments.assign(promptCode, scenarioSessionId);
     const experimentInput = {
+      scenarioSessionId: scenarioSessionId ?? null,
       transcript: messages.map((m) => `${m.role}: ${m.content}`).join('\n'),
       languageCode: languageCode ?? null,
       workerType: supervisorContext?.workerType ?? null,

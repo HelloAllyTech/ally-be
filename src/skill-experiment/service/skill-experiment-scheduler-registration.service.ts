@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { scheduledTaskRegistry } from 'src/scheduler/registry/scheduled-task.registry';
 import { SkillExperimentEngineService } from './skill-experiment-engine.service';
+import { SkillExperimentChallengerJobService } from './skill-experiment-challenger-job.service';
 
 /**
  * Registers the auto-improve loop on the shared 5-minute bucket.
@@ -17,7 +18,10 @@ import { SkillExperimentEngineService } from './skill-experiment-engine.service'
  */
 @Injectable()
 export class SkillExperimentSchedulerRegistrationService implements OnModuleInit {
-  constructor(private readonly engine: SkillExperimentEngineService) {}
+  constructor(
+    private readonly engine: SkillExperimentEngineService,
+    private readonly challengerJob: SkillExperimentChallengerJobService,
+  ) {}
 
   static enabled(): boolean {
     const raw = (process.env.SKILL_EXPERIMENTS_SCHEDULE ?? 'on')
@@ -31,5 +35,14 @@ export class SkillExperimentSchedulerRegistrationService implements OnModuleInit
       if (!SkillExperimentSchedulerRegistrationService.enabled()) return;
       this.engine.kick();
     });
+
+    scheduledTaskRegistry.register(
+      'weekly',
+      'skill-experiment-challenger-job',
+      async () => {
+        if (!SkillExperimentSchedulerRegistrationService.enabled()) return;
+        await this.challengerJob.run();
+      },
+    );
   }
 }

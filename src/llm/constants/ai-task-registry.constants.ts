@@ -1170,6 +1170,21 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: 'track_quiz_open_ended_grading_user',
   },
   {
+    id: 'skill-experiment-challenger-job',
+    task: LlmTask.SKILL_EXPERIMENT_CHALLENGER_JOB,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      'Scheduled: aggregated debrief feedback is analyzed to generate a challenger prompt',
+    detail:
+      'Weekly job that fuels the autonomous improvement loop for debriefs.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'skill_experiment_challenger_generator',
+  },
+  {
     id: 'glossary-lexeme-pairing',
     task: null,
     runtime: LlmRuntime.ALLY_BE,
