@@ -233,6 +233,11 @@ describe('BuilderBuildService', () => {
         computeReadiness: (...args: any[]) =>
           prdService.computeReadiness(...args),
       } as any,
+      // Readiness with its signals; here only the draft's rubric matters.
+      {
+        assess: async (_sessionId: string, doc: any) =>
+          prdService.computeReadiness(doc.draft),
+      } as any,
     );
   });
 
