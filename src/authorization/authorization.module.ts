@@ -21,6 +21,8 @@ import { AdminFeatureToggleRepository } from './repository/admin-feature-toggle.
 import { FeatureToggleService } from './service/feature-toggle.service';
 import { TenantFeatureService } from './service/tenant-feature.service';
 import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { TenantScopeService } from './service/tenant-scope.service';
 
 @Global()
 @Module({
@@ -38,6 +40,9 @@ import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
       // would pull in a circular require chain with UserModule and break
       // Nest's decorator metadata resolution at boot.
       AdminTenant,
+      // For TenantScopeService: drops tenants deleted since they were
+      // allowlisted, and resolves a tenant code to its id.
+      Tenant,
     ]),
     RedisModule,
     forwardRef(() => UserModule),
@@ -55,6 +60,7 @@ import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
     AdminFeatureToggleRepository,
     FeatureToggleService,
     TenantFeatureService,
+    TenantScopeService,
   ],
   exports: [
     PermissionsService,
@@ -67,6 +73,7 @@ import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
     FeatureToggleService,
     AdminFeatureToggleRepository,
     TenantFeatureService,
+    TenantScopeService,
   ],
 })
 export class AuthorizationModule {}

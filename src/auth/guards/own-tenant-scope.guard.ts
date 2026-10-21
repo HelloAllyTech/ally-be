@@ -6,9 +6,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import {
   OWN_TENANT_SCOPE_KEY,
   OwnTenantScopeOptions,
@@ -24,17 +22,20 @@ import {
  * tenant — the tenant baked into their JWT.
  *
  * How it works, per request:
- *  1. Resolve the caller's effective permissions (same source the
- *     PermissionsGuard uses).
- *  2. If the caller has SYSTEM_ACCESS (SUPER_ADMIN / MULTI_TENANT_ADMIN),
- *     allow unconditionally — their existing cross-tenant behaviour is
- *     preserved exactly.
- *  3. Otherwise (a plain tenant ADMIN): resolve the TARGET tenant id from
- *     the request (route param `tenantId`, else body `tenantId`, else the
- *     body `tenantIds` array used by the badge endpoints) and require that
- *     EVERY target tenant id is present AND strictly equals the caller's
- *     own tenant id (ExecutionManager.getTenantId()). Any mismatch,
- *     missing id, or missing caller tenant → ForbiddenException.
+ *  1. Resolve the tenants the caller may reach (TenantScopeService — the
+ *     same answer every other tenant-scoped surface uses).
+ *  2. An unrestricted platform admin (SYSTEM_ACCESS, no `admin_tenants`
+ *     rows) may target any tenant.
+ *  3. Everyone else — a plain tenant ADMIN (scope = their JWT tenant) or a
+ *     platform admin restricted to an allowlist (scope = those tenants):
+ *     resolve the TARGET tenant ids from the request (route param
+ *     `tenantId`, body `tenantId`, and the body `tenantIds` array used by
+ *     the badge endpoints) and require that there is at least one and that
+ *     EVERY one is inside the scope. Any miss → ForbiddenException.
+ *
+ * Step 3 used to apply to tenant ADMINs only: any SYSTEM_ACCESS holder was
+ * waved through, so an allowlisted platform admin could assign content to,
+ * and edit the cohorts of, every organisation on the platform.
  *
  * This is what makes it safe to grant the tenant-assignment permissions
  * (EDIT_/DELETE_*_TENANT etc.) to the ADMIN role: the permission opens the
@@ -47,7 +48,7 @@ import {
 export class OwnTenantScopeGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly permissionsService: PermissionsService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -66,18 +67,12 @@ export class OwnTenantScopeGuard implements CanActivate {
       throw new ForbiddenException('Authentication required');
     }
 
-    // 1. Super admin / multi-tenant admin keep their existing cross-tenant
-    //    behaviour untouched.
-    const userPermissions = await this.permissionsService.getUserPermissions(
-      user.id,
-    );
-    if (userPermissions.includes(PERMISSIONS.SYSTEM_ACCESS)) {
+    const scope = await this.tenantScopeService.resolveScope(Number(user.id));
+    if (scope.tenantIds === null) {
       return true;
     }
 
-    // 2. Plain tenant admin: lock every targeted tenant to their own JWT tenant.
-    const callerTenantId = ExecutionManager.getTenantId();
-    if (!callerTenantId) {
+    if (!scope.restricted && scope.tenantIds.length === 0) {
       // Without a tenant in the JWT there is nothing safe to scope to.
       throw new ForbiddenException(
         'No tenant context found for the current user',
@@ -91,13 +86,12 @@ export class OwnTenantScopeGuard implements CanActivate {
       throw new BadRequestException('A target tenant id is required');
     }
 
-    // Every targeted tenant must be exactly the caller's own tenant.
-    const allOwnTenant = targetTenantIds.every(
-      (tenantId) => tenantId != null && tenantId === callerTenantId,
-    );
-    if (!allOwnTenant) {
+    const allowed = scope.tenantIds;
+    if (!targetTenantIds.every((tenantId) => allowed.includes(tenantId))) {
       throw new ForbiddenException(
-        'You can only manage access for your own tenant',
+        scope.restricted
+          ? 'You can only manage the organizations assigned to you'
+          : 'You can only manage access for your own tenant',
       );
     }
 
