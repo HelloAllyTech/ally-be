@@ -5,21 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { In } from 'typeorm';
-import {
-  htmlToPlainText,
-  sanitizeDescriptionHtml,
-} from 'src/common/util/sanitize-html.util';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { TrackComponentTemplate } from '../entity/track-component-template.entity';
 import { TrackComponentTemplateRepository } from '../repository/track-component-template.repository';
 import { TrackItemType } from '../type/track.type';
-import {
-  ArticleContent,
-  JournalContent,
-  VideoContent,
-} from '../type/track.type';
-import { QuizContent } from '../type/quiz.type';
+import { applyPromptHtml, storedPromptsOf } from '../util/prompt-html.util';
 import {
   CreateTrackComponentTemplateDto,
   SUPPORTED_TRACK_COMPONENT_TEMPLATE_TYPES,
@@ -72,7 +63,7 @@ export class TrackComponentTemplateService {
   ): Promise<TrackComponentTemplate> {
     this.assertSupportedType(dto.type);
 
-    this.applyContentDerivations(dto.type, dto.content);
+    applyPromptHtml(dto.type, dto.content);
 
     validateTrackItemContent({
       type: dto.type,
@@ -107,7 +98,11 @@ export class TrackComponentTemplateService {
     const existing = await this.getById(id);
 
     if (dto.content !== undefined) {
-      this.applyContentDerivations(existing.type, dto.content);
+      applyPromptHtml(
+        existing.type,
+        dto.content,
+        storedPromptsOf(existing.type, existing.content),
+      );
       validateTrackItemContent({
         type: existing.type,
         content: dto.content,
@@ -160,77 +155,6 @@ export class TrackComponentTemplateService {
       throw new BadRequestException(
         `Component templates do not support type ${type}. Supported types: ${SUPPORTED_TRACK_COMPONENT_TEMPLATE_TYPES.join(', ')}.`,
       );
-    }
-  }
-
-  private applyContentDerivations(type: TrackItemType, content: any): void {
-    if (!content) return;
-
-    if (type === TrackItemType.QUIZ) {
-      const quiz = content as QuizContent;
-      if (Array.isArray(quiz.questions)) {
-        for (const question of quiz.questions) {
-          if (typeof question.promptHtml === 'string') {
-            question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
-            question.prompt = htmlToPlainText(question.promptHtml);
-          } else if (
-            question.promptHtml !== undefined &&
-            question.promptHtml !== null
-          ) {
-            throw new BadRequestException('promptHtml must be a string');
-          }
-        }
-      }
-    } else if (type === TrackItemType.ARTICLE) {
-      const article = content as ArticleContent;
-      if (Array.isArray(article.questions)) {
-        for (const question of article.questions) {
-          if (typeof question.promptHtml === 'string') {
-            question.promptHtml = sanitizeDescriptionHtml(question.promptHtml);
-            question.prompt = htmlToPlainText(question.promptHtml);
-          } else if (
-            question.promptHtml !== undefined &&
-            question.promptHtml !== null
-          ) {
-            throw new BadRequestException('promptHtml must be a string');
-          }
-        }
-      }
-    } else if (type === TrackItemType.VIDEO) {
-      const video = content as VideoContent;
-      if (Array.isArray(video.interjections)) {
-        for (const interjection of video.interjections) {
-          if (!interjection.question) continue;
-          if (typeof interjection.question.promptHtml === 'string') {
-            interjection.question.promptHtml = sanitizeDescriptionHtml(
-              interjection.question.promptHtml,
-            );
-            interjection.question.prompt = htmlToPlainText(
-              interjection.question.promptHtml,
-            );
-          } else if (
-            interjection.question.promptHtml !== undefined &&
-            interjection.question.promptHtml !== null
-          ) {
-            throw new BadRequestException('promptHtml must be a string');
-          }
-        }
-      }
-    } else if (type === TrackItemType.JOURNAL) {
-      const journal = content as JournalContent;
-      if (Array.isArray(journal.prompts)) {
-        for (const prompt of journal.prompts) {
-          if (typeof prompt.promptHtml === 'string') {
-            prompt.promptHtml = sanitizeDescriptionHtml(prompt.promptHtml);
-            prompt.prompt = htmlToPlainText(prompt.promptHtml);
-          } else if (
-            prompt.promptHtml !== undefined &&
-            prompt.promptHtml !== null
-          ) {
-            throw new BadRequestException('promptHtml must be a string');
-          }
-        }
-      }
     }
   }
 }

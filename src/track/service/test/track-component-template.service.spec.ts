@@ -374,6 +374,38 @@ describe('TrackComponentTemplateService', () => {
     });
   });
 
+  describe('update: stale promptHtml', () => {
+    it('lets a plain-text prompt edit win over the promptHtml sent back unchanged', async () => {
+      const stored = {
+        prompts: [
+          {
+            id: 'j1',
+            prompt: 'Old',
+            promptHtml: '<p>Old</p>',
+          },
+        ],
+      };
+      const existing = makeTemplate({
+        id: 'template-uuid-1',
+        type: TrackItemType.JOURNAL,
+        content: stored as any,
+      });
+      mockRepo.findOne
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce({ ...existing });
+
+      await service.update('template-uuid-1', {
+        content: {
+          prompts: [{ id: 'j1', prompt: 'Edited', promptHtml: '<p>Old</p>' }],
+        },
+      });
+
+      const written = mockRepo.update.mock.calls[0][1].content.prompts[0];
+      expect(written.prompt).toBe('Edited');
+      expect(written.promptHtml).toBeUndefined();
+    });
+  });
+
   describe('delete', () => {
     it('404s when the id does not exist', async () => {
       mockRepo.findOne.mockResolvedValue(null);
