@@ -1,5 +1,6 @@
 import { AssignmentStatus } from 'src/common/type/common.type';
 import { McqSingleQuestion, QuizQuestion } from './quiz.type';
+import { BranchingRun } from './branching.type';
 
 export enum TrackStatus {
   DRAFT = 'DRAFT',
@@ -205,6 +206,8 @@ export interface TrackItemProgressMeta {
   gamePlayCount?: number;
   /** BRANCHING_SCENARIO: finished runs; also the attempts used against maxAttempts. */
   branchingRunCount?: number;
+  /** BRANCHING_SCENARIO: runs in the current round; counts against maxAttempts. */
+  branchingRoundRuns?: BranchingRun[];
   /** BRANCHING_SCENARIO: highest and most recent run score (0-100). */
   branchingBestScore?: number;
   branchingLastScore?: number;

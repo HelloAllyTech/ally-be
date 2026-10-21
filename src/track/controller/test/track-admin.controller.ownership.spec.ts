@@ -48,6 +48,7 @@ describe('TrackAdminController — course ownership for restricted admins', () =
       trackTranslationService as any,
       {} as any,
       {} as any,
+      {} as any,
     );
   });
 
