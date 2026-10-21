@@ -131,4 +131,50 @@ describe('JwtStrategy', () => {
       undefined,
     );
   });
+
+  describe('token kind', () => {
+    it('rejects an AI Lab evaluator token before it becomes a session', async () => {
+      // An evaluator's uuid `sub` must never be read as a platform user id.
+      const payload = {
+        sub: '3f2a6c1e-0000-4000-8000-000000000000',
+        email: 'eval@x.com',
+        kind: 'lab_evaluator',
+        tv: 0,
+      };
+      (
+        mockPermissionsService.getUserPermissions as jest.Mock
+      ).mockResolvedValue([PERMISSIONS.SYSTEM_ACCESS]);
+
+      await expect(strategy.validate(payload)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(ExecutionManager.setAuthContext).not.toHaveBeenCalled();
+      expect(mockLastActiveService.touch).not.toHaveBeenCalled();
+      expect(mockPermissionsService.getUserPermissions).not.toHaveBeenCalled();
+    });
+
+    it.each([['some_future_kind'], [''], [null], [0]])(
+      'rejects any kind platform auth does not issue (%p)',
+      async (kind) => {
+        await expect(
+          strategy.validate({
+            sub: '101',
+            username: 'alice',
+            tenantId: 'tenant-1',
+            kind,
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+      },
+    );
+
+    it('accepts a platform token, which carries no kind claim', async () => {
+      (
+        mockPermissionsService.getUserPermissions as jest.Mock
+      ).mockResolvedValue([]);
+
+      await expect(
+        strategy.validate({ sub: 101, username: 'alice', tenantId: 't-1' }),
+      ).resolves.toEqual({ id: 101, username: 'alice', tenantId: 't-1' });
+    });
+  });
 });

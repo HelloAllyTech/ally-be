@@ -7,6 +7,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { PermissionsService } from '../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { LastActiveService } from '../service/last-active.service';
+import { isPlatformTokenKind } from '../util/token-kind.util';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -25,6 +26,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: any) {
     this.logger.info('JwtStrategy validate called');
+
+    // Before anything reads `sub`: a token minted for another purpose (an AI
+    // Lab evaluator token, say) is not a platform session, even if it verified.
+    if (!isPlatformTokenKind(payload)) {
+      this.logger.warn(
+        `JwtStrategy rejected a token of kind '${String(payload?.kind)}'`,
+      );
+      throw new UnauthorizedException();
+    }
 
     const user = {
       id: parseInt(payload.sub),

@@ -2,12 +2,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHmac } from 'crypto';
 import { LabEvaluatorService } from '../lab-evaluator.service';
 import { LabEvaluatorRepository } from '../../repository/lab-evaluator.repository';
 import { LabRunAssignmentRepository } from '../../repository/lab-eval.repositories';
 import { AppConfigService } from 'src/config/config.service';
 import { EmailService } from 'src/notification/service/email.service';
-import { EVALUATOR_TOKEN_KIND } from '../../constants/lab-eval.constants';
+import {
+  EVALUATOR_TOKEN_KEY_LABEL,
+  EVALUATOR_TOKEN_KIND,
+} from '../../constants/lab-eval.constants';
 
 describe('LabEvaluatorService', () => {
   let service: LabEvaluatorService;
@@ -87,6 +91,21 @@ describe('LabEvaluatorService', () => {
         kind: EVALUATOR_TOKEN_KIND,
         tv: 2,
       });
+    });
+
+    it('signs with the derived evaluator key, never the access secret itself', async () => {
+      evaluatorRepository.findOne.mockResolvedValue(makeEvaluator('hunter2'));
+
+      await service.login({ email: 'eval@x.com', password: 'hunter2' });
+
+      const options = jwtService.signAsync.mock.calls[0][1];
+      expect(options.secret).not.toBe('secret');
+      expect(options.secret).toBe(
+        createHmac('sha256', 'secret')
+          .update(EVALUATOR_TOKEN_KEY_LABEL)
+          .digest('hex'),
+      );
+      expect(options.algorithm).toBe('HS256');
     });
 
     it('rejects a wrong password', async () => {

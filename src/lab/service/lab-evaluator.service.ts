@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
+import { createHmac, randomInt } from 'crypto';
 import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import isDuplicateKeyException from 'src/exception/custom.exception';
@@ -22,6 +22,7 @@ import {
   EVALUATOR_PASSWORD_LENGTH,
   EVALUATOR_PASSWORD_SALT_ROUNDS,
   EVALUATOR_TOKEN_EXPIRES_IN,
+  EVALUATOR_TOKEN_KEY_LABEL,
   EVALUATOR_TOKEN_KIND,
 } from '../constants/lab-eval.constants';
 
@@ -218,9 +219,28 @@ export class LabEvaluatorService {
   }
 
   /**
-   * Email + password login for the /evaluate micro-app. Issues a JWT with a
-   * dedicated `kind` claim (so it can never pass as a platform-user token)
-   * and the current tokenVersion (so password regeneration revokes it).
+   * The evaluator signing key: HMAC-SHA256(access secret,
+   * EVALUATOR_TOKEN_KEY_LABEL), never the access secret itself — see that
+   * constant. Resolved per call so constructing this service reads no config.
+   */
+  private tokenSecret(): string {
+    const base = this.configService.jwt.accessToken.secret;
+    if (!base) {
+      // Fail closed: a guard with no key must not sign or accept anything.
+      throw new Error(
+        'JWT_ACCESS_SECRET is not configured; evaluator tokens cannot be signed or verified.',
+      );
+    }
+    return createHmac('sha256', base)
+      .update(EVALUATOR_TOKEN_KEY_LABEL)
+      .digest('hex');
+  }
+
+  /**
+   * Email + password login for the /evaluate micro-app. Issues a JWT signed
+   * with the evaluator key (so platform auth cannot verify it), carrying a
+   * dedicated `kind` claim and the current tokenVersion (so password
+   * regeneration revokes it).
    */
   async login(dto: EvaluatorLoginDto): Promise<{
     accessToken: string;
@@ -252,7 +272,8 @@ export class LabEvaluatorService {
         tv: evaluator.tokenVersion,
       },
       {
-        secret: this.configService.jwt.accessToken.secret,
+        secret: this.tokenSecret(),
+        algorithm: 'HS256',
         expiresIn: EVALUATOR_TOKEN_EXPIRES_IN,
       },
     );
@@ -261,7 +282,25 @@ export class LabEvaluatorService {
     return { accessToken, evaluator: this.toResponse(evaluator) };
   }
 
-  /** Used by the evaluator guard on every portal request. */
+  /**
+   * Used by the evaluator guard on every portal request: checks the signature
+   * against the evaluator key (a platform token fails here), then the claims.
+   */
+  async verifyToken(token: string): Promise<LabEvaluator> {
+    // Outside the try: missing config is a server fault, not a bad token.
+    const secret = this.tokenSecret();
+    let payload: { sub?: string; kind?: string; tv?: number };
+    try {
+      payload = await this.jwtService.verifyAsync(token, {
+        secret,
+        algorithms: ['HS256'],
+      });
+    } catch {
+      throw new UnauthorizedException();
+    }
+    return this.validateToken(payload);
+  }
+
   async validateToken(payload: {
     sub?: string;
     kind?: string;
