@@ -10,6 +10,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { TrackComponentTemplate } from '../entity/track-component-template.entity';
 import { TrackComponentTemplateRepository } from '../repository/track-component-template.repository';
 import { TrackItemType } from '../type/track.type';
+import { applyPromptHtml, storedPromptsOf } from '../util/prompt-html.util';
 import {
   CreateTrackComponentTemplateDto,
   SUPPORTED_TRACK_COMPONENT_TEMPLATE_TYPES,
@@ -62,6 +63,8 @@ export class TrackComponentTemplateService {
   ): Promise<TrackComponentTemplate> {
     this.assertSupportedType(dto.type);
 
+    applyPromptHtml(dto.type, dto.content);
+
     validateTrackItemContent({
       type: dto.type,
       content: dto.content,
@@ -95,6 +98,11 @@ export class TrackComponentTemplateService {
     const existing = await this.getById(id);
 
     if (dto.content !== undefined) {
+      applyPromptHtml(
+        existing.type,
+        dto.content,
+        storedPromptsOf(existing.type, existing.content),
+      );
       validateTrackItemContent({
         type: existing.type,
         content: dto.content,

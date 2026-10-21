@@ -27,6 +27,8 @@ describe('BuilderSessionService', () => {
   };
   let settingsService: { get: jest.Mock };
   let buildService: { findCancellableRun: jest.Mock; cancelRun: jest.Mock };
+  let readinessService: { assess: jest.Mock; settle: jest.Mock };
+  let reviewService: { dismiss: jest.Mock };
 
   beforeEach(() => {
     sessionRepository = {
@@ -62,6 +64,13 @@ describe('BuilderSessionService', () => {
       }),
     };
 
+    const notReady = { score: 0, ready: false, sections: [], blockers: [] };
+    readinessService = {
+      assess: jest.fn().mockResolvedValue(notReady),
+      settle: jest.fn().mockResolvedValue(notReady),
+    };
+    reviewService = { dismiss: jest.fn().mockResolvedValue({}) };
+
     service = new BuilderSessionService(
       { builder: { defaultBudgetUsd: 25 } } as any,
       sessionRepository as any,
@@ -72,6 +81,8 @@ describe('BuilderSessionService', () => {
       prdService as any,
       settingsService as any,
       buildService as any,
+      readinessService as any,
+      reviewService as any,
     );
   });
 
@@ -244,13 +255,14 @@ describe('BuilderSessionService', () => {
         { listBySession: jest.fn().mockResolvedValue([]) } as any,
         { listBySession: jest.fn().mockResolvedValue([]) } as any,
         {
-          getPrdWithReadiness: jest.fn().mockResolvedValue({
-            doc: { draft: {}, versionNumber: 3 },
-            readiness: { score: 0, ready: false, sections: [], blockers: [] },
-          }),
+          getOrCreateDoc: jest
+            .fn()
+            .mockResolvedValue({ id: 'doc-1', draft: {}, versionNumber: 3 }),
         } as any,
         settingsService as any,
         buildService as any,
+        readinessService as any,
+        reviewService as any,
       );
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
@@ -296,6 +308,64 @@ describe('BuilderSessionService', () => {
       ]);
 
       expect(prdService.applyPatch).toHaveBeenCalled();
+    });
+
+    it('settles readiness as an admin edit, which may run the reviewer', async () => {
+      sessionInStatus(BuilderSessionStatus.INTERVIEWING);
+
+      await service.patchPrd('session-1', 1, [
+        { op: 'replace', path: '/summary', value: 'x' },
+      ]);
+
+      expect(readinessService.settle).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ versionNumber: 2 }),
+        'admin_edit',
+      );
+    });
+  });
+
+  describe('dismissReviewFinding', () => {
+    const inStatus = (status: BuilderSessionStatus) =>
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        createdBy: 1,
+        status,
+      });
+
+    it('records the admin as the dismisser and re-scores the PRD', async () => {
+      inStatus(BuilderSessionStatus.INTERVIEWING);
+      readinessService.assess.mockResolvedValue({
+        score: 100,
+        ready: true,
+        sections: [],
+        blockers: [],
+      });
+
+      const result = await service.dismissReviewFinding(
+        'session-1',
+        7,
+        'F2',
+        'Mobile is a separate opportunity this quarter.',
+      );
+
+      expect(reviewService.dismiss).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'doc-1' }),
+        'F2',
+        'Mobile is a separate opportunity this quarter.',
+        7,
+        'admin',
+      );
+      expect(result.status).toBe(BuilderSessionStatus.PRD_READY);
+    });
+
+    it('is refused while a build is reading the PRD', async () => {
+      inStatus(BuilderSessionStatus.BUILDING);
+
+      await expect(
+        service.dismissReviewFinding('session-1', 7, 'F2', 'Not relevant now.'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(reviewService.dismiss).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,6 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
-import { BuilderPrdDocument } from '../type/builder-prd.type';
+import { BuilderPrdDocument, BuilderPrdReview } from '../type/builder-prd.type';
 
 /**
  * The living PRD for a session: one mutable `draft` plus an append-only trail
@@ -28,4 +28,12 @@ export class BuilderPrdDoc extends BaseWithoutTenantEntity {
 
   @Column({ type: 'int', nullable: true })
   updatedBy?: number;
+
+  /**
+   * The cold reviewer's findings, null until the PRD first reads ready.
+   * Beside the draft rather than in it: dismissing a finding is not a PRD
+   * edit, and no patch to the draft can rewrite what the reviewer said.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  review?: BuilderPrdReview | null;
 }

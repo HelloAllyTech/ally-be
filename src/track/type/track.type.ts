@@ -16,6 +16,7 @@ export enum TrackItemType {
   JOURNAL = 'JOURNAL',
   ANNOTATED_ARTIFACT = 'ANNOTATED_ARTIFACT',
   GAME = 'GAME',
+  BRANCHING_SCENARIO = 'BRANCHING_SCENARIO',
 }
 
 /**
@@ -157,6 +158,7 @@ export interface VideoContent {
 export interface JournalPrompt {
   id: string;
   prompt: string;
+  promptHtml?: string;
   required?: boolean;
   placeholder?: string;
 }
@@ -175,6 +177,8 @@ export interface JournalContent {
  *  - VIDEO → watchPct
  *  - ARTICLE → minReadSeconds (0 = mark-as-read only)
  *  - GAME → nothing; games never gate progression (see game.type.ts)
+ *  - BRANCHING_SCENARIO → passScore (kept in sync with
+ *    content.settings.passScore on save); absent = completes on any ending
  */
 export interface TrackItemCompletionCriteria {
   minScore?: number;
@@ -199,6 +203,15 @@ export interface TrackItemProgressMeta {
   bestGameScore?: number;
   /** GAME: how many runs they have finished, for the same reason. */
   gamePlayCount?: number;
+  /** BRANCHING_SCENARIO: finished runs; also the attempts used against maxAttempts. */
+  branchingRunCount?: number;
+  /** BRANCHING_SCENARIO: highest and most recent run score (0-100). */
+  branchingBestScore?: number;
+  branchingLastScore?: number;
+  /** BRANCHING_SCENARIO: distinct ending node ids the learner has reached. */
+  branchingEndingsReached?: string[];
+  /** BRANCHING_SCENARIO: choice ids of the most recent finished run. */
+  branchingLastPath?: string[];
   /** VIDEO: per-interjection result, keyed by VideoInterjection.id. */
   answeredInterjections?: Record<
     string,

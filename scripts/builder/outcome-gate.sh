@@ -47,7 +47,29 @@ if [ "$status" != "QUEUED" ] && [ "$status" != "RUNNING" ]; then
 fi
 
 echo "::error::The build ended while the run was still '${status}' — it stopped mid-protocol without reporting an outcome."
-reason="The build ended while the run was still '${status}'. The agent stopped mid-protocol without completing, so anything it had not pushed is gone with the runner. Retry the build."
+# What a person reads when a run dies, so it has to be true on the day they
+# read it.
+#
+# It used to end "anything it had not pushed is gone with the runner. Retry the
+# build." Both halves have since stopped being true. The coder pushes after
+# every attempt now, so the branch usually holds the work — and a blanket
+# "retry" is wrong for a REVIEW run, which pushes nothing by design and has
+# nothing to lose or repeat. On 2026-09-24 that sentence sent someone looking
+# for lost code that was sitting on the branch.
+#
+# So it says where to look instead of what to assume.
+branch_hint=""
+if [ -n "${BUILDER_BRANCH_SLUG:-}" ]; then
+  branch_hint=" Work the coder committed was pushed to builder/${BUILDER_BRANCH_SLUG} after each attempt, so check that branch before repeating anything."
+fi
+case "${BUILDER_MODE:-build}" in
+  review)
+    reason="The review ended while the run was still '${status}'. It stopped mid-protocol without reporting. A review writes no code, so nothing was lost and there is nothing to retry — the pull request is unchanged."
+    ;;
+  *)
+    reason="The build ended while the run was still '${status}'. The agent stopped mid-protocol without reporting an outcome.${branch_hint}"
+    ;;
+esac
 curl -sS -X POST "${API}/complete" \
   -H "x-api-key: ${ALLY_BE_API_KEY}" \
   -H 'Content-Type: application/json' \
