@@ -199,6 +199,8 @@ export class BuilderEvalFixtureService {
       checklist?: ChecklistInput;
       notes?: string | null;
       pins?: Record<string, string>;
+      /** False for a fixture a person has yet to review (the corrections loop's). */
+      active?: boolean;
     },
     userId: number,
   ): Promise<BuilderEvalFixture> {
@@ -229,6 +231,8 @@ export class BuilderEvalFixtureService {
       checklist?: ChecklistInput;
       notes?: string | null;
       pins?: Record<string, string>;
+      /** False for a fixture a person has yet to review (the corrections loop's). */
+      active?: boolean;
     },
     userId: number,
   ): Promise<BuilderEvalFixture> {
@@ -254,6 +258,7 @@ export class BuilderEvalFixtureService {
         payload,
         notes: input.notes ?? null,
         sourceSessionId: exported.id ?? null,
+        active: input.active,
       },
       userId,
     );

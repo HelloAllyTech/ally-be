@@ -228,6 +228,9 @@ export enum LlmTask {
   // interviews; metadata.evalOf keeps the original task), the simulated admin
   // and the checklist judge.
   BUILDER_EVAL = 'builder_eval',
+  // The learning loop: is an admin's reply in a Builder interview a
+  // correction, and of what kind.
+  BUILDER_CORRECTION_CLASSIFY = 'builder_correction_classify',
   // The roadmap's opportunity copilot: one pass of the guided interview's tool
   // loop (research, then a structured turn). Tagged with metadata.iteration so
   // a turn's passes can be summed.

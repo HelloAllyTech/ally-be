@@ -39,6 +39,7 @@ export const TASK_AGENT: Partial<Record<LlmTask, CodingAgent>> = {
   [LlmTask.BUILDER_INTERVIEW_SUMMARY]: 'builder',
   [LlmTask.BUILDER_PRD_REVIEW]: 'builder',
   [LlmTask.BUILDER_EVAL]: 'builder',
+  [LlmTask.BUILDER_CORRECTION_CLASSIFY]: 'builder',
 };
 
 /** One (bucket, task, service, provider, model) group of coding-agent AI usage. */
