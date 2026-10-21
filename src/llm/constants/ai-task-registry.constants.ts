@@ -1085,9 +1085,15 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An author builds a character in the interview agent',
     detail:
-      'Streamed turn, capped at 8 tool round-trips; a turn that hits the cap makes one ' +
-      'more, tool-less wrap-up call, told when no draft was saved so it cannot announce ' +
-      'one. Anthropic, OpenAI and Gemini all run ' +
+      'Streamed turn, capped at 8 tool round-trips. With global_settings ' +
+      'validated_agent_turns.characterInterview (default on) the shared validated runner ' +
+      '(src/llm-agent/runtime) ends a turn only through ask_question / finish_turn, checked ' +
+      'before it is shown — a reply batched with an unread corpus search or a failed call, or ' +
+      'saying the draft is saved when it is not, goes back to the model, so a turn can take a ' +
+      'pass or two more (at most two rejections, then a pass offered only the ending tools). ' +
+      'Off, the prior loop runs: a turn that hits the cap makes one more, tool-less wrap-up ' +
+      'call, told when no draft was saved so it cannot announce one. Anthropic, OpenAI and ' +
+      'Gemini all run ' +
       'it — the turn loop goes through AgentLlmProviderFactory, and the provider is ' +
       'inferred from the model id when the prompt row does not name one, so setting a ' +
       'model is normally the whole change. `llm_usage` records whichever provider ran.',
@@ -1989,7 +1995,13 @@ const COURSE_COPILOT_TASKS: AiTaskEntry[] = [
     trigger: 'A trainer talks to Course Copilot about the course they want',
     detail:
       'Streamed interview / edit turn, capped at COURSE_COPILOT_MAX_TOOL_ITERATIONS ' +
-      '(10) tool round-trips, plus one tool-less wrap-up call when the cap is hit. ' +
+      '(10) tool round-trips. With global_settings validated_agent_turns.courseCopilot ' +
+      '(default on) the shared validated runner (src/llm-agent/runtime) ends a turn only ' +
+      'through ask_trainer / finish_turn, checked before it is shown — a reply batched with an ' +
+      'unread lookup or a failed call, claiming a change nothing made, or leaving the ' +
+      "trainer's words unrecorded without saying why goes back to the model, so a turn can " +
+      'take a pass or two more (at most two rejections). Off, the prior loop runs, plus one ' +
+      'tool-less wrap-up call when the cap is hit. ' +
       'The system prompt and a per-session library context block are cached; the ' +
       'brief, blueprint or course outline rides on the newest user turn. Runs on ' +
       'any of the three providers through AgentLlmProviderFactory — the prompt ' +

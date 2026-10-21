@@ -13,10 +13,15 @@
  *  - `course_patch` — a one-line summary plus the compact outline after an
  *    edit-mode tool wrote the course;
  *  - `build_started` — an edit tool queued background jobs (a new roleplay,
- *    an image), so the client should start listening on the socket.
+ *    an image), so the client should start listening on the socket;
+ *  - `receipt` — what the turn read, searched, changed and what failed,
+ *    built by the server; once per turn, just before `done`.
  *
- * All four are emitted at tool-execution time, which is also when the change
- * is persisted: an aborted turn keeps whatever it already did.
+ * The first four are emitted at tool-execution time, which is also when the
+ * change is persisted: an aborted turn keeps whatever it already did. In a
+ * validated turn (`validated_agent_turns.courseCopilot`) the trainer's text
+ * arrives as one `token` frame once the reply has been checked, and a
+ * confirmation a tool raised is held until then.
  */
 export type CourseCopilotSseEventName =
   | 'token'
@@ -29,7 +34,9 @@ export type CourseCopilotSseEventName =
   | 'brief'
   | 'blueprint'
   | 'course_patch'
-  | 'build_started';
+  | 'build_started'
+  // What the turn read, changed and what failed; once per turn, just before `done`.
+  | 'receipt';
 
 export interface CourseCopilotSseFrame {
   event: CourseCopilotSseEventName;
@@ -83,6 +90,7 @@ export const COURSE_COPILOT_ERROR_CODES = {
   RESPONSE_TRUNCATED: 'response_truncated',
   INVALID_TOOL_CALL: 'invalid_tool_call',
   EMPTY_TURN: 'empty_turn',
+  NO_REPLY: 'no_reply',
   STRUCTURE_LOCKED: 'structure_locked',
   BUDGET_EXCEEDED: 'budget_exceeded',
   COPILOT_ERROR: 'copilot_error',
