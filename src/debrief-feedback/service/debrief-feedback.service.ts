@@ -49,7 +49,10 @@ export class DebriefFeedbackService {
       await this.observationRepo.update(observation.id, {
         status: SkillObservationStatus.JUDGED,
         score: rating === 'positive' ? 100 : 0,
-        judgeSummary: 'User rated this debrief as helpful.',
+        judgeSummary:
+          rating === 'positive'
+            ? 'User rated this debrief as helpful.'
+            : 'User rated this debrief as not helpful.',
         judgeModel: 'user-feedback',
         judgedAt: new Date(),
       });

@@ -68,6 +68,21 @@ describe('DebriefFeedbackService', () => {
     });
   });
 
+  it('records a negative rating as not helpful with score 0', async () => {
+    feedbackRepo.findOne.mockResolvedValue(null);
+    queryBuilder.getOne.mockResolvedValue({ id: 'obs-1' });
+
+    await service.createFeedback('tenant-1', 'sess-1', 'negative');
+
+    expect(observationRepo.update).toHaveBeenCalledWith(
+      'obs-1',
+      expect.objectContaining({
+        score: 0,
+        judgeSummary: 'User rated this debrief as not helpful.',
+      }),
+    );
+  });
+
   it('throws ConflictException if feedback already exists', async () => {
     feedbackRepo.findOne.mockResolvedValue({ id: 'existing' });
 
