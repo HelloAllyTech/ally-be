@@ -341,6 +341,44 @@ export class BuilderEvalService {
     });
   }
 
+  /**
+   * Stop a running suite. Runs not yet started are marked cancelled; a run
+   * already in flight finishes and keeps its result (a replay cannot be
+   * stopped mid-turn without leaving its sandbox half-written, and it is
+   * minutes at most). A cancelled prompt-gate suite publishes nothing.
+   */
+  async cancelSuite(id: string, userId: number): Promise<BuilderEvalSuite> {
+    const suite = await this.suites.findOne({ where: { id } });
+    if (!suite) throw new NotFoundException('No such eval suite.');
+    const cancelled = await this.suites.update(
+      { id, status: 'running' },
+      {
+        status: 'cancelled',
+        error: `Cancelled by admin ${userId}.`,
+        completedAt: new Date(),
+      },
+    );
+    if (!cancelled.affected) {
+      throw new BadRequestException(
+        `That suite is ${suite.status}, not running — nothing to cancel.`,
+      );
+    }
+    await this.runs.update(
+      { suiteId: id, status: 'queued' },
+      { status: 'cancelled' },
+    );
+    this.logger.info(`[BUILDER_EVAL] suite ${id} cancelled by ${userId}`);
+    return this.suites.findOneOrFail({ where: { id } });
+  }
+
+  private async stillRunning(suiteId: string): Promise<boolean> {
+    const current = await this.suites.findOne({
+      where: { id: suiteId },
+      select: { id: true, status: true },
+    });
+    return current?.status === 'running';
+  }
+
   async listSuites(limit = 30): Promise<BuilderEvalSuite[]> {
     await this.resumeStalled();
     return this.suites.find({
@@ -403,10 +441,20 @@ export class BuilderEvalService {
               baselineSuiteId: baseline?.id ?? null,
             };
       }
-      await this.suites.update(
-        { id: suiteId },
+      // Only a suite still running completes. A cancelled one keeps its status
+      // and gets the summary of what did run — and never publishes: a gate
+      // someone stopped has not passed.
+      const completed = await this.suites.update(
+        { id: suiteId, status: 'running' },
         { status: 'completed', summary, verdict, completedAt: new Date() },
       );
+      if (!completed.affected) {
+        await this.suites.update({ id: suiteId }, { summary });
+        this.logger.info(
+          `[BUILDER_EVAL] suite ${suiteId} stopped before finishing: ${summary.runs} run(s) recorded.`,
+        );
+        return;
+      }
       if (verdict?.pass && suite.candidate) {
         await this.publish(suite);
       }
@@ -445,6 +493,9 @@ export class BuilderEvalService {
       for (let next = queue.shift(); next; next = queue.shift()) {
         const fixture = byId.get(next.fixtureId);
         if (!fixture) continue;
+        // Cancelled (or settled elsewhere) since this queue was read: take no
+        // more runs. The one another worker has in flight finishes and records.
+        if (!(await this.stillRunning(suite.id))) return;
         await this.runs.update(
           { id: next.id },
           { status: 'running', startedAt: new Date() },
@@ -459,7 +510,12 @@ export class BuilderEvalService {
           { ...result, completedAt: new Date() },
         );
         // Touch the suite, which is what tells a stalled suite from a slow one.
-        await this.suites.update({ id: suite.id }, { status: 'running' });
+        // Only while it is still running — a blind write here would undo a
+        // cancel that landed during the run.
+        await this.suites.update(
+          { id: suite.id, status: 'running' },
+          { status: 'running' },
+        );
       }
     };
     await Promise.all(

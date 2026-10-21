@@ -221,6 +221,21 @@ export class BuilderEvalController {
     return this.evals.getSuite(id);
   }
 
+  @Post('suites/:id/cancel')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Stop a running suite: unstarted runs are cancelled, a run in flight finishes',
+  })
+  cancelSuite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.evals.cancelSuite(id, user.id);
+  }
+
   @Get('runs/:id')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.EDIT_BUILDER],

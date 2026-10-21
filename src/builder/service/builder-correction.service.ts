@@ -47,7 +47,7 @@ When it is a correction, classify it as exactly one of:
 Write everything in general terms about the platform. Never name or describe the admin.
 
 Return one JSON object and nothing else:
-{"isCorrection":true,"category":"missing_capability","subject":"what it was about, a few words","detail":"what Builder got wrong, one sentence","lesson":"one sentence a future interview should know, or null","capability":{"name":"…","whatItIs":"…","reuseWhen":"…"} or null (missing_capability only, when the admin named a system),"doc":{"path":"repo:path if known, else null","fix":"what the doc should say"} or null (stale_doc only),"checklistItem":{"text":"what a correct PRD for this request must (or must not) contain","kind":"must"} or null}
+{"isCorrection":true,"category":"missing_capability","subject":"what it was about, a few words","detail":"what Builder got wrong, one sentence","lesson":"one sentence a future interview should know, or null","capability":{"name":"…","whatItIs":"…","reuseWhen":"…"} or null (missing_capability only, when the admin named a system),"doc":{"path":"repo:path if known, else null","fix":"what the doc should say"} or null (stale_doc only),"checklistItem":{"text":"the thing itself, e.g. 'Reuses Auto-improve for challengers' or 'A new challenger job'","kind":"must or must_not"} or null}
 
 When it is not a correction: {"isCorrection":false}`;
 
@@ -66,6 +66,32 @@ const clip = (value: unknown, max: number): string =>
   String(value ?? '')
     .trim()
     .slice(0, max);
+
+/**
+ * A checklist line as the judge needs it: the thing itself, and whether the
+ * PRD must or must not contain it. The classifier sometimes writes the
+ * negation into the text and still tags the line `must` ("The PRD must not
+ * redefine promotion…", kind must) — which the judge would then score as
+ * something the PRD has to say. A line that opens with "must not" is a
+ * must_not line, whatever the tag.
+ */
+export function checklistLine(
+  rawText: string,
+  rawKind: unknown,
+): { text: string; kind: 'must' | 'must_not' } {
+  const text = clip(rawText, 600);
+  const negated = text.match(
+    /^(?:the\s+prd\s+)?(?:must|should)\s+not\s+(.+)$/i,
+  );
+  if (negated) {
+    const rest = negated[1].trim();
+    return {
+      text: rest.charAt(0).toUpperCase() + rest.slice(1),
+      kind: 'must_not',
+    };
+  }
+  return { text, kind: rawKind === 'must_not' ? 'must_not' : 'must' };
+}
 
 export function parseCorrection(text: string): CorrectionClassification | null {
   const parsed = parseFirstJsonObject(
@@ -94,13 +120,10 @@ export function parseCorrection(text: string): CorrectionClassification | null {
         }
       : null;
   const checklistItem = parsed.checklistItem?.text
-    ? {
-        text: clip(parsed.checklistItem.text, 600),
-        kind:
-          parsed.checklistItem.kind === 'must_not'
-            ? ('must_not' as const)
-            : ('must' as const),
-      }
+    ? checklistLine(
+        String(parsed.checklistItem.text),
+        parsed.checklistItem.kind,
+      )
     : null;
   return {
     isCorrection: true,
