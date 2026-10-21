@@ -93,6 +93,14 @@ A model id resolves at request time through four layers, later winning:
 4. an explicit override on the request or the simulation.
 
 See [`prompt-llm-config-standardization-adr.md`](./prompt-llm-config-standardization-adr.md).
+
+**A tier or a named model — one of the two.** A row with a `tier` resolves to the platform tier
+when nothing else names a model. A config-selected row (a `configPath`, no `tier` — the registry
+spec forbids both) has no floor of its own, so its call site must pass `model:`; the named model
+is then its own floor and there is nothing to fall back to. Until 2026-10-21 the resolver
+demanded a tier anyway and every such call threw ("no tier and no fallback model") — Bug Hunter's
+decider and Builder's exemplar re-rank among them. `src/llm-agent/service/test/llm-completion.untiered-rows.spec.ts`
+runs those calls through the real resolver; add a new config-selected call there.
 Two guards bite here and belong in `detail` when they apply: a prompt-level
 model is dropped when its provider cannot run in the consuming runtime
 (ai-learn has no Anthropic branch; the report evaluator is OpenAI-only), and

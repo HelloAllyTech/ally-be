@@ -147,6 +147,53 @@ describe('LlmTargetResolverService', () => {
     });
   });
 
+  /**
+   * A row with no tier whose call names its model — config-selected rows like
+   * builder-context-selection and the Bug Hunter decider. Demanding a tier
+   * here made every one of those calls throw; 363 failed in production in a
+   * week before this was fixed.
+   */
+  describe('a call that names its model on a row with no tier', () => {
+    const untiered = { taskId: 'bug-hunter-decider' };
+
+    it('serves the named model, with nothing to fall back to', async () => {
+      const { service } = build();
+
+      const target = await service.resolve({
+        ...untiered,
+        model: 'gemini-2.5-flash',
+      });
+
+      expect(target).toMatchObject({
+        model: 'gemini-2.5-flash',
+        provider: 'gemini',
+        source: LlmTargetSource.REQUEST,
+        tierModel: 'gemini-2.5-flash',
+        fallbackEnabled: false,
+      });
+    });
+
+    it('still refuses a call that names nothing at all', async () => {
+      const { service } = build();
+
+      await expect(service.resolve(untiered)).rejects.toThrow(
+        /no floor to land on/,
+      );
+    });
+
+    it('leaves a tiered row able to fall back from the named model', async () => {
+      const { service } = build();
+
+      const target = await service.resolve({
+        ...base,
+        model: 'gemini-2.5-flash',
+      });
+
+      expect(target.tierModel).toBe('gpt-4o-mini');
+      expect(target.fallbackEnabled).toBe(true);
+    });
+  });
+
   describe('degradation', () => {
     it('ignores an unreadable prompt row rather than failing the call', async () => {
       const resolver = new LlmTargetResolverService(configService, {
