@@ -5,7 +5,10 @@ import { BuilderPullRequestService } from './builder-pull-request.service';
 import { BuilderOutcomeService } from './builder-outcome.service';
 import { BuilderLessonCuratorService } from './builder-lesson-curator.service';
 import { BuilderCorrectionService } from './builder-correction.service';
+import { BuilderEvalService } from '../eval/service/builder-eval.service';
 import {
+  BUILDER_EVAL_RESUME_INTERVAL,
+  BUILDER_EVAL_RESUME_TASK,
   BUILDER_CORRECTIONS_INTERVAL,
   BUILDER_CORRECTIONS_TASK,
   BUILDER_CURATE_INTERVAL,
@@ -24,6 +27,7 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
     private readonly outcomeService: BuilderOutcomeService,
     private readonly curatorService: BuilderLessonCuratorService,
     private readonly correctionService: BuilderCorrectionService,
+    private readonly evalService: BuilderEvalService,
   ) {}
 
   onModuleInit(): void {
@@ -90,6 +94,14 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
       BUILDER_CORRECTIONS_INTERVAL,
       BUILDER_CORRECTIONS_TASK,
       () => this.correctionService.scan().then(() => undefined),
+    );
+
+    // Eval suites run in-process for hours; a deploy kills them. This picks a
+    // silent one up on whichever task the scheduler lands on.
+    scheduledTaskRegistry.register(
+      BUILDER_EVAL_RESUME_INTERVAL,
+      BUILDER_EVAL_RESUME_TASK,
+      () => this.evalService.resumeStalled(),
     );
   }
 }

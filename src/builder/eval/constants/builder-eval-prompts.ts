@@ -17,8 +17,18 @@ export const BUILDER_EVAL_MAX_RUNNING_SUITES = 2;
 /** A baseline is reused for a prompt gate when it is this recent. */
 export const BUILDER_EVAL_BASELINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A running suite that has not moved for this long was cut off by a restart. */
-export const BUILDER_EVAL_STALL_MS = 45 * 60 * 1000;
+/**
+ * How often a running suite says it is alive. Separate from run completion on
+ * purpose: one interview replay can run longer than any sensible stall window,
+ * and "no run finished lately" is not "nobody is running it".
+ */
+export const BUILDER_EVAL_HEARTBEAT_MS = 60 * 1000;
+
+/** A running suite with no heartbeat for this long lost its process — a deploy, usually. */
+export const BUILDER_EVAL_STALL_MS = 10 * 60 * 1000;
+
+/** Restarts a suite survives before it is called errored rather than resumed again. */
+export const BUILDER_EVAL_MAX_RESUMES = 3;
 
 /** How far the candidate's mean judge score may fall below the baseline's and still pass. */
 export const BUILDER_EVAL_JUDGE_TOLERANCE = 0.05;

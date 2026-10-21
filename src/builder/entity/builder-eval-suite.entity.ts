@@ -58,4 +58,11 @@ export class BuilderEvalSuite extends BaseWithoutTenantEntity {
 
   @Column({ type: 'int', nullable: true })
   createdBy?: number | null;
+
+  /**
+   * Times another process picked the suite up after the one running it went
+   * away — a deploy replaces every task, and a suite is hours of runs.
+   */
+  @Column({ type: 'int', default: 0 })
+  resumeCount!: number;
 }

@@ -115,6 +115,9 @@ export const BUILDER_OUTCOME_TASK = 'builder-outcome-sweep';
 /** The learning loop's scan of recent admin replies; daily is plenty for tens of sessions a week. */
 export const BUILDER_CORRECTIONS_INTERVAL = 'daily';
 export const BUILDER_CORRECTIONS_TASK = 'builder-corrections-scan';
+/** Picks up eval suites a deploy cut off; cheap (one query) when nothing is stalled. */
+export const BUILDER_EVAL_RESUME_INTERVAL = '5min';
+export const BUILDER_EVAL_RESUME_TASK = 'builder-eval-resume';
 
 /** Stacks retrieval defaults — small on purpose; hits are compact. */
 export const BUILDER_STACKS_DEFAULT_RESULTS = 4;
