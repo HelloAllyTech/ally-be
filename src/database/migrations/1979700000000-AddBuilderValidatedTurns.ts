@@ -9,8 +9,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * before. Defaults on — the change is measured by the replay eval after release, and this is how
  * it is switched back without a deploy if the eval or a live session says it should be.
  */
-export class AddBuilderValidatedTurns1979500000000 implements MigrationInterface {
-  name = 'AddBuilderValidatedTurns1979500000000';
+export class AddBuilderValidatedTurns1979700000000 implements MigrationInterface {
+  name = 'AddBuilderValidatedTurns1979700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

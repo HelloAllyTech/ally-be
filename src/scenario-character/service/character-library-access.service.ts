@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 /**
@@ -22,11 +23,22 @@ export interface CharacterLibraryScope {
    * meaning "do not filter" on read and "create as Ally-owned" on write.
    */
   tenantId: string | null;
+  /**
+   * Set only for a platform caller restricted to an organization allowlist:
+   * the organizations whose characters they see beside the global (Ally-owned)
+   * ones. Every other org's private characters are hidden from them. They edit
+   * those orgs' characters, and a global one only if they created it — the
+   * rule roleplays and courses follow. Null for everyone else.
+   */
+  restrictedToTenantIds: string[] | null;
 }
 
 @Injectable()
 export class CharacterLibraryAccessService {
-  constructor(private readonly permissionValidator: PermissionValidator) {}
+  constructor(
+    private readonly permissionValidator: PermissionValidator,
+    private readonly tenantScopeService: TenantScopeService,
+  ) {}
 
   async resolveScope(): Promise<CharacterLibraryScope> {
     const userId = ExecutionManager.getUserId();
@@ -39,7 +51,14 @@ export class CharacterLibraryAccessService {
       [PERMISSIONS.SYSTEM_ACCESS],
     );
     if (isPlatform) {
-      return { isPlatform: true, tenantId: null };
+      const scope = await this.tenantScopeService.resolveScope(Number(userId));
+      return {
+        isPlatform: true,
+        tenantId: null,
+        restrictedToTenantIds: scope.restricted
+          ? (scope.tenantIds ?? [])
+          : null,
+      };
     }
 
     const tenantId = ExecutionManager.getTenantId();
@@ -48,6 +67,6 @@ export class CharacterLibraryAccessService {
       // scoped to. Fail closed rather than falling through to the global pool.
       throw new UnauthorizedException('Tenant context is required');
     }
-    return { isPlatform: false, tenantId };
+    return { isPlatform: false, tenantId, restrictedToTenantIds: null };
   }
 }

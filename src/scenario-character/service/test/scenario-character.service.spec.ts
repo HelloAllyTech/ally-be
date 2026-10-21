@@ -47,6 +47,7 @@ describe('ScenarioCharacterService', () => {
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
+    find: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
   };
@@ -58,6 +59,13 @@ describe('ScenarioCharacterService', () => {
     mockAccessService.resolveScope.mockResolvedValue({
       isPlatform: true,
       tenantId: null,
+    });
+  // A platform admin restricted to one organization, 'org-a'.
+  const asRestrictedPlatform = () =>
+    mockAccessService.resolveScope.mockResolvedValue({
+      isPlatform: true,
+      tenantId: null,
+      restrictedToTenantIds: ['org-a'],
     });
   const asTenant = (tenantId: string) =>
     mockAccessService.resolveScope.mockResolvedValue({
@@ -468,6 +476,109 @@ describe('ScenarioCharacterService', () => {
         id: In(['char-uuid-1']),
         tenantId: 'tenant-a',
       });
+    });
+  });
+
+  describe('as a platform admin restricted to one organization', () => {
+    const CALLER = 42;
+
+    beforeEach(() => {
+      asRestrictedPlatform();
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(String(CALLER));
+    });
+
+    it('lists global characters plus their organization, never another org', async () => {
+      mockRepo.getScenarioCharactersQuery.mockResolvedValue({
+        characters: [],
+        count: 0,
+      });
+
+      await service.getScenarioCharacters({});
+
+      expect(mockRepo.getScenarioCharactersQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: null,
+          visibleTenantIds: ['org-a'],
+        }),
+      );
+    });
+
+    it('reads a global character and one of their org, but 403s another org', async () => {
+      mockRepo.findOne.mockResolvedValueOnce({
+        ...mockCharacter,
+        tenantId: null,
+      });
+      await expect(
+        service.getScenarioCharacterById('c1'),
+      ).resolves.toBeDefined();
+
+      mockRepo.findOne.mockResolvedValueOnce({
+        ...mockCharacter,
+        tenantId: 'org-a',
+      });
+      await expect(
+        service.getScenarioCharacterById('c1'),
+      ).resolves.toBeDefined();
+
+      mockRepo.findOne.mockResolvedValueOnce({
+        ...mockCharacter,
+        tenantId: 'org-b',
+      });
+      await expect(service.getScenarioCharacterById('c1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('may not change a global character someone else created', async () => {
+      mockRepo.findOne.mockResolvedValue({
+        ...mockCharacter,
+        tenantId: null,
+        createdBy: 7,
+      });
+
+      await expect(service.deleteScenarioCharacter('c1')).rejects.toThrow(
+        'You can only edit global characters you created',
+      );
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it("may change their organization's character and a global one they created", async () => {
+      mockRepo.findOne.mockResolvedValueOnce({
+        ...mockCharacter,
+        tenantId: 'org-a',
+        createdBy: 7,
+      });
+      await expect(service.deleteScenarioCharacter('c1')).resolves.toEqual({
+        success: true,
+      });
+
+      mockRepo.findOne.mockResolvedValueOnce({
+        ...mockCharacter,
+        tenantId: null,
+        createdBy: CALLER,
+      });
+      await expect(service.deleteScenarioCharacter('c2')).resolves.toEqual({
+        success: true,
+      });
+    });
+
+    it('bulk-deletes only the characters they may change', async () => {
+      mockRepo.find.mockResolvedValue([{ id: 'mine' }]);
+      mockRepo.delete.mockResolvedValue({ affected: 1 });
+
+      await expect(
+        service.deleteScenarioCharacters(['mine', 'someone-elses']),
+      ).resolves.toBe(true);
+      expect(mockRepo.delete).toHaveBeenCalledWith({ id: In(['mine']) });
+    });
+
+    it('deletes nothing when none of the ids are theirs to change', async () => {
+      mockRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.deleteScenarioCharacters(['someone-elses']),
+      ).resolves.toBe(false);
+      expect(mockRepo.delete).not.toHaveBeenCalled();
     });
   });
 });

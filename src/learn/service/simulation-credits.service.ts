@@ -11,6 +11,7 @@ import { SimulationCreditsResponseDto } from '../dto/simulation-credits-response
 import { UpdateSimulationCreditsDto } from '../dto/update-simulation-credits.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PostHog } from 'posthog-node';
@@ -35,6 +36,7 @@ export class SimulationCreditsService {
     private readonly userService: UserService,
     private readonly configService: AppConfigService,
     private readonly posthog: PostHog,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   async getSimulationCredits(
@@ -61,6 +63,7 @@ export class SimulationCreditsService {
       if (!isValidUser) {
         throw new BadRequestException('User not found');
       }
+      await this.assertUserInCallerScope(targetUserId);
     }
     const credits =
       await this.simulationCreditsRepository.findByUserId(targetUserId);
@@ -86,6 +89,7 @@ export class SimulationCreditsService {
     updateDto: UpdateSimulationCreditsDto,
   ): Promise<{ success: boolean }> {
     const { userId, creditLimit } = updateDto;
+    await this.assertUserInCallerScope(userId);
     // check if the user is allowed to start a scenario session to make sure given id  belongs to a learner role
     const isCreateScenarioSessionAllowed =
       await this.permissionValidator.validatePermissions(userId, [
@@ -115,6 +119,28 @@ export class SimulationCreditsService {
       );
     }
     return { success: true };
+  }
+
+  /**
+   * Every platform admin holds SYSTEM_ACCESS and EDIT_SIMULATION_CREDITS, so
+   * one restricted to some organizations could read and set the credits of
+   * any user on the platform. Hold them to users in those organizations.
+   * Answers like an unknown user, so a user id outside scope reveals nothing.
+   */
+  private async assertUserInCallerScope(userId: number): Promise<void> {
+    const { tenantIds } = await this.tenantScopeService.resolveScope();
+    if (tenantIds === null) {
+      return;
+    }
+    const user = await this.userService.get(userId);
+    try {
+      if (!user?.tenantId) {
+        throw new BadRequestException();
+      }
+      await this.tenantScopeService.assertTenantInScope(user.tenantId);
+    } catch {
+      throw new BadRequestException('User not found');
+    }
   }
 
   async consumeCredits(

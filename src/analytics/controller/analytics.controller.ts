@@ -135,7 +135,10 @@ import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.ser
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
-import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
+import {
+  HighlightsAnalyticsService,
+  withholdPlatformWideHighlights,
+} from '../service/highlights-analytics.service';
 import { ActiveUsersXpAnalyticsService } from '../service/active-users-xp-analytics.service';
 import { XpLevelReachedAnalyticsService } from '../service/xp-level-reached-analytics.service';
 import { BugHunterVolumeAnalyticsService } from '../service/bug-hunter-volume-analytics.service';
@@ -378,6 +381,8 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
+import { OrgScopedRoute } from 'src/auth/decorators/org-scoped-route.decorator';
 import { PlatformWidePermissions } from 'src/auth/decorators/platform-wide.decorator';
 import {
   ADMIN_ANALYTICS_CHART_REGISTRY,
@@ -456,6 +461,7 @@ export class AnalyticsController {
     private readonly judgeAgreementAnalyticsService: JudgeAgreementAnalyticsService,
     private readonly foundationalSkillsTransferAnalyticsService: FoundationalSkillsTransferAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
+    private readonly tenantScopeService: TenantScopeService,
   ) {}
 
   @Get('chart-registry')
@@ -504,6 +510,9 @@ export class AnalyticsController {
   }
 
   @Get('highlights')
+  // Scoped by tenantId apart from the sections withheld below from an
+  // organization-restricted admin (withholdPlatformWideHighlights).
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Leadership highlights (super-admin)',
@@ -528,10 +537,15 @@ export class AnalyticsController {
   async getHighlights(
     @Query() query: AnalyticsHighlightsQueryDto,
   ): Promise<AnalyticsHighlightsResponseDto> {
-    return this.highlightsAnalyticsService.getHighlights(query);
+    const highlights =
+      await this.highlightsAnalyticsService.getHighlights(query);
+    return (await this.tenantScopeService.isRestricted())
+      ? withholdPlatformWideHighlights(highlights)
+      : highlights;
   }
 
   @Get('cohort-retention')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Monthly learner cohort retention (super-admin)',
@@ -559,6 +573,7 @@ export class AnalyticsController {
   }
 
   @Get('xp-growth')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Cumulative platform XP over time (super-admin)',
@@ -722,6 +737,7 @@ export class AnalyticsController {
   }
 
   @Get('practice-stickiness')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Practice stickiness funnel (super-admin)',
@@ -753,6 +769,7 @@ export class AnalyticsController {
   }
 
   @Get('qualified-sessions')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Roleplay sessions of 5+ minutes (super-admin)',
@@ -1012,6 +1029,7 @@ export class AnalyticsController {
   }
 
   @Get('quality-sentiment')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Roleplay quality vs learner sentiment (super-admin)',
@@ -1098,6 +1116,7 @@ export class AnalyticsController {
   }
 
   @Get('usage-levels')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Monthly learner usage-level mix (super-admin)',
@@ -1130,6 +1149,7 @@ export class AnalyticsController {
   }
 
   @Get('roleplay-volume')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Learners by lifetime completed roleplays (super-admin)',
@@ -1247,6 +1267,7 @@ export class AnalyticsController {
   /* ------------------------------------------------------------------------ */
 
   @Get('activation')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Activation: practising learners, funnel, time to first practice',
@@ -1278,6 +1299,7 @@ export class AnalyticsController {
   }
 
   @Get('completion-rate')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Started vs completed roleplays per period (super-admin)',
@@ -1302,6 +1324,7 @@ export class AnalyticsController {
   }
 
   @Get('language-mix')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Completed sessions by language per period (super-admin)',
@@ -1328,6 +1351,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Helping-skills composite by Nth slice (super-admin)',
@@ -1380,6 +1404,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/learners')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Learners behind the foundational skills chart (super-admin)',
@@ -1404,6 +1429,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/progress')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'What is moving in the foundational helping skills (super-admin)',
@@ -1434,6 +1460,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/behaviours')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1458,6 +1485,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/advanced-behaviours')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1484,6 +1512,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/benchmark')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Benchmark roleplay, before and after (super-admin)',
@@ -1514,6 +1543,7 @@ export class AnalyticsController {
   }
 
   @Get('course-impact')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1546,6 +1576,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth/learners')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1569,6 +1600,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth/learners/:userId')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "One learner's helping-skills timeline (super-admin)",
@@ -1586,11 +1618,16 @@ export class AnalyticsController {
   })
   async getSkillGrowthLearnerSeries(
     @Param('userId', ParseIntPipe) userId: number,
+    @Query('tenantId') tenantId?: string,
   ): Promise<SkillGrowthLearnerSeriesResponseDto> {
-    return this.skillGrowthAnalyticsService.getLearnerSeries(userId);
+    return this.skillGrowthAnalyticsService.getLearnerSeries(
+      userId,
+      tenantId?.trim() || undefined,
+    );
   }
 
   @Get('quality-distribution')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1626,6 +1663,7 @@ export class AnalyticsController {
   }
 
   @Get('competency-map')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1651,6 +1689,7 @@ export class AnalyticsController {
   }
 
   @Get('track-dropoff')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Track item completion by format (super-admin)',
@@ -1678,6 +1717,7 @@ export class AnalyticsController {
   }
 
   @Get('coaching-loop')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Review sharing and turnaround per period (super-admin)',
@@ -1704,6 +1744,7 @@ export class AnalyticsController {
   }
 
   @Get('org-health')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Per-organisation activity, recency and credit use (super-admin)',
@@ -1733,6 +1774,7 @@ export class AnalyticsController {
   }
 
   @Get('org-session-distribution')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -1759,6 +1801,7 @@ export class AnalyticsController {
   }
 
   @Get('learner-kpis')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'LEARNER-role-scoped headline KPIs (super-admin)',
@@ -1781,6 +1824,7 @@ export class AnalyticsController {
   }
 
   @Get('scenario-usage')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Most/least-used scenarios, platform-wide (super-admin)',
@@ -1803,6 +1847,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe-adoption')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Orgs and counsellors using Scribe per period (super-admin)',
@@ -2002,6 +2047,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/overview')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Scribe-session analytics overview (super-admin)',
@@ -2019,6 +2065,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/summary-failures')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Scribe summary-generation failure analytics (super-admin)',
@@ -2465,6 +2512,7 @@ export class AnalyticsController {
   }
 
   @Get('effectiveness/funnel')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Where learners fall out of the effectiveness chain (super-admin)',
@@ -2490,6 +2538,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/progress/segments')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Helping skills start → now, by segment (super-admin)',
@@ -2514,6 +2563,7 @@ export class AnalyticsController {
   }
 
   @Get('scenarios/opportunity-coverage')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2539,6 +2589,7 @@ export class AnalyticsController {
   }
 
   @Get('scenarios/repeat-improvement')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2564,6 +2615,7 @@ export class AnalyticsController {
   }
 
   @Get('practice-quality')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2587,6 +2639,7 @@ export class AnalyticsController {
   }
 
   @Get('curriculum/course-funnel')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2611,6 +2664,7 @@ export class AnalyticsController {
   }
 
   @Get('curriculum/quiz-outcomes')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2635,6 +2689,7 @@ export class AnalyticsController {
   }
 
   @Get('curriculum/roleplay-gates')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2659,6 +2714,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/time-to-competence')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Time to competence on each helping-skills tier (super-admin)',
@@ -2687,6 +2743,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/retention')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Helping-skills change across a break in practice (super-admin)',
@@ -2712,6 +2769,7 @@ export class AnalyticsController {
   }
 
   @Get('practice-progression')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Scenario difficulty mix by practice ordinal (super-admin)',
@@ -2737,6 +2795,7 @@ export class AnalyticsController {
   }
 
   @Get('curriculum/progress-curve')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2761,6 +2820,7 @@ export class AnalyticsController {
   }
 
   @Get('curriculum/knowledge-vs-skill')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2784,6 +2844,7 @@ export class AnalyticsController {
   }
 
   @Get('scenarios/calibration')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2808,6 +2869,7 @@ export class AnalyticsController {
   }
 
   @Get('scenarios/progression')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2877,6 +2939,7 @@ export class AnalyticsController {
   }
 
   @Get('measurement/convergence')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Do the rulers agree? (super-admin)',
@@ -2899,6 +2962,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/feedback-uptake')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Named improvements that were acted on (super-admin)',
@@ -2927,6 +2991,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/self-efficacy')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
@@ -2980,6 +3045,7 @@ export class AnalyticsController {
   }
 
   @Get('foundational-skills/transfer')
+  @OrgScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:

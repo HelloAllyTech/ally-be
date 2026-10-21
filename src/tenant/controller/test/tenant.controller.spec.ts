@@ -94,6 +94,8 @@ describe('TenantController', () => {
       updateMetadata: jest.fn(),
       getAllTenants: jest.fn(),
       updateTenant: jest.fn(),
+      findTenantIdsUsingLogo: jest.fn(),
+      deleteOrganizationLogo: jest.fn(),
     };
 
     // The real resolver: an unrestricted platform admin unless a test makes
@@ -174,6 +176,37 @@ describe('TenantController', () => {
       );
       expect(tenantService.findById).not.toHaveBeenCalled();
       expect(tenantService.findByCode).not.toHaveBeenCalled();
+    });
+
+    it("refuses to delete another organization's logo", async () => {
+      tenantService.findTenantIdsUsingLogo.mockResolvedValue([
+        'other-tenant-id',
+      ]);
+
+      await expect(
+        controller.deleteOrganizationLogo({
+          logoUrl: 'https://b/org-logos/x.png',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(tenantService.deleteOrganizationLogo).not.toHaveBeenCalled();
+    });
+
+    it('deletes their own organization logo or an unreferenced upload', async () => {
+      tenantService.deleteOrganizationLogo.mockResolvedValue({ success: true });
+
+      tenantService.findTenantIdsUsingLogo.mockResolvedValueOnce([
+        ALLOWED_TENANT_ID,
+      ]);
+      await controller.deleteOrganizationLogo({
+        logoUrl: 'https://b/mine.png',
+      });
+
+      tenantService.findTenantIdsUsingLogo.mockResolvedValueOnce([]);
+      await controller.deleteOrganizationLogo({
+        logoUrl: 'https://b/orphan.png',
+      });
+
+      expect(tenantService.deleteOrganizationLogo).toHaveBeenCalledTimes(2);
     });
 
     it.each([

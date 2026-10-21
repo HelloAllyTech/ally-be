@@ -43,7 +43,10 @@ import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { GameContent } from '../type/game.type';
-import { BranchingScenarioContent } from '../type/branching.type';
+import {
+  BranchingScenarioContent,
+  resolveBranchingRound,
+} from '../type/branching.type';
 import {
   sanitizeQuizForLearner,
   sanitizeQuizQuestionForLearner,
@@ -711,6 +714,13 @@ export class TrackEnrollmentService {
 
       case TrackItemType.BRANCHING_SCENARIO: {
         const scenario = item.content as BranchingScenarioContent;
+        const completed = progress.status === SessionItemStatus.COMPLETED;
+        const round = resolveBranchingRound(
+          progress.meta?.branchingRoundRuns,
+          scenario.settings?.maxAttempts ?? null,
+          completed,
+          new Date(),
+        );
         /**
          * No answer key exists, so the whole scenario ships as authored. The
          * item is not completed here — it completes when a finished run is
@@ -725,9 +735,14 @@ export class TrackEnrollmentService {
           nodes: scenario.nodes,
           passScore: scenario.settings?.passScore || null,
           maxAttempts: scenario.settings?.maxAttempts ?? null,
-          attemptsUsed: progress.meta?.branchingRunCount ?? 0,
+          attemptsUsed: round.attemptsUsed,
+          exhausted: round.exhausted,
+          nextRoundAt: round.nextRoundAt,
+          // What they reached this round, so the "out of attempts" screen can
+          // show it. Empty unless the round is exhausted.
+          recap: round.exhausted ? round.runs : [],
           bestScore: progress.meta?.branchingBestScore ?? null,
-          completed: progress.status === SessionItemStatus.COMPLETED,
+          completed,
           endingsReached: progress.meta?.branchingEndingsReached ?? [],
         };
       }

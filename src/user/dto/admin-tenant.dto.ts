@@ -5,6 +5,8 @@ import {
   ArrayNotEmpty,
   IsInt,
   IsPositive,
+  IsOptional,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -48,4 +50,15 @@ export class RemoveAdminTenantsDto {
   @ArrayNotEmpty()
   @IsUUID('4', { each: true })
   tenantIds!: string[];
+
+  @ApiProperty({
+    description:
+      'Required to remove an admin’s last organization: with none left, the ' +
+      'restriction is lifted and they see every organization.',
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  liftRestriction?: boolean;
 }

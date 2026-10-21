@@ -6,6 +6,7 @@ import { AdminFeatureToggleRepository } from '../repository/admin-feature-toggle
 import {
   FEATURE_TOGGLES,
   FeatureToggleKey,
+  isOrgScopedRoutesOnlyToggle,
   isPlatformOnlyToggle,
   isValidFeatureToggleKey,
 } from '../constants/admin-feature-toggle.constants';
@@ -69,6 +70,21 @@ export class FeatureToggleService {
     );
   }
 
+  /**
+   * True when this user may use this toggle's surface only through its
+   * org-scoped routes — the key is `orgScopedRoutesOnly` and they are
+   * restricted to an organization allowlist.
+   */
+  async isLimitedToOrgScopedRoutes(
+    userId: number,
+    featureKey: string,
+  ): Promise<boolean> {
+    return (
+      isOrgScopedRoutesOnlyToggle(featureKey) &&
+      (await this.tenantScopeService.isRestricted(userId))
+    );
+  }
+
   private async getStoredEnabledKeys(userId: number): Promise<string[]> {
     const cached = await this.cache.get(this.cacheKey(userId));
     if (cached) {
@@ -101,6 +117,7 @@ export class FeatureToggleService {
       description: string;
       enabled: boolean;
       platformOnly: boolean;
+      orgScopedRoutesOnly: boolean;
     }[]
   > {
     const rows = await this.toggleRepository.findByUserId(userId);
@@ -114,6 +131,7 @@ export class FeatureToggleService {
       description: definition.description,
       enabled: enabledByKey.get(definition.key) ?? false,
       platformOnly: definition.platformOnly === true,
+      orgScopedRoutesOnly: definition.orgScopedRoutesOnly === true,
     }));
   }
 

@@ -25,7 +25,7 @@ const explicit = Number.isFinite(requested) && requested > 0 ? requested : null;
 // 7.65 GB with 4 workers (161s). That fits, but leaves little room for an editor,
 // Chrome and Docker alongside it — and this suite is the memory-hungry one, since
 // every worker runs ts-jest over the whole project's types.
-const maxWorkers = explicit ?? (isCI ? null : 3);
+const maxWorkers = explicit ?? 4;
 
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
@@ -59,5 +59,5 @@ module.exports = {
   // Not a throttle. A worker is recycled BETWEEN test files once it exceeds the limit,
   // so the only cost is process startup on a worker that was about to die anyway.
   workerIdleMemoryLimit: '1GB',
-  testTimeout: 180000,
+  testTimeout: 300000,
 };

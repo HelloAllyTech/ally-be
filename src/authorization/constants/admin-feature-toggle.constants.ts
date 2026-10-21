@@ -143,6 +143,14 @@ export interface FeatureToggleDefinition {
    * the restriction is lifted.
    */
   platformOnly?: true;
+  /**
+   * The surface is mostly per-organization, so a platform admin restricted to
+   * an organization allowlist keeps the toggle — but reaches only routes marked
+   * @OrgScopedRoute, and only for an organization on their allowlist
+   * (FeatureToggleGuard). Every other route of the surface is refused to them.
+   * Mutually exclusive with `platformOnly`.
+   */
+  orgScopedRoutesOnly?: true;
 }
 
 const SDA_ONLY: FeatureToggleLegacyGrants = {
@@ -223,8 +231,9 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Analytics',
     description: 'Access the Analytics tab and its general sub-tabs.',
     legacyGrants: SUPER_ADMIN_TIER,
-    // Charts default to every organization, and ~30 cannot be scoped to one.
-    platformOnly: true,
+    // Charts default to every organization and ~30 cannot be scoped to one,
+    // so a restricted admin reaches only the charts marked @OrgScopedRoute.
+    orgScopedRoutesOnly: true,
   },
   {
     key: FeatureToggleKey.ANALYTICS_AGENT,
@@ -251,6 +260,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
       'The PostHog UX scan that files findings to Bug Hunter and suggestions ' +
       'to the Analytics Suggestions queue, plus its "Scan now" control.',
     legacyGrants: SDA_ONLY,
+    // Scans every user's PostHog sessions across the platform.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.USER_BADGES,
@@ -330,6 +341,8 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'View, edit, upload and archive documents in the WhatsApp bot’s knowledge base.',
     legacyGrants: SDA_ONLY,
+    // Feeds the one platform-wide WhatsApp bot.
+    platformOnly: true,
   },
   {
     key: FeatureToggleKey.PRODUCT_ROADMAP_MANAGE,
@@ -429,5 +442,16 @@ export function isValidFeatureToggleKey(key: string): key is FeatureToggleKey {
 export function isPlatformOnlyToggle(key: string): boolean {
   return FEATURE_TOGGLES.some(
     (definition) => definition.key === key && definition.platformOnly === true,
+  );
+}
+
+/**
+ * Whether a restricted admin keeps this toggle only for its org-scoped routes —
+ * see FeatureToggleDefinition.orgScopedRoutesOnly.
+ */
+export function isOrgScopedRoutesOnlyToggle(key: string): boolean {
+  return FEATURE_TOGGLES.some(
+    (definition) =>
+      definition.key === key && definition.orgScopedRoutesOnly === true,
   );
 }

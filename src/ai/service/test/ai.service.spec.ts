@@ -319,9 +319,14 @@ describe('AiService', () => {
         mockMessages,
         false,
         null,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'sess-1',
       );
 
-      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE);
+      expect(mockSkillExperiments.assign).toHaveBeenCalledWith(CODE, 'sess-1');
       const sent = (mockedAxios as any).mock.calls.at(-1)[0].data;
       expect(sent.prompts[CODE]).toEqual({
         prompt: 'VARIANT {chat_history}',
@@ -334,7 +339,34 @@ describe('AiService', () => {
           output: JSON.stringify({ summary: 'ok' }),
           input: expect.objectContaining({
             transcript: 'COUNSELOR: Hello\nCLIENT: Hi',
+            scenarioSessionId: 'sess-1',
           }),
+        }),
+      );
+    });
+
+    it('records scenarioSessionId in input even when no experiment is live', async () => {
+      mockSkillExperiments.assign.mockResolvedValue(null);
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        false,
+        'en',
+        undefined,
+        'sess-1',
+      );
+
+      // assign is called but returns null
+      expect(mockSkillExperiments.assign).toHaveBeenCalled();
+      // record is called even with null arm (guard is internal to record)
+      expect(mockSkillExperiments.record).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          input: expect.objectContaining({ scenarioSessionId: 'sess-1' }),
         }),
       );
     });
@@ -344,6 +376,7 @@ describe('AiService', () => {
       await service.getScenarioSessionEvaluation(mockMessages, true, 'prev');
       expect(mockSkillExperiments.assign).toHaveBeenCalledWith(
         'ally_ai_scenario_scenario_evaluation_with_memory',
+        undefined,
       );
     });
 

@@ -70,17 +70,40 @@ export class SkillExperimentRouterService {
   /**
    * Which text this execution of `promptCode` should run, or null when no
    * experiment is live for it (the caller resolves the skill as usual).
+   *
+   * Assignment is sticky for a given `sessionId`: if provided, it determines
+   * the variant using a hash, ensuring a user retrying a debrief sees the same
+   * one.
    */
-  async assign(promptCode: string): Promise<SkillArm | null> {
+  async assign(
+    promptCode: string,
+    sessionId?: string,
+  ): Promise<SkillArm | null> {
     if (!isConnectedSkill(promptCode)) return null;
     try {
       const live = (await this.liveExperiments()).get(promptCode);
       if (!live) return null;
 
-      const useChallenger =
+      let useChallenger: boolean;
+      if (
+        sessionId &&
         live.status === SkillExperimentStatus.TESTING &&
-        live.challenger !== null &&
-        Math.random() * 100 < live.challengerPercent;
+        live.challenger !== null
+      ) {
+        // Sticky assignment: hash(sessionId) % 100
+        let hash = 0;
+        for (let i = 0; i < sessionId.length; i++) {
+          hash = (hash << 5) - hash + sessionId.charCodeAt(i);
+          hash |= 0; // Convert to 32bit integer
+        }
+        const bucket = Math.abs(hash) % 100;
+        useChallenger = bucket < live.challengerPercent;
+      } else {
+        useChallenger =
+          live.status === SkillExperimentStatus.TESTING &&
+          live.challenger !== null &&
+          Math.random() * 100 < live.challengerPercent;
+      }
       const variant = useChallenger ? live.challenger! : live.champion;
 
       return {
@@ -128,6 +151,9 @@ export class SkillExperimentRouterService {
             : report.output.slice(0, SKILL_EXPERIMENT_ENGINE.MAX_OUTPUT_CHARS),
         skillError: report.error ? report.error.slice(0, 2000) : null,
         status: SkillObservationStatus.PENDING,
+        context: report.input?.scenarioSessionId
+          ? { scenarioSessionId: report.input.scenarioSessionId }
+          : null,
       });
       const live = this.snapshot?.get(arm.promptCode);
       if (live) live.pending += 1;

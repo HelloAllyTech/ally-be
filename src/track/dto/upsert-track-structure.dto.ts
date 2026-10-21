@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsObject,
   IsOptional,
+  IsPositive,
   IsString,
   IsUUID,
   Max,
@@ -54,22 +55,22 @@ export class UpsertTrackItemCompletionCriteriaDto {
 export class BreathingExerciseContentDto {
   @ApiProperty({ description: 'Duration of inhale phase (seconds)' })
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   inhale!: number;
 
   @ApiProperty({ description: 'Duration of hold phase after inhale (seconds)' })
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   holdIn!: number;
 
   @ApiProperty({ description: 'Duration of exhale phase (seconds)' })
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   exhale!: number;
 
   @ApiProperty({ description: 'Duration of hold phase after exhale (seconds)' })
   @IsNumber()
-  @Min(0)
+  @IsPositive()
   holdOut!: number;
 
   @ApiProperty({ description: 'Total number of breathing cycles' })

@@ -114,3 +114,62 @@ export function branchingEndingScore(node: BranchingNode): number {
   if (node.outcome) return OUTCOME_DEFAULT_SCORE[node.outcome];
   return 100;
 }
+
+/** How long a learner who used every attempt waits before a fresh round opens. */
+export const BRANCHING_ROUND_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/** The recap keeps this many most-recent runs; only reachable with no attempt limit. */
+export const BRANCHING_MAX_STORED_RUNS = 50;
+
+/** One finished run, as the recap shows it. */
+export interface BranchingRun {
+  endingNodeId: string;
+  score: number;
+  /** ISO timestamp. */
+  at: string;
+}
+
+export interface BranchingRoundState {
+  /** Runs in the current round: what counts against `maxAttempts`. */
+  runs: BranchingRun[];
+  attemptsUsed: number;
+  /** True while the learner has no attempts left and the item is not completed. */
+  exhausted: boolean;
+  /** ISO timestamp the next round opens, only while exhausted. */
+  nextRoundAt: string | null;
+}
+
+/**
+ * The learner's current round, derived on read so nothing has to run on a
+ * timer: a round that used every attempt more than a cooldown ago is simply
+ * treated as empty, and the stored runs are replaced on the next write.
+ *
+ * A completed item replays freely and is never exhausted.
+ */
+export function resolveBranchingRound(
+  storedRuns: BranchingRun[] | undefined,
+  maxAttempts: number | null,
+  completed: boolean,
+  now: Date,
+): BranchingRoundState {
+  let runs = storedRuns ?? [];
+  if (completed || maxAttempts === null || runs.length < maxAttempts) {
+    return {
+      runs,
+      attemptsUsed: runs.length,
+      exhausted: false,
+      nextRoundAt: null,
+    };
+  }
+  const lastAt = new Date(runs[runs.length - 1].at).getTime();
+  const opensAt = lastAt + BRANCHING_ROUND_COOLDOWN_MS;
+  if (now.getTime() >= opensAt) {
+    runs = [];
+    return { runs, attemptsUsed: 0, exhausted: false, nextRoundAt: null };
+  }
+  return {
+    runs,
+    attemptsUsed: runs.length,
+    exhausted: true,
+    nextRoundAt: new Date(opensAt).toISOString(),
+  };
+}

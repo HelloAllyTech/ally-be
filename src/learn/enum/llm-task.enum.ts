@@ -282,11 +282,13 @@ export enum LlmTask {
   AGENT_MEMORY_CURATION = 'agent_memory_curation',
 
   // Skill experiments (auto-improve): the judge that scores one skill output
-  // against the admin's rubric, and the designer that drafts the next variant.
-  // Both tagged with metadata.experimentId so an experiment's spend is one
+  // against the admin's rubric, the designer that drafts the next variant,
+  // and the challenger generator that aggregates feedback to propose a new prompt.
+  // All tagged with metadata.experimentId so an experiment's spend is one
   // llm_usage query.
   SKILL_EXPERIMENT_JUDGE = 'skill_experiment_judge',
   SKILL_EXPERIMENT_DESIGNER = 'skill_experiment_designer',
+  SKILL_EXPERIMENT_CHALLENGER_JOB = 'skill_experiment_challenger_job',
 
   // Course Copilot: the admin agent that interviews a trainer, plans a course
   // blueprint and generates every component into a DRAFT course. One label per

@@ -108,12 +108,14 @@ export function isConnectedSkill(promptCode: string): boolean {
 export const SKILL_EXPERIMENT_PROMPT_CODES = {
   JUDGE: 'skill_experiment_judge',
   DESIGNER: 'skill_experiment_designer',
+  CHALLENGER_GENERATOR: 'skill_experiment_challenger_generator',
 } as const;
 
 /** AI-task-registry row ids. */
 export const SKILL_EXPERIMENT_AI_TASK_IDS = {
   JUDGE: 'skill-experiment-judge',
   DESIGNER: 'skill-experiment-designer',
+  CHALLENGER_GENERATOR: 'skill-experiment-challenger-job',
 } as const;
 
 /** Defaults for a new experiment; mirrored by the column defaults in the migration. */

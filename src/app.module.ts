@@ -78,6 +78,7 @@ import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { FoundationalSkillsModule } from './foundational-skills/foundational-skills.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
 import { HelplineModule } from './helpline/helpline.module';
+import { DebriefFeedbackModule } from './debrief-feedback/debrief-feedback.module';
 
 @Module({
   imports: [
@@ -159,6 +160,7 @@ import { HelplineModule } from './helpline/helpline.module';
     FoundationalSkillsModule,
     MobileReleasesModule,
     HelplineModule,
+    DebriefFeedbackModule,
   ],
   controllers: [],
   providers: [

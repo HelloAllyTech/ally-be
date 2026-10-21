@@ -150,6 +150,15 @@ describe('FoundationalSkillsAnalyticsService', () => {
       expect(res.total).toBe(24);
     });
 
+    it("narrows a learner's cuts to the org named (an org-restricted admin's drill-down)", async () => {
+      const { repository, service } = buildLearners([], 0);
+      await service.getLearners({ userId: 7, tenantId: ' org-a ' } as any);
+      expect(repository.getLearnerCuts).toHaveBeenCalledWith(
+        FHS_RUBRIC_VERSION,
+        expect.objectContaining({ userId: 7, tenantId: 'org-a' }),
+      );
+    });
+
     it('groups cuts per learner and computes change since cut 1', async () => {
       const { service } = buildLearners(
         [

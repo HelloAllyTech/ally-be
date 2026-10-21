@@ -58,6 +58,8 @@ import { ImageGenerationJobDto } from 'src/image-generation/dto/image-generation
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { TrackSortBy, TrackSortOrder } from '../type/track.type';
+import { BranchingResetDto } from '../dto/branching-reset.dto';
+import { TrackBranchingService } from '../service/track-branching.service';
 
 @ApiTags('Learn Tracks (Admin)')
 @ApiBearerAuth()
@@ -71,6 +73,7 @@ export class TrackAdminController {
     private readonly trackTranslationService: TrackTranslationService,
     private readonly trackCoverImageService: TrackCoverImageService,
     private readonly imageGenerationJobService: ImageGenerationJobService,
+    private readonly trackBranchingService: TrackBranchingService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
@@ -167,6 +170,7 @@ export class TrackAdminController {
   async deleteMedia(
     @Body() dto: DeleteTrackMediaDto,
   ): Promise<SuccessResponse> {
+    await this.trackService.assertCallerMayDeleteMedia(dto.url);
     return this.trackMediaService.deleteMedia(dto);
   }
 
@@ -378,6 +382,37 @@ export class TrackAdminController {
   ): Promise<TrackSummaryResponseDto> {
     await this.trackService.assertCallerMayEdit(id);
     return this.trackService.duplicateTrack(id);
+  }
+
+  @ApiOperation({
+    summary: "A learner's open scenario quiz attempts",
+    description:
+      "The scenario quizzes a learner in the caller's own organisation has " +
+      'started but not passed, with attempts used and when a paused round ' +
+      'reopens. What the "reopen attempts" action acts on.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  @Get('learners/:userId/scenario-attempts')
+  async listLearnerScenarioAttempts(
+    @Param('userId', ParseIntPipe) userId: number,
+  ) {
+    return this.trackBranchingService.listLearnerAttempts(userId);
+  }
+
+  @ApiOperation({
+    summary: "Reopen a learner's attempts on a scenario quiz now",
+    description:
+      'A learner who uses every attempt without passing waits for a fresh ' +
+      'round to open by itself. This opens it immediately. Only learners in ' +
+      "the caller's own organisation can be reset.",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  @Post('tracks/items/:trackItemId/branching-reset')
+  async resetBranchingAttempts(
+    @Param('trackItemId', ParseUUIDPipe) trackItemId: string,
+    @Body() dto: BranchingResetDto,
+  ) {
+    return this.trackBranchingService.resetAttempts(trackItemId, dto.userId);
   }
 
   @ApiOperation({ summary: 'Assign tracks to a tenant' })

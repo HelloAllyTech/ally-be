@@ -170,7 +170,13 @@ export class FoundationalSkillsAnalyticsService {
     const offset = query.offset ?? 0;
     const { total, rows } = await this.repository.getLearnerCuts(
       FHS_RUBRIC_VERSION,
-      { minCut, limit, offset, userId: query.userId },
+      {
+        minCut,
+        limit,
+        offset,
+        userId: query.userId,
+        tenantId: query.tenantId?.trim() || undefined,
+      },
     );
 
     const scenarios = await this.repository.getSessionScenarios([

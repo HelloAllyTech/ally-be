@@ -665,6 +665,16 @@ describe('ChatService', () => {
       expect(cache.get).toHaveBeenCalledWith('chat:1');
     });
 
+    it('never hands a cached chat to a caller in another org', async () => {
+      jest
+        .spyOn(cache, 'get')
+        .mockResolvedValue(
+          JSON.stringify({ ...mockChat, tenantId: 'another-tenant' }),
+        );
+
+      await expect(service.getChatById(1)).resolves.toBeNull();
+    });
+
     it('should fetch from database and cache when not cached', async () => {
       jest.spyOn(cache, 'get').mockResolvedValue(null);
       jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat);

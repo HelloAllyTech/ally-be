@@ -17,6 +17,8 @@ import {
   BUILDER_EVAL_CONCURRENCY,
   BUILDER_EVAL_JUDGE_TOLERANCE,
   BUILDER_EVAL_MAX_RUNNING_SUITES,
+  BUILDER_EVAL_HEARTBEAT_MS,
+  BUILDER_EVAL_MAX_RESUMES,
   BUILDER_EVAL_STALL_MS,
 } from '../constants/builder-eval-prompts';
 import {
@@ -191,7 +193,7 @@ export class BuilderEvalService {
   private readonly inflight = new Map<string, Promise<void>>();
 
   constructor(
-    dataSource: DataSource,
+    private readonly dataSource: DataSource,
     private readonly fixtureService: BuilderEvalFixtureService,
     private readonly runner: BuilderEvalRunnerService,
     private readonly promptsService: PromptsService,
@@ -211,7 +213,7 @@ export class BuilderEvalService {
     /** A gate's own baseline: part of a suite already admitted, so not counted again. */
     baselineFor?: string;
   }): Promise<BuilderEvalSuite> {
-    await this.settleStalled();
+    await this.resumeStalled();
     const running = await this.suites.count({ where: { status: 'running' } });
     if (!input.baselineFor && running >= BUILDER_EVAL_MAX_RUNNING_SUITES) {
       throw new ConflictException(
@@ -340,7 +342,7 @@ export class BuilderEvalService {
   }
 
   async listSuites(limit = 30): Promise<BuilderEvalSuite[]> {
-    await this.settleStalled();
+    await this.resumeStalled();
     return this.suites.find({
       order: { createdAt: 'DESC' },
       take: Math.min(100, Math.max(1, limit)),
@@ -370,6 +372,14 @@ export class BuilderEvalService {
     fixtures: BuilderEvalFixture[],
   ): Promise<void> {
     const suite = await this.suites.findOneOrFail({ where: { id: suiteId } });
+    // The heartbeat is what lets another task tell a slow suite from one whose
+    // process is gone; touching the row bumps updatedAt.
+    const heartbeat = setInterval(() => {
+      void this.suites
+        .update({ id: suiteId, status: 'running' }, { status: 'running' })
+        .catch(() => undefined);
+    }, BUILDER_EVAL_HEARTBEAT_MS);
+    heartbeat.unref?.();
     try {
       // The gate's baseline runs beside the candidate, not before it: the two
       // take the same time, and waiting would double how long an admin waits
@@ -416,6 +426,8 @@ export class BuilderEvalService {
           completedAt: new Date(),
         },
       );
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
@@ -569,29 +581,68 @@ export class BuilderEvalService {
   }
 
   /**
-   * A suite this process is not running and that has not moved in a while was
-   * cut off by a restart. Say so, rather than leave it "running" and holding
-   * one of the two slots forever.
+   * Pick up suites whose process went away — a deploy replaces every task, and
+   * on 2026-10-21 one cut off the first production baseline after 5 of 63
+   * runs. A suite with no heartbeat for BUILDER_EVAL_STALL_MS is claimed by
+   * exactly one process (an atomic UPDATE … WHERE updatedAt < cutoff), its
+   * half-done runs go back in the queue, and it carries on here. Finished runs
+   * are kept. After BUILDER_EVAL_MAX_RESUMES it is called errored instead, so a
+   * suite that kills its own process cannot loop.
+   *
+   * Runs on the 5-minute scheduler and before a suite is listed or started.
    */
-  private async settleStalled(): Promise<void> {
+  async resumeStalled(): Promise<void> {
     const cutoff = new Date(Date.now() - BUILDER_EVAL_STALL_MS);
     const stalled = await this.suites.find({
       where: { status: 'running', updatedAt: LessThan(cutoff) },
     });
     for (const suite of stalled) {
       if (this.inflight.has(suite.id)) continue;
-      await this.suites.update(
-        { id: suite.id },
-        {
-          status: 'errored',
-          error: 'Stopped making progress — most likely cut off by a restart.',
-          completedAt: new Date(),
-        },
+      const result = await this.dataSource.query(
+        `UPDATE "builder_eval_suites"
+            SET "updatedAt" = now(), "resumeCount" = "resumeCount" + 1
+          WHERE id = $1 AND status = 'running' AND "updatedAt" < $2
+          RETURNING "resumeCount"`,
+        [suite.id, cutoff],
       );
+      const rows: { resumeCount: number }[] = Array.isArray(result?.[0])
+        ? result[0]
+        : result;
+      // Another process got there first.
+      if (!rows?.length) continue;
+      const resumeCount = Number(rows[0].resumeCount);
+
+      if (resumeCount > BUILDER_EVAL_MAX_RESUMES) {
+        await this.suites.update(
+          { id: suite.id },
+          {
+            status: 'errored',
+            error: `Cut off ${resumeCount} times — giving up rather than resuming again.`,
+            completedAt: new Date(),
+          },
+        );
+        await this.runs.update(
+          { suiteId: suite.id, status: In(['queued', 'running']) },
+          { status: 'errored', error: 'The suite was cut off.' },
+        );
+        continue;
+      }
+
+      // A run that was mid-flight when the process died has no result; it
+      // starts again from the top.
       await this.runs.update(
-        { suiteId: suite.id, status: In(['queued', 'running']) },
-        { status: 'errored', error: 'The suite was cut off.' },
+        { suiteId: suite.id, status: 'running' },
+        { status: 'queued', startedAt: null },
       );
+      const fixtures = await this.fixtureService.findMany(suite.fixtureIds);
+      this.logger.warn(
+        `[BUILDER_EVAL] suite ${suite.id} lost its process; resuming here (resume ${resumeCount}).`,
+      );
+      const work = this.execute(suite.id, fixtures).finally(() =>
+        this.inflight.delete(suite.id),
+      );
+      this.inflight.set(suite.id, work);
+      void work;
     }
   }
 }
