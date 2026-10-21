@@ -326,4 +326,32 @@ describe('BuilderEvalService', () => {
       { publishedAt: expect.any(Date) },
     );
   });
+
+  it('publishes a cleared temperature as a cleared override', async () => {
+    const promptsService = {
+      findIdByCode: jest.fn().mockResolvedValue('prompt-1'),
+      updatePrompt: jest.fn().mockResolvedValue(true),
+    };
+    const service = new BuilderEvalService(
+      { getRepository: () => ({ update: jest.fn() }) } as any,
+      {} as any,
+      {} as any,
+      promptsService as any,
+    );
+
+    await (service as any).publish({
+      id: 'suite-2',
+      createdBy: 7,
+      candidate: {
+        promptCode: 'builder_interviewer_system',
+        temperature: null,
+      },
+    });
+
+    expect(promptsService.updatePrompt).toHaveBeenCalledWith(
+      'prompt-1',
+      { temperature: null },
+      { evalApproved: true },
+    );
+  });
 });
