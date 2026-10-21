@@ -377,7 +377,11 @@ function validateJournalContent(
   content: JournalContent | undefined,
   title: string,
 ): void {
-  if (!content?.prompts || !Array.isArray(content.prompts) || content.prompts.length === 0) {
+  if (
+    !content?.prompts ||
+    !Array.isArray(content.prompts) ||
+    content.prompts.length === 0
+  ) {
     fail(`Journal component "${title}" must have at least one prompt.`);
   }
   const seen = new Set<string>();

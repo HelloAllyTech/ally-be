@@ -110,13 +110,15 @@ describe('TrackService', () => {
         sections: [],
       });
       mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
-      mockDataSource.transaction.mockImplementation(async (cb) => cb({
-        getRepository: () => ({
-          softDelete: jest.fn(),
-          update: jest.fn(),
-          save: jest.fn(),
+      mockDataSource.transaction.mockImplementation(async (cb) =>
+        cb({
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn(),
+          }),
         }),
-      }));
+      );
 
       // Should not throw a TypeError; validateTrackStructure will eventually catch it,
       // but here we just want to ensure it doesn't crash during defaults application.
