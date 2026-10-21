@@ -383,6 +383,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { TenantScopeService } from 'src/authorization/service/tenant-scope.service';
 import { OrgScopedRoute } from 'src/auth/decorators/org-scoped-route.decorator';
+import { CallerScopedRoute } from 'src/auth/decorators/caller-scoped-route.decorator';
 import { PlatformWidePermissions } from 'src/auth/decorators/platform-wide.decorator';
 import {
   ADMIN_ANALYTICS_CHART_REGISTRY,
@@ -1066,6 +1067,7 @@ export class AnalyticsController {
   }
 
   @Get('chart-preferences')
+  @CallerScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "The caller's saved per-chart controls (super-admin)",
@@ -1090,6 +1092,7 @@ export class AnalyticsController {
   }
 
   @Put('chart-preferences')
+  @CallerScopedRoute()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "Save the caller's per-chart controls (super-admin)",

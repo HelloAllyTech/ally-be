@@ -27,6 +27,7 @@ import {
   ORG_SCOPED_ROUTE_KEY,
   OrgScopedRouteOptions,
 } from '../decorators/org-scoped-route.decorator';
+import { CALLER_SCOPED_ROUTE_KEY } from '../decorators/caller-scoped-route.decorator';
 
 /**
  * FeatureToggleGuard
@@ -145,12 +146,24 @@ export class FeatureToggleGuard implements CanActivate {
    * their allowlist. Naming none is refused rather than defaulted — the route
    * would answer for every organization, and Express 5 re-parses the query on
    * each read, so a guard cannot fill the gap in for the handler.
+   *
+   * A route marked @CallerScopedRoute touches only the caller's own rows, so
+   * it has no organization to name and passes as it is.
    */
   private async assertOrgScopedRoute(
     context: ExecutionContext,
     request: { query?: Record<string, unknown> },
     userId: number,
   ): Promise<void> {
+    if (
+      this.reflector.getAllAndOverride<boolean | undefined>(
+        CALLER_SCOPED_ROUTE_KEY,
+        [context.getHandler(), context.getClass()],
+      )
+    ) {
+      return;
+    }
+
     const route = this.reflector.getAllAndOverride<
       Required<OrgScopedRouteOptions> | undefined
     >(ORG_SCOPED_ROUTE_KEY, [context.getHandler(), context.getClass()]);
