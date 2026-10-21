@@ -355,3 +355,88 @@ describe('BuilderEvalService', () => {
     );
   });
 });
+
+/**
+ * A deploy replaces every task, and a suite is hours of runs: the first
+ * production baseline was cut off after 5 of 63 runs. A silent suite is now
+ * claimed by exactly one process and resumed.
+ */
+describe('BuilderEvalService — resuming a suite a deploy cut off', () => {
+  const stalledSuite = {
+    id: 'suite-9',
+    status: 'running',
+    fixtureIds: ['debrief'],
+    repetitions: 3,
+    trigger: 'manual',
+  };
+
+  const build = (claim: unknown[]) => {
+    const suites = {
+      find: jest.fn().mockResolvedValue([stalledSuite]),
+      update: jest.fn(),
+    };
+    const runs = { update: jest.fn() };
+    const dataSource = {
+      getRepository: (entity: any) =>
+        entity?.name === 'BuilderEvalSuite' ? suites : runs,
+      query: jest.fn().mockResolvedValue(claim),
+    };
+    const fixtures = {
+      findMany: jest.fn().mockResolvedValue([{ id: 'debrief' }]),
+    };
+    const service = new BuilderEvalService(
+      dataSource as any,
+      fixtures as any,
+      { run: jest.fn() } as any,
+      {} as any,
+    );
+    const execute = jest
+      .spyOn(service as any, 'execute')
+      .mockResolvedValue(undefined);
+    return { service, suites, runs, dataSource, execute };
+  };
+
+  it('claims it, requeues the half-done runs and carries on here', async () => {
+    const { service, runs, dataSource, execute } = build([
+      [{ resumeCount: 1 }],
+      1,
+    ]);
+
+    await service.resumeStalled();
+
+    // The claim is the atomic part: only a process whose UPDATE matched resumes.
+    expect(dataSource.query.mock.calls[0][0]).toContain(
+      '"resumeCount" = "resumeCount" + 1',
+    );
+    expect(runs.update).toHaveBeenCalledWith(
+      { suiteId: 'suite-9', status: 'running' },
+      { status: 'queued', startedAt: null },
+    );
+    expect(execute).toHaveBeenCalledWith('suite-9', [{ id: 'debrief' }]);
+  });
+
+  it('leaves it alone when another process claimed it first', async () => {
+    const { service, runs, execute } = build([[], 0]);
+
+    await service.resumeStalled();
+
+    expect(runs.update).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('gives up after the resume limit instead of looping', async () => {
+    const { service, suites, runs, execute } = build([[{ resumeCount: 4 }], 1]);
+
+    await service.resumeStalled();
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(suites.update).toHaveBeenCalledWith(
+      { id: 'suite-9' },
+      expect.objectContaining({ status: 'errored' }),
+    );
+    expect(runs.update).toHaveBeenCalledWith(
+      expect.objectContaining({ suiteId: 'suite-9' }),
+      expect.objectContaining({ status: 'errored' }),
+    );
+  });
+});
