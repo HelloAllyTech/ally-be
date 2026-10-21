@@ -52,7 +52,7 @@ export class TenantScopeService {
   ) {}
 
   /** True for a platform admin confined to an `admin_tenants` allowlist. */
-  async isRestricted(userId?: number): Promise<boolean> {
+  async isRestricted(userId = currentUserId()): Promise<boolean> {
     if (!userId) return false;
     return this.permissionsService.isMultiTenantAdmin(userId);
   }
