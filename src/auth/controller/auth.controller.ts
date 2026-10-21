@@ -200,8 +200,14 @@ export class AuthController {
   @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
   @Version('1')
   @HttpCode(HttpStatus.OK)
-  async impersonate(@Body() ImpersonateDto: ImpersonateDto) {
-    const data = await this.authService.impersonate(ImpersonateDto);
+  async impersonate(
+    @Body() ImpersonateDto: ImpersonateDto,
+    @Req() req: { user: { id: string | number } },
+  ) {
+    const data = await this.authService.impersonate(
+      ImpersonateDto,
+      Number(req.user.id),
+    );
     return { message: data.message, data: data.data };
   }
 
