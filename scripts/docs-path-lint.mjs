@@ -48,6 +48,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+// Every repo the wiki's scope names, so `infra/dev_env.sh` in a doc is read as a path into
+// the infra repo rather than a directory that happens to be called infra.
 const SIBLING_REPOS = [
   "ally-be",
   "ally-web",
@@ -55,6 +57,11 @@ const SIBLING_REPOS = [
   "ally-ai-learn",
   "ally-mobile",
   "helloallytech.github.io",
+  "infra",
+  "ally-changelog",
+  "calibrate",
+  "calibrate-backend",
+  "calibrate-frontend",
 ];
 const EXTENSIONS = [
   "ts",
