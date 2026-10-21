@@ -78,7 +78,9 @@ the weighted mean mapped to 0–100.
 
 Debrief skills can also be improved using direct learner feedback. When a learner rates a debrief (thumbs up/down) via the learner app, the rating is translated into a score (100 for positive, 0 for negative) and stored in `skill_experiment_observations`.
 
-Only the learner who ran the session can rate it: `POST /v1/scenario-sessions/:sessionId/debrief-feedback` returns 404 for a session outside the caller's tenant and 403 for anyone else's session. A session takes one rating, so letting a supervisor or peer rate first would both judge the experiment on someone else's opinion and lock the learner out with a 409. Supervisors viewing a debrief read-only never see the rating control.
+Only the learner who ran the session can rate it: `POST /v1/scenario-sessions/:sessionId/debrief-feedback` returns 404 for a session outside the caller's tenant and 403 for anyone else's session. A session takes one rating, so letting a supervisor or peer rate first would judge the experiment on someone else's opinion and take the learner's one rating. Supervisors viewing a debrief read-only never see the rating control.
+
+The debrief posts twice: the rating the moment a thumb is tapped, then the optional comment with the same rating. The second post updates the session's row instead of creating one: a non-blank comment (trimmed) is saved, and the rating is ignored, because the first rating has already judged the observation and the UI locks the thumbs after it. The observation is therefore judged once, by the first rating. A post with no comment on an already-rated session returns the stored row unchanged.
 
 A weekly job (`SkillExperimentChallengerJobService`) aggregates this feedback and generates a new challenger prompt using the `skill_experiment_challenger_generator` system skill. This allows the debrief quality to improve recursively based on real user sentiment, handled automatically by the same engine that manages standard AI-judged experiments.
 
