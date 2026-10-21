@@ -14,6 +14,8 @@ export type CharacterInterviewSseEventName =
   | 'tool_result'
   | 'question'
   | 'character_draft'
+  // What the turn read, changed and what failed; once per turn, just before `done`.
+  | 'receipt'
   | 'error'
   | 'done'
   // Keep-alive written by the stream controller every ~15s; clients ignore it.

@@ -154,6 +154,58 @@ describe('CourseCopilotToolsService', () => {
     });
   });
 
+  describe('validated turns', () => {
+    const validatedNames = (s: ReturnType<typeof makeSession>) =>
+      service
+        .getToolDefinitions(s, { validatedTurns: true })
+        .map((tool) => tool.name);
+
+    it('adds finish_turn and gives ask_trainer the reply, in every state that has tools', () => {
+      for (const status of [
+        Status.INTERVIEWING,
+        Status.AWAITING_BLUEPRINT,
+        Status.BUILDING,
+        Status.EDITING,
+      ]) {
+        const s = session(status, { trackId: 't-1' });
+        expect(validatedNames(s)).toEqual([...namesFor(s), 'finish_turn']);
+        const ask = service
+          .getToolDefinitions(s, { validatedTurns: true })
+          .find((tool) => tool.name === 'ask_trainer')!;
+        expect(ask.input_schema.required).toEqual(
+          expect.arrayContaining(['prompt', 'kind', 'message']),
+        );
+        expect(Object.keys(ask.input_schema.properties)).toEqual(
+          expect.arrayContaining(['message', 'unchangedBecause']),
+        );
+      }
+    });
+
+    it('exposes nothing for an archived session either way', () => {
+      expect(validatedNames(session(Status.ARCHIVED))).toEqual([]);
+    });
+
+    it('runs finish_turn only in a validated turn', async () => {
+      const s = session(Status.INTERVIEWING);
+      await expect(
+        exec('finish_turn', { message: 'Done.' }, s),
+      ).resolves.toMatchObject({
+        modelResult: { ok: false, error: 'tool_unavailable' },
+      });
+      await expect(
+        service.execute(
+          'finish_turn',
+          { message: 'Done.' },
+          {
+            session: s,
+            userId: 7,
+            validatedTurns: true,
+          },
+        ),
+      ).resolves.toMatchObject({ modelResult: { ok: true }, endTurn: true });
+    });
+  });
+
   describe('execute', () => {
     it.each([
       ['update_blueprint', Status.INTERVIEWING],

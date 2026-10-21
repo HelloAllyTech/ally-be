@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { GoogleGenAI } from '@google/genai';
 import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
@@ -19,8 +20,17 @@ const STOP_REASONS: Record<string, AgentStopReason> = {
   MALFORMED_FUNCTION_CALL: 'invalid_tool_call',
 };
 
-/** Gemini has no tool-call id, so we mint one and resolve it back by name. */
-const syntheticId = (name: string, index: number) => `gemini_${name}_${index}`;
+/**
+ * Gemini has no tool-call id, so we mint one and resolve it back by name.
+ *
+ * Unique per response, not only within it: an agent turn makes several passes,
+ * and `gemini_save_character_draft_0` from the second pass used to collide
+ * with the first pass's — so everything that joins a turn's calls to their
+ * results by id (the turn receipt, "did an edit fail and stay unrepaired")
+ * read the later result for both calls.
+ */
+const syntheticId = (name: string, index: number, response: string) =>
+  `gemini_${name}_${index}_${response}`;
 
 /**
  * Gemini adapter over `@google/genai`.
@@ -117,10 +127,11 @@ export class GeminiAgentProvider implements IAgentLlmProvider {
     if (text) {
       content.push({ type: 'text', text });
     }
+    const response = randomUUID().slice(0, 8);
     calls.forEach((call, index) => {
       content.push({
         type: 'tool_use',
-        id: syntheticId(call.name, index),
+        id: syntheticId(call.name, index, response),
         name: call.name,
         input: call.input,
       });

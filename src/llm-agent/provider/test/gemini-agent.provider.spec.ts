@@ -79,12 +79,33 @@ describe('GeminiAgentProvider', () => {
       { type: 'text', text: 'Looking those up.' },
       {
         type: 'tool_use',
-        id: 'gemini_get_voices_0',
+        id: expect.stringMatching(/^gemini_get_voices_0_[0-9a-f]{8}$/),
         name: 'get_voices',
         input: {},
       },
     ]);
     expect(final.usage.inputTokens).toBe(12);
+  });
+
+  it('mints ids no other response repeats, so a turn of several passes can join calls to results', async () => {
+    // An agent turn calls the same tool in two passes. With ids unique only
+    // within a response, both calls were `gemini_save_character_draft_0`, and
+    // the receipt read the second call's result for the first.
+    const call = () =>
+      fakeClient([
+        chunk([{ functionCall: { name: 'search', args: {} } }], 'STOP'),
+      ]);
+    const first = await drain(
+      new GeminiAgentProvider('key', call()),
+      request(),
+    );
+    const second = await drain(
+      new GeminiAgentProvider('key', call()),
+      request(),
+    );
+
+    const idOf = (final: any) => final.content[0].id;
+    expect(idOf(first.final)).not.toBe(idOf(second.final));
   });
 
   it('lets a truncated turn outrank its own tool calls', async () => {

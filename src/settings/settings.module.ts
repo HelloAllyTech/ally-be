@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { SettingsService } from './service/settings.service';
 import { SettingsController } from './controller/settings.controller';
+import { AgentTurnSettingsController } from './controller/agent-turn-settings.controller';
+import { AgentTurnSettingsService } from 'src/llm-agent/runtime/agent-turn-settings.service';
 import { RedisModule } from 'src/redis/redis.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Preference } from './entity/preference.entity';
@@ -25,8 +27,9 @@ import { UserModule } from 'src/user/user.module';
 
     GlobalSettingsRepository,
     SettingsShared,
+    AgentTurnSettingsService,
   ],
-  controllers: [SettingsController],
+  controllers: [SettingsController, AgentTurnSettingsController],
   exports: [SettingsService, PreferenceService, SettingsShared],
 })
 export class SettingsModule {}

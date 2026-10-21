@@ -3,6 +3,8 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmModule } from 'src/llm/llm.module';
 import { AgentLlmProviderFactory } from './service/agent-llm.factory';
 import { LlmCompletionService } from './service/llm-completion.service';
+import { GlobalSettingsRepository } from 'src/settings/repository/global-settings.repository';
+import { AgentTurnSettingsService } from './runtime/agent-turn-settings.service';
 
 /**
  * Provider-agnostic LLM access for ally-be: streamed and tool-capable for the
@@ -15,10 +17,24 @@ import { LlmCompletionService } from './service/llm-completion.service';
  * `LlmUsageModule` rather than `AnalyticsModule` on purpose — it exists exactly
  * so a call site can record usage without pulling in the analytics dependency
  * graph and its cycles.
+ *
+ * `AgentTurnSettingsService` is the validated-turn runtime's kill switch, read
+ * by each agent's orchestrator per turn. Its repository is provided here
+ * rather than by importing SettingsModule, whose UserModule import would pull
+ * the user graph into every agent module.
  */
 @Module({
   imports: [LlmModule, LlmUsageModule],
-  providers: [AgentLlmProviderFactory, LlmCompletionService],
-  exports: [AgentLlmProviderFactory, LlmCompletionService],
+  providers: [
+    AgentLlmProviderFactory,
+    LlmCompletionService,
+    GlobalSettingsRepository,
+    AgentTurnSettingsService,
+  ],
+  exports: [
+    AgentLlmProviderFactory,
+    LlmCompletionService,
+    AgentTurnSettingsService,
+  ],
 })
 export class LlmAgentModule {}
