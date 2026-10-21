@@ -9,6 +9,7 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { PreferenceName } from 'src/common/constants/user.constants';
 import { FEATURE_TOGGLE_KEY } from '../../decorators/feature-toggle.decorator';
 import { ORG_SCOPED_ROUTE_KEY } from '../../decorators/org-scoped-route.decorator';
+import { CALLER_SCOPED_ROUTE_KEY } from '../../decorators/caller-scoped-route.decorator';
 
 describe('FeatureToggleGuard', () => {
   let guard: FeatureToggleGuard;
@@ -188,13 +189,19 @@ describe('FeatureToggleGuard', () => {
 
   describe('org-scoped routes only (Analytics, organization-restricted admins)', () => {
     /** Route metadata by key, as the reflector would read it. */
-    const routeWith = (orgScoped?: { queryParam: string }) =>
+    const routeWith = (
+      orgScoped?: { queryParam: string },
+      callerScoped?: boolean,
+    ) =>
       reflector.getAllAndOverride.mockImplementation((key: string) => {
         if (key === FEATURE_TOGGLE_KEY) {
           return { featureKey: FeatureToggleKey.ANALYTICS };
         }
         if (key === ORG_SCOPED_ROUTE_KEY) {
           return orgScoped;
+        }
+        if (key === CALLER_SCOPED_ROUTE_KEY) {
+          return callerScoped;
         }
         return undefined;
       });
@@ -265,6 +272,23 @@ describe('FeatureToggleGuard', () => {
         }),
       });
       expect(tenantScopeService.assertTenantInScope).not.toHaveBeenCalled();
+    });
+
+    it("passes a caller-scoped route with no organization named — it holds only the caller's own rows", async () => {
+      routeWith(undefined, true);
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin, {})),
+      ).resolves.toBe(true);
+      expect(tenantScopeService.assertTenantInScope).not.toHaveBeenCalled();
+    });
+
+    it('still refuses an unmarked route when the caller-scoped marker is absent', async () => {
+      routeWith(undefined, false);
+
+      await expect(
+        guard.canActivate(contextFor(platformAdmin, {})),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('leaves an unrestricted admin free on every route', async () => {

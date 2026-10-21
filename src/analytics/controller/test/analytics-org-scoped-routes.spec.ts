@@ -5,6 +5,7 @@ import { getMetadataStorage } from 'class-validator';
 import { AnalyticsController } from '../analytics.controller';
 import { FEATURE_TOGGLE_KEY } from '../../../auth/decorators/feature-toggle.decorator';
 import { ORG_SCOPED_ROUTE_KEY } from '../../../auth/decorators/org-scoped-route.decorator';
+import { CALLER_SCOPED_ROUTE_KEY } from '../../../auth/decorators/caller-scoped-route.decorator';
 import { FeatureToggleKey } from '../../../authorization/constants/admin-feature-toggle.constants';
 
 /**
@@ -66,7 +67,21 @@ const ORG_SCOPED_ANALYTICS_ROUTES = [
   'xp-growth',
 ];
 
-type Route = { method: string; path: string; orgScoped: boolean };
+/**
+ * The Analytics routes that touch only the caller's own rows, open to a
+ * restricted admin with no organization named. Pinned for the same reason.
+ */
+const CALLER_SCOPED_ANALYTICS_HANDLERS = [
+  'getChartPreferences',
+  'saveChartPreferences',
+];
+
+type Route = {
+  method: string;
+  path: string;
+  orgScoped: boolean;
+  callerScoped: boolean;
+};
 
 function analyticsRoutes(): Route[] {
   const proto = AnalyticsController.prototype as unknown as Record<
@@ -87,6 +102,9 @@ function analyticsRoutes(): Route[] {
       path: Reflect.getMetadata(PATH_METADATA, handler as object),
       orgScoped: Boolean(
         Reflect.getMetadata(ORG_SCOPED_ROUTE_KEY, handler as object),
+      ),
+      callerScoped: Boolean(
+        Reflect.getMetadata(CALLER_SCOPED_ROUTE_KEY, handler as object),
       ),
     }));
 }
@@ -156,5 +174,51 @@ describe('Analytics routes open to organization-restricted admins', () => {
 
     expect(xpGoals).toBeDefined();
     expect(takesTenantId(xpGoals!.method)).toBe(false);
+  });
+
+  it('opens exactly the pinned caller-scoped routes without an organization', () => {
+    const callerScoped = analyticsRoutes()
+      .filter((r) => r.callerScoped)
+      .map((r) => r.method)
+      .sort();
+
+    expect(callerScoped).toEqual([...CALLER_SCOPED_ANALYTICS_HANDLERS].sort());
+  });
+
+  it('never marks a route both org-scoped and caller-scoped', () => {
+    const both = analyticsRoutes()
+      .filter((r) => r.orgScoped && r.callerScoped)
+      .map((r) => r.path);
+
+    expect(both).toEqual([]);
+  });
+
+  /** Whether a handler reads anything from the query string or the path. */
+  function takesQueryOrPathParam(method: string): boolean {
+    const routeArgs: Record<string, unknown> =
+      Reflect.getMetadata(ROUTE_ARGS_METADATA, AnalyticsController, method) ??
+      {};
+    return Object.keys(routeArgs).some((key) =>
+      [RouteParamtypes.QUERY, RouteParamtypes.PARAM].includes(
+        Number(key.split(':')[0]),
+      ),
+    );
+  }
+
+  it('gives caller-scoped routes no query or path parameter to name someone else by', () => {
+    const named = analyticsRoutes()
+      .filter((r) => r.callerScoped && takesQueryOrPathParam(r.method))
+      .map((r) => r.method);
+
+    expect(named).toEqual([]);
+  });
+
+  it('can tell a route that takes a path parameter (the check above is live)', () => {
+    const learner = analyticsRoutes().find(
+      (r) => r.path === 'skill-growth/learners/:userId',
+    );
+
+    expect(learner).toBeDefined();
+    expect(takesQueryOrPathParam(learner!.method)).toBe(true);
   });
 });
