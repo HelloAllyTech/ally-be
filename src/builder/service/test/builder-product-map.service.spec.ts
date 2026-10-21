@@ -1,8 +1,8 @@
 import { FEATURE_TOGGLES } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { BUILDER_REPOS } from 'src/builder/constants/builder-repos.constants';
 
-import { RoadmapCopilotProductMapService } from '../roadmap-copilot-product-map.service';
-import { ROADMAP_COPILOT_PRODUCT_MAP } from '../../constants/product-roadmap.constants';
+import { BuilderProductMapService } from '../builder-product-map.service';
+import { BUILDER_PRODUCT_MAP } from '../../constants/builder.constants';
 
 const ROUTING = [
   '# Wiki routing index',
@@ -46,7 +46,7 @@ const pack = (repo: string, body: string) => ({
  * What matters: each source is present when it can be read, says so plainly when it cannot,
  * and the whole thing is cached — briefly when anything failed.
  */
-describe('RoadmapCopilotProductMapService', () => {
+describe('BuilderProductMapService', () => {
   const build = (
     over: {
       maps?: any[] | Error;
@@ -76,11 +76,18 @@ describe('RoadmapCopilotProductMapService', () => {
           },
       ),
     };
-    const service = new RoadmapCopilotProductMapService(
+    const catalog = {
+      renderContextSection: jest.fn(
+        async () =>
+          '# Reusable platform systems\n\n- **Auto-improve** (ally-be:src/skill-experiment) — tests prompt versions.',
+      ),
+    };
+    const service = new BuilderProductMapService(
       knowledge as any,
       githubRead as any,
+      catalog as any,
     );
-    return { service, knowledge, githubRead };
+    return { service, knowledge, githubRead, catalog };
   };
 
   afterEach(() => jest.useRealTimers());
@@ -148,21 +155,19 @@ describe('RoadmapCopilotProductMapService', () => {
       maps: [
         pack(
           'ally-be',
-          head + 'y'.repeat(ROADMAP_COPILOT_PRODUCT_MAP.PACK_MAX_CHARS * 2),
+          head + 'y'.repeat(BUILDER_PRODUCT_MAP.PACK_MAX_CHARS * 2),
         ),
       ],
     }).service.render();
 
     expect(text).toContain(head);
     expect(text).toMatch(/cut here/);
-    expect(text).not.toContain(
-      'y'.repeat(ROADMAP_COPILOT_PRODUCT_MAP.PACK_MAX_CHARS),
-    );
+    expect(text).not.toContain('y'.repeat(BUILDER_PRODUCT_MAP.PACK_MAX_CHARS));
   });
 
   it('caps the doc paths per repo and points at docs_search for the rest', async () => {
     const many = Array.from(
-      { length: ROADMAP_COPILOT_PRODUCT_MAP.DOCS_PER_REPO + 5 },
+      { length: BUILDER_PRODUCT_MAP.DOCS_PER_REPO + 5 },
       (_, i) => `docs/page-${i}.md`,
     );
     const text = await build({
@@ -171,7 +176,7 @@ describe('RoadmapCopilotProductMapService', () => {
 
     expect(text).toContain('and 5 more (docs_search finds them)');
     expect(text).not.toContain(
-      `docs/page-${ROADMAP_COPILOT_PRODUCT_MAP.DOCS_PER_REPO}.md`,
+      `docs/page-${BUILDER_PRODUCT_MAP.DOCS_PER_REPO}.md`,
     );
   });
 
@@ -219,9 +224,7 @@ describe('RoadmapCopilotProductMapService', () => {
       const { service, knowledge } = build();
 
       await service.render();
-      jest.setSystemTime(
-        Date.now() + ROADMAP_COPILOT_PRODUCT_MAP.TTL_MS - 1_000,
-      );
+      jest.setSystemTime(Date.now() + BUILDER_PRODUCT_MAP.TTL_MS - 1_000);
       await service.render();
       expect(knowledge.listRepoMaps).toHaveBeenCalledTimes(1);
 
@@ -237,12 +240,28 @@ describe('RoadmapCopilotProductMapService', () => {
       });
 
       await service.render();
-      jest.setSystemTime(
-        Date.now() + ROADMAP_COPILOT_PRODUCT_MAP.RETRY_TTL_MS + 1_000,
-      );
+      jest.setSystemTime(Date.now() + BUILDER_PRODUCT_MAP.RETRY_TTL_MS + 1_000);
       await service.render();
 
       expect(githubRead.readFile).toHaveBeenCalledTimes(2);
     });
+  });
+  it('carries the reusable systems, so the copilot knows what already exists', async () => {
+    const text = await build().service.render();
+
+    expect(text).toContain('## Reusable platform systems');
+    expect(text).toContain('**Auto-improve**');
+  });
+
+  it('renders the documentation index on its own for the Builder interview', async () => {
+    const text = await build().service.renderDocsIndex();
+
+    expect(text).toContain('# Documentation you can read');
+    expect(text).toContain('`platform/architecture.md`');
+    expect(text).toContain(
+      '- ally-web: README.md, CLAUDE.md, docs/ally-web-guide.md',
+    );
+    // Not the parts the interview's own context already carries.
+    expect(text).not.toContain("## The admin console's surfaces");
   });
 });

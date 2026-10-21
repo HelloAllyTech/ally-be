@@ -47,7 +47,6 @@ import { RoadmapAiService } from './service/roadmap-ai.service';
 import { RoadmapStrategyContextService } from './service/roadmap-strategy-context.service';
 import { RoadmapCopilotToolsService } from './service/roadmap-copilot-tools.service';
 import { RoadmapCopilotService } from './service/roadmap-copilot.service';
-import { RoadmapCopilotProductMapService } from './service/roadmap-copilot-product-map.service';
 import { GlobalSettings } from 'src/settings/entity/global-settings.entity';
 import { RoadmapAllocationService } from './service/roadmap-allocation.service';
 import { RoadmapCommentService } from './service/roadmap-comment.service';
@@ -199,7 +198,6 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     // strategy page it always reads.
     RoadmapStrategyContextService,
     RoadmapCopilotToolsService,
-    RoadmapCopilotProductMapService,
     RoadmapCopilotService,
     RoadmapVoteGrantSchedulerRegistrationService,
     RoadmapBuilderSchedulerRegistrationService,

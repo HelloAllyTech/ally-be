@@ -16,10 +16,13 @@ import { BuilderPrdService } from './builder-prd.service';
 import { BuilderGithubReadService } from './builder-github-read.service';
 import { BuilderStacksService } from './builder-stacks.service';
 import { BuilderEvidenceService } from './builder-evidence.service';
+import { BuilderCatalogService } from './builder-catalog.service';
+import { BuilderEvidenceLogService } from './builder-evidence-log.service';
 import {
   BUILDER_REPO_NAMES,
   BUILDER_REPOS,
   BUILDER_WIKI_REPO,
+  isBuilderReadableRepo,
 } from '../constants/builder-repos.constants';
 import { BUILDER_STACKS_DEFAULT_RESULTS } from '../constants/builder.constants';
 
@@ -82,6 +85,8 @@ export class BuilderInterviewToolsService {
     private readonly githubRead: BuilderGithubReadService,
     private readonly stacks: BuilderStacksService,
     private readonly evidence: BuilderEvidenceService,
+    private readonly catalog: BuilderCatalogService,
+    private readonly evidenceLog: BuilderEvidenceLogService,
   ) {}
 
   getToolDefinitions(): any[] {
@@ -392,15 +397,122 @@ export class BuilderInterviewToolsService {
           },
         },
       },
+      {
+        name: 'capability_lookup',
+        description:
+          "Search the platform's map of what already exists: the reusable systems " +
+          '(Auto-improve, the prompt registry, the scheduler, notifications…), every ' +
+          "repo's modules, tables, routes, screens, components and docs, the AI task " +
+          'registry and the prompts connected to Auto-improve. Run it before you ' +
+          'propose building anything new, with the nouns of the request — one to three ' +
+          'words per query ("a/b test", "challenger", "rating", "debrief"). A hit is a ' +
+          'place to read next, not a description of how it works.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'ai_tasks_lookup',
+        description:
+          'Find which model call produces an AI output — a debrief, a grade, a summary, ' +
+          'a translation — from the AI task registry, and whether its prompt is ' +
+          'connected to Auto-improve (so it can be A/B tested and improved without new ' +
+          'code). Run it whenever a request touches something a model writes.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'docs_search',
+        description:
+          "Search the platform's written documentation — every repo's README, " +
+          'CLAUDE.md, DATA_SCHEMA.md and docs/ pages, and the wiki — and get back ' +
+          'matching file paths. Docs say what an area is for and why; read the one or ' +
+          'two that match with github_read_file (or wiki_read for the wiki) before ' +
+          'reading code. Every word must match, so search one to three words.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'One to three words' },
+            repo: {
+              type: 'string',
+              enum: [...BUILDER_REPO_NAMES, BUILDER_WIKI_REPO],
+            },
+          },
+          required: ['query'],
+        },
+      },
     ];
   }
 
+  /**
+   * Run one tool, and record it in the evidence log when it is a lookup.
+   *
+   * Recorded here rather than in each research branch so no lookup can be
+   * added without leaving a trace — the log is only useful if it is complete.
+   */
   async execute(
     name: string,
     input: Record<string, any>,
     context: BuilderToolExecutionContext,
   ): Promise<BuilderToolExecutionOutcome> {
+    const outcome = await this.dispatch(name, input, context);
+    this.evidenceLog.recordToolResult(
+      context.session?.id,
+      name,
+      input ?? {},
+      outcome.modelResult ?? {},
+    );
+    return outcome;
+  }
+
+  private async dispatch(
+    name: string,
+    input: Record<string, any>,
+    context: BuilderToolExecutionContext,
+  ): Promise<BuilderToolExecutionOutcome> {
     switch (name) {
+      case 'capability_lookup': {
+        const hits = await this.catalog.search(String(input?.query ?? ''));
+        return {
+          modelResult: {
+            ok: true,
+            results: hits,
+            ...(hits.length
+              ? {}
+              : {
+                  note:
+                    'Nothing matched those words. Try the name a screen or system has in the ' +
+                    'product, or one shorter word, before concluding nothing exists.',
+                }),
+          },
+          summary: `Platform map: "${input?.query}" — ${hits.length} match(es)`,
+        };
+      }
+      case 'ai_tasks_lookup': {
+        const hits = this.catalog.aiTasksLookup(String(input?.query ?? ''));
+        return {
+          modelResult: { ok: true, results: hits },
+          summary: `AI tasks: "${input?.query}" — ${hits.length} match(es)`,
+        };
+      }
+      case 'docs_search':
+        return this.wrapResearch(
+          await this.searchDocs(
+            String(input?.query ?? ''),
+            input?.repo ? String(input.repo) : undefined,
+          ),
+          (result) =>
+            `Docs: "${input?.query}" — ${result.results?.length ?? 0} page(s)`,
+        );
       case 'ask_admin':
         return this.executeAskAdmin(input);
       case 'update_prd':
@@ -529,6 +641,39 @@ export class BuilderInterviewToolsService {
           summary: `Unknown tool "${name}"`,
         };
     }
+  }
+
+  /**
+   * Markdown-only code search, across every repo and the wiki — the same
+   * search the opportunity copilot uses, so both agents find the same pages.
+   */
+  private async searchDocs(
+    query: string,
+    repo?: string,
+  ): Promise<Record<string, any>> {
+    const trimmed = query.trim();
+    if (!trimmed)
+      return { ok: false, error: 'Give me something to search for.' };
+    const found = await this.githubRead.searchCode(
+      `${trimmed} extension:md`,
+      repo,
+    );
+    if (found?.ok === false) return found;
+    const results = (Array.isArray(found?.results) ? found.results : []).filter(
+      (hit: { repo?: string }) =>
+        !!hit?.repo && isBuilderReadableRepo(hit.repo),
+    );
+    return {
+      ok: true,
+      results,
+      ...(results.length
+        ? {}
+        : {
+            note:
+              'No page matched those words — try one word, or the name the product map ' +
+              'uses, before concluding nothing is documented.',
+          }),
+    };
   }
 
   /**

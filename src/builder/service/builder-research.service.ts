@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
@@ -11,6 +11,7 @@ import { AgentTurnResult } from 'src/llm-agent/type/agent-llm.type';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
+import { BuilderPlatformContextService } from './builder-platform-context.service';
 import { BuilderInterviewToolsService } from './builder-interview-tools.service';
 import { BUILDER_MAX_TOKENS } from '../constants/builder.constants';
 
@@ -46,6 +47,8 @@ export class BuilderResearchService {
     private readonly toolsService: BuilderInterviewToolsService,
     private readonly llmUsage: LlmUsageService,
     private readonly agentLlmFactory: AgentLlmProviderFactory,
+    @Optional()
+    private readonly platformContext?: BuilderPlatformContextService,
   ) {}
 
   /**
@@ -101,9 +104,10 @@ export class BuilderResearchService {
     );
     const { provider: providerName, model } = this.resolveModel();
     const provider = this.agentLlmFactory.create(providerName, model);
-    const [context, platformRules] = await Promise.all([
+    const [context, platformRules, platformMap] = await Promise.all([
       this.knowledgeService.buildContextBlock(session.repos ?? undefined),
       this.knowledgeService.platformRules(),
+      this.platformContext?.render() ?? Promise.resolve(''),
     ]);
 
     // The read-only research tools plus `update_prd`. `ask_admin` is
@@ -139,6 +143,7 @@ export class BuilderResearchService {
           // technical plan, and is held to the same platform as anything else.
           { text: `${RESEARCH_SYSTEM_PROMPT}\n\n${platformRules}` },
           { text: context, cache: true },
+          ...(platformMap.trim() ? [{ text: platformMap, cache: true }] : []),
         ],
         messages: messages as any,
         tools,
