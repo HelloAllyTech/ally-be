@@ -554,9 +554,15 @@ describe('BuilderInterviewOrchestratorService — validated turns', () => {
     await drain();
 
     expect(sentRequests[0].system[0].text).toContain('# How a turn ends');
+    // The interview protocol is off here (its own spec turns it on).
     expect(toolsService.getToolDefinitions).toHaveBeenCalledWith({
       validatedTurns: true,
+      situationBrief: false,
+      briefDue: false,
     });
+    expect(sentRequests[0].system[0].text).not.toContain(
+      '# How this interview runs',
+    );
     expect(toolsService.execute.mock.calls[0][2]).toMatchObject({
       validatedTurns: true,
     });

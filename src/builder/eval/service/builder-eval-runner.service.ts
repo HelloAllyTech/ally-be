@@ -41,6 +41,11 @@ import {
   computeEvalGates,
   gateViolations,
 } from '../util/builder-eval-scoring.util';
+import {
+  BuilderBriefLine,
+  BuilderSituationBrief,
+  storedSituationBrief,
+} from '../../util/builder-situation-brief.util';
 import { BUILDER_TERMINAL_TOOLS } from '../../util/builder-turn-receipt.util';
 
 const ADMIN_MAX_TOKENS = 4_000;
@@ -67,6 +72,8 @@ export interface SimulatedAdminReply {
   correction: boolean;
   about: string[];
   done: boolean;
+  /** Verdicts on a situation brief's lines, when one was shown. */
+  lines?: { id: string; verdict: 'confirm' | 'correct'; correction?: string }[];
 }
 
 const stripFence = (text: string) =>
@@ -80,6 +87,17 @@ export function parseAdminReply(text: string): SimulatedAdminReply | null {
   const message = String(parsed.message ?? '').trim();
   const done = parsed.done === true;
   if (!message && !done) return null;
+  const lines = Array.isArray(parsed.lines)
+    ? parsed.lines
+        .map((line: any) => {
+          const id = String(line?.id ?? '').trim();
+          const correctionText = String(line?.correction ?? '').trim();
+          return line?.verdict === 'correct' && correctionText
+            ? { id, verdict: 'correct' as const, correction: correctionText }
+            : { id, verdict: 'confirm' as const };
+        })
+        .filter((line: { id: string }) => line.id)
+    : undefined;
   return {
     message,
     optionIds: Array.isArray(parsed.optionIds)
@@ -88,6 +106,7 @@ export function parseAdminReply(text: string): SimulatedAdminReply | null {
     correction: parsed.correction === true,
     about: Array.isArray(parsed.about) ? parsed.about.map(String) : [],
     done,
+    ...(lines ? { lines } : {}),
   };
 }
 
@@ -123,11 +142,51 @@ export function parseJudgement(
   };
 }
 
+/** One brief line as the simulated admin and the transcript read it. */
+export function briefLineText(line: BuilderBriefLine): string {
+  const label =
+    line.kind === 'proposal'
+      ? `proposal (${line.approach ?? '?'})${line.part ? ` ${line.part}` : ''}`
+      : line.kind === 'repo'
+        ? `repo ${line.repo}`
+        : line.kind === 'exists'
+          ? 'exists'
+          : 'already met';
+  const cites = line.cites.length
+    ? ` [${line.cites.map((cite) => cite.label).join(' | ')}]`
+    : '';
+  return `${line.id} ${label}: ${line.text}${cites}`;
+}
+
 /** The admin's reply as the message the interview receives. */
 export function replyToMessage(
   reply: SimulatedAdminReply,
   question: { id?: string; options?: { id: string; label: string }[] } | null,
+  brief?: BuilderSituationBrief | null,
 ): CreateBuilderMessageDto {
+  // A brief is answered line by line, the way the card does it: a line the
+  // admin did not mention is confirmed, and anything else they said is the
+  // note under it.
+  if (brief && !question) {
+    const verdicts = new Map(
+      (reply.lines ?? []).map((line) => [line.id, line]),
+    );
+    const lines = brief.lines.map(
+      (line) =>
+        verdicts.get(line.id) ?? { id: line.id, verdict: 'confirm' as const },
+    );
+    const corrected = lines.filter((line) => line.verdict === 'correct').length;
+    return {
+      message:
+        reply.message ||
+        (corrected ? `Corrected ${corrected} line(s).` : 'Confirmed.'),
+      briefResponse: {
+        briefId: brief.id,
+        lines,
+        ...(reply.message ? { note: reply.message } : {}),
+      },
+    } as CreateBuilderMessageDto;
+  }
   const options = question?.options ?? [];
   const picked = options.filter((option) =>
     reply.optionIds.includes(option.id),
@@ -250,6 +309,10 @@ export class BuilderEvalRunnerService {
     let adminSaid = payload.openingMessage;
     let adminCorrected = false;
     let messages: BuilderMessage[] = [];
+    let questionsSoFar = 0;
+    let briefLines: number | null = null;
+    let briefBeforeFirstQuestion = false;
+    let briefCorrections = 0;
 
     while (turns < maxTurns) {
       turns += 1;
@@ -269,6 +332,14 @@ export class BuilderEvalRunnerService {
         .reverse()
         .find((row) => row.role === BuilderMessageRole.ASSISTANT);
       const question = (reply?.metadata?.questions ?? [])[0] ?? null;
+      const brief = storedSituationBrief(reply?.metadata);
+      if (brief) {
+        briefLines = brief.lines.length;
+        briefBeforeFirstQuestion = questionsSoFar === 0;
+      }
+      questionsSoFar += Array.isArray(reply?.metadata?.questions)
+        ? reply!.metadata!.questions.length
+        : 0;
       transcript.push(
         this.turnRecord(turns, adminSaid, adminCorrected, reply, question),
       );
@@ -281,13 +352,21 @@ export class BuilderEvalRunnerService {
         messages,
         reply,
         question,
+        brief,
       );
-      if (admin.done) break;
-      if (admin.correction) {
+      // A brief is a question: the admin answers it even when they say
+      // they are done.
+      if (admin.done && !brief) break;
+      const briefCorrected = brief
+        ? (admin.lines ?? []).filter((line) => line.verdict === 'correct')
+            .length
+        : 0;
+      briefCorrections += briefCorrected;
+      if (admin.correction || briefCorrected) {
         corrections += 1;
         admin.about.forEach((id) => correctedItems.add(id));
       }
-      message = replyToMessage(admin, question);
+      message = replyToMessage(admin, question, brief);
       adminSaid = admin.message;
       adminCorrected = admin.correction;
     }
@@ -307,6 +386,11 @@ export class BuilderEvalRunnerService {
       .filter((result) => !BUILDER_TERMINAL_TOOLS.has(String(result?.name)));
     const metrics: BuilderEvalMetrics = {
       loop: sandbox.validatedTurns ? 'validated' : 'legacy',
+      protocol: sandbox.validatedTurns && sandbox.situationBrief,
+      briefDelivered: briefLines !== null,
+      briefBeforeFirstQuestion,
+      briefLines: briefLines ?? 0,
+      briefCorrections,
       turns,
       // Questions delivered, not ask_admin calls made: the same count on the
       // legacy loop, where every call was delivered.
@@ -461,6 +545,7 @@ export class BuilderEvalRunnerService {
     messages: BuilderMessage[],
     reply: BuilderMessage | undefined,
     question: Record<string, any> | null,
+    brief: BuilderSituationBrief | null = null,
   ): Promise<SimulatedAdminReply> {
     const doc = await sandbox.stores.docRepository.findBySession(
       sandbox.session.id,
@@ -487,6 +572,14 @@ export class BuilderEvalRunnerService {
       '<question>',
       question ? JSON.stringify(question) : '(no question asked)',
       '</question>',
+      ...(brief && !question
+        ? [
+            '',
+            '<situation_brief>',
+            ...brief.lines.map((line) => briefLineText(line)),
+            '</situation_brief>',
+          ]
+        : []),
       '',
       '<prd>',
       prdForPrompt(doc?.draft),
@@ -584,6 +677,13 @@ export class BuilderEvalRunnerService {
         reply?.content ?? reply?.metadata?.errorMessage ?? '',
       ).slice(0, 6000),
       question: question?.prompt ? String(question.prompt) : null,
+      ...(storedSituationBrief(reply?.metadata)
+        ? {
+            brief: storedSituationBrief(reply?.metadata)!.lines.map((line) =>
+              briefLineText(line).slice(0, 400),
+            ),
+          }
+        : {}),
       toolCalls: (reply?.toolCalls ?? []).map((call) => {
         const result = results.get(String(call.id))?.result;
         return {

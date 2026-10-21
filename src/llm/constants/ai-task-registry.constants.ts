@@ -1758,6 +1758,24 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     configuredBy: 'LLM_REASONING_MODEL',
   },
   {
+    id: 'builder-discovery-plan',
+    task: LlmTask.BUILDER_DISCOVERY_PLAN,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger:
+      "An admin's opening message in a Builder interview, with the situation brief on",
+    detail:
+      'Plans the discovery sweep the server runs before Builder replies: 8-12 queries of one ' +
+      'to three words over the platform map, docs, wiki, code search and the AI task ' +
+      'registry. Once per interview (at most twice, if the first turn had nothing to brief ' +
+      'on); the searches themselves are tool calls, not model calls. A failure falls back ' +
+      "to queries from the request's own words. builder_settings.situationBrief turns it off.",
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    tier: LlmModelTier.FAST,
+    configuredBy: 'LLM_FAST_MODEL',
+  },
+  {
     id: 'builder-eval-admin',
     task: LlmTask.BUILDER_EVAL,
     runtime: LlmRuntime.ALLY_BE,

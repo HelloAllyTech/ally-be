@@ -35,9 +35,15 @@ import { BuilderSettingsService } from '../../service/builder-settings.service';
 
 const DEFAULT_REPETITIONS = 3;
 
-/** The loop a suite ran. Suites from before the switch existed ran the legacy one. */
-const loopOf = (overrides: BuilderEvalOverrides | null | undefined): boolean =>
-  overrides?.validatedTurns === true;
+/**
+ * The loop a suite ran: validated turns or not, and with them the interview
+ * protocol or not. Suites from before either switch existed ran without it.
+ */
+const loopOf = (overrides: BuilderEvalOverrides | null | undefined): string => {
+  const validated = overrides?.validatedTurns === true;
+  if (!validated) return 'legacy';
+  return overrides?.situationBrief === true ? 'validated+brief' : 'validated';
+};
 
 /** Roll a suite's runs up per fixture and overall. Pure, for the gate and the page. */
 export function summariseSuite(
@@ -235,10 +241,11 @@ export class BuilderEvalService {
     );
     // The loop is part of what a suite measured — stamped now, from the live
     // switch unless the caller chose, so the record says which loop ran.
+    const live = await this.liveLoop();
     const overrides: BuilderEvalOverrides = {
       ...(input.overrides ?? {}),
-      validatedTurns:
-        input.overrides?.validatedTurns ?? (await this.liveValidatedTurns()),
+      validatedTurns: input.overrides?.validatedTurns ?? live.validatedTurns,
+      situationBrief: input.overrides?.situationBrief ?? live.situationBrief,
     };
 
     const suite = await this.suites.save(
@@ -523,12 +530,19 @@ export class BuilderEvalService {
     );
   }
 
-  /** The live validated-turns switch; a failed read means the column default, on. */
-  private async liveValidatedTurns(): Promise<boolean> {
+  /** The live interview switches; a failed read means the column defaults, on. */
+  private async liveLoop(): Promise<{
+    validatedTurns: boolean;
+    situationBrief: boolean;
+  }> {
     try {
-      return (await this.settingsService.get()).validatedTurns !== false;
+      const settings = await this.settingsService.get();
+      return {
+        validatedTurns: settings.validatedTurns !== false,
+        situationBrief: settings.situationBrief === true,
+      };
     } catch {
-      return true;
+      return { validatedTurns: true, situationBrief: true };
     }
   }
 
@@ -567,7 +581,10 @@ export class BuilderEvalService {
       trigger: 'baseline',
       fixtureIds: suite.fixtureIds,
       repetitions: suite.repetitions,
-      overrides: { validatedTurns: loop },
+      overrides: {
+        validatedTurns: suite.overrides?.validatedTurns === true,
+        situationBrief: suite.overrides?.situationBrief === true,
+      },
       userId: suite.createdBy ?? 0,
       baselineFor: suite.id,
     }).catch((error: unknown) => {

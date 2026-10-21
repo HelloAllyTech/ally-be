@@ -58,6 +58,7 @@ export class BuilderSettingsService {
         | 'coderModel'
         | 'verifierModel'
         | 'validatedTurns'
+        | 'situationBrief'
       >
     >,
     userId: number,
@@ -108,6 +109,13 @@ export class BuilderSettingsService {
       this.logger.info(
         `Builder validated interview turns ${
           changes.validatedTurns ? 'ON' : 'OFF'
+        } by user ${userId}`,
+      );
+    }
+    if (changes.situationBrief !== undefined) {
+      this.logger.info(
+        `Builder situation brief and question gate ${
+          changes.situationBrief ? 'ON' : 'OFF'
         } by user ${userId}`,
       );
     }

@@ -104,6 +104,69 @@ describe('BuilderInterviewToolsService — validated belt and edits by id', () =
     expect(update.description).toMatch(/\/requirements\/R3\/title/);
   });
 
+  describe('the interview protocol', () => {
+    it('gates ask_admin: a question type, a basis and why research cannot settle it', async () => {
+      const { service } = await build();
+      const ask = service
+        .getToolDefinitions({ validatedTurns: true, situationBrief: true })
+        .find((tool: any) => tool.name === 'ask_admin');
+      expect(ask.input_schema.required).toEqual([
+        'prompt',
+        'kind',
+        'message',
+        'questionType',
+        'basis',
+        'whyNotResearch',
+      ]);
+      expect(ask.input_schema.properties.questionType.enum).toEqual([
+        'scope',
+        'behaviour',
+        'priority',
+        'taste',
+        'contradiction',
+      ]);
+    });
+
+    it('swaps ask_admin for the situation brief on the opening turn', async () => {
+      const { service } = await build();
+      const names = service
+        .getToolDefinitions({
+          validatedTurns: true,
+          situationBrief: true,
+          briefDue: true,
+        })
+        .map((tool: any) => tool.name);
+      expect(names).toContain('submit_situation_brief');
+      expect(names).not.toContain('ask_admin');
+      expect(names).toContain('finish_turn');
+      // Without validated turns the protocol does not exist.
+      expect(
+        service
+          .getToolDefinitions({ situationBrief: true, briefDue: true })
+          .map((tool: any) => tool.name),
+      ).not.toContain('submit_situation_brief');
+    });
+
+    it("puts the gate's basis and reason on the card", async () => {
+      const { service, context } = await build();
+      const outcome = await service.execute(
+        'ask_admin',
+        {
+          prompt: 'Guardrail or weight?',
+          kind: 'freeText',
+          questionType: 'behaviour',
+          basis: 'P1',
+          whyNotResearch: 'their call',
+        },
+        { ...context, questionGate: true },
+      );
+      expect(outcome.events?.[0].data).toMatchObject({
+        questionType: 'behaviour',
+        rationale: 'Based on: P1\nYours to decide because: their call',
+      });
+    });
+  });
+
   it('removes one requirement and edits another by id, both landing', async () => {
     const { service, context, stores } = await build();
 

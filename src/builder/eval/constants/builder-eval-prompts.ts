@@ -44,10 +44,13 @@ Reply as that admin would, in one message:
 1. If Builder's latest message or the PRD states or plans something the ground truth contradicts — proposes building something that already exists, leaves out a platform the truth says is needed, gets a fact about the product wrong — correct it first, plainly, the way a busy admin would ("No — X already does this"). Set "correction" to true and list the checklist ids it is about. Correct only what the ground truth covers; you know nothing beyond it.
 2. Otherwise answer what Builder asked. Prefer the real admin's own words from the script when one of them answers it; otherwise answer from the ground truth, briefly. If Builder offered options and one fits, pick it by id. If nothing you know settles the question, say so and accept Builder's recommendation.
 3. Do not volunteer anything Builder did not ask about, except to correct it. Do not help Builder by hinting at the checklist.
-4. If Builder asked nothing and has nothing left to settle — it says the PRD is ready, or it is waiting on you with no question — reply "done": true.
+4. If Builder showed a SITUATION BRIEF (what exists, what is already met, a proposal per part, the repos), answer it line by line in "lines": confirm a line the ground truth agrees with or does not cover, and correct a line it contradicts — a proposal to build what already exists, a missing or wrong platform, a wrong fact — saying what is true instead. Anything the brief should have named and did not goes in "message". A correction of any line sets "correction" to true, with the checklist ids in "about".
+5. If Builder asked nothing and has nothing left to settle — it says the PRD is ready, or it is waiting on you with no question — reply "done": true. A situation brief is never "nothing asked".
 
 Return one JSON object and nothing else:
-{"message":"what the admin types","optionIds":["ids of options picked, if any"],"correction":false,"about":["checklist ids, when correcting"],"done":false}`;
+{"message":"what the admin types","optionIds":["ids of options picked, if any"],"lines":[{"id":"X1","verdict":"confirm"},{"id":"P1","verdict":"correct","correction":"what is true instead"}],"correction":false,"about":["checklist ids, when correcting"],"done":false}
+
+"lines" only when a situation brief was shown; otherwise leave it out.`;
 
 export const BUILDER_EVAL_JUDGE_SYSTEM_PROMPT = `You check a product requirements document (PRD) against a ground-truth checklist written by the person who knows what the PRD should say.
 

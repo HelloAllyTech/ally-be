@@ -165,6 +165,16 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', default: true })
   validatedTurns!: boolean;
 
+  /**
+   * The interview protocol (W4), on top of validated turns. On, a new
+   * interview opens with a server discovery sweep and a situation brief the
+   * admin confirms or corrects line by line, and every later question names
+   * its type, its basis and why research cannot settle it. Needs
+   * `validatedTurns`; with those off it does nothing.
+   */
+  @Column({ type: 'boolean', default: true })
+  situationBrief!: boolean;
+
   @Column({ type: 'int', nullable: true })
   updatedBy?: number | null;
 }
