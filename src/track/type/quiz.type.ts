@@ -104,6 +104,7 @@ export interface QuizQuestionBase {
   id: string;
   type: QuizQuestionType;
   prompt: string;
+  promptHtml?: string;
   explanation?: string;
   points?: number;
   /** Optional picture or clip shown with the prompt. */

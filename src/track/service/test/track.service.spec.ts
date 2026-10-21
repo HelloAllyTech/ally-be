@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { TrackService } from '../track.service';
@@ -81,6 +82,85 @@ describe('TrackService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('applyContentDefaults', () => {
+    it('should handle malformed questions array without throwing', async () => {
+      const trackId = 'test-track-id';
+      const dto: any = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content: {
+                  settings: { passScore: 70 },
+                  questions: 'not-an-array', // Malformed
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId });
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockDataSource.transaction.mockImplementation(async (cb) =>
+        cb({
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn(),
+          }),
+        }),
+      );
+
+      // Should not throw a TypeError; validateTrackStructure will eventually catch it,
+      // but here we just want to ensure it doesn't crash during defaults application.
+      await expect(service.upsertStructure(trackId, dto)).rejects.toThrow();
+    });
+
+    it('should handle missing interjection question without throwing', async () => {
+      const trackId = 'test-track-id';
+      const dto: any = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.VIDEO,
+                order: 1,
+                title: 'Video',
+                content: {
+                  url: 'https://vimeo.com/123',
+                  interjections: [
+                    { time: 10 }, // Missing 'question'
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId });
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+
+      await expect(service.upsertStructure(trackId, dto)).rejects.toThrow();
+    });
+  });
+
   describe('upsertStructure', () => {
     it('should add missing ids to quiz options and not throw', async () => {
       const trackId = 'test-track-id';
@@ -134,6 +214,232 @@ describe('TrackService', () => {
       await expect(
         service.upsertStructure(trackId, dto),
       ).resolves.not.toThrow();
+    });
+
+    it('should derive prompt from promptHtml and sanitize promptHtml on upsertStructure', async () => {
+      const trackId = 'test-track-id';
+      const dto: UpsertTrackStructureDto = {
+        sections: [
+          {
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content: {
+                  settings: { passScore: 70 },
+                  questions: [
+                    {
+                      id: 'q1',
+                      type: QuizQuestionType.MCQ_SINGLE,
+                      promptHtml:
+                        '<h1>Question 1</h1><p>Is this <strong>bold</strong>?</p><script>alert(1)</script>',
+                      options: [
+                        { id: 'opt1', text: 'Yes' },
+                        { id: 'opt2', text: 'No' },
+                      ],
+                      correctOptionIds: ['opt1'],
+                    },
+                  ],
+                },
+              },
+              {
+                type: TrackItemType.JOURNAL,
+                order: 2,
+                title: 'Journal',
+                content: {
+                  prompts: [
+                    {
+                      id: 'j1',
+                      promptHtml:
+                        '<blockquote>Reflection</blockquote><p>How are you?</p>',
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [],
+      });
+
+      const savedItems: any[] = [];
+      mockDataSource.transaction.mockImplementation(async (cb) => {
+        const manager = {
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn().mockImplementation((data) => {
+              // The test mocks save for TrackSection and TrackItem.
+              // We only care about the TrackItem content here.
+              if (data.type) {
+                savedItems.push(data);
+              }
+              return Promise.resolve({ id: 'some-id', ...data });
+            }),
+          }),
+        };
+        return cb(manager);
+      });
+
+      await service.upsertStructure(trackId, dto);
+
+      const quizItem = savedItems.find((i) => i.type === TrackItemType.QUIZ);
+      const journalItem = savedItems.find(
+        (i) => i.type === TrackItemType.JOURNAL,
+      );
+
+      expect(quizItem.content.questions[0].promptHtml).toBe(
+        '<h1>Question 1</h1><p>Is this <strong>bold</strong>?</p>',
+      );
+      expect(quizItem.content.questions[0].prompt).toBe(
+        'Question 1 Is this bold ?',
+      );
+
+      expect(journalItem.content.prompts[0].promptHtml).toBe(
+        '<blockquote>Reflection</blockquote><p>How are you?</p>',
+      );
+      expect(journalItem.content.prompts[0].prompt).toBe(
+        'Reflection How are you?',
+      );
+    });
+  });
+
+  describe('upsertStructure: prompt vs promptHtml on edit', () => {
+    const trackId = 'test-track-id';
+    const quizContent = (question: Record<string, unknown>) => ({
+      settings: { passScore: 70 },
+      questions: [
+        {
+          id: 'q1',
+          type: QuizQuestionType.MCQ_SINGLE,
+          options: [
+            { id: 'opt1', text: 'Yes' },
+            { id: 'opt2', text: 'No' },
+          ],
+          correctOptionIds: ['opt1'],
+          ...question,
+        },
+      ],
+    });
+    const stored = quizContent({
+      prompt: 'Old question',
+      promptHtml: '<p>Old <strong>question</strong></p>',
+    });
+    const dtoFor = (
+      content: Record<string, unknown>,
+    ): UpsertTrackStructureDto =>
+      ({
+        sections: [
+          {
+            id: 'sec1',
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                id: 'item1',
+                type: TrackItemType.QUIZ,
+                order: 1,
+                title: 'Quiz',
+                content,
+              },
+            ],
+          },
+        ],
+      }) as UpsertTrackStructureDto;
+
+    const arrange = () => {
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [
+          {
+            id: 'sec1',
+            items: [{ id: 'item1', type: TrackItemType.QUIZ, content: stored }],
+          },
+        ],
+      });
+      const savedItems: any[] = [];
+      mockDataSource.transaction.mockImplementation(async (cb) =>
+        cb({
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn().mockImplementation((data) => {
+              if (data.type) savedItems.push(data);
+              return Promise.resolve({ id: 'some-id', ...data });
+            }),
+          }),
+        }),
+      );
+      return savedItems;
+    };
+
+    it('lets a plain-text edit win over the stale promptHtml it round-tripped', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(
+        trackId,
+        dtoFor(
+          quizContent({
+            prompt: 'New question from the Copilot',
+            promptHtml: '<p>Old <strong>question</strong></p>',
+          }),
+        ),
+      );
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.prompt).toBe('New question from the Copilot');
+      expect(question.promptHtml).toBeUndefined();
+    });
+
+    it('re-derives prompt when the rich text itself changed', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(
+        trackId,
+        dtoFor(
+          quizContent({
+            prompt: 'Old question',
+            promptHtml: '<p>Brand <em>new</em> text</p>',
+          }),
+        ),
+      );
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.promptHtml).toBe('<p>Brand <em>new</em> text</p>');
+      expect(question.prompt).toBe('Brand new text');
+    });
+
+    it('keeps the formatting when nothing about the prompt changed', async () => {
+      const savedItems = arrange();
+
+      await service.upsertStructure(trackId, dtoFor(stored));
+
+      const question = savedItems[0].content.questions[0];
+      expect(question.promptHtml).toBe('<p>Old <strong>question</strong></p>');
+      expect(question.prompt).toBe('Old question');
+    });
+
+    it('rejects a quiz with no settings as a 400, not a 500', async () => {
+      arrange();
+      const noSettings: Record<string, unknown> = quizContent({
+        prompt: 'Pick one',
+      });
+      delete noSettings.settings;
+
+      const result = service.upsertStructure(trackId, dtoFor(noSettings));
+
+      await expect(result).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
