@@ -18,6 +18,7 @@ import { Track } from '../../entity/track.entity';
 
 const mockDataSource = {
   transaction: jest.fn(),
+  query: jest.fn(),
 };
 
 const mockTrackRepository = {
@@ -250,6 +251,36 @@ describe('TrackService', () => {
       );
     });
 
+    it('may delete an unreferenced upload, or media only their courses use', async () => {
+      mockDataSource.query.mockResolvedValueOnce([]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/a.png'),
+      ).resolves.toBeUndefined();
+
+      mockDataSource.query.mockResolvedValueOnce([
+        { createdBy: CALLER_ID },
+        { createdBy: CALLER_ID },
+      ]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/b.png'),
+      ).resolves.toBeUndefined();
+    });
+
+    it("may not delete media another admin's course or a shared template uses", async () => {
+      mockDataSource.query.mockResolvedValueOnce([
+        { createdBy: CALLER_ID },
+        { createdBy: 99 },
+      ]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/c.png'),
+      ).rejects.toThrow('This file is still used by a course you cannot edit');
+
+      mockDataSource.query.mockResolvedValueOnce([{ createdBy: null }]);
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/d.png'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('may not make a course global', async () => {
       await expect(service.assertCallerMayMakeGlobal(true)).rejects.toThrow(
         ForbiddenException,
@@ -271,6 +302,11 @@ describe('TrackService', () => {
         service.assertCallerMayMakeGlobal(true),
       ).resolves.toBeUndefined();
       expect(mockTrackRepository.findOne).not.toHaveBeenCalled();
+      mockDataSource.query.mockClear();
+      await expect(
+        service.assertCallerMayDeleteMedia('https://b/track-media/e.png'),
+      ).resolves.toBeUndefined();
+      expect(mockDataSource.query).not.toHaveBeenCalled();
     });
   });
 });

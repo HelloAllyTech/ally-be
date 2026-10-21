@@ -606,6 +606,15 @@ export class TenantService {
     return { presignedUrl, logoUrl };
   }
 
+  /** Organizations whose current logo is this URL — usually one, or none for an abandoned upload. */
+  async findTenantIdsUsingLogo(logoUrl: string): Promise<string[]> {
+    const tenants = await this.tenantRepository.find({
+      where: { logoUrl },
+      select: ['id'],
+    });
+    return tenants.map((tenant) => tenant.id);
+  }
+
   async deleteOrganizationLogo(deleteLogoDto: DeleteLogoDto) {
     const bucket = this.configService.s3.assetsBucket;
     if (!bucket) {

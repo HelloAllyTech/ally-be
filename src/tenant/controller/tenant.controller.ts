@@ -216,6 +216,18 @@ export class TenantController {
   async deleteOrganizationLogo(
     @Body() deleteLogoDto: DeleteLogoDto,
   ): Promise<SuccessResponse> {
+    // The body names a file, not an organization, so an organization-
+    // restricted admin could otherwise delete any org's logo. Refuse one that
+    // is still some out-of-reach org's logo; an unreferenced upload (replaced
+    // or abandoned) stays theirs to clean up.
+    if (await this.tenantScopeService.isRestricted()) {
+      const owners = await this.tenantService.findTenantIdsUsingLogo(
+        deleteLogoDto.logoUrl,
+      );
+      for (const tenantId of owners) {
+        await this.tenantScopeService.assertTenantInScope(tenantId);
+      }
+    }
     return this.tenantService.deleteOrganizationLogo(deleteLogoDto);
   }
 }
