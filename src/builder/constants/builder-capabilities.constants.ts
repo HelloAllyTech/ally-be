@@ -18,7 +18,7 @@
  *
  * `builder-capabilities.constants.spec.ts` fails when an entry names an ally-be
  * path that no longer exists, and lists the ally-be modules no entry covers
- * (a warning for now, not a failure — see `BUILDER_CAPABILITY_EXEMPT_MODULES`).
+ * (it fails until the module gets a line or is exempted in `BUILDER_CAPABILITY_EXEMPT_MODULES`).
  * Paths are `repo:path` so an entry can point across repos.
  *
  * Write `reuseWhen` in the words a requester would use, not the words the code
@@ -60,7 +60,8 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
       'whose call site is "connected" (CONNECTED_SKILLS) can run it.',
     extendVia:
       'Connect a new call site in skill-experiment.constants.ts (CONNECTED_SKILLS) with a ' +
-      'rubric; the judge score is the only signal today — a human rating would be a new input.',
+      'rubric. Outputs are scored by the LLM judge, except debriefs a learner rated: ' +
+      'debrief-feedback writes that rating onto the observation as its score.',
     modules: ['ally-be:src/skill-experiment'],
     docs: ['ally-be:docs/skill-experiments.md'],
     adminRoute: '/manage-prompts?tab=experiments',
@@ -117,8 +118,9 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
       'resolution, usage attribution and tier fallback.',
     reuseWhen:
       'Any new ally-be feature that calls a model. Use LlmCompletionService for a single call; ' +
-      'never construct a provider SDK client directly.',
-    modules: ['ally-be:src/llm-agent'],
+      'never construct a provider SDK client directly. src/ai-chat is the older text-only SSE ' +
+      'streamer (still behind the post-session debrief chat); new work goes through llm-agent.',
+    modules: ['ally-be:src/llm-agent', 'ally-be:src/ai-chat'],
     keywords: ['llm', 'completion', 'openai', 'gemini', 'anthropic', 'agent'],
   },
   {
@@ -219,8 +221,9 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
       'practice, not the debrief.',
     reuseWhen:
       'A request concerns what happens during or after a practice session, its score, its ' +
-      'debrief, or learner feedback on a session.',
-    modules: ['ally-be:src/learn'],
+      'debrief, or learner feedback on a session. Showing a transcript in the reader’s ' +
+      'language is already built (transcript-translation, cached per message).',
+    modules: ['ally-be:src/learn', 'ally-be:src/transcript-translation'],
     keywords: [
       'roleplay',
       'session',
@@ -233,14 +236,40 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
     ],
   },
   {
+    id: 'debrief-feedback',
+    name: 'Debrief feedback (learner rating of the debrief)',
+    whatItIs:
+      'A learner’s thumbs-up or thumbs-down and optional comment on a roleplay’s debrief, one per ' +
+      'session. When the debrief came from an Auto-improve experiment, the rating is written ' +
+      'onto that output’s observation as its score (100 or 0) in place of the judge.',
+    reuseWhen:
+      'A request wants learner feedback on the debrief specifically, or human ratings feeding ' +
+      'Auto-improve. The 1–5 session rating rates the practice and lives in learn.',
+    modules: ['ally-be:src/debrief-feedback'],
+    keywords: [
+      'debrief rating',
+      'debrief feedback',
+      'thumbs up',
+      'helpful',
+      'rate the debrief',
+    ],
+  },
+  {
     id: 'session-review',
     name: 'Session review (supervisor comments and reactions)',
     whatItIs:
-      'Threads, comments and reactions on a learner’s session, used by supervisors and reviewers.',
+      'Threads, comments, reactions and read status on a session, used by supervisors and ' +
+      'reviewers: scenario-session-review for roleplay sessions, scribe-session-review for a ' +
+      'counsellor’s Scribe sessions, both built on the shared bases in src/review.',
     reuseWhen:
-      'A request wants people to comment on, review or react to a session. Extend the threads ' +
-      'rather than adding a new comment store.',
-    modules: ['ally-be:src/scenario-session-review'],
+      'A request wants people to comment on, review or react to a session, or an unread-review ' +
+      'count. Extend the threads rather than adding a new comment store; a new kind of ' +
+      'reviewable thing gets a sibling module on src/review.',
+    modules: [
+      'ally-be:src/scenario-session-review',
+      'ally-be:src/scribe-session-review',
+      'ally-be:src/review',
+    ],
     keywords: ['review', 'comment', 'supervisor', 'reaction', 'thread'],
   },
   {
@@ -299,15 +328,24 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
   },
   {
     id: 'badges-xp',
-    name: 'Badges, streaks and XP',
+    name: 'Badges, XP, streaks and the leaderboard',
     whatItIs:
-      'Badge awards, streak milestones and per-tenant badge configuration.',
+      'Badge awards, streak milestones and per-tenant badge configuration; XP events (progress); ' +
+      'and the community leaderboard, practice-streak heatmap and streak-at-risk reminders, fed ' +
+      'by daily practice minutes recorded when a roleplay ends.',
     reuseWhen:
-      'A request wants to reward, recognise or gamify learner activity. Award through the ' +
-      'existing badge and milestone services.',
-    modules: ['ally-be:src/badge', 'ally-be:src/progress'],
+      'A request wants to reward, recognise or gamify learner activity, rank learners, or track ' +
+      'practice streaks. New point sources belong in progress (XP events); award badges through ' +
+      'the existing badge and milestone services.',
+    modules: [
+      'ally-be:src/badge',
+      'ally-be:src/progress',
+      'ally-be:src/community',
+    ],
     adminRoute: '/user-badges',
     keywords: [
+      'leaderboard',
+      'rank',
       'badge',
       'xp',
       'streak',
@@ -474,6 +512,443 @@ export const BUILDER_CAPABILITIES: BuilderCapability[] = [
       'A feature stores a file a user uploads or the platform generates.',
     modules: ['ally-be:src/aws'],
     keywords: ['upload', 'file', 's3', 'attachment', 'media'],
+  },
+  {
+    id: 'agent-memory',
+    name: 'Agent memory (the agents’ notebook)',
+    whatItIs:
+      'A shared notebook where an internal AI agent keeps short lessons (600 characters each) so ' +
+      'its next run does not rediscover them: searched by meaning, tidied hourly by a curator, ' +
+      'and editable by admins who can add, retire and restore entries. Bug Hunter writes to it ' +
+      'today.',
+    reuseWhen:
+      'An internal agent or copilot should remember what it learned last time, keep lessons or ' +
+      'gotchas, or have a memory people can edit and retire. Do not build another memory table.',
+    extendVia:
+      'Add a value to AgentMemoryAgent (and its CHECK constraint); each agent exposes the ' +
+      'endpoints on its own surface.',
+    modules: ['ally-be:src/agent-memory'],
+    docs: ['ally-be:docs/bug-hunter-memory-adr.md'],
+    adminRoute: '/bug-hunter',
+    keywords: [
+      'agent memory',
+      'notebook',
+      'lessons learned',
+      'remember',
+      'gotcha',
+    ],
+  },
+  {
+    id: 'ally-ai-client',
+    name: 'Calls to ally-ai and ally-ai-learn',
+    whatItIs:
+      'ally-be’s HTTP and SQS client for the AI services — summaries, nudges, transcription, ' +
+      'scenario evaluation and reports, vector search — and the router for the events they send ' +
+      'back.',
+    reuseWhen:
+      'A feature needs something ally-ai or ally-ai-learn already does. Call it through AiService ' +
+      'rather than a second client.',
+    extendVia:
+      'Add the URL to ENDPOINTS and a method to AiService; inbound events get a processor ' +
+      'registered in ProcessorRegistry.',
+    modules: ['ally-be:src/ai'],
+    keywords: [
+      'ally-ai',
+      'transcription',
+      'summarise',
+      'evaluation',
+      'vector search',
+    ],
+  },
+  {
+    id: 'scribe',
+    name: 'Scribe (counsellor session notes and call logs)',
+    whatItIs:
+      'A counsellor’s real client sessions, stored as chats: recorded live over the microphone ' +
+      '(audio chunks uploaded to S3 encrypted), uploaded as a recording, or written as a note; ' +
+      'transcribed, summarised by AI into a session note, and listed as call logs.',
+    reuseWhen:
+      'A request is about counsellors’ session notes, call or session logs, transcripts, AI ' +
+      'session summaries, uploading a call recording or dictating a note. Not roleplay practice ' +
+      '(learn) and not the text helpline.',
+    modules: ['ally-be:src/chat', 'ally-be:src/audio'],
+    docs: ['helloallytech.github.io:wiki/platform/scribe-summary-writes.md'],
+    keywords: [
+      'scribe',
+      'session notes',
+      'call logs',
+      'transcript',
+      'call recording',
+      'dictation',
+    ],
+  },
+  {
+    id: 'cloud-telephony',
+    name: 'Cloud telephony call ingest',
+    whatItIs:
+      'Brings calls in from a cloud telephony provider (Ozonetel today): per-org credentials, ' +
+      'call-detail and call-event webhooks that create or end the chat and start transcription, ' +
+      'and retries for missing recordings.',
+    reuseWhen:
+      'A request wants to connect a phone or call-centre provider, or have dialer call ' +
+      'recordings transcribed and summarised.',
+    extendVia:
+      'Add a CloudTelephonyProvider value, a case in validateCredentials, and a provider service ' +
+      'and webhook alongside Ozonetel’s.',
+    modules: ['ally-be:src/audio-ingest'],
+    keywords: ['telephony', 'ozonetel', 'call centre', 'dialer', 'phone calls'],
+  },
+  {
+    id: 'custom-fields',
+    name: 'Custom fields on Scribe session notes',
+    whatItIs:
+      'Per-tenant fields on a counsellor’s session notes (select, multi-select, date, text, ' +
+      'number, boolean), each filled by hand, by AI from an instruction, or computed by the ' +
+      'system, with control over editing, table columns and call-log filters.',
+    reuseWhen:
+      'A request wants a new field, column or filter on session notes or call logs, lets an org ' +
+      'define its own note fields, or has AI fill a note field. Add a field, not a column.',
+    extendVia:
+      'A computed field is an entry in SYSTEM_FIELD_COMPUTERS; defaults live in the field ' +
+      'templates constant.',
+    modules: ['ally-be:src/custom-fields'],
+    keywords: [
+      'custom field',
+      'note field',
+      'session note template',
+      'call log filter',
+    ],
+  },
+  {
+    id: 'text-helpline',
+    name: 'Text helpline',
+    whatItIs:
+      'Live chat between anonymous members of the public and an org’s trained listeners: queue ' +
+      'and lobby, claiming, a staff-only AI copilot, risk flags, supervisor monitoring, whisper ' +
+      'and transfer, QA scoring, talker feedback and data erasure. Model output never reaches ' +
+      'talkers.',
+    reuseWhen:
+      'A request involves live human-to-human support chat with the public, crisis or risk ' +
+      'detection in those chats, the listener or supervisor workflow, or a new helpline channel.',
+    extendVia:
+      'The channel enum, the TEXT_HELPLINE_SETTINGS preference, per-tenant risk rules.',
+    modules: ['ally-be:src/helpline'],
+    docs: ['ally-be:docs/text-helpline.md'],
+    keywords: [
+      'helpline',
+      'listener',
+      'talker',
+      'crisis chat',
+      'risk flag',
+      'live chat',
+    ],
+  },
+  {
+    id: 'languages',
+    name: 'Languages and the language glossary',
+    whatItIs:
+      'The supported languages, each with its default LLM, STT and evaluation config, and the ' +
+      'per-language glossary the live roleplay agent speaks from, maintained by an unattended ' +
+      'loop (generate, consolidate, adjudicate, adherence reports).',
+    reuseWhen:
+      'A request adds or enables a language, changes the model or speech-to-text a language ' +
+      'uses, or improves how the AI character speaks a language (register, dialect, colloquial ' +
+      'words). Not content translation.',
+    modules: ['ally-be:src/language'],
+    docs: [
+      'ally-be:docs/LANGUAGE_GLOSSARY_DESIGN.md',
+      'ally-be:docs/language-glossary-v2-design.md',
+    ],
+    adminRoute: '/manage-scenario-languages',
+    keywords: [
+      'language',
+      'glossary',
+      'dialect',
+      'hindi',
+      'stt',
+      'add language',
+    ],
+  },
+  {
+    id: 'roleplay-guardrails',
+    name: 'Roleplay guardrails',
+    whatItIs:
+      'A global list pairing something a learner might say with how the AI character should ' +
+      'respond, sampled into each roleplay for real-time boundary detection by the voice agent; ' +
+      'platform guardrails (including the speech-coherence guard) are always on.',
+    reuseWhen:
+      'A request is about how the AI client reacts when a learner crosses a line, goes off-topic ' +
+      'or speaks gibberish, or wants guardrails on or off for a roleplay. Add a guardrail row.',
+    modules: ['ally-be:src/conversational-guardrails'],
+    adminRoute: '/manage-guardrails',
+    keywords: [
+      'guardrail',
+      'boundary',
+      'off-topic',
+      'inappropriate',
+      'redirect',
+    ],
+  },
+  {
+    id: 'session-events',
+    name: 'Session events (behaviour detection and scoring)',
+    whatItIs:
+      'The library of behaviours a roleplay detects while it runs — by similarity, time, score, ' +
+      'combination or a binary classifier — each with a score, emoji, message, branch ' +
+      'instruction, tags and translations, plus an AI Event Builder that drafts a detector.',
+    reuseWhen:
+      'A request wants to detect when the learner does something during a roleplay, add a ' +
+      'scoring or feedback moment, or branch the conversation when something happens.',
+    extendVia:
+      'A new SessionEventDetectionType for new detection logic; mapping events to a scenario ' +
+      'lives in learn.',
+    modules: ['ally-be:src/session-event'],
+    adminRoute: '/manage-events',
+    keywords: [
+      'session event',
+      'detect',
+      'behaviour',
+      'scoring moment',
+      'branch',
+    ],
+  },
+  {
+    id: 'character-library',
+    name: 'Character Library',
+    whatItIs:
+      'Reusable client personas for roleplays — demographics, profile, a voice per language, ' +
+      'language style, knowledge sources — owned by Ally or by one tenant, plus an AI character ' +
+      'interview that drafts a character for review.',
+    reuseWhen:
+      'A request wants to create, edit or reuse a client persona, pick a character for a ' +
+      'roleplay or course, or create characters with AI help.',
+    modules: ['ally-be:src/scenario-character'],
+    adminRoute: '/character-library',
+    keywords: ['character', 'persona', 'client persona', 'character library'],
+  },
+  {
+    id: 'roleplay-sequences',
+    name: 'Cases and Pathways (sequences of roleplays)',
+    whatItIs:
+      'Two older ways to chain roleplays: Cases (2–20 roleplays where session memory carries ' +
+      'forward and steps unlock in order) and Pathways (2–20 roleplays where the next unlocks ' +
+      'after a minimum score). Both are assignable per tenant and translatable.',
+    reuseWhen:
+      'A request wants a multi-part roleplay or a story continuing across sessions (Cases), or ' +
+      'roleplays that unlock in order behind a pass mark (Pathways). For a sequence mixing ' +
+      'roleplays with quizzes, articles or video, use Courses (Tracks) instead.',
+    modules: ['ally-be:src/case', 'ally-be:src/scenario-path'],
+    keywords: [
+      'case',
+      'pathway',
+      'series',
+      'unlock',
+      'sequence',
+      'learning path',
+    ],
+  },
+  {
+    id: 'simulation-test-reports',
+    name: 'Simulation test reports',
+    whatItIs:
+      'An automated test run of a roleplay: ally-ai-learn plays an N-turn conversation between a ' +
+      'helper agent and the scenario (optionally a draft version), an evaluator scores the ' +
+      'transcript, and the report streams live to the author.',
+    reuseWhen:
+      'A request wants to test or QA a simulation automatically before publishing, or run a bot ' +
+      'against a roleplay and score it.',
+    modules: ['ally-be:src/scenario-report'],
+    keywords: [
+      'test simulation',
+      'qa roleplay',
+      'evaluator',
+      'test run',
+      'report',
+    ],
+  },
+  {
+    id: 'roleplay-session-logs',
+    name: 'Roleplay Logs',
+    whatItIs:
+      'A super-admin, read-only, all-organisation view of real learner roleplay sessions: list ' +
+      'with score and cost, and a detail page with transcript, summary, scored events, latency, ' +
+      'recording, lifecycle events, language judgements and weak metrics.',
+    reuseWhen:
+      'A request wants to see or debug a specific learner’s session, or add a diagnostic to a ' +
+      'session’s detail page.',
+    modules: ['ally-be:src/roleplay-session-logs'],
+    adminRoute: '/roleplay-session-logs',
+    keywords: [
+      'session logs',
+      'debug session',
+      'session detail',
+      'recording playback',
+    ],
+  },
+  {
+    id: 'roleplay-assets',
+    name: 'Roleplay cover images and comfort audio',
+    whatItIs:
+      'Two shared, cross-tenant asset libraries for roleplay authoring: cover images (upload, ' +
+      'URL, or AI-generated through image-generation jobs) and ambient comfort-audio tracks that ' +
+      'authors pick for a roleplay.',
+    reuseWhen:
+      'A request wants authors to pick, upload or generate a cover image, or choose background ' +
+      'or ambient sound for a roleplay. Reuse the libraries rather than storing assets per ' +
+      'scenario.',
+    modules: [
+      'ally-be:src/scenario-cover-image-library',
+      'ally-be:src/comfort-audio',
+    ],
+    keywords: [
+      'cover image',
+      'thumbnail',
+      'image library',
+      'comfort audio',
+      'ambient sound',
+    ],
+  },
+  {
+    id: 'voices',
+    name: 'Roleplay voices and voice preview',
+    whatItIs:
+      'Plays a short sample of a configured roleplay voice through its text-to-speech provider ' +
+      'so an admin can hear it before choosing it; voice configuration itself lives in learn.',
+    reuseWhen:
+      'A request wants to hear, audition or compare voices, or preview a voice in a language.',
+    extendVia:
+      'A new TTS vendor is one ITTSProvider class plus a case in TTSProviderFactory.',
+    modules: ['ally-be:src/voice-preview'],
+    adminRoute: '/manage-scenario-voices',
+    keywords: ['voice', 'tts', 'text to speech', 'voice preview', 'audition'],
+  },
+  {
+    id: 'live-voice-rooms',
+    name: 'Live voice rooms (LiveKit)',
+    whatItIs:
+      'The backend’s only LiveKit wrapper: rooms, access tokens, dispatching the AI agent into a ' +
+      'room, recordings, and room events turned into roleplay session lifecycle updates.',
+    reuseWhen:
+      'A feature needs real-time voice or video, a recording, or the AI agent in a call. Go ' +
+      'through LiveKitService rather than a new SDK client.',
+    modules: ['ally-be:src/livekit'],
+    keywords: ['livekit', 'voice call', 'room', 'recording', 'real-time voice'],
+  },
+  {
+    id: 'model-test',
+    name: 'Model test (LLM preview)',
+    whatItIs:
+      'The admin “test this model” check: one fixed prompt to a catalog model, returning the ' +
+      'reply, latency and tokens, or the provider’s own error.',
+    reuseWhen:
+      'A request wants to check that a model still works or test one before saving it.',
+    modules: ['ally-be:src/llm-preview'],
+    adminRoute: '/manage-llm-model-catalog',
+    keywords: ['test model', 'model health', 'llm preview', 'model catalog'],
+  },
+  {
+    id: 'mobile-releases',
+    name: 'Mobile releases',
+    whatItIs:
+      'A super-admin console for the ally-mobile release pipeline: workflow runs, TestFlight, ' +
+      'App Store review and Play status, promoting Android, AI-drafted “What’s New” text, and an ' +
+      'automatic minimum-version bump once a build is live.',
+    reuseWhen:
+      'A request is about releasing the app, store review status, release notes for the stores, ' +
+      'or forcing users to update.',
+    modules: ['ally-be:src/mobile-releases'],
+    adminRoute: '/mobile-releases',
+    keywords: [
+      'mobile release',
+      'testflight',
+      'app store',
+      'play store',
+      'force update',
+    ],
+  },
+  {
+    id: 'product-updates',
+    name: 'Product updates and the public changelog',
+    whatItIs:
+      'The public changelog read from the ally-changelog file, and product updates built from ' +
+      'it: merges grouped by an LLM into one recognisable change, published once every part is ' +
+      'live, with a daily digest email and admin corrections that the job never overwrites.',
+    reuseWhen:
+      'A request wants “what’s new”, release notes, a shipped-features feed, or the team told ' +
+      'what went live.',
+    modules: ['ally-be:src/product-updates', 'ally-be:src/changelog'],
+    adminRoute: '/product-updates',
+    keywords: [
+      'changelog',
+      'release notes',
+      'what’s new',
+      'shipped',
+      'product updates',
+    ],
+  },
+  {
+    id: 'blog',
+    name: 'Blog',
+    whatItIs:
+      'Platform-wide posts written by super-admins — draft and published, slug, tags, header ' +
+      'image, sanitised HTML — shown publicly without login at /blog.',
+    reuseWhen:
+      'A request wants an announcement post, a public article or a news page.',
+    modules: ['ally-be:src/blog'],
+    adminRoute: '/blog',
+    keywords: ['blog', 'post', 'article', 'announcement'],
+  },
+  {
+    id: 'reference-documents',
+    name: 'Reference documents (counsellor resource library)',
+    whatItIs:
+      'Searchable reference articles (heading, content, category, tags), public or per ' +
+      'organisation, uploaded by CSV and searched through ally-ai’s vector store; counsellors ' +
+      'use it from the helpline dashboard and the mobile app.',
+    reuseWhen:
+      'A request wants counsellors to search guidance or articles, or a resource library by ' +
+      'category. For a new document-search feature, extend the knowledge base instead.',
+    modules: ['ally-be:src/reference-document'],
+    keywords: [
+      'reference document',
+      'resource library',
+      'article search',
+      'guidance',
+    ],
+  },
+  {
+    id: 'places',
+    name: 'Places (city and state lookup)',
+    whatItIs: 'A reference list of cities and states with type-ahead search.',
+    reuseWhen:
+      'A request needs a location picker or city autocomplete. Reuse it rather than adding a ' +
+      'second location list.',
+    modules: ['ally-be:src/place'],
+    keywords: ['city', 'state', 'location', 'place', 'autocomplete'],
+  },
+  {
+    id: 'tooltips',
+    name: 'Tooltips (editable help text)',
+    whatItIs:
+      'Help-text tooltips a superadmin edits by location key, machine-translated into each ' +
+      'language and fetched by any frontend without login.',
+    reuseWhen:
+      'A request wants to change help text or an info icon on a screen without a deploy.',
+    modules: ['ally-be:src/tooltip'],
+    adminRoute: '/manage-tooltips',
+    keywords: ['tooltip', 'help text', 'info icon', 'hint'],
+  },
+  {
+    id: 'github-client',
+    name: 'GitHub client',
+    whatItIs:
+      'The platform’s GitHub REST client: workflow dispatch and runs, pull requests, checks, ' +
+      'reviews, issues, commits and release tags.',
+    reuseWhen:
+      'Any backend feature that talks to GitHub injects GithubActionsService rather than ' +
+      'writing its own client.',
+    modules: ['ally-be:src/github'],
+    keywords: ['github', 'workflow', 'pull request', 'release tag'],
   },
 ];
 
