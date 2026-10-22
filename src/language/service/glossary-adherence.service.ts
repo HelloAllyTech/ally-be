@@ -178,19 +178,27 @@ export class GlossaryAdherenceService {
     totalViolations: number;
     violations: GlossaryAdherenceViolation[];
   } | null> {
-    const [session] = await this.dataSource.query(
-      `SELECT id, NULLIF(metadata->>'languageId', '')::int AS "languageId"
+    const [sessionInfo] = await this.dataSource.query(
+      `SELECT id, metadata->>'languageId' AS "languageId"
        FROM scenario_sessions WHERE id = $1::uuid`,
       [scenarioSessionId],
     );
-    if (!session) {
+    if (!sessionInfo) {
       throw new NotFoundException(`Session ${scenarioSessionId} not found`);
     }
-    if (!session.languageId) return null;
 
-    const sections = await this.glossaryRepository.findPublishedByLanguage(
-      session.languageId,
-    );
+    if (!sessionInfo.languageId) return null;
+
+    const languageId = parseInt(sessionInfo.languageId, 10);
+    if (isNaN(languageId)) {
+      this.logger.warn(
+        `[GLOSSARY_ADHERENCE] Session ${scenarioSessionId} has non-integer languageId '${sessionInfo.languageId}'. Skipping.`,
+      );
+      return null;
+    }
+
+    const sections =
+      await this.glossaryRepository.findPublishedByLanguage(languageId);
     const avoidTerms = this.parseAvoidTerms(sections);
     if (avoidTerms.length === 0) return null;
 
@@ -218,7 +226,7 @@ export class GlossaryAdherenceService {
       Object.fromEntries(sections.map((s) => [s.sectionCode, s.version]));
 
     return {
-      languageId: session.languageId,
+      languageId,
       glossaryVersions,
       agentMessageCount: messages.length,
       totalViolations: violations.reduce((sum, v) => sum + v.count, 0),
