@@ -476,15 +476,44 @@ export class DynamicI18nService {
         // very endpoint, which then refused to replace the blanks because the
         // keys "existed". So a key counts as present only when it has text,
         // and a blank in the incoming locale never overwrites or adds anything.
-        const draftKeys = new Set(
+        const draftValues = new Map(
           this.flattenStrings(draftNamespace)
             .filter((e) => e.value.trim() !== '')
-            .map((e) => e.key),
+            .map((e) => [e.key, e.value]),
         );
 
-        const newEntries = this.flattenStrings(content).filter(
-          (e) => e.value.trim() !== '' && !draftKeys.has(e.key),
-        );
+        // English squatting on a translated key is the same disease as a
+        // blank: a non-translation occupying the slot. The review tabs showed
+        // "Read"/"Unread" in every language for months because the drafts held
+        // the English text, which the presence check above counted as a
+        // translation. When this language's repo bundle carries a real
+        // translation (differs from English) but the draft holds exactly the
+        // English value, the draft is seeding debris, not an author's choice —
+        // replace it. A deliberate English-looking translation ("OK") is safe:
+        // its repo value equals English too, so it never matches.
+        const englishValues =
+          language === 'en'
+            ? null
+            : new Map(
+                this.flattenStrings(
+                  this.isObject(locales.en?.[namespace])
+                    ? (locales.en[namespace] as TranslationValue)
+                    : {},
+                ).map((e) => [e.key, e.value]),
+              );
+
+        const newEntries = this.flattenStrings(content).filter((e) => {
+          if (e.value.trim() === '') return false;
+          const draftValue = draftValues.get(e.key);
+          if (draftValue === undefined) return true;
+          if (!englishValues) return false;
+          const englishValue = englishValues.get(e.key);
+          return (
+            englishValue !== undefined &&
+            draftValue === englishValue &&
+            e.value !== englishValue
+          );
+        });
         if (newEntries.length === 0) continue;
 
         this.logger.log(
