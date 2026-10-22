@@ -2,6 +2,7 @@ import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmTargetSource } from 'src/llm/service/llm-target-resolver.service';
 import { LlmCompletionService } from '../llm-completion.service';
+import { Logger } from '@nestjs/common';
 
 /**
  * The fallback is why this service exists.
@@ -249,6 +250,25 @@ describe('LlmCompletionService', () => {
 
       expect(streamCalls[0].request.temperature).toBe(0.9);
       expect(streamCalls[1].request.temperature).toBeUndefined();
+    });
+
+    it('logs an actionable suggestion on an Anthropic auth error', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { service } = build({
+        providers: {
+          anthropic: { fail: authError },
+          openai: { text: 'saved' },
+        },
+      });
+
+      await service.complete(request);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'SUGGESTION: The Anthropic API key may be invalid or expired',
+        ),
+      );
+      warn.mockRestore();
     });
   });
 

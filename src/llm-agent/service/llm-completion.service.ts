@@ -146,10 +146,23 @@ export class LlmCompletionService {
       }
 
       const reason = (error as Error)?.message ?? String(error);
-      this.logger.warn(
+      let logMessage =
         `[LLM-FALLBACK] ${request.taskId}: ${target.provider}/${target.model} ` +
-          `failed (${reason}); retrying on ${fallback.provider}/${fallback.model}`,
-      );
+        `failed (${reason}); retrying on ${fallback.provider}/${fallback.model}`;
+
+      // On a provider-auth failure for Anthropic, add an actionable hint. This
+      // is a recurring operational issue (an expired key is present but invalid)
+      // and the default message does not point the operator at the root cause.
+      if (
+        target.provider === 'anthropic' &&
+        (reason.includes('key') || [401, 403].includes((error as any)?.status))
+      ) {
+        logMessage +=
+          ' - SUGGESTION: The Anthropic API key may be invalid or expired. ' +
+          'Please check the ANTHROPIC_API_KEY environment variable.';
+      }
+
+      this.logger.warn(logMessage);
 
       const result = await this.run(request, fallback);
       return {
