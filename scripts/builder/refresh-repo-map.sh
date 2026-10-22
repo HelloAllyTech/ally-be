@@ -106,22 +106,28 @@ opencode run \
 # otherwise surfaces only as the empty-map refusal below, with no reason.
 MAP_MD="$(node -e "
   const fs = require('fs');
-  let step = [];
-  let lastWithText = [];
+  const steps = [];
+  let current = null;
   for (const line of fs.readFileSync('/tmp/map-result.jsonl', 'utf8').split('\n')) {
     if (!line.trim()) continue;
     let record;
     try { record = JSON.parse(line); } catch { continue; }
     if (record?.type === 'step_start') {
-      step = [];
+      current = [];
+      steps.push(current);
     } else if (record?.type === 'text' && record.part?.text?.trim()) {
-      step.push(record.part.text);
-      lastWithText = step;
+      if (!current) {
+        current = [];
+        steps.push(current);
+      }
+      current.push(record.part.text);
     } else if (record?.type === 'error') {
       console.error('[opencode] ' + (record.error?.data?.message ?? record.error?.name ?? 'unknown error'));
     }
   }
-  process.stdout.write(lastWithText.join('\n').trim());
+  const texts = steps.map((parts) => parts.join('\n').trim());
+  const longest = texts.reduce((best, text) => (text.length > best.length ? text : best), '');
+  process.stdout.write(longest);
 ")"
 
 if [ -z "$MAP_MD" ]; then

@@ -51,11 +51,15 @@ FAKE
 # characters means the step wrote nothing, which is how an empty reply looks.
 cat >"${BIN}/opencode" <<'FAKE'
 #!/usr/bin/env bash
-echo '{"type":"step_start"}'
-if [ "${FAKE_MAP_CHARS:-0}" -gt 0 ]; then
-  text="$(head -c "$FAKE_MAP_CHARS" /dev/zero | tr '\0' x)"
-  printf '{"type":"text","part":{"text":"%s"}}\n' "$text"
-fi
+emit() {
+  echo '{"type":"step_start"}'
+  if [ "$1" -gt 0 ]; then
+    text="$(head -c "$1" /dev/zero | tr '\0' x)"
+    printf '{"type":"text","part":{"text":"%s"}}\n' "$text"
+  fi
+}
+IFS=',' read -r -a lengths <<<"${FAKE_MAP_STEPS:-${FAKE_MAP_CHARS:-0}}"
+for n in "${lengths[@]}"; do emit "$n"; done
 FAKE
 
 cat >"${BIN}/curl" <<'FAKE'
@@ -106,6 +110,11 @@ check "  and names the floor it used" 1 "$(said '6000-char floor')"
 check "a non-numeric floor is an error" 1 "$(run_map 20000 BUILDER_MAP_MIN_CHARS=lots)"
 check "  and nothing is posted" 0 "$(posts)"
 check "  and says what was wrong" 1 "$(said 'must be a whole number')"
+
+# 5. Which step is the map (2026-10-21 regression).
+check "the longest step is the map, not a closing sign-off" 0 "$(run_map 0 FAKE_MAP_STEPS=120,9000,56)"
+check "  and it is posted" 1 "$(posts)"
+
 
 echo
 echo "${passed} passed, ${failed} failed"
