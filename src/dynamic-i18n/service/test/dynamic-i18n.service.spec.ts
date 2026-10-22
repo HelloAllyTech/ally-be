@@ -446,6 +446,28 @@ describe('DynamicI18nService', () => {
     expect(secondRun).toBeNull();
   });
 
+  it('ciSync repairs English-squatting from a single-language request using the stored en draft', async () => {
+    // The release pipeline posts one language per ci-sync request, so the
+    // English reference must come from the drafts, not the payload.
+    await writeJson(path.join(rootDir, '.drafts', 'en.json'), {
+      review: { filter: { read: 'Read', unread: 'Unread' } },
+    });
+    await writeJson(path.join(rootDir, '.drafts', 'mr.json'), {
+      review: { filter: { read: 'Read', unread: 'Unread' } },
+    });
+
+    const manifest = await service.ciSync({
+      mr: { review: { filter: { read: 'वाचलेले', unread: 'न वाचलेले' } } },
+    });
+
+    expect(manifest).toMatchObject({ currentVersion: 'v1' });
+    const draft = await readJson<{
+      review: { filter: { read: string; unread: string } };
+    }>(path.join(rootDir, '.drafts', 'mr.json'));
+    expect(draft.review.filter.read).toBe('वाचलेले');
+    expect(draft.review.filter.unread).toBe('न वाचलेले');
+  });
+
   it('returns compact i18n audit log entries with resolved user names', async () => {
     const loggedAt = new Date('2026-04-29T04:31:45.000Z');
     auditLogService.listByEventTypes.mockResolvedValue([

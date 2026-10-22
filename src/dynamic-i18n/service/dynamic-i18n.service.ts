@@ -447,6 +447,16 @@ export class DynamicI18nService {
     const LEGACY_NAMESPACE = 'translation';
     let anyUpdates = false;
 
+    // English reference for the squatting repair below. The release pipeline
+    // posts ONE language per request (five locales in one body once crossed
+    // the 1mb JSON limit), so `locales.en` is usually absent — fall back to
+    // the stored English draft, which the pipeline syncs first.
+    const englishSource = async (): Promise<Record<string, unknown>> =>
+      this.isObject(locales.en)
+        ? locales.en
+        : await this.readDraftLanguageOrEmpty('en');
+    let englishLanguage: Record<string, unknown> | null = null;
+
     for (const [language, localeContent] of Object.entries(locales)) {
       if (!SAFE_SEGMENT.test(language)) continue;
       if (!this.isObject(localeContent)) continue;
@@ -491,16 +501,17 @@ export class DynamicI18nService {
         // English value, the draft is seeding debris, not an author's choice —
         // replace it. A deliberate English-looking translation ("OK") is safe:
         // its repo value equals English too, so it never matches.
-        const englishValues =
-          language === 'en'
-            ? null
-            : new Map(
-                this.flattenStrings(
-                  this.isObject(locales.en?.[namespace])
-                    ? (locales.en[namespace] as TranslationValue)
-                    : {},
-                ).map((e) => [e.key, e.value]),
-              );
+        let englishValues: Map<string, string> | null = null;
+        if (language !== 'en') {
+          englishLanguage ??= await englishSource();
+          englishValues = new Map(
+            this.flattenStrings(
+              this.isObject(englishLanguage[namespace])
+                ? (englishLanguage[namespace] as TranslationValue)
+                : {},
+            ).map((e) => [e.key, e.value]),
+          );
+        }
 
         const newEntries = this.flattenStrings(content).filter((e) => {
           if (e.value.trim() === '') return false;
