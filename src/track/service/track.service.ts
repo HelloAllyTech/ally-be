@@ -443,9 +443,12 @@ export class TrackService {
             ...(section.id ? { id: section.id } : {}),
             trackId: id,
             title: section.title,
-            description: section.description,
+            // `?? null`, not the raw value: the builder omits a cleared
+            // description, and TypeORM save() skips undefined columns, so the
+            // old text would silently survive the delete. Same below.
+            description: section.description ?? null,
             order: section.order,
-          });
+          } as Partial<TrackSection>);
           for (const item of section.items) {
             await itemRepo.save({
               ...(item.id ? { id: item.id } : {}),
@@ -454,7 +457,7 @@ export class TrackService {
               type: item.type,
               order: item.order,
               title: item.title,
-              description: item.description,
+              description: item.description ?? null,
               scenarioId:
                 item.type === TrackItemType.ROLEPLAY ? item.scenarioId : null,
               caseId: item.type === TrackItemType.CASE ? item.caseId : null,

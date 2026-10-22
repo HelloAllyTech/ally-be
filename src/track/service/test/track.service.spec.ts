@@ -324,6 +324,78 @@ describe('TrackService', () => {
         'Reflection How are you?',
       );
     });
+
+    it('clears a deleted section/item description instead of silently keeping it', async () => {
+      // The builder omits a cleared description entirely, and TypeORM save()
+      // skips undefined columns — so the write must carry an explicit null.
+      const trackId = 'test-track-id';
+      const dto: UpsertTrackStructureDto = {
+        sections: [
+          {
+            id: 'a0000000-0000-4000-8000-000000000001',
+            title: 'Section 1',
+            order: 1,
+            items: [
+              {
+                id: 'a0000000-0000-4000-8000-000000000002',
+                type: TrackItemType.JOURNAL,
+                order: 1,
+                title: 'Reflect',
+                content: {
+                  prompts: [{ id: 'j1', prompt: 'How are you?' }],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      mockTrackRepository.findOne.mockResolvedValue({ id: trackId } as Track);
+      mockTrackEnrollmentRepository.existsForTrack.mockResolvedValue(false);
+      mockTrackSharedService.getTrackWithStructure.mockResolvedValue({
+        id: trackId,
+        sections: [
+          {
+            id: 'a0000000-0000-4000-8000-000000000001',
+            title: 'Section 1',
+            description: 'Old section description',
+            order: 1,
+            items: [
+              {
+                id: 'a0000000-0000-4000-8000-000000000002',
+                type: TrackItemType.JOURNAL,
+                order: 1,
+                title: 'Reflect',
+                description: 'Pen down your reflections here!',
+                content: { prompts: [{ id: 'j1', prompt: 'How are you?' }] },
+              },
+            ],
+          },
+        ],
+      });
+
+      const saved: any[] = [];
+      mockDataSource.transaction.mockImplementation(async (cb) => {
+        const manager = {
+          getRepository: () => ({
+            softDelete: jest.fn(),
+            update: jest.fn(),
+            save: jest.fn().mockImplementation((data) => {
+              saved.push(data);
+              return Promise.resolve({ id: 'some-id', ...data });
+            }),
+          }),
+        };
+        return cb(manager);
+      });
+
+      await service.upsertStructure(trackId, dto);
+
+      const savedSection = saved.find((d) => !d.type && 'title' in d);
+      const savedItem = saved.find((d) => d.type === TrackItemType.JOURNAL);
+      expect(savedSection.description).toBeNull();
+      expect(savedItem.description).toBeNull();
+    });
   });
 
   describe('upsertStructure: prompt vs promptHtml on edit', () => {
