@@ -121,6 +121,9 @@ export enum FeatureToggleKey {
   // Track/Course item templates (Journal, Quiz, Article, Video, Annotated
   // Artifact) a course author can save, browse and insert from.
   COMPONENT_LIBRARY = 'component_library',
+
+  // Sidebar Hover Expand: default to collapsed, expand on hover
+  SIDEBAR_HOVER_EXPAND = 'sidebar_hover_expand',
 }
 
 export interface FeatureToggleLegacyGrants {
@@ -423,6 +426,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Component Library',
     description:
       'Manage the shared, cross-tenant library of reusable course component templates (Journal, Quiz, Article, Video, Annotated Artifact).',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.SIDEBAR_HOVER_EXPAND,
+    label: 'Sidebar Hover Expand',
+    description:
+      'Default the admin sidebar to collapsed and expand it on hover.',
     legacyGrants: SUPER_ADMIN_TIER,
   },
 ];
