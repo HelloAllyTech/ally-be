@@ -564,16 +564,40 @@ export class GlossaryAdjudicationService {
     reason: string;
     rewrite?: string;
   }[] {
-    const cleaned = (raw ?? '')
-      .trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/, '');
+    const content = (raw ?? '').trim();
+    let toParse = content;
+
+    // The model may wrap the JSON in markdown fences, sometimes with leading text.
+    const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenceMatch && fenceMatch[1]) {
+      toParse = fenceMatch[1];
+    } else {
+      // Or it might just be a JSON object/array with leading/trailing text.
+      const firstBracket = content.indexOf('[');
+      const firstBrace = content.indexOf('{');
+
+      let start = -1;
+      if (firstBracket === -1) start = firstBrace;
+      else if (firstBrace === -1) start = firstBracket;
+      else start = Math.min(firstBracket, firstBrace);
+
+      if (start !== -1) {
+        const lastBracket = content.lastIndexOf(']');
+        const lastBrace = content.lastIndexOf('}');
+        const end = Math.max(lastBracket, lastBrace);
+
+        if (end > start) {
+          toParse = content.substring(start, end + 1);
+        }
+      }
+    }
+
     let parsed: unknown;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(toParse);
     } catch {
       this.logger.warn(
-        '[GLOSSARY_ADJUDICATE] unparseable adjudicator output — batch deferred',
+        `[GLOSSARY_ADJUDICATE] unparseable adjudicator output — batch deferred. Raw output: "${raw}"`,
       );
       return [];
     }
