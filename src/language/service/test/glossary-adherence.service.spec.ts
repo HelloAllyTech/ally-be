@@ -212,6 +212,13 @@ describe('GlossaryAdherenceService', () => {
       expect(await service.analyzeSession('sess-1')).toBeNull();
     });
 
+    it('returns null on a non-integer languageId in session metadata', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        { id: 'sess-1', languageId: 'en' },
+      ]);
+      expect(await service.analyzeSession('sess-1')).toBeNull();
+    });
+
     it('scans agent messages and upserts a report with start_metrics provenance', async () => {
       dataSource.query
         .mockResolvedValueOnce([sessionRow]) // session lookup

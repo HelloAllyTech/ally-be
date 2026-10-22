@@ -139,6 +139,11 @@ when the judge is wrong. `violationsPer100AgentMessages` is the honest denominat
 `avgViolationsPerSession` is retained but misleading. Endpoints under
 `…/glossary/adherence[/backfill]` and `…/glossary/adherence/overview`.
 
+**Scan robustness (2026-10-22):** The session scan is resilient to malformed `languageId`
+metadata. It fetches the ID as a string and parses it in code, safely skipping sessions
+where the ID is not a valid integer. This prevents a class of data-quality errors from
+failing the scan for a whole batch.
+
 **Phase 10 — unattended adjudication** (supersedes decision #5's "humans approve").
 There is no reviewer who reads Tamil, Kannada, Hindi and Marathi, so `propose` meant the
 queue grew forever. `GlossaryAdjudicationService` decides it hourly. See §6.3.
