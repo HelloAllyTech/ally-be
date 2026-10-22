@@ -4,24 +4,26 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { AppConfigService } from 'src/config/config.service';
 import { LabEvaluatorService } from '../service/lab-evaluator.service';
 
 /**
  * Authenticates AI Lab human evaluators (the /evaluate micro-app) — NOT
- * platform users. Verifies the bearer JWT against the access-token secret,
- * requires the dedicated `kind: lab_evaluator` claim (so platform-user tokens
- * are rejected and vice-versa), checks the tokenVersion (password
+ * platform users. Verifies the bearer JWT against the evaluator signing key,
+ * requires the `kind: lab_evaluator` claim, checks the tokenVersion (password
  * regeneration revokes old tokens) and attaches `req.evaluator`.
+ *
+ * The separation holds both ways, and on two separate locks:
+ * - a platform token here fails the signature check, because evaluator
+ *   tokens are signed with a key derived from the access secret, not the
+ *   access secret itself (EVALUATOR_TOKEN_KEY_LABEL), and has no evaluator
+ *   `kind` either;
+ * - an evaluator token on a platform route fails the same way in reverse,
+ *   and JwtStrategy and WebSocketAuthMiddleware also refuse any token whose
+ *   `kind` claim is not one they issue (isPlatformTokenKind).
  */
 @Injectable()
 export class LabEvaluatorGuard implements CanActivate {
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly configService: AppConfigService,
-    private readonly evaluatorService: LabEvaluatorService,
-  ) {}
+  constructor(private readonly evaluatorService: LabEvaluatorService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -33,16 +35,7 @@ export class LabEvaluatorGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    let payload: { sub?: string; email?: string; kind?: string; tv?: number };
-    try {
-      payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.jwt.accessToken.secret,
-      });
-    } catch {
-      throw new UnauthorizedException();
-    }
-
-    const evaluator = await this.evaluatorService.validateToken(payload);
+    const evaluator = await this.evaluatorService.verifyToken(token);
     request.evaluator = { id: evaluator.id, email: evaluator.email };
     return true;
   }

@@ -9,6 +9,7 @@ import {
   ValidationException,
 } from '../../exception/custom.exception';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { isPlatformTokenKind } from '../util/token-kind.util';
 
 @Injectable()
 export class WebSocketAuthMiddleware {
@@ -44,6 +45,16 @@ export class WebSocketAuthMiddleware {
         const payload = await this.jwtService.verifyAsync(token, {
           secret: this.configService.jwt.accessToken.secret,
         });
+
+        // A token minted for another purpose (an AI Lab evaluator token,
+        // say) is not a platform session, even if it verified.
+        if (!isPlatformTokenKind(payload)) {
+          const error = new UnauthorizedException('Invalid token');
+          this.logger.error(
+            `Rejected token of kind '${String(payload.kind)}' for socket ${socket.id}`,
+          );
+          return next(error);
+        }
 
         // Validate user ID
         const userId = parseInt(payload.sub);

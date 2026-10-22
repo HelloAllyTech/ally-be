@@ -212,6 +212,57 @@ describe('WebSocketAuthMiddleware', () => {
       expect(next).toHaveBeenCalledWith(originalError);
     });
 
+    it('should reject an AI Lab evaluator token before reading its sub', async () => {
+      const socket = createMockSocket({
+        handshake: {
+          auth: { token: mockValidToken },
+          query: {},
+          headers: {},
+        },
+      });
+      const next = createMockNext();
+      const authMiddleware = middleware.webSocketMiddleware([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]);
+
+      // A uuid sub that parseInt would happily turn into user 3.
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: '3f2a6c1e-0000-4000-8000-000000000000',
+        email: 'eval@x.com',
+        kind: 'lab_evaluator',
+        tv: 0,
+      });
+
+      await authMiddleware(socket, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+      expect(next.mock.calls[0][0].message).toBe('Invalid token');
+      expect(permissionsService.getUserPermissions).not.toHaveBeenCalled();
+      expect(socket.data.user).toBeUndefined();
+    });
+
+    it('should reject any kind platform auth does not issue', async () => {
+      const socket = createMockSocket({
+        handshake: {
+          auth: { token: mockValidToken },
+          query: {},
+          headers: {},
+        },
+      });
+      const next = createMockNext();
+
+      jwtService.verifyAsync.mockResolvedValue({
+        ...mockValidPayload,
+        kind: 'some_future_kind',
+      });
+
+      await middleware.webSocketMiddleware()(socket, next);
+
+      expect(next.mock.calls[0][0]?.message).toBe('Invalid token');
+      expect(socket.data.user).toBeUndefined();
+    });
+
     // Positive test cases
     it('should authenticate successfully with token in auth field', async () => {
       const socket = createMockSocket({
