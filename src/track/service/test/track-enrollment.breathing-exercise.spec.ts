@@ -92,7 +92,7 @@ describe('TrackEnrollmentService — Breathing Exercise', () => {
       status: SessionItemStatus.UNLOCKED,
     });
 
-    const result = await service.startItem(ITEM_ID);
+    const result: any = await service.startItem(ITEM_ID);
 
     expect(trackProgressService.completeItem).toHaveBeenCalledWith(
       PROGRESS_ID,
@@ -100,5 +100,38 @@ describe('TrackEnrollmentService — Breathing Exercise', () => {
     );
     expect(result.completion).toMatchObject({ completed: true });
     expect(result.gameKey).toBe(TrackGameKey.BREATHING_EXERCISE);
+  });
+
+  it('sends the breathing exercise configuration to the client', async () => {
+    stubPermittedItemProgress(breathingExerciseItem, {
+      id: PROGRESS_ID,
+      trackEnrollmentId: 'enr-1',
+      status: SessionItemStatus.UNLOCKED,
+    });
+
+    const result: any = await service.startItem(ITEM_ID);
+
+    expect(result.breathingExercise).toEqual(
+      breathingExerciseItem.content.breathingExercise,
+    );
+  });
+
+  it('does not add a breathingExercise key to other games', async () => {
+    stubPermittedItemProgress(
+      {
+        id: ITEM_ID,
+        type: TrackItemType.GAME,
+        content: { gameKey: TrackGameKey.SNAKE },
+      },
+      {
+        id: PROGRESS_ID,
+        trackEnrollmentId: 'enr-1',
+        status: SessionItemStatus.UNLOCKED,
+      },
+    );
+
+    const result: any = await service.startItem(ITEM_ID);
+
+    expect(result).not.toHaveProperty('breathingExercise');
   });
 });

@@ -42,7 +42,7 @@ import { TrackProgressService } from './track-progress.service';
 import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
-import { GameContent } from '../type/game.type';
+import { GameContent, TrackGameKey } from '../type/game.type';
 import { BucketSortContent } from '../type/bucket-sort.type';
 import { sanitizeBucketSortForLearner } from './track-bucket-sort.sanitizer';
 import {
@@ -711,6 +711,12 @@ export class TrackEnrollmentService {
           bestScore: progress.meta?.bestGameScore ?? null,
           playCount: progress.meta?.gamePlayCount ?? 0,
           completion,
+          // The breathing exercise is native, not an HTML bundle, so the client
+          // has nothing to run unless the author's timings and wording come with
+          // the payload.
+          ...(game.gameKey === TrackGameKey.BREATHING_EXERCISE
+            ? { breathingExercise: game.breathingExercise }
+            : {}),
         };
       }
 
