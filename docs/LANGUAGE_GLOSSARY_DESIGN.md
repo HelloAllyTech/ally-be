@@ -632,7 +632,10 @@ What that review found, and what the pass therefore checks:
 
 Outcomes: accepts apply immediately (reversible via the batch record); rejects need two
 consecutive votes (§4); **every** failure mode — unparseable output, provider error, skipped
-proposal, Tier 0 cap breach — lands in `deferred`. Cap pressure is reported, not fought: a
+proposal, Tier 0 cap breach — lands in `deferred`. The service is robust to variations in
+the adjudicator's output format; it locates and parses a JSON object from within the
+model's response, tolerating conversational filler or markdown fences. An output that is
+genuinely unparseable defers the batch. Cap pressure is reported, not fought: a
 proposal that would breach the cap is deferred with its reason after one re-tier attempt,
 because the cap is authoritative and the answer is re-tiering or trimming, not squeezing.
 
