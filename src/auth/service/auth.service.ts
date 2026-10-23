@@ -841,23 +841,13 @@ export class AuthService {
         (id): id is string => !!id,
       );
       if (!issuedTo.some((id) => clientIds.includes(id))) {
-        const ownProjects = new Set(
-          clientIds.map(AuthService.googleProjectNumber).filter(Boolean),
-        );
-        const sameProjectClient = issuedTo.find((id) =>
-          ownProjects.has(AuthService.googleProjectNumber(id)),
-        );
-        // Client ids aren't personal data. Logged so an unlisted client,
-        // ours or not, shows up straight away.
-        if (!sameProjectClient) {
-          this.logger.warn(
-            `Rejected a Google access token issued to client ${issuedTo[0] ?? 'unknown'}`,
-          );
-          throw new UnauthorizedException('Invalid Google token');
-        }
+        const uniqueIssuedTo = [...new Set(issuedTo)];
         this.logger.warn(
-          `Accepted a Google access token from unlisted client ${sameProjectClient} in Ally's Google project; add it to GOOGLE_WEB_CLIENT_ID`,
+          `Rejected a Google access token issued to unlisted client(s): ${uniqueIssuedTo.join(
+            ', ',
+          )}`,
         );
+        throw new UnauthorizedException('Invalid Google token');
       }
 
       // The typings say boolean, but tokeninfo returns every field as a

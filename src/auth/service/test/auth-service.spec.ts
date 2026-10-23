@@ -1140,14 +1140,14 @@ describe('AuthService', () => {
         ).resolves.toEqual({ email: 'ada@example.com' });
       });
 
-      it('accepts an unlisted client in the same Google project, and says so', async () => {
+      it('rejects an unlisted client in the same Google project', async () => {
         mockTokenInfo(tokenInfo({ aud: UNLISTED_OWN, azp: UNLISTED_OWN }));
 
         await expect(
           authService.verifyGoogleToken({ ...roles, accessToken: 'token' }),
-        ).resolves.toEqual({ email: 'ada@example.com' });
+        ).rejects.toThrow(new UnauthorizedException('Invalid Google token'));
         expect(mockLogger.warn).toHaveBeenCalledWith(
-          expect.stringContaining(UNLISTED_OWN),
+          `Rejected a Google access token issued to unlisted client(s): ${UNLISTED_OWN}`,
         );
       });
 
