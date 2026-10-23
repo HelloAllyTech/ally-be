@@ -141,4 +141,37 @@ describe('MobileReleasesService', () => {
       ).not.toHaveBeenCalled();
     });
   });
+
+  describe('requireToken', () => {
+    it('should throw ServiceUnavailableException if githubActionsToken is not configured', async () => {
+      const mockAppConfigServiceWithoutToken = {
+        ...mockAppConfigService,
+        githubActionsToken: '',
+      };
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          MobileReleasesService,
+          {
+            provide: AppConfigService,
+            useValue: mockAppConfigServiceWithoutToken,
+          },
+          {
+            provide: MobileReleaseWhatsNewAiService,
+            useValue: mockMobileReleaseWhatsNewAiService,
+          },
+          {
+            provide: AppVersionSettingsService,
+            useValue: mockAppVersionSettingsService,
+          },
+          { provide: SlackService, useValue: mockSlackService },
+        ],
+      }).compile();
+      const serviceWithoutToken = module.get<MobileReleasesService>(
+        MobileReleasesService,
+      );
+      expect(() => (serviceWithoutToken as any).requireToken()).toThrow(
+        'GITHUB_ACTIONS_TOKEN is not configured on this environment, so mobile release status cannot be read.',
+      );
+    });
+  });
 });
