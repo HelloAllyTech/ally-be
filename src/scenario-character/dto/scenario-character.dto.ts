@@ -22,6 +22,7 @@ import {
   ScenarioCharacterSortOrder,
 } from '../enum/scenario-character.enum';
 import { TrimStringTransform } from 'src/common/util/string-transform.util';
+import { EmptyStringToUndefinedTransform } from 'src/common/util/empty-string-to-undefined.util';
 import { CharacterKnowledgeSourceDto } from './character-knowledge-source.dto';
 import {
   IsSamplesByLanguageConstraint,
@@ -93,6 +94,7 @@ export class ScenarioCharacterRequestDto {
     required: false,
   })
   @IsOptional()
+  @Transform(EmptyStringToUndefinedTransform)
   @IsString()
   @IsUrl()
   coverImageUrl?: string;
@@ -102,6 +104,7 @@ export class ScenarioCharacterRequestDto {
     required: false,
   })
   @IsOptional()
+  @Transform(EmptyStringToUndefinedTransform)
   @IsString()
   @IsUrl()
   coverVideoUrl?: string;
