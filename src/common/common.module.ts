@@ -5,10 +5,12 @@ import { OpenAITranslationsService } from './service/openai-translation.service'
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { AiChatModule } from 'src/ai-chat/ai-chat.module';
+import { FaviconController } from './controller/favicon.controller';
 
 @Global()
 @Module({
   imports: [PromptModule, LlmUsageModule, AiChatModule],
+  controllers: [FaviconController],
   providers: [
     CryptoService,
     GoogleTranslationsService,
