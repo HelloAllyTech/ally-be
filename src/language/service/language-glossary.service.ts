@@ -546,22 +546,32 @@ export class LanguageGlossaryService {
       let seedEvidence:
         | { line: string; verdict: string; avoidLearnerCount: number }[]
         | undefined;
+      const contentLines = (gen.content ?? '').split('\n');
+      const keptLines: string[] = [];
+
       if (corpora) {
         seedEvidence = [];
-        for (const line of (gen.content ?? '').split('\n')) {
+        for (const line of contentLines) {
           const evidence = scoreLexicalEvidence(
             line,
             corpora.learner,
             corpora.agent,
             GLOSSARY_LEXICAL_CONTRADICTION_MIN,
           );
-          if (!evidence || !evidence.avoid) continue;
+          if (!evidence || !evidence.avoid) {
+            keptLines.push(line);
+            continue;
+          }
           seedEvidence.push({
             line: line.trim().slice(0, 200),
             verdict: evidence.verdict,
             avoidLearnerCount: evidence.avoidLearnerCount,
           });
-          if (evidence.verdict === 'contradicted') contradictedLines++;
+          if (evidence.verdict === 'contradicted') {
+            contradictedLines++;
+            continue; // Exclude the contradicted line
+          }
+          keptLines.push(line);
         }
         if (seedEvidence.length === 0) seedEvidence = undefined;
       }
@@ -573,7 +583,7 @@ export class LanguageGlossaryService {
           createdBy,
         }),
         title: gen.title,
-        content: gen.content,
+        content: corpora ? keptLines.join('\n') : gen.content,
         retrievalHint: gen.retrievalHint,
         injectionMode:
           gen.injectionMode === GlossaryInjectionMode.ALWAYS

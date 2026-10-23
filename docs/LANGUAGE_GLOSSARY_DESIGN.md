@@ -473,6 +473,8 @@ metabolism* — and every gram of that metabolism stays out of the per-turn hot 
    Inputs: language + `evalConfig` (script, `targetVariety`, `diglossia`), tone guidelines,
    code-mix preserve words, the three entry-type specs, per-section token budgets.
 3. Output lands as `status='draft'` rows per `sectionCode`. Native-speaker review → publish.
+4. Seeded `avoid-line(s)` are scored against the learner corpus; lines contradicted by real
+   usage are excluded from the draft and recorded in `provenance.seedEvidence`.
 
 ### 6.2 Consolidate — weekly, per language, unattended
 

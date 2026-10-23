@@ -354,6 +354,50 @@ describe('LanguageGlossaryService', () => {
       expect(core.provenance.seedEvidence).toBeUndefined();
     });
 
+    it('filters out seeded avoid-lines that are contradicted by the learner corpus', async () => {
+      const contradictedContent = '- worry: say "டென்ஷன்" (avoid: "பதட்டம்")';
+      const uncontradictedContent = '- Speak colloquial Tamil.';
+      const generatedWithContradiction = [
+        {
+          sectionCode: 'clinical_terms',
+          title: 'Clinical terms',
+          injectionMode: 'retrieved',
+          retrievalHint: 'Retrieve when clinical.',
+          content: `${uncontradictedContent}\n${contradictedContent}`,
+        },
+      ];
+
+      // Corpus: learners say the avoid-term பதட்டம், so the line is contradicted.
+      annotationRepository.manager.query.mockResolvedValue(
+        Array.from({ length: 5 }, () => ({
+          content: 'எனக்கு பதட்டம் இருக்கு', // "I have anxiety"
+          senderId: 101,
+        })),
+      );
+      getCompletion.mockResolvedValue(
+        JSON.stringify(generatedWithContradiction),
+      );
+
+      await service.generateDraftGlossary(6);
+
+      const savedSection = glossaryRepository.save.mock.calls[0][0];
+
+      // This is the state we want after the fix: the contradicted line is NOT saved.
+      // This assertion will fail with the current code, proving the bug.
+      expect(savedSection.content).not.toContain(contradictedContent);
+
+      // The uncontradicted line should always be present.
+      expect(savedSection.content).toContain(uncontradictedContent);
+
+      // The contradiction should be recorded in provenance, even if filtered out.
+      expect(savedSection.provenance.seedEvidence).toEqual([
+        expect.objectContaining({
+          verdict: 'contradicted',
+          avoidLearnerCount: 5,
+        }),
+      ]);
+    });
+
     it('parses fenced JSON, fills placeholders, and saves markdown drafts', async () => {
       getCompletion.mockResolvedValue(
         '```json\n' + JSON.stringify(generated) + '\n```',
