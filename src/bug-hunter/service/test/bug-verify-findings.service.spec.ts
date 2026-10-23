@@ -262,6 +262,19 @@ describe('BugVerifyFindingsService', () => {
       expect(bugHunterService.startRun).not.toHaveBeenCalled();
     });
 
+    it('never locates a step of a cross-repo plan — the plan drives it (2026-10-21)', async () => {
+      rows = [
+        finding({
+          id: 'f-3',
+          source: BugFindingSource.REPORTED_BUG,
+          status: BugFindingStatus.PR_OPENED,
+          parentFindingId: 'parent-1',
+        } as never),
+      ];
+      expect(await service.dispatchForReport('f-3')).toBeNull();
+      expect(bugHunterService.startRun).not.toHaveBeenCalled();
+    });
+
     it('locates again a report whose wrong-layer fix was closed, and leaves a pending or running one alone', async () => {
       // 2026-10-12: a translations bug was "fixed" in the frontend while the
       // rows were missing in the backend; the PR was closed and the admin

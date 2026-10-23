@@ -366,6 +366,10 @@ export class BugHunterFinderService {
         // Locate before fixing: every fresh report with a repo gets its own
         // Verifier run first, whatever the light pass below turns up.
         for (const r of reports) {
+          // A step of a cross-repo plan is created as a reported bug, but it
+          // is the plan's work, not a new report: locating it would start a
+          // second fix session on a step whose PR may already be open.
+          if (r.parentFindingId) continue;
           if (r.metadata?.independentVerification) continue;
           try {
             await this.verifyFindings.dispatchForReport(r.id);

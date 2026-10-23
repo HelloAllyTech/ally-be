@@ -4,7 +4,7 @@ import { GithubActionsService } from 'src/github/service/github-actions.service'
 import { LoggerService } from 'src/logger/logger.service';
 
 import { repoCommands } from '../constants/bug-hunt-repos.constants';
-import { prNumberFrom } from './bug-hunter-policy.service';
+import { prNumberFrom, repoFromPrUrl } from './bug-hunter-policy.service';
 import { BUG_HUNT_LOW_CONFIDENCE_THRESHOLD } from '../constants/bug-hunter.constants';
 import { BugFinding } from '../entity/bug-finding.entity';
 import { faultLocationOf, isDataFault } from '../type/bug-finding-verdict.type';
@@ -94,8 +94,9 @@ export class BugHunterOrchestratorService {
     for (const finding of open) {
       try {
         const prNumber = finding.prUrl ? prNumberFrom(finding.prUrl) : null;
-        if (!finding.repo || !prNumber) continue;
-        const pr = await this.github.getPullRequest(finding.repo, prNumber);
+        const prRepo = repoFromPrUrl(finding.prUrl) ?? finding.repo;
+        if (!prRepo || !prNumber) continue;
+        const pr = await this.github.getPullRequest(prRepo, prNumber);
         if (!pr || pr.merged || pr.state !== 'open' || !pr.headSha) continue;
 
         if (pr.mergeableState === 'dirty') {
@@ -113,10 +114,7 @@ export class BugHunterOrchestratorService {
           | { headSha: string }
           | undefined;
         if (seenChecks?.headSha !== pr.headSha) {
-          const rollup = await this.github.getCheckRollup(
-            finding.repo,
-            pr.headSha,
-          );
+          const rollup = await this.github.getCheckRollup(prRepo, pr.headSha);
           if (rollup?.state === 'failure' && rollup.failed.length) {
             await this.onPrChecksFailed(finding.id, pr.headSha, rollup.failed);
             continue;
@@ -128,7 +126,7 @@ export class BugHunterOrchestratorService {
             | undefined;
           if (seen?.headSha === pr.headSha) continue;
           const result = await this.github.updatePullRequestBranch(
-            finding.repo,
+            prRepo,
             prNumber,
             pr.headSha,
           );
@@ -388,6 +386,8 @@ export class BugHunterOrchestratorService {
     confidence: number | null,
   ): Promise<D5Pick | null> {
     const finding = await this.bugFindingService.getOne(findingId);
+    // A plan step is started by the plan, in order, never by D5.
+    if (finding.parentFindingId) return null;
     // A re-located report (a closed wrong-layer PR, a failed or cancelled
     // session) is decided like a fresh one; a session in flight or a fix
     // already merged means a person acted, and D5 stays out of it.

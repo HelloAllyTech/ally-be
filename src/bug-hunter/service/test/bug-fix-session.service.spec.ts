@@ -54,7 +54,7 @@ describe('BugFixSessionService', () => {
     save: jest.Mock;
     create: jest.Mock;
     listChildren: jest.Mock;
-    listCoordinatingParents: jest.Mock;
+    listOpenPlanParents: jest.Mock;
     listReleasingParents: jest.Mock;
     findReversibleFinderErrors: jest.Mock;
   };
@@ -92,7 +92,7 @@ describe('BugFixSessionService', () => {
       create: jest.fn((row: unknown) => row),
       // Most tests are about a standalone bug: no plan, no steps.
       listChildren: jest.fn().mockResolvedValue([]),
-      listCoordinatingParents: jest.fn().mockResolvedValue([]),
+      listOpenPlanParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
       findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
@@ -906,6 +906,33 @@ describe('BugFixSessionService', () => {
           summary: expect.stringContaining('Found pull request 123'),
         }),
       );
+    });
+
+    it("reads the PR from its own repo, not the finding's (2026-10-21: an ally-web bug fixed by ally-be #686)", async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/686',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/HelloAllyTech/ally-be/pull/686',
+        mergedAt: new Date('2026-10-21T13:19:55.000Z'),
+      });
+
+      await service.reconcile();
+
+      expect(github.getPullRequest).toHaveBeenCalledWith('ally-be', 686);
+      expect(github.getPullRequest).not.toHaveBeenCalledWith('ally-web', 686);
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
     });
 
     it('flips a PR_OPENED finding to MERGED once GitHub reports it merged — the human-review-merge case', async () => {
@@ -1741,7 +1768,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       ),
       create: jest.fn((row) => row),
       listChildren: jest.fn().mockResolvedValue([]),
-      listCoordinatingParents: jest.fn().mockResolvedValue([]),
+      listOpenPlanParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
       findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
@@ -1754,6 +1781,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       appendFindingEvent: jest.fn(),
     };
     github = {
+      getPullRequest: jest.fn().mockResolvedValue(null),
       isConfigured: true,
       dispatchWorkflow: jest.fn().mockResolvedValue(DISPATCHED_AT),
       findRunSince: jest.fn().mockResolvedValue(null),
@@ -1834,6 +1862,24 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       expect(github.dispatchWorkflow).not.toHaveBeenCalled();
     });
 
+    it('rejects a step that changes nothing, and says to fix the one repo left as a normal fix (2026-10-21)', async () => {
+      bugFindingService.getOne.mockResolvedValue(findingRow());
+      await expect(
+        service.recordPlan('finding-1', [
+          {
+            repo: 'ally-be',
+            summary: 'Update the HTML sanitizer in track.service.ts',
+          },
+          {
+            repo: 'ally-web',
+            summary:
+              'No code changes required. After the ally-be change is deployed, verify that rich text appears.',
+          },
+        ]),
+      ).rejects.toThrow(/needs no code change.*ordinary single-repo fix/);
+      expect(findingRepository.create).not.toHaveBeenCalled();
+    });
+
     it('rejects a one-step plan — that is just a normal fix', async () => {
       bugFindingService.getOne.mockResolvedValue(findingRow());
       await expect(
@@ -1868,10 +1914,83 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
     const coordinating = () =>
       findingRow({ id: 'finding-1', status: BugFindingStatus.COORDINATING });
 
-    it('starts the next step once the one before it is merged', async () => {
-      findingRepository.listCoordinatingParents.mockResolvedValue([
-        coordinating(),
+    it("treats a step whose own PR merged as merged, then finishes the plan (2026-10-21: step 1 read 'New' after ally-be #686 merged)", async () => {
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
+      findingRepository.listChildren.mockResolvedValue([
+        step(0, {
+          status: BugFindingStatus.NEW,
+          prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/686',
+        }),
+        step(1, {
+          status: BugFindingStatus.MERGED,
+          prUrl: 'https://github.com/HelloAllyTech/ally-web/pull/900',
+        }),
       ]);
+      github.getPullRequest.mockResolvedValue({ merged: true });
+
+      await service.reconcile();
+
+      expect(github.getPullRequest).toHaveBeenCalledWith('ally-be', 686);
+      expect(findingRepository.update).toHaveBeenCalledWith('step-0', {
+        status: BugFindingStatus.MERGED,
+      });
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
+    });
+
+    it('puts a parent that drifted to "PR opened" back on its plan', async () => {
+      findingRepository.listOpenPlanParents.mockResolvedValue([
+        findingRow({ id: 'finding-1', status: BugFindingStatus.PR_OPENED }),
+      ]);
+      findingRepository.listChildren.mockResolvedValue([
+        step(0, { status: BugFindingStatus.FIXING }),
+        step(1, { status: BugFindingStatus.BLOCKED }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.COORDINATING,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          summary: expect.stringContaining(
+            'put it back to coordinating (it was pr_opened)',
+          ),
+        }),
+      );
+    });
+
+    it('stops the plan when a person pins the bug Released, closing the steps that never started', async () => {
+      findingRepository.listOpenPlanParents.mockResolvedValue([
+        findingRow({
+          id: 'finding-1',
+          status: BugFindingStatus.COORDINATING,
+          stageOverride: RoadmapOpportunityStage.RELEASED,
+        } as Partial<BugFinding>),
+      ]);
+      findingRepository.listChildren.mockResolvedValue([
+        step(0, { status: BugFindingStatus.MERGED }),
+        step(1, { status: BugFindingStatus.BLOCKED }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'step-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.RELEASED }),
+      );
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('starts the next step once the one before it is merged', async () => {
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, { status: BugFindingStatus.MERGED }),
         step(1, { status: BugFindingStatus.BLOCKED }),
@@ -1885,9 +2004,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
     });
 
     it('does not run two steps at once', async () => {
-      findingRepository.listCoordinatingParents.mockResolvedValue([
-        coordinating(),
-      ]);
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, { status: BugFindingStatus.FIXING }),
         step(1, { status: BugFindingStatus.BLOCKED }),
@@ -1899,9 +2016,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
     });
 
     it('makes the parent releasable once every step is merged, and says so', async () => {
-      findingRepository.listCoordinatingParents.mockResolvedValue([
-        coordinating(),
-      ]);
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, { status: BugFindingStatus.MERGED }),
         step(1, { status: BugFindingStatus.MERGED }),
@@ -1922,7 +2037,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
 
     it('releases the linked roadmap opportunity when the coordinated parent merges', async () => {
       const parent = { ...coordinating(), reportedBugId: 'opportunity-1' };
-      findingRepository.listCoordinatingParents.mockResolvedValue([parent]);
+      findingRepository.listOpenPlanParents.mockResolvedValue([parent]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, { status: BugFindingStatus.MERGED }),
         step(1, { status: BugFindingStatus.MERGED }),
@@ -1946,9 +2061,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
     });
 
     it('halts the whole plan when a step is cancelled, rather than dispatching the next one', async () => {
-      findingRepository.listCoordinatingParents.mockResolvedValue([
-        coordinating(),
-      ]);
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, { status: BugFindingStatus.CANCELLED, cancelledBy: 42 }),
         step(1, { status: BugFindingStatus.BLOCKED }),
@@ -1974,9 +2087,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
     });
 
     it('halts the whole plan when a step gets stuck, rather than building on it', async () => {
-      findingRepository.listCoordinatingParents.mockResolvedValue([
-        coordinating(),
-      ]);
+      findingRepository.listOpenPlanParents.mockResolvedValue([coordinating()]);
       findingRepository.listChildren.mockResolvedValue([
         step(0, {
           status: BugFindingStatus.NEEDS_INPUT,

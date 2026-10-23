@@ -82,6 +82,12 @@ const FIX_ALREADY_EXISTS: BugFindingStatus[] = [
   BugFindingStatus.COORDINATING,
 ];
 
+/** The repo a GitHub pull-request URL belongs to, e.g. ".../HelloAllyTech/ally-be/pull/686" → "ally-be". */
+export const repoFromPrUrl = (url: string | null | undefined): string | null =>
+  url
+    ? (/github\.com\/[^/]+\/([^/]+)\/pull\/\d+/.exec(url)?.[1] ?? null)
+    : null;
+
 @Injectable()
 export class BugHunterPolicyService {
   private readonly logger = LoggerService.getInstance(
@@ -104,6 +110,23 @@ export class BugHunterPolicyService {
     findingId: string,
     patch: FindingTransitionPatch,
   ): Promise<void> {
+    // A bug split into a cross-repo plan is fixed through its steps. A
+    // session that reports on the parent instead (2026-10-21, a rich-text
+    // bug) knocks the plan off its track: the parent leaves COORDINATING and
+    // the plan pass stops seeing it.
+    if (
+      patch.status === BugFindingStatus.FIXING ||
+      patch.status === BugFindingStatus.PR_OPENED
+    ) {
+      const steps = await this.bugFindingService.listSteps(findingId);
+      if (steps.length) {
+        throw new ForbiddenException(
+          `This bug is being fixed as a ${steps.length}-step plan across repos. Report on the step you are working on (${steps
+            .map((s) => `${s.repo}: ${s.id}`)
+            .join(', ')}), not on the parent.`,
+        );
+      }
+    }
     if (patch.status === BugFindingStatus.FIXING) {
       const finding = await this.bugFindingService.getOne(findingId);
       await this.assertMayFix(finding);

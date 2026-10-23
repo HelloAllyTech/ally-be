@@ -668,12 +668,29 @@ export class BugFindingRepository extends Repository<BugFinding> {
     });
   }
 
-  /** Every parent whose plan is still being worked through — the orchestrator's queue. */
-  listCoordinatingParents(): Promise<BugFinding[]> {
-    return this.find({
-      where: { status: BugFindingStatus.COORDINATING },
-      order: { createdAt: 'ASC' },
-    });
+  /**
+   * Every parent with a plan that is not finished: coordinating, or knocked
+   * into another open status by a session that reported on the parent
+   * instead of its step. The plan pass puts the second kind back.
+   */
+  listOpenPlanParents(): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.status IN (:...statuses)', {
+        statuses: [
+          BugFindingStatus.COORDINATING,
+          BugFindingStatus.NEW,
+          BugFindingStatus.PENDING_APPROVAL,
+          BugFindingStatus.APPROVED,
+          BugFindingStatus.QUEUED,
+          BugFindingStatus.FIXING,
+          BugFindingStatus.PR_OPENED,
+        ],
+      })
+      .andWhere(
+        'EXISTS (SELECT 1 FROM bug_findings c WHERE c.parent_finding_id = f.id)',
+      )
+      .orderBy('f.createdAt', 'ASC')
+      .getMany();
   }
 
   /** Parents mid-release, whose steps are being deployed one at a time. */

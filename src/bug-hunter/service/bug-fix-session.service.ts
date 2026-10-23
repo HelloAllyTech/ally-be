@@ -60,6 +60,8 @@ import { BugCaseBudgetService } from './bug-case-budget.service';
 import { BugFixPlanService } from './bug-fix-plan.service';
 import { BugFixVerdict } from '../type/bug-fix-verdict.type';
 import { repoForFault } from '../constants/bug-hunter-repair';
+import { repoFromPrUrl } from './bug-hunter-policy.service';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 import {
   FixRetry,
   orchestratorStateOf,
@@ -93,6 +95,10 @@ import {
  * "Progressive Delegation: Staged Autonomy Growth" and the human gate in
  * "Deployment Gates: Automated and Manual Quality Checks".
  */
+/** A plan step that changes nothing: "no code changes required", "nothing to change", "verify only". */
+const NO_CHANGE_STEP =
+  /\b(no (code )?(changes?|fix(es)?) (are |is )?(required|needed|necessary)|nothing to (change|fix)|verify only|only verify)\b/i;
+
 @Injectable()
 export class BugFixSessionService {
   private readonly logger = LoggerService.getInstance(
@@ -521,6 +527,21 @@ export class BugFixSessionService {
     const existing = await this.findingRepository.listChildren(parent.id);
     if (existing.length) return existing;
 
+    // A step is a change in a repo. "No code changes required, verify after
+    // deploy" is not one: it sat as a step that could never finish and kept a
+    // fixed bug looking unfinished (2026-10-21).
+    const noChange = steps.find((step) =>
+      NO_CHANGE_STEP.test(step.summary ?? ''),
+    );
+    if (noChange) {
+      throw new BadRequestException(
+        `Step "${noChange.repo}" says it needs no code change. A plan lists only repos that change; leave ${noChange.repo} out${
+          steps.length - 1 < 2
+            ? ', and since that leaves one repo, fix it as an ordinary single-repo fix instead of a plan'
+            : ''
+        }.`,
+      );
+    }
     if (steps.length < 2) {
       throw new BadRequestException(
         'A plan needs at least two steps — a single-repo fix does not need one.',
@@ -1005,12 +1026,38 @@ export class BugFixSessionService {
    * against something that never landed.
    */
   private async advancePlans(): Promise<void> {
-    const parents = await this.findingRepository.listCoordinatingParents();
+    const parents = await this.findingRepository.listOpenPlanParents();
 
     for (const parent of parents) {
       try {
         const steps = await this.findingRepository.listChildren(parent.id);
         if (!steps.length) continue;
+
+        // A parent with steps belongs to its plan. One that drifted to
+        // another open status is put back, so the plan is seen again.
+        if (parent.status !== BugFindingStatus.COORDINATING) {
+          await this.findingRepository.update(parent.id, {
+            status: BugFindingStatus.COORDINATING,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: parent.id,
+            repo: parent.repo,
+            stage: BugHuntEventStage.PLAN_CREATED,
+            summary: `This bug is fixed through its ${steps.length}-step plan, so I put it back to coordinating (it was ${parent.status}).`,
+            payload: { restoredFrom: parent.status },
+          });
+          parent.status = BugFindingStatus.COORDINATING;
+        }
+
+        // A person marked the bug released by hand: the plan has nothing
+        // left to do. Close the steps that never started and stop.
+        if (parent.stageOverride === RoadmapOpportunityStage.RELEASED) {
+          await this.closePlanByHand(parent, steps);
+          continue;
+        }
+
+        // A step whose own PR merged is merged, whatever its status says.
+        await this.healMergedSteps(steps);
 
         const stuck = steps.find(
           (step) =>
@@ -1071,6 +1118,77 @@ export class BugFixSessionService {
         );
       }
     }
+  }
+
+  /**
+   * Steps whose recorded PR is merged on GitHub but whose status says
+   * otherwise. On 2026-10-21 a step's PR (ally-be #686) merged with a Verifier
+   * pass, yet the step later read "New" and the plan waited on it forever.
+   * The PR is the evidence; the status follows it.
+   */
+  private async healMergedSteps(steps: BugFinding[]): Promise<void> {
+    for (const step of steps) {
+      if (
+        !step.prUrl ||
+        step.status === BugFindingStatus.MERGED ||
+        step.status === BugFindingStatus.RELEASING ||
+        step.status === BugFindingStatus.RELEASED
+      ) {
+        continue;
+      }
+      const prNumber = BugFixSessionService.prNumberFrom(step.prUrl);
+      const prRepo = repoFromPrUrl(step.prUrl) ?? step.repo;
+      if (!prNumber || !prRepo) continue;
+      const pr = await this.github.getPullRequest(prRepo, prNumber);
+      if (!pr?.merged) continue;
+      await this.findingRepository.update(step.id, {
+        status: BugFindingStatus.MERGED,
+      });
+      await this.bugHunterService.appendFindingEvent({
+        findingId: step.id,
+        repo: prRepo,
+        stage: BugHuntEventStage.MERGED,
+        summary: `${step.prUrl} is merged, so this step is merged (it read ${step.status}).`,
+        payload: { prUrl: step.prUrl, healedFrom: step.status },
+      });
+      step.status = BugFindingStatus.MERGED;
+    }
+  }
+
+  /** The parent was pinned Released by hand: close the steps that never started, and release the parent. */
+  private async closePlanByHand(
+    parent: BugFinding,
+    steps: BugFinding[],
+  ): Promise<void> {
+    const unstarted = steps.filter((step) =>
+      [
+        BugFindingStatus.NEW,
+        BugFindingStatus.BLOCKED,
+        BugFindingStatus.PENDING_APPROVAL,
+        BugFindingStatus.APPROVED,
+      ].includes(step.status),
+    );
+    for (const step of unstarted) {
+      await this.findingRepository.update(step.id, {
+        status: BugFindingStatus.CANCELLED,
+        cancelledAt: new Date(),
+      });
+    }
+    await this.findingRepository.update(parent.id, {
+      status: BugFindingStatus.RELEASED,
+      releasedAt: parent.releasedAt ?? new Date(),
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId: parent.id,
+      repo: parent.repo,
+      stage: BugHuntEventStage.RELEASED,
+      summary: `Marked released by hand, so the plan stops here${
+        unstarted.length
+          ? `: closed ${unstarted.map((s) => s.repo).join(', ')}, which never started`
+          : ''
+      }.`,
+      payload: { closedSteps: unstarted.map((s) => s.id) },
+    });
   }
 
   /** A plan that cannot continue: the parent takes on the stuck step's meaning and the admin is told which step and why. */
@@ -1381,9 +1499,13 @@ export class BugFixSessionService {
         const prNumber = finding.prUrl
           ? BugFixSessionService.prNumberFrom(finding.prUrl)
           : null;
-        if (!finding.repo || !prNumber) continue;
+        // The PR's own repo, not the finding's: a bug filed against ally-web
+        // whose fix landed in ally-be was looked up as ally-web PR #<n> —
+        // some other, long-merged PR — and never moved.
+        const prRepo = repoFromPrUrl(finding.prUrl) ?? finding.repo;
+        if (!prRepo || !prNumber) continue;
 
-        const pr = await this.github.getPullRequest(finding.repo, prNumber);
+        const pr = await this.github.getPullRequest(prRepo, prNumber);
         if (!pr) continue;
 
         if (!pr.merged) {
@@ -1402,10 +1524,10 @@ export class BugFixSessionService {
           finding,
           pr.mergedAt ?? new Date(),
         );
-        const branch = await this.deleteMergedBranch(finding.repo, pr);
+        const branch = await this.deleteMergedBranch(prRepo, pr);
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
-          repo: finding.repo,
+          repo: prRepo,
           stage: BugHuntEventStage.MERGED,
           summary: `${finding.prUrl} was merged.`,
           payload: { prUrl: finding.prUrl, mergedAt: pr.mergedAt, ...branch },

@@ -155,6 +155,12 @@ describe('BugHunterOrchestratorService', () => {
       .pop();
 
   describe('D5 — a confirmed finding', () => {
+    it('never starts a plan step from D5 — the plan starts its steps in order', async () => {
+      current = finding({ parentFindingId: 'parent-1' } as never);
+      expect(await service.onFindingConfirmed('f-1', 0.9)).toBeNull();
+      expect(fixSession.startByAgent).not.toHaveBeenCalled();
+    });
+
     it('decides a re-located report like a fresh one, and stays out once a session is running', async () => {
       // A report whose wrong-layer fix was closed sits at CANCELLED (or
       // PR_OPENED); its second, located verdict must reach D5.

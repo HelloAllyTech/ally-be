@@ -221,6 +221,8 @@ export class BugVerifyFindingsService {
   ): Promise<VerifyFindingsDispatch | null> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (finding.source !== BugFindingSource.REPORTED_BUG) return null;
+    // A plan step inherits its parent's source; the plan, not locate-first, drives it.
+    if (finding.parentFindingId) return null;
     if (!BUG_FINDING_LOCATE_STATUSES.includes(finding.status)) return null;
     // Pending: a Verifier is on it. Confirmed: the fault is already named,
     // and the fix session reads it. Unsure or never judged: locate (again) —

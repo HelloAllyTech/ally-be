@@ -86,13 +86,16 @@ const run = (overrides: Partial<BugHuntRun> = {}): BugHuntRun =>
 
 describe('BugHunterPolicyService', () => {
   let service: BugHunterPolicyService;
-  let bugFindingService: { getOne: jest.Mock };
+  let bugFindingService: { getOne: jest.Mock; listSteps: jest.Mock };
   let bugHunterService: { getRun: jest.Mock; getSettings: jest.Mock };
   let findingRepository: { count: jest.Mock };
   let github: { listPullRequestFiles: jest.Mock; getPullRequest: jest.Mock };
 
   beforeEach(() => {
-    bugFindingService = { getOne: jest.fn().mockResolvedValue(finding()) };
+    bugFindingService = {
+      getOne: jest.fn().mockResolvedValue(finding()),
+      listSteps: jest.fn().mockResolvedValue([]),
+    };
     bugHunterService = {
       getRun: jest.fn().mockResolvedValue(run()),
       getSettings: jest.fn().mockResolvedValue({ mode: BugHunterMode.AI }),
@@ -130,6 +133,20 @@ describe('BugHunterPolicyService', () => {
       service.assertTransitionAllowed('f-1', {}),
     ).resolves.toBeUndefined();
     expect(bugFindingService.getOne).not.toHaveBeenCalled();
+  });
+
+  it("refuses a parent reported as fixing or PR opened while its plan's steps do the work (2026-10-21)", async () => {
+    bugFindingService.listSteps.mockResolvedValue([
+      { id: 'step-0', repo: 'ally-be' },
+      { id: 'step-1', repo: 'ally-web' },
+    ]);
+    await expect(
+      service.assertTransitionAllowed('f-1', {
+        status: BugFindingStatus.PR_OPENED,
+        prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/686',
+      } as never),
+    ).rejects.toThrow(/2-step plan.*ally-be: step-0/);
+    await expect(fixing()).rejects.toThrow(/Report on the step/);
   });
 
   describe('fixing', () => {
