@@ -428,6 +428,24 @@ describe('GlossaryAdjudicationService', () => {
     expect(glossaryService.acceptProposal).not.toHaveBeenCalled();
   });
 
+  it('parses verdicts correctly when adjudicator output has leading text and markdown fences', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      section({
+        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+      }),
+    ]);
+    getCompletion.mockResolvedValue(
+      `Sure, here is the adjudication:
+
+\`\`\`json
+${JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }])}
+\`\`\``,
+    );
+    const out = await service.adjudicateLanguage(6);
+    expect(out).toMatchObject({ accepted: 1, rejected: 0, deferred: 0 });
+    expect(glossaryService.acceptProposal).toHaveBeenCalled();
+  });
+
   it('defers, never auto-accepts, when the model call throws', async () => {
     glossaryRepository.findAllForLanguage.mockResolvedValue([
       section({
